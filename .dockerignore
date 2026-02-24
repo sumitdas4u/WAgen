@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.env
+.env.*
+dev.log
+api-prod.log
+web-prod.log
+npm-debug.log*
