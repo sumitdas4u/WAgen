@@ -4,19 +4,23 @@ import { setAgentActive, updateBusinessBasics, updatePersonality } from "../serv
 
 const BusinessSchema = z.object({
   whatDoYouSell: z.string().min(2),
-  priceRange: z.string().min(1),
   targetAudience: z.string().min(2),
   usp: z.string().min(2),
   objections: z.string().min(2),
   defaultCountry: z.string().trim().min(2).max(56).optional().default("IN"),
   defaultCurrency: z.string().trim().min(3).max(4).optional().default("INR"),
   greetingScript: z.string().trim().max(2000).optional().default(""),
-  pricingInquiryScript: z.string().trim().max(2000).optional().default(""),
   availabilityScript: z.string().trim().max(2000).optional().default(""),
   objectionHandlingScript: z.string().trim().max(2000).optional().default(""),
   bookingScript: z.string().trim().max(2000).optional().default(""),
   feedbackCollectionScript: z.string().trim().max(2000).optional().default(""),
-  complaintHandlingScript: z.string().trim().max(2000).optional().default("")
+  complaintHandlingScript: z.string().trim().max(2000).optional().default(""),
+  supportAddress: z.string().trim().max(300).optional().default(""),
+  supportPhoneNumber: z.string().trim().max(40).optional().default(""),
+  supportContactName: z.string().trim().max(100).optional().default(""),
+  supportEmail: z.union([z.string().trim().email(), z.literal("")]).optional().default(""),
+  aiDoRules: z.string().trim().max(3000).optional().default(""),
+  aiDontRules: z.string().trim().max(3000).optional().default("")
 });
 
 const PersonalitySchema = z.object({

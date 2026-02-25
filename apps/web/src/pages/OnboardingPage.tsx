@@ -25,14 +25,13 @@ const PERSONALITIES = [
 
 type PlaybookKey =
   | "greetingScript"
-  | "pricingInquiryScript"
   | "availabilityScript"
   | "objectionHandlingScript"
   | "bookingScript"
   | "feedbackCollectionScript"
   | "complaintHandlingScript";
 
-const SALES_PLAYBOOKS: Array<{
+const SUPPORT_PLAYBOOKS: Array<{
   index: number;
   key: PlaybookKey;
   title: string;
@@ -44,62 +43,53 @@ const SALES_PLAYBOOKS: Array<{
     index: 1,
     key: "greetingScript",
     title: "Greeting",
-    hint: "How the AI opens the conversation.",
-    defaultValue: "Greet warmly, mention the brand quickly, and ask one need-based question.",
-    placeholder: "How should AI greet the lead?"
+    hint: "How the AI should welcome customers.",
+    defaultValue: "Greet politely, introduce yourself as support, and ask how you can help.",
+    placeholder: "How should AI greet customers?"
   },
   {
     index: 2,
-    key: "pricingInquiryScript",
-    title: "Pricing Inquiry",
-    hint: "How to answer price questions.",
+    key: "availabilityScript",
+    title: "Availability",
+    hint: "How to respond for stock, timing, and service availability.",
     defaultValue:
-      "Share pricing clearly in the lead's currency, mention inclusions, and ask one qualifier about requirement or budget.",
-    placeholder: "How should AI handle pricing questions?"
+      "Share availability and timelines clearly. If unavailable, offer the next available option and expected time.",
+    placeholder: "How should AI handle availability questions?"
   },
   {
     index: 3,
-    key: "availabilityScript",
-    title: "Availability",
-    hint: "How to answer stock/time-slot questions.",
-    defaultValue:
-      "Confirm current availability with clear timing. If unavailable, offer the nearest alternative and ask preference.",
-    placeholder: "How should AI answer availability?"
-  },
-  {
-    index: 4,
     key: "objectionHandlingScript",
     title: "Objection Handling",
-    hint: "How to handle hesitation and concerns.",
+    hint: "How to handle concerns and hesitation.",
     defaultValue:
-      "Acknowledge concerns first, respond with proof/USP, keep tone calm, and move the lead forward with one question.",
+      "Acknowledge concern first, explain clearly with empathy, and provide a practical next support step.",
     placeholder: "How should AI handle objections?"
   },
   {
-    index: 5,
+    index: 4,
     key: "bookingScript",
     title: "Booking",
-    hint: "How to convert into appointment/order.",
+    hint: "How to assist with booking requests.",
     defaultValue:
-      "Confirm intent, ask date/time or order details, and give one simple next step to complete booking.",
-    placeholder: "How should AI drive booking?"
+      "Confirm booking intent, collect necessary details, and provide a clear next step to complete the booking.",
+    placeholder: "How should AI assist in booking?"
   },
   {
-    index: 6,
+    index: 5,
     key: "feedbackCollectionScript",
     title: "Feedback Collection",
-    hint: "How to ask and process feedback.",
+    hint: "How to collect feedback after support.",
     defaultValue:
-      "Thank the user, request concise feedback, and ask one follow-up about their experience or improvement ideas.",
+      "Thank the customer, ask for concise feedback, and capture one suggestion to improve support quality.",
     placeholder: "How should AI collect feedback?"
   },
   {
-    index: 7,
+    index: 6,
     key: "complaintHandlingScript",
     title: "Complaint Handling",
-    hint: "How to de-escalate and recover trust.",
+    hint: "How to de-escalate and resolve complaints.",
     defaultValue:
-      "Apologize sincerely, acknowledge the issue, offer corrective action or escalation, and confirm follow-up expectations.",
+      "Apologize clearly, acknowledge the issue, share corrective action, and provide escalation contact if needed.",
     placeholder: "How should AI handle complaints?"
   }
 ];
@@ -118,8 +108,78 @@ const COUNTRY_OPTIONS = [
 
 const CURRENCY_OPTIONS = ["INR", "USD", "GBP", "AED", "SAR", "SGD", "MYR", "AUD", "CAD", "EUR"];
 
+const DEFAULT_BUSINESS_BASICS: BusinessBasicsPayload = {
+  whatDoYouSell: "",
+  targetAudience: "",
+  usp: "",
+  objections: "",
+  defaultCountry: "IN",
+  defaultCurrency: "INR",
+  greetingScript: SUPPORT_PLAYBOOKS[0].defaultValue,
+  availabilityScript: SUPPORT_PLAYBOOKS[1].defaultValue,
+  objectionHandlingScript: SUPPORT_PLAYBOOKS[2].defaultValue,
+  bookingScript: SUPPORT_PLAYBOOKS[3].defaultValue,
+  feedbackCollectionScript: SUPPORT_PLAYBOOKS[4].defaultValue,
+  complaintHandlingScript: SUPPORT_PLAYBOOKS[5].defaultValue,
+  supportAddress: "",
+  supportPhoneNumber: "",
+  supportContactName: "",
+  supportEmail: "",
+  aiDoRules:
+    "Be polite and empathetic.\nAnswer clearly using available business knowledge.\nEscalate to support contact when needed.",
+  aiDontRules:
+    "Do not ask customer budget or pricing qualification questions.\nDo not promise actions you cannot perform.\nDo not share sensitive data."
+};
+
+function readSavedString(value: unknown, fallback: string): string {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value.trim();
+  return normalized || fallback;
+}
+
+function loadSavedBusinessBasics(value: unknown): BusinessBasicsPayload {
+  if (!value || typeof value !== "object") {
+    return DEFAULT_BUSINESS_BASICS;
+  }
+
+  const saved = value as Record<string, unknown>;
+
+  return {
+    whatDoYouSell: readSavedString(saved.whatDoYouSell, DEFAULT_BUSINESS_BASICS.whatDoYouSell),
+    targetAudience: readSavedString(saved.targetAudience, DEFAULT_BUSINESS_BASICS.targetAudience),
+    usp: readSavedString(saved.usp, DEFAULT_BUSINESS_BASICS.usp),
+    objections: readSavedString(saved.objections, DEFAULT_BUSINESS_BASICS.objections),
+    defaultCountry: readSavedString(saved.defaultCountry, DEFAULT_BUSINESS_BASICS.defaultCountry).toUpperCase(),
+    defaultCurrency: readSavedString(saved.defaultCurrency, DEFAULT_BUSINESS_BASICS.defaultCurrency).toUpperCase(),
+    greetingScript: readSavedString(saved.greetingScript, DEFAULT_BUSINESS_BASICS.greetingScript),
+    availabilityScript: readSavedString(saved.availabilityScript, DEFAULT_BUSINESS_BASICS.availabilityScript),
+    objectionHandlingScript: readSavedString(
+      saved.objectionHandlingScript,
+      DEFAULT_BUSINESS_BASICS.objectionHandlingScript
+    ),
+    bookingScript: readSavedString(saved.bookingScript, DEFAULT_BUSINESS_BASICS.bookingScript),
+    feedbackCollectionScript: readSavedString(
+      saved.feedbackCollectionScript,
+      DEFAULT_BUSINESS_BASICS.feedbackCollectionScript
+    ),
+    complaintHandlingScript: readSavedString(
+      saved.complaintHandlingScript,
+      DEFAULT_BUSINESS_BASICS.complaintHandlingScript
+    ),
+    supportAddress: readSavedString(saved.supportAddress, DEFAULT_BUSINESS_BASICS.supportAddress),
+    supportPhoneNumber: readSavedString(saved.supportPhoneNumber, DEFAULT_BUSINESS_BASICS.supportPhoneNumber),
+    supportContactName: readSavedString(saved.supportContactName, DEFAULT_BUSINESS_BASICS.supportContactName),
+    supportEmail: readSavedString(saved.supportEmail, DEFAULT_BUSINESS_BASICS.supportEmail),
+    aiDoRules: readSavedString(saved.aiDoRules, DEFAULT_BUSINESS_BASICS.aiDoRules),
+    aiDontRules: readSavedString(saved.aiDontRules, DEFAULT_BUSINESS_BASICS.aiDontRules)
+  };
+}
+
 export function OnboardingPage() {
-  const { token, refreshUser } = useAuth();
+  const { token, user, refreshUser } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
@@ -132,6 +192,14 @@ export function OnboardingPage() {
   const [processingLog, setProcessingLog] = useState<string[]>([]);
   const [personality, setPersonality] = useState<(typeof PERSONALITIES)[number]["key"]>("friendly_warm");
   const [error, setError] = useState<string | null>(null);
+  const [businessBasics, setBusinessBasics] = useState<BusinessBasicsPayload>(DEFAULT_BUSINESS_BASICS);
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [manualFaq, setManualFaq] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    setBusinessBasics(loadSavedBusinessBasics(user?.business_basics));
+  }, [user?.business_basics]);
 
   useRealtime(
     token,
@@ -178,6 +246,36 @@ export function OnboardingPage() {
   }, [token]);
 
   useEffect(() => {
+    if (!token || step !== 1) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void fetchWhatsAppStatus(token)
+        .then((status) => {
+          if (status.status === "connected") {
+            setWaStatus("connected");
+            setQrText(null);
+            setStep(2);
+            return;
+          }
+
+          if (status.status === "connecting") {
+            setWaStatus(status.qr ? "waiting_scan" : "connecting");
+            setQrText(status.qr);
+            return;
+          }
+
+          setWaStatus("not_connected");
+          setQrText(null);
+        })
+        .catch(() => undefined);
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [step, token]);
+
+  useEffect(() => {
     if (!qrText) {
       setQrImage(null);
       return;
@@ -205,6 +303,13 @@ export function OnboardingPage() {
     return "Not Connected";
   }, [waStatus]);
 
+  const handleBasicsChange = (field: keyof BusinessBasicsPayload, value: string) => {
+    setBusinessBasics((previous) => ({
+      ...previous,
+      [field]: value
+    }));
+  };
+
   const handleStartConnection = async () => {
     if (!token) {
       return;
@@ -229,45 +334,28 @@ export function OnboardingPage() {
       return;
     }
 
-    const form = new FormData(event.currentTarget);
-    const readValue = (name: string, fallback = "") => String(form.get(name) || fallback).trim();
-
-    const businessBasics: BusinessBasicsPayload = {
-      whatDoYouSell: readValue("whatDoYouSell"),
-      priceRange: readValue("priceRange"),
-      targetAudience: readValue("targetAudience"),
-      usp: readValue("usp"),
-      objections: readValue("objections"),
-      defaultCountry: readValue("defaultCountry", "IN"),
-      defaultCurrency: readValue("defaultCurrency", "INR").toUpperCase(),
-      greetingScript: readValue("greetingScript"),
-      pricingInquiryScript: readValue("pricingInquiryScript"),
-      availabilityScript: readValue("availabilityScript"),
-      objectionHandlingScript: readValue("objectionHandlingScript"),
-      bookingScript: readValue("bookingScript"),
-      feedbackCollectionScript: readValue("feedbackCollectionScript"),
-      complaintHandlingScript: readValue("complaintHandlingScript")
+    const payload: BusinessBasicsPayload = {
+      ...businessBasics,
+      defaultCountry: businessBasics.defaultCountry.trim().toUpperCase() || "IN",
+      defaultCurrency: businessBasics.defaultCurrency.trim().toUpperCase() || "INR"
     };
-
-    const websiteUrl = readValue("websiteUrl");
-    const manualFaq = readValue("manualFaq");
-    const pdfFile = form.get("pdfFile") as File | null;
 
     setError(null);
     setLoading(true);
-    setProcessingLog(["Saving business profile, playbooks, and locale settings..."]);
+    setProcessingLog(["Saving business profile, support playbooks, and agent guardrails..."]);
 
     try {
-      await saveBusinessBasics(token, businessBasics);
+      await saveBusinessBasics(token, payload);
+      await refreshUser();
 
       if (websiteUrl) {
         setProcessingLog((previous) => [...previous, "Reading website and generating vectors..."]);
         await ingestWebsite(token, websiteUrl);
       }
 
-      if (manualFaq.length > 20) {
+      if (manualFaq.trim().length > 20) {
         setProcessingLog((previous) => [...previous, "Converting FAQ into knowledge chunks..."]);
-        await ingestManual(token, manualFaq);
+        await ingestManual(token, manualFaq.trim());
       }
 
       if (pdfFile && pdfFile.size > 0) {
@@ -275,7 +363,7 @@ export function OnboardingPage() {
         await ingestPdf(token, pdfFile);
       }
 
-      setProcessingLog((previous) => [...previous, "AI playbooks and knowledge are ready."]);
+      setProcessingLog((previous) => [...previous, "Support AI knowledge is ready."]);
       setStep(3);
     } catch (trainError) {
       setError((trainError as Error).message);
@@ -364,31 +452,51 @@ export function OnboardingPage() {
         {step === 2 && (
           <article className="panel train-panel">
             <h1>Train Your WAgen</h1>
-            <p>Configure full conversation playbooks and locale-aware pricing replies.</p>
+            <p>Configure customer support behavior, guardrails, and escalation contacts.</p>
 
             <form className="stack-form train-form" onSubmit={handleTrain}>
               <section className="train-section">
                 <h3>Business Basics</h3>
                 <div className="train-grid two-col">
                   <label>
-                    What do you sell?
-                    <input name="whatDoYouSell" required placeholder="Example: Restaurant services" />
-                  </label>
-                  <label>
-                    Price range
-                    <input name="priceRange" required placeholder="Example: 500-2500" />
+                    What do you support?
+                    <input
+                      name="whatDoYouSell"
+                      required
+                      placeholder="Example: Salon appointments and order support"
+                      value={businessBasics.whatDoYouSell}
+                      onChange={(event) => handleBasicsChange("whatDoYouSell", event.target.value)}
+                    />
                   </label>
                   <label>
                     Target audience
-                    <input name="targetAudience" required placeholder="Example: local families and professionals" />
+                    <input
+                      name="targetAudience"
+                      required
+                      placeholder="Example: local customers and repeat buyers"
+                      value={businessBasics.targetAudience}
+                      onChange={(event) => handleBasicsChange("targetAudience", event.target.value)}
+                    />
                   </label>
                   <label>
-                    USP
-                    <textarea name="usp" required placeholder="Why customers should choose you" />
+                    Core promise / USP
+                    <textarea
+                      name="usp"
+                      required
+                      placeholder="What support quality promise do you make?"
+                      value={businessBasics.usp}
+                      onChange={(event) => handleBasicsChange("usp", event.target.value)}
+                    />
                   </label>
-                  <label className="full-span">
-                    Common objections
-                    <textarea name="objections" required placeholder="Budget, trust, delivery time, location..." />
+                  <label>
+                    Common customer issues
+                    <textarea
+                      name="objections"
+                      required
+                      placeholder="Late delivery, service timing, missing item, app issue..."
+                      value={businessBasics.objections}
+                      onChange={(event) => handleBasicsChange("objections", event.target.value)}
+                    />
                   </label>
                 </div>
               </section>
@@ -398,7 +506,11 @@ export function OnboardingPage() {
                 <div className="train-grid two-col">
                   <label>
                     Default country
-                    <select name="defaultCountry" defaultValue="IN">
+                    <select
+                      name="defaultCountry"
+                      value={businessBasics.defaultCountry}
+                      onChange={(event) => handleBasicsChange("defaultCountry", event.target.value)}
+                    >
                       {COUNTRY_OPTIONS.map((option) => (
                         <option key={option.code} value={option.code}>
                           {option.label}
@@ -408,7 +520,13 @@ export function OnboardingPage() {
                   </label>
                   <label>
                     Default currency
-                    <input name="defaultCurrency" defaultValue="INR" list="currency-list" required />
+                    <input
+                      name="defaultCurrency"
+                      value={businessBasics.defaultCurrency}
+                      list="currency-list"
+                      required
+                      onChange={(event) => handleBasicsChange("defaultCurrency", event.target.value)}
+                    />
                   </label>
                 </div>
                 <datalist id="currency-list">
@@ -416,16 +534,14 @@ export function OnboardingPage() {
                     <option key={currency} value={currency} />
                   ))}
                 </datalist>
-                <p className="tiny-note">
-                  Replies auto-adapt by lead country code when possible (example: +91 uses INR, +1 uses USD).
-                </p>
+                <p className="tiny-note">Currency format follows user phone country code when available.</p>
               </section>
 
               <section className="train-section">
-                <h3>Conversation Flow Playbooks</h3>
-                <p>Define exactly how your AI should respond at each stage.</p>
+                <h3>Customer Support Playbooks</h3>
+                <p>Define how your AI agent should respond in each support scenario.</p>
                 <div className="scenario-grid">
-                  {SALES_PLAYBOOKS.map((playbook) => (
+                  {SUPPORT_PLAYBOOKS.map((playbook) => (
                     <label key={playbook.key} className="scenario-card">
                       <span className="scenario-badge">{playbook.index}</span>
                       <strong>{playbook.title}</strong>
@@ -433,11 +549,83 @@ export function OnboardingPage() {
                       <textarea
                         name={playbook.key}
                         required
-                        defaultValue={playbook.defaultValue}
+                        value={businessBasics[playbook.key]}
                         placeholder={playbook.placeholder}
+                        onChange={(event) => handleBasicsChange(playbook.key, event.target.value)}
                       />
                     </label>
                   ))}
+                </div>
+              </section>
+
+              <section className="train-section">
+                <h3>Support Escalation Contact</h3>
+                <div className="train-grid two-col">
+                  <label>
+                    Contact name
+                    <input
+                      name="supportContactName"
+                      required
+                      placeholder="Example: Priya Sharma"
+                      value={businessBasics.supportContactName}
+                      onChange={(event) => handleBasicsChange("supportContactName", event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Phone number
+                    <input
+                      name="supportPhoneNumber"
+                      required
+                      placeholder="Example: +91 98765 43210"
+                      value={businessBasics.supportPhoneNumber}
+                      onChange={(event) => handleBasicsChange("supportPhoneNumber", event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Support email
+                    <input
+                      name="supportEmail"
+                      type="email"
+                      placeholder="support@yourcompany.com"
+                      value={businessBasics.supportEmail}
+                      onChange={(event) => handleBasicsChange("supportEmail", event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Support address
+                    <textarea
+                      name="supportAddress"
+                      placeholder="Full support office/service address"
+                      value={businessBasics.supportAddress}
+                      onChange={(event) => handleBasicsChange("supportAddress", event.target.value)}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="train-section">
+                <h3>AI Guardrails</h3>
+                <div className="train-grid two-col">
+                  <label>
+                    AI Do
+                    <textarea
+                      name="aiDoRules"
+                      required
+                      placeholder="Rules the AI must follow"
+                      value={businessBasics.aiDoRules}
+                      onChange={(event) => handleBasicsChange("aiDoRules", event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    AI Don&apos;t
+                    <textarea
+                      name="aiDontRules"
+                      required
+                      placeholder="Rules the AI must never do"
+                      value={businessBasics.aiDontRules}
+                      onChange={(event) => handleBasicsChange("aiDontRules", event.target.value)}
+                    />
+                  </label>
                 </div>
               </section>
 
@@ -446,15 +634,31 @@ export function OnboardingPage() {
                 <div className="train-grid two-col">
                   <label>
                     Website URL
-                    <input name="websiteUrl" type="url" placeholder="https://yourcompany.com" />
+                    <input
+                      name="websiteUrl"
+                      type="url"
+                      placeholder="https://yourcompany.com"
+                      value={websiteUrl}
+                      onChange={(event) => setWebsiteUrl(event.target.value)}
+                    />
                   </label>
                   <label>
                     Upload PDF
-                    <input name="pdfFile" type="file" accept="application/pdf" />
+                    <input
+                      name="pdfFile"
+                      type="file"
+                      accept="application/pdf"
+                      onChange={(event) => setPdfFile(event.target.files?.[0] ?? null)}
+                    />
                   </label>
                   <label className="full-span">
                     Manual FAQ
-                    <textarea name="manualFaq" placeholder="Paste FAQs, menu details, policies, and product notes" />
+                    <textarea
+                      name="manualFaq"
+                      placeholder="Paste FAQs, policies, support scripts, and troubleshooting notes"
+                      value={manualFaq}
+                      onChange={(event) => setManualFaq(event.target.value)}
+                    />
                   </label>
                 </div>
               </section>
@@ -499,7 +703,7 @@ export function OnboardingPage() {
                   <textarea
                     name="customPrompt"
                     required
-                    placeholder="Define your exact tone, offer framing, and objection handling style"
+                    placeholder="Define your exact tone and support style"
                   />
                 </label>
               )}

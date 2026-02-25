@@ -15,7 +15,7 @@ const EnvSchema = z.object({
   OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
   REPLY_DELAY_MIN_MS: z.coerce.number().default(2000),
   REPLY_DELAY_MAX_MS: z.coerce.number().default(5000),
-  CONTACT_COOLDOWN_SECONDS: z.coerce.number().default(60),
+  CONTACT_COOLDOWN_SECONDS: z.coerce.number().default(0),
   AUTO_RECONNECT: z.enum(["true", "false"]).default("true")
 });
 

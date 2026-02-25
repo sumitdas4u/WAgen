@@ -34,7 +34,7 @@ export async function buildApp() {
   await app.register(jwt, { secret: env.JWT_SECRET });
   await app.register(multipart, {
     limits: {
-      fileSize: 10 * 1024 * 1024
+      fileSize: 20 * 1024 * 1024
     }
   });
   await app.register(websocket);

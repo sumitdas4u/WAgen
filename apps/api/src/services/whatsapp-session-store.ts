@@ -39,6 +39,17 @@ export async function saveWhatsAppAuthState(userId: string, authState: Record<st
   );
 }
 
+export async function resetWhatsAppAuthState(userId: string): Promise<void> {
+  await pool.query(
+    `UPDATE whatsapp_sessions
+     SET session_auth_json = '{}'::jsonb,
+         status = 'disconnected',
+         phone_number = NULL
+     WHERE user_id = $1`,
+    [userId]
+  );
+}
+
 export async function updateWhatsAppStatus(
   userId: string,
   status: "connected" | "connecting" | "disconnected",
@@ -52,6 +63,24 @@ export async function updateWhatsAppStatus(
      WHERE user_id = $3`,
     [status, phoneNumber ?? null, userId]
   );
+}
+
+export async function disconnectSessionsByPhoneNumber(
+  activeUserId: string,
+  phoneNumber: string
+): Promise<string[]> {
+  const result = await pool.query<{ user_id: string }>(
+    `UPDATE whatsapp_sessions
+     SET status = 'disconnected',
+         phone_number = NULL,
+         session_auth_json = '{}'::jsonb
+     WHERE user_id <> $1
+       AND phone_number = $2
+     RETURNING user_id`,
+    [activeUserId, phoneNumber]
+  );
+
+  return result.rows.map((row) => row.user_id);
 }
 
 export async function getWhatsAppStatus(userId: string): Promise<{

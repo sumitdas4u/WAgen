@@ -163,7 +163,7 @@ export function DashboardPage() {
     try {
       await connectWhatsApp(token);
       await loadData();
-      setInfo("Reconnect requested. If QR is needed, open Onboarding to scan it.");
+      setInfo("Reconnect requested. Open Onboarding if QR scan is needed.");
     } catch (connectError) {
       setError((connectError as Error).message);
     } finally {

@@ -10,9 +10,8 @@ interface ReplyInput {
   history: Array<{ direction: "inbound" | "outbound"; message_text: string }>;
 }
 
-type SalesIntent =
+type SupportIntent =
   | "greeting"
-  | "pricing_inquiry"
   | "availability"
   | "objection_handling"
   | "booking"
@@ -21,19 +20,23 @@ type SalesIntent =
 
 interface BusinessBasicsProfile {
   whatDoYouSell: string;
-  priceRange: string;
   targetAudience: string;
   usp: string;
   objections: string;
   defaultCountry: string;
   defaultCurrency: string;
   greetingScript: string;
-  pricingInquiryScript: string;
   availabilityScript: string;
   objectionHandlingScript: string;
   bookingScript: string;
   feedbackCollectionScript: string;
   complaintHandlingScript: string;
+  supportAddress: string;
+  supportPhoneNumber: string;
+  supportContactName: string;
+  supportEmail: string;
+  aiDoRules: string;
+  aiDontRules: string;
 }
 
 interface LocaleContext {
@@ -44,19 +47,17 @@ interface LocaleContext {
   currencySymbol: string;
 }
 
-const INTENT_ORDER: SalesIntent[] = [
+const INTENT_ORDER: SupportIntent[] = [
   "complaint_handling",
   "feedback_collection",
   "booking",
-  "pricing_inquiry",
   "availability",
   "objection_handling",
   "greeting"
 ];
 
-const INTENT_LABELS: Record<SalesIntent, string> = {
+const INTENT_LABELS: Record<SupportIntent, string> = {
   greeting: "Greeting",
-  pricing_inquiry: "Pricing Inquiry",
   availability: "Availability",
   objection_handling: "Objection Handling",
   booking: "Booking",
@@ -64,20 +65,8 @@ const INTENT_LABELS: Record<SalesIntent, string> = {
   complaint_handling: "Complaint Handling"
 };
 
-const INTENT_KEYWORDS: Record<SalesIntent, string[]> = {
+const INTENT_KEYWORDS: Record<SupportIntent, string[]> = {
   greeting: ["hi", "hello", "hey", "good morning", "good evening", "namaste", "hlo"],
-  pricing_inquiry: [
-    "price",
-    "pricing",
-    "cost",
-    "rate",
-    "quote",
-    "charges",
-    "fee",
-    "package",
-    "how much",
-    "quotation"
-  ],
   availability: ["available", "availability", "in stock", "stock", "open", "timing", "today", "tomorrow"],
   objection_handling: [
     "expensive",
@@ -95,21 +84,32 @@ const INTENT_KEYWORDS: Record<SalesIntent, string[]> = {
   complaint_handling: ["complaint", "issue", "problem", "bad", "upset", "refund", "cancel", "delay", "poor service"]
 };
 
-const DEFAULT_PLAYBOOKS: Record<SalesIntent, string> = {
+const PRICING_KEYWORDS = [
+  "price",
+  "pricing",
+  "cost",
+  "rate",
+  "quote",
+  "charges",
+  "fee",
+  "package",
+  "how much",
+  "quotation"
+];
+
+const DEFAULT_PLAYBOOKS: Record<SupportIntent, string> = {
   greeting:
-    "Greet warmly, introduce the business in one line, and ask one qualifying question to continue the conversation.",
-  pricing_inquiry:
-    "Give price context clearly in the right currency, share what is included, and ask one budget or requirement qualifier.",
+    "Greet politely, introduce yourself as support, and ask one clear question to understand the issue.",
   availability:
-    "Answer availability with clear next slot or timeline. If unavailable, offer the nearest alternative and confirm preference.",
+    "Share current availability or timeline clearly. If unavailable, provide the next best option and expected time.",
   objection_handling:
-    "Acknowledge concern first, reframe with USP/proof, keep tone calm, and ask one question to move the lead forward.",
+    "Acknowledge concern first, respond calmly with facts from knowledge, and provide one practical next support step.",
   booking:
-    "Confirm interest, propose immediate next booking step, ask for date/time preference, and keep instructions simple.",
+    "Confirm booking request, collect required details, and guide the user with one clear next step.",
   feedback_collection:
-    "Thank the user for time, collect concise feedback, and ask one specific follow-up about their experience.",
+    "Thank the user and collect concise feedback. Ask one follow-up only when needed.",
   complaint_handling:
-    "Apologize sincerely, acknowledge issue details, offer corrective action or escalation path, and confirm resolution intent."
+    "Apologize, acknowledge the issue clearly, offer corrective action, and provide escalation contact if unresolved."
 };
 
 const COUNTRY_NAME_BY_CODE: Record<string, string> = {
@@ -220,23 +220,27 @@ function resolveCurrencySymbol(currencyCode: string, locale: string): string {
 function toBasicsProfile(rawBasics: Record<string, unknown>): BusinessBasicsProfile {
   return {
     whatDoYouSell: readString(rawBasics.whatDoYouSell, "N/A"),
-    priceRange: readString(rawBasics.priceRange, "N/A"),
     targetAudience: readString(rawBasics.targetAudience, "N/A"),
     usp: readString(rawBasics.usp, "N/A"),
     objections: readString(rawBasics.objections, "N/A"),
     defaultCountry: readString(rawBasics.defaultCountry, "IN"),
     defaultCurrency: readString(rawBasics.defaultCurrency, "INR"),
     greetingScript: readString(rawBasics.greetingScript),
-    pricingInquiryScript: readString(rawBasics.pricingInquiryScript),
     availabilityScript: readString(rawBasics.availabilityScript),
     objectionHandlingScript: readString(rawBasics.objectionHandlingScript),
     bookingScript: readString(rawBasics.bookingScript),
     feedbackCollectionScript: readString(rawBasics.feedbackCollectionScript),
-    complaintHandlingScript: readString(rawBasics.complaintHandlingScript)
+    complaintHandlingScript: readString(rawBasics.complaintHandlingScript),
+    supportAddress: readString(rawBasics.supportAddress),
+    supportPhoneNumber: readString(rawBasics.supportPhoneNumber),
+    supportContactName: readString(rawBasics.supportContactName),
+    supportEmail: readString(rawBasics.supportEmail),
+    aiDoRules: readString(rawBasics.aiDoRules),
+    aiDontRules: readString(rawBasics.aiDontRules)
   };
 }
 
-function detectSalesIntent(message: string): SalesIntent {
+function detectSupportIntent(message: string): SupportIntent {
   const normalized = message.toLowerCase();
 
   for (const intent of INTENT_ORDER) {
@@ -246,6 +250,11 @@ function detectSalesIntent(message: string): SalesIntent {
   }
 
   return "greeting";
+}
+
+function isPricingQuery(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return PRICING_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 
 function resolveLocaleContext(conversationPhone: string, basics: BusinessBasicsProfile): LocaleContext {
@@ -279,10 +288,9 @@ function resolveLocaleContext(conversationPhone: string, basics: BusinessBasicsP
   };
 }
 
-function playbookForIntent(intent: SalesIntent, basics: BusinessBasicsProfile): string {
-  const customPlaybookMap: Record<SalesIntent, string> = {
+function playbookForIntent(intent: SupportIntent, basics: BusinessBasicsProfile): string {
+  const customPlaybookMap: Record<SupportIntent, string> = {
     greeting: basics.greetingScript,
-    pricing_inquiry: basics.pricingInquiryScript,
     availability: basics.availabilityScript,
     objection_handling: basics.objectionHandlingScript,
     booking: basics.bookingScript,
@@ -293,29 +301,49 @@ function playbookForIntent(intent: SalesIntent, basics: BusinessBasicsProfile): 
   return customPlaybookMap[intent] || DEFAULT_PLAYBOOKS[intent];
 }
 
-function buildFallbackReply(intent: SalesIntent, basics: BusinessBasicsProfile, localeContext: LocaleContext): string {
-  if (intent === "pricing_inquiry") {
-    return `Thanks for your message. Our pricing is in ${localeContext.currencyCode} (${localeContext.currencySymbol}) and typical range is ${basics.priceRange}. Share your requirement and I will suggest the best option.`;
+function buildSupportContactLine(basics: BusinessBasicsProfile): string {
+  const contactName = basics.supportContactName || "support team";
+  const channels = [basics.supportPhoneNumber, basics.supportEmail].filter(Boolean).join(" | ");
+  const address = basics.supportAddress ? ` Address: ${basics.supportAddress}.` : "";
+
+  if (channels) {
+    return `${contactName} (${channels}).${address}`;
   }
 
-  if (intent === "booking") {
-    return "Thanks for the interest. Please share your preferred date and time, and we will help you confirm the booking.";
+  return `${contactName}.${address}`;
+}
+
+function buildFallbackReply(
+  intent: SupportIntent,
+  basics: BusinessBasicsProfile,
+  localeContext: LocaleContext,
+  incomingMessage: string
+): string {
+  const supportLine = buildSupportContactLine(basics);
+
+  if (isPricingQuery(incomingMessage)) {
+    return `For pricing details, please contact ${supportLine} I can help with support questions here.`;
   }
 
   if (intent === "complaint_handling") {
-    return "I am sorry for the inconvenience. Please share your issue details, and we will resolve it on priority.";
+    return `I am sorry for the inconvenience. Please share your issue details, and we will resolve it quickly. If needed, contact ${supportLine}`;
   }
 
-  return `Thanks for reaching out about ${basics.whatDoYouSell}. I can guide you with details in ${localeContext.currencyCode} and help with the next step.`;
+  if (intent === "booking") {
+    return "Thanks for reaching out. Please share your preferred date and time, and I will help you with the booking process.";
+  }
+
+  return `Thanks for contacting support for ${basics.whatDoYouSell}. I can help with updates and issue resolution. Currency format for your region is ${localeContext.currencySymbol} (${localeContext.currencyCode}).`;
 }
 
 export async function buildSalesReply(input: ReplyInput): Promise<string> {
   const basics = toBasicsProfile(input.user.business_basics as Record<string, unknown>);
-  const detectedIntent = detectSalesIntent(input.incomingMessage);
+  const detectedIntent = detectSupportIntent(input.incomingMessage);
   const localeContext = resolveLocaleContext(input.conversationPhone, basics);
+  const supportLine = buildSupportContactLine(basics);
 
   if (!openAIService.isConfigured()) {
-    return buildFallbackReply(detectedIntent, basics, localeContext);
+    return buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage);
   }
 
   let knowledge: Awaited<ReturnType<typeof retrieveKnowledge>> = [];
@@ -326,7 +354,6 @@ export async function buildSalesReply(input: ReplyInput): Promise<string> {
       limit: 5
     });
   } catch {
-    // Continue without RAG context when embeddings are unavailable for this key/project.
     knowledge = [];
   }
 
@@ -338,15 +365,16 @@ export async function buildSalesReply(input: ReplyInput): Promise<string> {
   }).join("\n");
 
   const systemPrompt = [
-    "You are WAgen, a WhatsApp AI assistant.",
+    "You are WAgen, a WhatsApp customer support agent.",
     "Rules:",
+    "- Primary role is customer support, not sales.",
     "- Reply only with plain conversational text.",
-    "- Keep messages short (under 110 words unless user asks details).",
+    "- Keep messages short (under 120 words unless user asks for details).",
     "- Ask at most one follow-up question.",
-    "- Follow the selected intent playbook closely while sounding natural.",
-    "- If message is about pricing, include currency symbol and code at least once.",
-    "- Never mix multiple currencies in the same reply.",
-    "- If uncertain, acknowledge and offer handoff.",
+    "- Never ask budget, pricing expectation, or package preference.",
+    "- If user asks pricing and exact pricing is unavailable, provide support handoff details.",
+    "- When money is mentioned, format it in the user's currency.",
+    "- If uncertain, acknowledge and offer escalation support.",
     "- Never claim actions you cannot perform.",
     `Personality: ${personality}`
   ].join("\n");
@@ -362,20 +390,23 @@ export async function buildSalesReply(input: ReplyInput): Promise<string> {
     .join("\n");
 
   const userPrompt = [
-    `Business context:\n- What we sell: ${basics.whatDoYouSell}\n- Price range: ${basics.priceRange}\n- Target audience: ${basics.targetAudience}\n- USP: ${basics.usp}\n- Typical objections: ${basics.objections}`,
+    `Business context:\n- Support domain: ${basics.whatDoYouSell}\n- Audience: ${basics.targetAudience}\n- Promise/USP: ${basics.usp}\n- Common issues: ${basics.objections}`,
     `Locale context:\n- User country: ${localeContext.countryName} (${localeContext.countryCode})\n- Currency: ${localeContext.currencyCode} (${localeContext.currencySymbol})\n- Locale format: ${localeContext.locale}`,
-    `Detected intent: ${INTENT_LABELS[detectedIntent]}`,
-    `Primary intent playbook:\n${selectedPlaybook}`,
+    `Detected support scenario: ${INTENT_LABELS[detectedIntent]}`,
+    `Primary scenario playbook:\n${selectedPlaybook}`,
     `All configured playbooks:\n${allPlaybooksBlock}`,
+    `Support handoff contact:\n${supportLine}`,
+    `AI Do rules:\n${basics.aiDoRules || "No custom do rules provided."}`,
+    `AI Don't rules:\n${basics.aiDontRules || "No custom don't rules provided."}`,
     `Conversation with ${input.conversationPhone}:\n${historyBlock || "No prior messages."}`,
     `Retrieved knowledge:\n${knowledgeBlock}`,
     `Incoming message: ${input.incomingMessage}`,
-    "Craft the best helpful response now."
+    "Craft the best support response now."
   ].join("\n\n");
 
   try {
     return await openAIService.generateReply(systemPrompt, userPrompt);
   } catch {
-    return buildFallbackReply(detectedIntent, basics, localeContext);
+    return buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage);
   }
 }

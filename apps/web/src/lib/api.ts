@@ -1,4 +1,5 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const runtimeOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost:4000";
+export const API_URL = import.meta.env.VITE_API_URL || runtimeOrigin;
 
 interface RequestOptions extends RequestInit {
   token?: string | null;
@@ -65,11 +66,11 @@ export function fetchMe(token: string) {
   return apiRequest<{ user: User }>("/api/auth/me", { token });
 }
 
-export function connectWhatsApp(token: string) {
+export function connectWhatsApp(token: string, options?: { resetAuth?: boolean }) {
   return apiRequest<{ ok: boolean }>("/api/whatsapp/connect", {
     method: "POST",
     token,
-    body: JSON.stringify({})
+    body: JSON.stringify({ resetAuth: Boolean(options?.resetAuth) })
   });
 }
 
@@ -82,19 +83,23 @@ export function fetchWhatsAppStatus(token: string) {
 
 export interface BusinessBasicsPayload {
   whatDoYouSell: string;
-  priceRange: string;
   targetAudience: string;
   usp: string;
   objections: string;
   defaultCountry: string;
   defaultCurrency: string;
   greetingScript: string;
-  pricingInquiryScript: string;
   availabilityScript: string;
   objectionHandlingScript: string;
   bookingScript: string;
   feedbackCollectionScript: string;
   complaintHandlingScript: string;
+  supportAddress: string;
+  supportPhoneNumber: string;
+  supportContactName: string;
+  supportEmail: string;
+  aiDoRules: string;
+  aiDontRules: string;
 }
 
 export function saveBusinessBasics(token: string, payload: BusinessBasicsPayload) {

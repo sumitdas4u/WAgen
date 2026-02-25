@@ -85,19 +85,23 @@ export async function updateBusinessBasics(
   userId: string,
   basics: {
     whatDoYouSell: string;
-    priceRange: string;
     targetAudience: string;
     usp: string;
     objections: string;
     defaultCountry: string;
     defaultCurrency: string;
     greetingScript: string;
-    pricingInquiryScript: string;
     availabilityScript: string;
     objectionHandlingScript: string;
     bookingScript: string;
     feedbackCollectionScript: string;
     complaintHandlingScript: string;
+    supportAddress: string;
+    supportPhoneNumber: string;
+    supportContactName: string;
+    supportEmail: string;
+    aiDoRules: string;
+    aiDontRules: string;
   }
 ): Promise<void> {
   await pool.query(

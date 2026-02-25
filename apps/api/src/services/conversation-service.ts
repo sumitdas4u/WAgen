@@ -58,6 +58,18 @@ export async function getOrCreateConversation(userId: string, phoneNumber: strin
   return created.rows[0];
 }
 
+export async function getConversationById(conversationId: string): Promise<Conversation | null> {
+  const result = await pool.query<Conversation>(
+    `SELECT *
+     FROM conversations
+     WHERE id = $1
+     LIMIT 1`,
+    [conversationId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
 export async function trackInboundMessage(
   userId: string,
   phoneNumber: string,
