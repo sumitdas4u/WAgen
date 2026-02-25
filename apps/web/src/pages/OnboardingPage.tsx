@@ -113,7 +113,7 @@ const COUNTRY_OPTIONS = [
 ];
 
 const CURRENCY_OPTIONS = ["INR", "USD", "GBP", "AED", "SAR", "SGD", "MYR", "AUD", "CAD", "EUR"];
-const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 const DEFAULT_BUSINESS_BASICS: BusinessBasicsPayload = {
   whatDoYouSell: "",
@@ -362,7 +362,7 @@ export function OnboardingPage() {
         if (file.size > MAX_PDF_UPLOAD_BYTES) {
           rejected.push({
             file,
-            reason: `File exceeds 20MB limit (${(file.size / (1024 * 1024)).toFixed(1)}MB).`
+            reason: `File exceeds 50MB limit (${(file.size / (1024 * 1024)).toFixed(1)}MB).`
           });
           continue;
         }
