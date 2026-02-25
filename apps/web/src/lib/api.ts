@@ -270,6 +270,66 @@ export function fetchDashboardOverview(token: string) {
   return apiRequest<DashboardOverviewResponse>("/api/dashboard/overview", { token });
 }
 
+export interface UsageModelBreakdown {
+  ai_model: string;
+  messages: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  estimated_cost_inr: number;
+}
+
+export interface UsageDailyBreakdown {
+  day: string;
+  messages: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  estimated_cost_inr: number;
+}
+
+export interface UsageMessageCost {
+  message_id: string;
+  conversation_id: string;
+  conversation_phone: string;
+  ai_model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  estimated_cost_inr: number;
+  created_at: string;
+}
+
+export interface UsageAnalyticsResponse {
+  usage: {
+    range_days: number;
+    messages: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    estimated_cost_usd: number;
+    estimated_cost_inr: number;
+    by_model: UsageModelBreakdown[];
+    daily: UsageDailyBreakdown[];
+    recent_messages: UsageMessageCost[];
+  };
+}
+
+export function fetchUsageAnalytics(token: string, options?: { days?: number; limit?: number }) {
+  const params = new URLSearchParams();
+  if (typeof options?.days === "number") {
+    params.set("days", String(options.days));
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+
+  const query = params.toString();
+  const path = query ? `/api/dashboard/usage?${query}` : "/api/dashboard/usage";
+  return apiRequest<UsageAnalyticsResponse>(path, { token });
+}
+
 export interface Conversation {
   id: string;
   phone_number: string;

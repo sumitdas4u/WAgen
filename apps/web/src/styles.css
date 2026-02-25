@@ -1285,11 +1285,74 @@ textarea {
   flex-wrap: wrap;
 }
 
+.dashboard-tabbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-tabbar .active-tab {
+  color: #fff;
+  background: linear-gradient(120deg, #1e77b8, #3ea4cf);
+  border-color: transparent;
+}
+
 .dashboard-main {
   display: grid;
   grid-template-columns: 280px 1fr 240px;
   gap: 0.8rem;
   min-height: 58vh;
+}
+
+.finance-shell {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.finance-grid p {
+  font-size: 1.45rem;
+}
+
+.finance-panels {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.finance-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.finance-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.finance-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+}
+
+.finance-table th,
+.finance-table td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.finance-table th {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
 }
 
 .conversation-list,

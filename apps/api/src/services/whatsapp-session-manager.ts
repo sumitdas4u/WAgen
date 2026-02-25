@@ -49,6 +49,84 @@ function isDirectChatJid(jid: string): boolean {
   return jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid");
 }
 
+function normalizePhoneDigits(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) {
+    return null;
+  }
+  return digits;
+}
+
+function extractPhoneFromJidCandidate(candidate: unknown): string | null {
+  if (typeof candidate !== "string" || !candidate.trim()) {
+    return null;
+  }
+
+  const value = candidate.trim();
+  if (value.includes("@")) {
+    const jidUser = value.split("@")[0]?.split(":")[0] ?? "";
+    return normalizePhoneDigits(jidUser);
+  }
+
+  return normalizePhoneDigits(value);
+}
+
+function resolveInboundPhoneNumber(message: WAMessage): string | null {
+  const keyAny = message.key as unknown as {
+    remoteJid?: string;
+    participantPn?: string;
+    remoteJidAlt?: string;
+  };
+  const messageAny = message as unknown as {
+    participantPn?: string;
+    verifiedBizName?: string;
+    pushName?: string;
+  };
+
+  const candidates: unknown[] = [
+    keyAny.participantPn,
+    messageAny.participantPn,
+    keyAny.remoteJidAlt,
+    keyAny.remoteJid
+  ];
+
+  for (const candidate of candidates) {
+    const phone = extractPhoneFromJidCandidate(candidate);
+    if (phone) {
+      return phone;
+    }
+  }
+
+  return null;
+}
+
+function resolveInboundSenderName(message: WAMessage): string | undefined {
+  const messageAny = message as unknown as {
+    verifiedBizName?: string;
+    notifyName?: string;
+    pushName?: string;
+  };
+
+  const candidates = [
+    message.pushName,
+    messageAny.notifyName,
+    messageAny.verifiedBizName
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const normalized = candidate.trim();
+    if (!normalized || /^(\d+|\+?\d+)$/.test(normalized)) {
+      continue;
+    }
+    return normalized;
+  }
+
+  return undefined;
+}
+
 export async function randomDelay(min: number, max: number): Promise<void> {
   const delay = randomInt(min, max);
   await wait(delay);
@@ -526,8 +604,14 @@ class WhatsAppSessionManager {
       return;
     }
 
-    const phoneNumber = remoteJid.split("@")[0].split(":")[0];
-    const conversation = await trackInboundMessage(userId, phoneNumber, text, message.pushName ?? undefined);
+    const phoneNumber = resolveInboundPhoneNumber(message);
+    if (!phoneNumber) {
+      console.info(`[WA] inbound skipped user=${userId} reason=missing_phone jid=${remoteJid}`);
+      return;
+    }
+
+    const senderName = resolveInboundSenderName(message);
+    const conversation = await trackInboundMessage(userId, phoneNumber, text, senderName);
     console.info(`[WA] inbound tracked user=${userId} conversation=${conversation.id} phone=${phoneNumber}`);
 
     realtimeHub.broadcast(userId, "conversation.updated", {
