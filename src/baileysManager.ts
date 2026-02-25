@@ -1,9 +1,5 @@
-import makeWASocket, {
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  useMultiFileAuthState,
-  type WASocket
-} from "@adiwajshing/baileys";
+import * as baileys from "@whiskeysockets/baileys";
+import type { WASocket, ConnectionState, WAMessageUpsertType, WAMessage } from "@whiskeysockets/baileys";
 import { delay } from "./utils/delay";
 import { MessageHandler } from "./messageHandler";
 
@@ -19,12 +15,12 @@ export class BaileysManager {
   private reconnecting = false;
 
   async start(): Promise<void> {
-    const { state, saveCreds } = await useMultiFileAuthState("auth");
-    const { version, isLatest } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } = await baileys.useMultiFileAuthState("auth");
+    const { version, isLatest } = await baileys.fetchLatestBaileysVersion();
 
     console.log(`[Baileys] Starting socket with WA web version: ${version.join(".")} (latest=${isLatest})`);
 
-    const sock = makeWASocket({
+    const sock = (baileys.default ?? (baileys as any).makeWASocket)({
       version,
       auth: state,
       printQRInTerminal: true,
@@ -38,7 +34,7 @@ export class BaileysManager {
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", async (update) => {
+    sock.ev.on("connection.update", async (update: Partial<ConnectionState>) => {
       if (update.qr) {
         console.log("[Baileys] QR generated. Scan it with WhatsApp Linked Devices.");
       }
@@ -49,7 +45,7 @@ export class BaileysManager {
 
       if (update.connection === "close") {
         const statusCode = (update.lastDisconnect?.error as ConnectionErrorLike | undefined)?.output?.statusCode;
-        const loggedOut = statusCode === DisconnectReason.loggedOut;
+        const loggedOut = statusCode === (baileys.DisconnectReason as any).loggedOut;
 
         console.error(`[Baileys] Connection closed (statusCode=${statusCode ?? "unknown"}).`);
 
@@ -62,7 +58,7 @@ export class BaileysManager {
       }
     });
 
-    sock.ev.on("messages.upsert", async (payload) => {
+    sock.ev.on("messages.upsert", async (payload: { messages: WAMessage[]; type: WAMessageUpsertType }) => {
       if (!this.messageHandler) {
         return;
       }

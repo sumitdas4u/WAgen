@@ -1,8 +1,9 @@
-import makeWASocket, {
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  type WAMessage,
-  type WASocket
+import * as baileys from "@whiskeysockets/baileys";
+import type {
+  WAMessage,
+  WASocket,
+  MessageUpsertType,
+  ConnectionState
 } from "@whiskeysockets/baileys";
 import { env } from "../config/env.js";
 import { getUserById } from "./user-service.js";
@@ -93,14 +94,14 @@ class WhatsAppSessionManager {
 
       clearAuthStateCache(userId);
       const { state, saveCreds } = await useDbAuthState(userId);
-      const { version } = await fetchLatestBaileysVersion();
+      const { version } = await baileys.fetchLatestBaileysVersion();
 
-      const socket = makeWASocket({
+      const socket = (baileys.default ?? (baileys as any).makeWASocket)({
         version,
         auth: state,
         printQRInTerminal: false,
         browser: ["WAgen", "Chrome", "1.0.0"]
-      });
+      }) as WASocket;
       const connectionId = ++this.connectionSeq;
 
       this.sessions.set(userId, {
@@ -112,7 +113,7 @@ class WhatsAppSessionManager {
 
       socket.ev.on("creds.update", saveCreds);
 
-      socket.ev.on("connection.update", async (update) => {
+      socket.ev.on("connection.update", async (update: Partial<ConnectionState>) => {
         const runtime = this.sessions.get(userId);
         if (!runtime || runtime.socket !== socket || runtime.connectionId !== connectionId) {
           return;
@@ -168,7 +169,7 @@ class WhatsAppSessionManager {
           const errorMessage = String(update.lastDisconnect?.error ?? "").toLowerCase();
           const isConflictError = errorMessage.includes("conflict");
           const looksLikeStaleAuth = errorMessage.includes("connection failure") && previousStatus === "connecting";
-          const shouldResetAuth = statusCode === DisconnectReason.loggedOut || (looksLikeStaleAuth && !hadQr);
+          const shouldResetAuth = statusCode === (baileys.DisconnectReason as any).loggedOut || (looksLikeStaleAuth && !hadQr);
 
           runtime.status = "disconnected";
           await updateWhatsAppStatus(userId, "disconnected");
@@ -179,13 +180,13 @@ class WhatsAppSessionManager {
             clearAuthStateCache(userId);
             console.warn(
               `[WA] auth reset requested user=${userId} reason=${
-                statusCode === DisconnectReason.loggedOut ? "logged_out" : "connection_failure"
+                statusCode === (baileys.DisconnectReason as any).loggedOut ? "logged_out" : "connection_failure"
               }`
             );
           }
 
           const shouldReconnect =
-            env.AUTO_RECONNECT && (statusCode !== DisconnectReason.loggedOut || shouldResetAuth);
+            env.AUTO_RECONNECT && (statusCode !== (baileys.DisconnectReason as any).loggedOut || shouldResetAuth);
 
           this.sessions.delete(userId);
           this.clearUserQueues(userId);
@@ -202,7 +203,9 @@ class WhatsAppSessionManager {
         }
       });
 
-      socket.ev.on("messages.upsert", async ({ messages, type }) => {
+      socket.ev.on(
+        "messages.upsert",
+        async ({ messages, type }: { messages: WAMessage[]; type: MessageUpsertType }) => {
         const runtime = this.sessions.get(userId);
         if (!runtime || runtime.socket !== socket || runtime.connectionId !== connectionId) {
           return;
