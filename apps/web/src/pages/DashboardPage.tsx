@@ -195,6 +195,7 @@ export function DashboardPage() {
       <header className="dashboard-header">
         <h1>WAgen Dashboard</h1>
         <div className="header-actions">
+          <button className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>Scan QR</button>
           <button className="ghost-btn" onClick={() => navigate("/onboarding")}>Onboarding</button>
           <button
             className="ghost-btn"
@@ -283,6 +284,14 @@ export function DashboardPage() {
             {messages.map((message) => (
               <div key={message.id} className={`bubble ${message.direction}`}>
                 <p>{message.message_text}</p>
+                {message.direction === "outbound" && message.total_tokens ? (
+                  <small className="token-meta">
+                    Tokens: {message.total_tokens}
+                    {typeof message.prompt_tokens === "number" ? ` (P:${message.prompt_tokens}` : ""}
+                    {typeof message.completion_tokens === "number" ? ` C:${message.completion_tokens})` : ""}
+                    {message.ai_model ? ` • ${message.ai_model}` : ""}
+                  </small>
+                ) : null}
                 <small>{new Date(message.created_at).toLocaleTimeString()}</small>
               </div>
             ))}
@@ -290,6 +299,20 @@ export function DashboardPage() {
         </section>
 
         <aside className="settings-panel">
+          <h2>Chat Details</h2>
+          {selectedConversation ? (
+            <div className="chat-user-details">
+              <div><strong>Name:</strong> {selectedConversation.contact_name || "Unknown"}</div>
+              <div><strong>Phone:</strong> {selectedConversation.phone_number}</div>
+              <div><strong>Stage:</strong> {selectedConversation.stage}</div>
+              <div><strong>Score:</strong> {selectedConversation.score}</div>
+              <div><strong>Manual:</strong> {selectedConversation.manual_takeover ? "On" : "Off"}</div>
+              <div><strong>AI Paused:</strong> {selectedConversation.ai_paused ? "Yes" : "No"}</div>
+            </div>
+          ) : (
+            <p className="tiny-note">Select a conversation to view contact details.</p>
+          )}
+
           <h2>Settings</h2>
           <button className="ghost-btn" disabled={busy} onClick={handleReconnectWhatsApp}>
             Reconnect WhatsApp

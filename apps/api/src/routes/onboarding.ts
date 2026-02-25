@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { setAgentActive, updateBusinessBasics, updatePersonality } from "../services/user-service.js";
+import { generateOnboardingDraft } from "../services/onboarding-autofill-service.js";
 
 const BusinessSchema = z.object({
   whatDoYouSell: z.string().min(2),
@@ -32,7 +33,25 @@ const ActivateSchema = z.object({
   active: z.boolean()
 });
 
+const AutofillSchema = z.object({
+  description: z.string().trim().min(20).max(6000)
+});
+
 export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.post(
+    "/api/onboarding/autofill",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = AutofillSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Description must be at least 20 characters" });
+      }
+
+      const draft = await generateOnboardingDraft(parsed.data.description);
+      return reply.send({ ok: true, draft });
+    }
+  );
+
   fastify.post(
     "/api/onboarding/business",
     { preHandler: [fastify.requireAuth] },

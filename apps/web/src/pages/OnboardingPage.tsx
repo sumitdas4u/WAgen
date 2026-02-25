@@ -1,9 +1,13 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
 import {
+  autofillOnboarding,
   connectWhatsApp,
+  deleteKnowledgeSource,
+  fetchIngestionJobs,
+  fetchKnowledgeSources,
   fetchWhatsAppStatus,
   ingestManual,
   ingestPdf,
@@ -11,7 +15,9 @@ import {
   saveBusinessBasics,
   savePersonality,
   setAgentActive,
-  type BusinessBasicsPayload
+  type BusinessBasicsPayload,
+  type KnowledgeIngestJob,
+  type KnowledgeSource
 } from "../lib/api";
 import { useRealtime } from "../lib/use-realtime";
 
@@ -107,6 +113,7 @@ const COUNTRY_OPTIONS = [
 ];
 
 const CURRENCY_OPTIONS = ["INR", "USD", "GBP", "AED", "SAR", "SGD", "MYR", "AUD", "CAD", "EUR"];
+const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const DEFAULT_BUSINESS_BASICS: BusinessBasicsPayload = {
   whatDoYouSell: "",
@@ -181,6 +188,7 @@ function loadSavedBusinessBasics(value: unknown): BusinessBasicsPayload {
 export function OnboardingPage() {
   const { token, user, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [step, setStep] = useState(1);
   const [waStatus, setWaStatus] = useState<"not_connected" | "connecting" | "waiting_scan" | "connected">(
@@ -195,11 +203,280 @@ export function OnboardingPage() {
   const [businessBasics, setBusinessBasics] = useState<BusinessBasicsPayload>(DEFAULT_BUSINESS_BASICS);
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [manualFaq, setManualFaq] = useState("");
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [uploadedPdfSources, setUploadedPdfSources] = useState<KnowledgeSource[]>([]);
+  const [businessDescription, setBusinessDescription] = useState("");
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [pdfUploadItems, setPdfUploadItems] = useState<
+    Array<{
+      id: string;
+      jobId?: string;
+      name: string;
+      size: number;
+      status: "queued" | "uploading" | "done" | "error";
+      stage?: string;
+      progress?: number;
+      chunks?: number;
+      error?: string;
+    }>
+  >([]);
+  const uploadPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     setBusinessBasics(loadSavedBusinessBasics(user?.business_basics));
   }, [user?.business_basics]);
+
+  const refreshUploadedPdfs = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const response = await fetchKnowledgeSources(token, { sourceType: "pdf" });
+      setUploadedPdfSources(response.sources);
+    } catch {
+      setUploadedPdfSources([]);
+    }
+  }, [token]);
+
+  const updateUploadItem = useCallback(
+    (
+      id: string,
+      patch: Partial<{
+        id: string;
+        jobId?: string;
+        name: string;
+        size: number;
+        status: "queued" | "uploading" | "done" | "error";
+        stage?: string;
+        progress?: number;
+        chunks?: number;
+        error?: string;
+      }>
+    ) => {
+      setPdfUploadItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    },
+    []
+  );
+
+  const stopUploadPolling = useCallback(() => {
+    if (uploadPollRef.current) {
+      clearInterval(uploadPollRef.current);
+      uploadPollRef.current = null;
+    }
+  }, []);
+
+  const applyJobToItem = useCallback(
+    (job: KnowledgeIngestJob) => {
+      const effectivelyCompleted =
+        job.status === "completed" ||
+        Boolean(job.completed_at) ||
+        (job.progress >= 100 && job.stage.toLowerCase() === "completed");
+
+      setPdfUploadItems((current) =>
+        current.map((item) => {
+          if (item.jobId !== job.id) {
+            return item;
+          }
+
+          if (effectivelyCompleted) {
+            return {
+              ...item,
+              status: "done",
+              stage: "Completed",
+              progress: 100,
+              chunks: job.chunks_created,
+              error: undefined
+            };
+          }
+
+          if (job.status === "failed") {
+            return {
+              ...item,
+              status: "error",
+              stage: "Failed",
+              progress: 100,
+              error: job.error_message || "upload error"
+            };
+          }
+
+          return {
+            ...item,
+            status: "uploading",
+            stage: job.stage || "Processing",
+            progress: job.progress ?? 0,
+            chunks: job.chunks_created || undefined,
+            error: undefined
+          };
+        })
+      );
+    },
+    []
+  );
+
+  const syncIngestionJobs = useCallback(
+    async (jobIds: string[]) => {
+      if (!token || jobIds.length === 0) {
+        stopUploadPolling();
+        setUploadingFiles(false);
+        return;
+      }
+
+      const response = await fetchIngestionJobs(token, jobIds);
+      response.jobs.forEach((job) => applyJobToItem(job));
+
+      const pending = response.jobs.some((job) => {
+        const done =
+          job.status === "completed" ||
+          Boolean(job.completed_at) ||
+          (job.progress >= 100 && job.stage.toLowerCase() === "completed");
+        return !done && (job.status === "queued" || job.status === "processing");
+      });
+      if (!pending) {
+        stopUploadPolling();
+        setUploadingFiles(false);
+        await refreshUploadedPdfs();
+      }
+    },
+    [applyJobToItem, refreshUploadedPdfs, stopUploadPolling, token]
+  );
+
+  const queuePdfUploads = useCallback(
+    (files: File[]) => {
+      if (!token || files.length === 0) {
+        return;
+      }
+
+      if (uploadingFiles) {
+        setError("A PDF upload is already running. Please wait for it to finish.");
+        return;
+      }
+
+      const accepted: File[] = [];
+      const rejected: Array<{ file: File; reason: string }> = [];
+      for (const file of files) {
+        if (file.type !== "application/pdf") {
+          rejected.push({ file, reason: "Only PDF files are allowed." });
+          continue;
+        }
+        if (file.size > MAX_PDF_UPLOAD_BYTES) {
+          rejected.push({
+            file,
+            reason: `File exceeds 20MB limit (${(file.size / (1024 * 1024)).toFixed(1)}MB).`
+          });
+          continue;
+        }
+        accepted.push(file);
+      }
+
+      if (rejected.length > 0) {
+        const rejectedItems = rejected.map((entry) => ({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${entry.file.name}`,
+          name: entry.file.name,
+          size: entry.file.size,
+          status: "error" as const,
+          stage: "Failed",
+          progress: 100,
+          error: entry.reason
+        }));
+        setPdfUploadItems((current) => [...rejectedItems, ...current].slice(0, 30));
+      }
+
+      if (accepted.length === 0) {
+        return;
+      }
+
+      const queued = accepted.map((file) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`,
+        name: file.name,
+        size: file.size,
+        status: "queued" as const,
+        stage: "Uploading file",
+        progress: 0
+      }));
+
+      setPdfUploadItems((current) => [...queued, ...current].slice(0, 30));
+
+      setUploadingFiles(true);
+      stopUploadPolling();
+
+      void ingestPdf(token, accepted)
+        .then(async (response) => {
+          const jobIds: string[] = [];
+          for (let index = 0; index < queued.length; index += 1) {
+            const item = queued[index];
+            const job = response.jobs[index];
+            if (!item) {
+              continue;
+            }
+
+            if (!job) {
+              updateUploadItem(item.id, {
+                status: "error",
+                stage: "Failed",
+                progress: 100,
+                error: "Upload job was not created"
+              });
+              continue;
+            }
+
+            jobIds.push(job.id);
+            updateUploadItem(item.id, {
+              jobId: job.id,
+              status: "uploading",
+              stage: job.stage || "Queued",
+              progress: job.progress ?? 0,
+              error: undefined
+            });
+          }
+
+          if (jobIds.length === 0) {
+            setUploadingFiles(false);
+            return;
+          }
+
+          await syncIngestionJobs(jobIds).catch(() => undefined);
+          uploadPollRef.current = setInterval(() => {
+            void syncIngestionJobs(jobIds).catch((error) => {
+              const message = (error as Error).message || "Failed to sync upload status";
+              setPdfUploadItems((current) =>
+                current.map((item) =>
+                  item.jobId && jobIds.includes(item.jobId)
+                    ? { ...item, status: "error", stage: "Failed", progress: 100, error: message }
+                    : item
+                )
+              );
+              stopUploadPolling();
+              setUploadingFiles(false);
+            });
+          }, 1500);
+        })
+        .catch((uploadError) => {
+          const message = (uploadError as Error).message;
+          queued.forEach((item) => {
+            updateUploadItem(item.id, {
+              status: "error",
+              stage: "Failed",
+              progress: 100,
+              error: message
+            });
+          });
+          setUploadingFiles(false);
+        });
+    },
+    [stopUploadPolling, syncIngestionJobs, token, updateUploadItem, uploadingFiles]
+  );
+
+  useEffect(() => {
+    void refreshUploadedPdfs();
+  }, [refreshUploadedPdfs]);
+
+  useEffect(
+    () => () => {
+      stopUploadPolling();
+    },
+    [stopUploadPolling]
+  );
 
   useRealtime(
     token,
@@ -216,7 +493,7 @@ export function OnboardingPage() {
           setWaStatus("connected");
           setQrText(null);
           setTimeout(() => {
-            setStep((current) => Math.max(current, 2));
+            setStep((current) => (current >= 2 ? Math.max(current, 3) : current));
           }, 900);
         }
         if (payload.status === "connecting") {
@@ -224,6 +501,8 @@ export function OnboardingPage() {
         }
         if (payload.status === "disconnected") {
           setWaStatus("not_connected");
+          setQrText(null);
+          setStep((current) => (current <= 3 ? 2 : current));
         }
       }
     }, [])
@@ -235,18 +514,26 @@ export function OnboardingPage() {
     }
 
     void fetchWhatsAppStatus(token).then((status) => {
+      const forceQr = new URLSearchParams(location.search).get("focus") === "qr";
       if (status.status === "connected") {
         setWaStatus("connected");
-        setStep(2);
+        if (forceQr) {
+          setStep(2);
+        }
       } else if (status.status === "connecting") {
         setWaStatus(status.qr ? "waiting_scan" : "connecting");
         setQrText(status.qr);
+        setStep(2);
+      } else {
+        setWaStatus("not_connected");
+        setQrText(null);
+        setStep(2);
       }
     });
-  }, [token]);
+  }, [location.search, token]);
 
   useEffect(() => {
-    if (!token || step !== 1) {
+    if (!token || step !== 2) {
       return;
     }
 
@@ -256,7 +543,7 @@ export function OnboardingPage() {
           if (status.status === "connected") {
             setWaStatus("connected");
             setQrText(null);
-            setStep(2);
+            setStep(3);
             return;
           }
 
@@ -310,6 +597,26 @@ export function OnboardingPage() {
     }));
   };
 
+  const handleAutofill = async () => {
+    if (!token) {
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    try {
+      const response = await autofillOnboarding(token, businessDescription);
+      setBusinessBasics(response.draft.businessBasics);
+      setPersonality(response.draft.personality);
+      setCustomPrompt(response.draft.customPrompt || "");
+      setStep(waStatus === "connected" ? 3 : 2);
+    } catch (autofillError) {
+      setError((autofillError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleStartConnection = async () => {
     if (!token) {
       return;
@@ -358,15 +665,31 @@ export function OnboardingPage() {
         await ingestManual(token, manualFaq.trim());
       }
 
-      if (pdfFile && pdfFile.size > 0) {
-        setProcessingLog((previous) => [...previous, "Parsing PDF and embedding content..."]);
-        await ingestPdf(token, pdfFile);
-      }
-
       setProcessingLog((previous) => [...previous, "Support AI knowledge is ready."]);
-      setStep(3);
+      setStep(4);
     } catch (trainError) {
       setError((trainError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeUploadItem = (id: string) => {
+    setPdfUploadItems((current) => current.filter((item) => item.id !== id));
+  };
+
+  const handleDeleteUploadedPdf = async (sourceName: string) => {
+    if (!token) {
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    try {
+      await deleteKnowledgeSource(token, { sourceType: "pdf", sourceName });
+      await refreshUploadedPdfs();
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
     } finally {
       setLoading(false);
     }
@@ -378,18 +701,15 @@ export function OnboardingPage() {
       return;
     }
 
-    const form = new FormData(event.currentTarget);
-    const customPrompt = String(form.get("customPrompt") || "").trim();
-
     setError(null);
     setLoading(true);
 
     try {
       await savePersonality(token, {
         personality,
-        customPrompt: personality === "custom" ? customPrompt : undefined
+        customPrompt: personality === "custom" ? customPrompt.trim() : undefined
       });
-      setStep(4);
+      setStep(5);
     } catch (saveError) {
       setError((saveError as Error).message);
     } finally {
@@ -419,7 +739,7 @@ export function OnboardingPage() {
   return (
     <main className="onboarding-shell">
       <aside className="wizard-steps">
-        {["Connect WhatsApp", "Train AI", "Choose Personality", "Activate"].map((label, index) => {
+        {["AI Prefill", "Connect WhatsApp", "Train AI", "Choose Personality", "Activate"].map((label, index) => {
           const current = index + 1;
           const status = step === current ? "current" : step > current ? "done" : "pending";
           return (
@@ -433,6 +753,40 @@ export function OnboardingPage() {
 
       <section className="wizard-content">
         {step === 1 && (
+          <article className="panel">
+            <h1>Describe Your Agent and Business</h1>
+            <p>Tell us what your business does and how your AI agent should behave. We will prefill onboarding for review.</p>
+            <label>
+              Business + agent description
+              <textarea
+                value={businessDescription}
+                placeholder="Example: We are a D2C skincare brand in India. Customers ask about ingredients, shipping, and refunds. Tone should be warm and professional..."
+                onChange={(event) => setBusinessDescription(event.target.value)}
+                rows={8}
+              />
+            </label>
+            <div className="chat-actions">
+              <button
+                className="primary-btn"
+                disabled={loading || businessDescription.trim().length < 20}
+                onClick={handleAutofill}
+                type="button"
+              >
+                {loading ? "Generating..." : "Auto-fill with AI"}
+              </button>
+              <button
+                className="ghost-btn"
+                disabled={loading}
+                onClick={() => setStep(waStatus === "connected" ? 3 : 2)}
+                type="button"
+              >
+                Skip and fill manually
+              </button>
+            </div>
+          </article>
+        )}
+
+        {step === 2 && (
           <article className="panel">
             <h1>Connect Your WhatsApp</h1>
             <p>Open WhatsApp &gt; Linked Devices &gt; Scan QR.</p>
@@ -449,7 +803,7 @@ export function OnboardingPage() {
           </article>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <article className="panel train-panel">
             <h1>Train Your WAgen</h1>
             <p>Configure customer support behavior, guardrails, and escalation contacts.</p>
@@ -643,13 +997,60 @@ export function OnboardingPage() {
                     />
                   </label>
                   <label>
-                    Upload PDF
+                    Upload PDF(s)
                     <input
-                      name="pdfFile"
+                      name="pdfFiles"
                       type="file"
                       accept="application/pdf"
-                      onChange={(event) => setPdfFile(event.target.files?.[0] ?? null)}
+                      multiple
+                      onChange={(event) => {
+                        const files = Array.from(event.target.files ?? []);
+                        queuePdfUploads(files);
+                        event.currentTarget.value = "";
+                      }}
                     />
+                    {pdfUploadItems.length > 0 && (
+                      <div className="file-chip-list">
+                        {pdfUploadItems.map((item) => (
+                          <span className="file-chip" key={item.id}>
+                            {item.name}{" "}
+                            {item.status === "uploading"
+                              ? `${item.stage || "Uploading file"} (${item.progress ?? 0}%)`
+                              : item.status === "done"
+                                ? `Done (${item.chunks ?? 0} chunks)`
+                                : item.status === "error"
+                                  ? `Failed: ${item.error || "upload error"}`
+                                  : "Queued"}
+                            <button type="button" className="chip-remove" onClick={() => removeUploadItem(item.id)}>
+                              Clear
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {uploadedPdfSources.length > 0 && (
+                      <div className="uploaded-files-list">
+                        <small className="tiny-note">Uploaded PDFs</small>
+                        {uploadedPdfSources.map((source) => (
+                          <div className="uploaded-file-row" key={`${source.source_name}-${source.last_ingested_at}`}>
+                            <span>{source.source_name || "Untitled PDF"}</span>
+                            {source.source_name ? (
+                              <button
+                                type="button"
+                                className="ghost-btn"
+                                disabled={loading}
+                                onClick={() => handleDeleteUploadedPdf(source.source_name as string)}
+                              >
+                                Delete
+                              </button>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <small className="tiny-note">
+                      Files upload immediately after selection. You can upload multiple PDFs in one go.
+                    </small>
                   </label>
                   <label className="full-span">
                     Manual FAQ
@@ -663,8 +1064,8 @@ export function OnboardingPage() {
                 </div>
               </section>
 
-              <button className="primary-btn" disabled={loading} type="submit">
-                {loading ? "Processing..." : "Train My WAgen"}
+              <button className="primary-btn" disabled={loading || uploadingFiles} type="submit">
+                {uploadingFiles ? "Uploading files..." : loading ? "Processing..." : "Train My WAgen"}
               </button>
             </form>
 
@@ -678,7 +1079,7 @@ export function OnboardingPage() {
           </article>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <article className="panel">
             <h1>Choose WAgen Personality</h1>
             <form className="stack-form" onSubmit={handleSavePersonality}>
@@ -704,6 +1105,8 @@ export function OnboardingPage() {
                     name="customPrompt"
                     required
                     placeholder="Define your exact tone and support style"
+                    value={customPrompt}
+                    onChange={(event) => setCustomPrompt(event.target.value)}
                   />
                 </label>
               )}
@@ -715,7 +1118,7 @@ export function OnboardingPage() {
           </article>
         )}
 
-        {step === 4 && (
+        {step === 5 && (
           <article className="panel activation-panel">
             <h1>Activate WAgen</h1>
             <p>Your WhatsApp AI is ready to go live.</p>

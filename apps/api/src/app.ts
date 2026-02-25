@@ -4,6 +4,7 @@ import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import { env } from "./config/env.js";
+import { ensureDbCompatibility } from "./db/pool.js";
 import { authRoutes } from "./routes/auth.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
@@ -25,6 +26,7 @@ interface AuthTokenPayload {
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
+  await ensureDbCompatibility();
 
   await app.register(cors, {
     origin: env.APP_BASE_URL,

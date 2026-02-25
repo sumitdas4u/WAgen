@@ -24,6 +24,7 @@ import {
   trackOutboundMessage
 } from "./conversation-service.js";
 import { buildSalesReply } from "./ai-reply-service.js";
+import { extractInboundMediaText } from "./inbound-media-service.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
@@ -452,21 +453,27 @@ class WhatsAppSessionManager {
     }
 
     console.info(
-      `[WA] auto-reply queued user=${job.userId} conversation=${job.conversationId} wait=${HUMAN_REPLY_DELAY_MIN_MS}-${HUMAN_REPLY_DELAY_MAX_MS}ms jid=${job.remoteJid}`
+        `[WA] auto-reply queued user=${job.userId} conversation=${job.conversationId} wait=${HUMAN_REPLY_DELAY_MIN_MS}-${HUMAN_REPLY_DELAY_MAX_MS}ms jid=${job.remoteJid}`
     );
     await randomDelay(HUMAN_REPLY_DELAY_MIN_MS, HUMAN_REPLY_DELAY_MAX_MS);
 
     let composingSet = false;
     try {
       try {
-        await simulateTyping(runtime.socket, job.remoteJid, reply.length);
+        await simulateTyping(runtime.socket, job.remoteJid, reply.text.length);
         composingSet = true;
       } catch (presenceError) {
         console.warn(`[WA] typing presence failed user=${job.userId} jid=${job.remoteJid}`, presenceError);
       }
 
-      await runtime.socket.sendMessage(job.remoteJid, { text: reply });
-      await trackOutboundMessage(conversation.id, reply);
+      await runtime.socket.sendMessage(job.remoteJid, { text: reply.text });
+      await trackOutboundMessage(conversation.id, reply.text, {
+        promptTokens: reply.usage?.promptTokens,
+        completionTokens: reply.usage?.completionTokens,
+        totalTokens: reply.usage?.totalTokens,
+        aiModel: reply.model,
+        retrievalChunks: reply.retrievalChunks
+      });
 
       console.info(
         `[WA] auto-reply sent user=${job.userId} conversation=${job.conversationId} phone=${job.phoneNumber}`
@@ -476,7 +483,7 @@ class WhatsAppSessionManager {
         conversationId: conversation.id,
         phoneNumber: job.phoneNumber,
         direction: "outbound",
-        message: reply,
+        message: reply.text,
         score: conversation.score,
         stage: conversation.stage
       });
@@ -507,7 +514,13 @@ class WhatsAppSessionManager {
       return;
     }
 
-    const text = getMessageText(message);
+    const runtime = this.sessions.get(userId);
+    let text = getMessageText(message);
+    const mediaContext = runtime ? await extractInboundMediaText(runtime.socket, message) : null;
+    if (mediaContext) {
+      text = text ? `${text}\n${mediaContext}` : mediaContext;
+    }
+
     if (!text) {
       console.info(`[WA] inbound skipped user=${userId} reason=no_text jid=${remoteJid}`);
       return;

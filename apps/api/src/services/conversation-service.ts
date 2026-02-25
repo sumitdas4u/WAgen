@@ -101,11 +101,38 @@ export async function trackInboundMessage(
   return updated.rows[0];
 }
 
-export async function trackOutboundMessage(conversationId: string, message: string): Promise<void> {
+export async function trackOutboundMessage(
+  conversationId: string,
+  message: string,
+  usage?: {
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    aiModel?: string | null;
+    retrievalChunks?: number | null;
+  }
+): Promise<void> {
   await pool.query(
-    `INSERT INTO conversation_messages (conversation_id, direction, message_text)
-     VALUES ($1, 'outbound', $2)`,
-    [conversationId, message]
+    `INSERT INTO conversation_messages (
+       conversation_id,
+       direction,
+       message_text,
+       prompt_tokens,
+       completion_tokens,
+       total_tokens,
+       ai_model,
+       retrieval_chunks
+     )
+     VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7)`,
+    [
+      conversationId,
+      message,
+      usage?.promptTokens ?? null,
+      usage?.completionTokens ?? null,
+      usage?.totalTokens ?? null,
+      usage?.aiModel ?? null,
+      usage?.retrievalChunks ?? null
+    ]
   );
 
   await pool.query(
@@ -119,10 +146,21 @@ export async function trackOutboundMessage(conversationId: string, message: stri
 }
 
 export async function listConversations(userId: string): Promise<Conversation[]> {
-  const result = await pool.query<Conversation>(
-    `SELECT * FROM conversations
-     WHERE user_id = $1
-     ORDER BY last_message_at DESC NULLS LAST, created_at DESC`,
+  const result = await pool.query<Conversation & { contact_name: string | null }>(
+    `SELECT
+       c.*,
+       (
+         SELECT cm.sender_name
+         FROM conversation_messages cm
+         WHERE cm.conversation_id = c.id
+           AND cm.direction = 'inbound'
+           AND cm.sender_name IS NOT NULL
+         ORDER BY cm.created_at DESC
+         LIMIT 1
+       ) AS contact_name
+     FROM conversations c
+     WHERE c.user_id = $1
+     ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC`,
     [userId]
   );
 
@@ -134,12 +172,27 @@ export interface ConversationMessage {
   direction: "inbound" | "outbound";
   sender_name: string | null;
   message_text: string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  ai_model: string | null;
+  retrieval_chunks: number | null;
   created_at: string;
 }
 
 export async function listConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
   const result = await pool.query<ConversationMessage>(
-    `SELECT id, direction, sender_name, message_text, created_at
+    `SELECT
+       id,
+       direction,
+       sender_name,
+       message_text,
+       prompt_tokens,
+       completion_tokens,
+       total_tokens,
+       ai_model,
+       retrieval_chunks,
+       created_at
      FROM conversation_messages
      WHERE conversation_id = $1
      ORDER BY created_at ASC`,

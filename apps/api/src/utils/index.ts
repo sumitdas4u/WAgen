@@ -53,6 +53,41 @@ export function getMessageText(message: WAMessage): string {
     }
   }
 
+  const image = content.imageMessage;
+  if (image) {
+    return "[Image received]";
+  }
+
+  const video = content.videoMessage;
+  if (video) {
+    return "[Video received]";
+  }
+
+  const audio = content.audioMessage;
+  if (audio) {
+    return "[Audio message received]";
+  }
+
+  const document = content.documentMessage;
+  if (document) {
+    const fileName = document.fileName?.trim();
+    const mediaType = document.mimetype?.trim();
+    if (fileName && mediaType) {
+      return `[Document received: ${fileName} (${mediaType})]`;
+    }
+    if (fileName) {
+      return `[Document received: ${fileName}]`;
+    }
+    if (mediaType) {
+      return `[Document received: ${mediaType}]`;
+    }
+    return "[Document received]";
+  }
+
+  if (content.stickerMessage) {
+    return "[Sticker received]";
+  }
+
   return "";
 }
 

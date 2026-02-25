@@ -54,14 +54,6 @@ services:
       - "8080:80"
     restart: unless-stopped
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate --url http://web:80
-    depends_on:
-      web:
-        condition: service_started
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   redis_data:

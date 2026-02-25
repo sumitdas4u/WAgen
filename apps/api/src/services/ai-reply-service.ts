@@ -1,4 +1,5 @@
 import type { User } from "../types/models.js";
+import { env } from "../config/env.js";
 import { resolvePersonalityPrompt } from "./personality.js";
 import { openAIService } from "./openai-service.js";
 import { retrieveKnowledge } from "./rag-service.js";
@@ -8,6 +9,13 @@ interface ReplyInput {
   incomingMessage: string;
   conversationPhone: string;
   history: Array<{ direction: "inbound" | "outbound"; message_text: string }>;
+}
+
+export interface ReplyOutput {
+  text: string;
+  model: string | null;
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number } | null;
+  retrievalChunks: number;
 }
 
 type SupportIntent =
@@ -95,6 +103,39 @@ const PRICING_KEYWORDS = [
   "package",
   "how much",
   "quotation"
+];
+
+const LIGHTWEIGHT_NO_RAG_PATTERNS = [
+  "hi",
+  "hello",
+  "hey",
+  "ok",
+  "okay",
+  "thanks",
+  "thank you",
+  "cool",
+  "great",
+  "done",
+  "yes",
+  "no"
+];
+
+const KNOWLEDGE_REQUIRED_KEYWORDS = [
+  "price",
+  "pricing",
+  "policy",
+  "warranty",
+  "refund",
+  "return",
+  "delivery",
+  "shipping",
+  "timeline",
+  "feature",
+  "specification",
+  "how",
+  "why",
+  "what",
+  "which"
 ];
 
 const DEFAULT_PLAYBOOKS: Record<SupportIntent, string> = {
@@ -313,6 +354,199 @@ function buildSupportContactLine(basics: BusinessBasicsProfile): string {
   return `${contactName}.${address}`;
 }
 
+function trimForPrompt(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+
+  return `${text.slice(0, maxChars - 1)}...`;
+}
+
+function shouldRetrieveKnowledge(incomingMessage: string): boolean {
+  if (!env.RAG_KNOWLEDGE_ROUTER) {
+    return true;
+  }
+
+  const normalized = incomingMessage.toLowerCase().trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (LIGHTWEIGHT_NO_RAG_PATTERNS.includes(normalized)) {
+    return false;
+  }
+
+  const wordCount = normalized.split(/\s+/g).filter(Boolean).length;
+  if (normalized.length < env.RAG_MIN_QUERY_LENGTH && wordCount <= 2 && !normalized.endsWith("?")) {
+    return false;
+  }
+
+  if (normalized.endsWith("?")) {
+    return true;
+  }
+
+  if (KNOWLEDGE_REQUIRED_KEYWORDS.some((keyword) => normalized.includes(keyword))) {
+    return true;
+  }
+
+  return wordCount >= 3;
+}
+
+function extractQueryTerms(query: string): string[] {
+  const STOPWORDS = new Set([
+    "the",
+    "and",
+    "for",
+    "with",
+    "this",
+    "that",
+    "have",
+    "has",
+    "from",
+    "you",
+    "your",
+    "what",
+    "when",
+    "where",
+    "which",
+    "how",
+    "why",
+    "can",
+    "are",
+    "was",
+    "were",
+    "will",
+    "shall",
+    "about",
+    "please",
+    "want",
+    "need"
+  ]);
+
+  return Array.from(
+    new Set(
+      query
+        .toLowerCase()
+        .split(/[^a-z0-9]+/g)
+        .map((term) => term.trim())
+        .filter((term) => term.length >= 3 && !STOPWORDS.has(term))
+    )
+  );
+}
+
+function compactChunkForQuery(chunk: string, queryTerms: string[], maxChars: number): string {
+  if (!chunk) {
+    return "";
+  }
+
+  const lowerChunk = chunk.toLowerCase();
+  const snippets: string[] = [];
+
+  for (const term of queryTerms) {
+    let fromIndex = 0;
+    while (fromIndex < lowerChunk.length) {
+      const hit = lowerChunk.indexOf(term, fromIndex);
+      if (hit < 0) {
+        break;
+      }
+
+      // Keep broader local context around the matched term so table/header mappings survive.
+      const rawStart = Math.max(0, hit - 260);
+      const rawEnd = Math.min(chunk.length, hit + term.length + 320);
+      const snippet = chunk.slice(rawStart, rawEnd).trim();
+      if (snippet.length >= 12) {
+        snippets.push(snippet);
+      }
+
+      fromIndex = hit + term.length;
+    }
+  }
+
+  if (snippets.length > 0) {
+    const dedupedSnippets = Array.from(new Set(snippets));
+    const focused = dedupedSnippets.join(" | ");
+    return trimForPrompt(focused, maxChars);
+  }
+
+  const sentences = chunk
+    .split(/(?<=[.!?])\s+|\n+/g)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  if (sentences.length === 0) {
+    return trimForPrompt(chunk, maxChars);
+  }
+
+  const scored = sentences
+    .map((sentence) => {
+      const lower = sentence.toLowerCase();
+      let score = 0;
+      for (const term of queryTerms) {
+        if (lower.includes(term)) {
+          score += 2;
+        }
+      }
+      if (/\d/.test(sentence)) {
+        score += 1;
+      }
+      return { sentence, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const selected: string[] = [];
+  let used = 0;
+
+  for (const item of scored) {
+    if (used >= maxChars) {
+      break;
+    }
+    if (item.score <= 0 && selected.length > 0) {
+      continue;
+    }
+
+    const next = item.sentence;
+    if (used + next.length + 1 > maxChars) {
+      continue;
+    }
+    selected.push(next);
+    used += next.length + 1;
+    if (selected.length >= 5) {
+      break;
+    }
+  }
+
+  if (selected.length === 0) {
+    return trimForPrompt(chunk, maxChars);
+  }
+
+  return selected.join(" ");
+}
+
+function buildKnowledgeBlock(chunks: Awaited<ReturnType<typeof retrieveKnowledge>>, query: string): string {
+  if (chunks.length === 0) {
+    return "No stored knowledge available.";
+  }
+
+  const queryTerms = extractQueryTerms(query);
+  const maxPromptChars = Math.max(1000, Math.min(env.RAG_MAX_PROMPT_CHARS, 1800));
+  const perChunkChars = Math.min(600, Math.max(220, Math.floor(maxPromptChars / Math.max(1, chunks.length))));
+  let usedChars = 0;
+  const lines: string[] = [];
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = compactChunkForQuery(chunks[index].content_chunk, queryTerms, perChunkChars);
+    const entry = `${index + 1}. ${chunk}`;
+    if (usedChars + entry.length > maxPromptChars) {
+      break;
+    }
+
+    lines.push(entry);
+    usedChars += entry.length;
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "No stored knowledge available.";
+}
+
 function buildFallbackReply(
   intent: SupportIntent,
   basics: BusinessBasicsProfile,
@@ -336,25 +570,33 @@ function buildFallbackReply(
   return `Thanks for contacting support for ${basics.whatDoYouSell}. I can help with updates and issue resolution. Currency format for your region is ${localeContext.currencySymbol} (${localeContext.currencyCode}).`;
 }
 
-export async function buildSalesReply(input: ReplyInput): Promise<string> {
+export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   const basics = toBasicsProfile(input.user.business_basics as Record<string, unknown>);
   const detectedIntent = detectSupportIntent(input.incomingMessage);
   const localeContext = resolveLocaleContext(input.conversationPhone, basics);
   const supportLine = buildSupportContactLine(basics);
 
   if (!openAIService.isConfigured()) {
-    return buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage);
+    return {
+      text: buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage),
+      model: null,
+      usage: null,
+      retrievalChunks: 0
+    };
   }
 
   let knowledge: Awaited<ReturnType<typeof retrieveKnowledge>> = [];
-  try {
-    knowledge = await retrieveKnowledge({
-      userId: input.user.id,
-      query: input.incomingMessage,
-      limit: 5
-    });
-  } catch {
-    knowledge = [];
+  if (shouldRetrieveKnowledge(input.incomingMessage)) {
+    try {
+      knowledge = await retrieveKnowledge({
+        userId: input.user.id,
+        query: input.incomingMessage,
+        limit: Math.max(4, Math.min(6, env.RAG_RETRIEVAL_LIMIT)),
+        minSimilarity: Math.min(env.RAG_MIN_SIMILARITY, 0.1)
+      });
+    } catch {
+      knowledge = [];
+    }
   }
 
   const personality = resolvePersonalityPrompt(input.user.personality, input.user.custom_personality_prompt);
@@ -376,16 +618,17 @@ export async function buildSalesReply(input: ReplyInput): Promise<string> {
     "- When money is mentioned, format it in the user's currency.",
     "- If uncertain, acknowledge and offer escalation support.",
     "- Never claim actions you cannot perform.",
+    "- If retrieved knowledge is present, answer strictly from it and do not invent facts.",
+    "- When user asks for item price/amount and a numeric value exists in retrieved knowledge near that item name, return that value.",
+    "- If the answer is missing in retrieved knowledge, clearly say that and ask one clarifying question.",
+    "- Prefer concise answers using only the minimum relevant details from retrieved knowledge.",
     `Personality: ${personality}`
   ].join("\n");
 
-  const knowledgeBlock = knowledge.length
-    ? knowledge
-        .map((chunk, index) => `${index + 1}. ${chunk.content_chunk}`)
-        .join("\n")
-    : "No stored knowledge available.";
+  const knowledgeBlock = buildKnowledgeBlock(knowledge, input.incomingMessage);
 
   const historyBlock = input.history
+    .slice(-Math.max(2, Math.min(env.PROMPT_HISTORY_LIMIT, 4)))
     .map((item) => `${item.direction === "inbound" ? "User" : "WAgen"}: ${item.message_text}`)
     .join("\n");
 
@@ -405,8 +648,19 @@ export async function buildSalesReply(input: ReplyInput): Promise<string> {
   ].join("\n\n");
 
   try {
-    return await openAIService.generateReply(systemPrompt, userPrompt);
+    const response = await openAIService.generateReply(systemPrompt, userPrompt);
+    return {
+      text: response.content,
+      model: response.model,
+      usage: response.usage ?? null,
+      retrievalChunks: knowledge.length
+    };
   } catch {
-    return buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage);
+    return {
+      text: buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage),
+      model: null,
+      usage: null,
+      retrievalChunks: knowledge.length
+    };
   }
 }

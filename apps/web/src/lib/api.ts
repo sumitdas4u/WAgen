@@ -3,20 +3,35 @@ export const API_URL = import.meta.env.VITE_API_URL || runtimeOrigin;
 
 interface RequestOptions extends RequestInit {
   token?: string | null;
+  timeoutMs?: number;
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { token, headers, ...rest } = options;
+  const { token, headers, timeoutMs, ...rest } = options;
   const hasJsonBody = rest.body !== undefined && rest.body !== null && !(rest.body instanceof FormData);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? 60_000);
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...rest,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
-      ...headers
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...rest,
+      signal: controller.signal,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
+        ...headers
+      }
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    if ((error as Error).name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
     }
-  });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
@@ -110,6 +125,20 @@ export function saveBusinessBasics(token: string, payload: BusinessBasicsPayload
   });
 }
 
+export interface OnboardingAutofillDraft {
+  businessBasics: BusinessBasicsPayload;
+  personality: User["personality"];
+  customPrompt: string;
+}
+
+export function autofillOnboarding(token: string, description: string) {
+  return apiRequest<{ ok: boolean; draft: OnboardingAutofillDraft }>("/api/onboarding/autofill", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ description })
+  });
+}
+
 export function ingestWebsite(token: string, url: string) {
   return apiRequest<{ ok: boolean; chunks: number }>("/api/knowledge/ingest/website", {
     method: "POST",
@@ -126,14 +155,73 @@ export function ingestManual(token: string, text: string) {
   });
 }
 
-export function ingestPdf(token: string, file: File) {
-  const form = new FormData();
-  form.append("file", file);
+export interface KnowledgeIngestJob {
+  id: string;
+  source_name: string | null;
+  source_type: "pdf" | "website" | "manual";
+  status: "queued" | "processing" | "completed" | "failed";
+  stage: string;
+  progress: number;
+  chunks_created: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
 
-  return apiRequest<{ ok: boolean; chunks: number }>("/api/knowledge/ingest/pdf", {
+export function ingestPdf(token: string, files: File[]) {
+  const form = new FormData();
+  for (const file of files) {
+    form.append("file", file);
+  }
+
+  return apiRequest<{ ok: boolean; jobs: KnowledgeIngestJob[] }>("/api/knowledge/ingest/pdf", {
     method: "POST",
     token,
-    body: form
+    body: form,
+    timeoutMs: 5 * 60_000
+  });
+}
+
+export function fetchIngestionJobs(token: string, ids?: string[]) {
+  const params = new URLSearchParams();
+  if (ids && ids.length > 0) {
+    params.set("ids", ids.join(","));
+  }
+  const query = params.toString();
+  const path = query ? `/api/knowledge/ingest/jobs?${query}` : "/api/knowledge/ingest/jobs";
+  return apiRequest<{ jobs: KnowledgeIngestJob[] }>(path, { token });
+}
+
+export interface KnowledgeSource {
+  source_type: "pdf" | "website" | "manual";
+  source_name: string | null;
+  chunks: number;
+  last_ingested_at: string;
+}
+
+export function fetchKnowledgeSources(
+  token: string,
+  options?: { sourceType?: KnowledgeSource["source_type"] }
+) {
+  const params = new URLSearchParams();
+  if (options?.sourceType) {
+    params.set("sourceType", options.sourceType);
+  }
+
+  const query = params.toString();
+  const path = query ? `/api/knowledge/sources?${query}` : "/api/knowledge/sources";
+  return apiRequest<{ sources: KnowledgeSource[] }>(path, { token });
+}
+
+export function deleteKnowledgeSource(
+  token: string,
+  payload: { sourceType: KnowledgeSource["source_type"]; sourceName: string }
+) {
+  return apiRequest<{ ok: boolean; deleted: number }>("/api/knowledge/source", {
+    method: "DELETE",
+    token,
+    body: JSON.stringify(payload)
   });
 }
 
@@ -185,6 +273,7 @@ export function fetchDashboardOverview(token: string) {
 export interface Conversation {
   id: string;
   phone_number: string;
+  contact_name?: string | null;
   stage: string;
   score: number;
   last_message: string | null;
@@ -202,6 +291,11 @@ export interface ConversationMessage {
   direction: "inbound" | "outbound";
   sender_name: string | null;
   message_text: string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  ai_model: string | null;
+  retrieval_chunks: number | null;
   created_at: string;
 }
 
