@@ -85,6 +85,98 @@ function prepareManualOrWebsiteChunks(text: string, metadata: Record<string, unk
   return toChunkInput(semantic, metadata);
 }
 
+function resolveWebsiteUrl(rawUrl: string): URL {
+  try {
+    return new URL(rawUrl);
+  } catch {
+    return new URL(`https://${rawUrl}`);
+  }
+}
+
+async function fetchWebsitePage(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "WAgenBot/1.0 (+knowledge-ingestion)"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch website page (${response.status})`);
+  }
+
+  return response.text();
+}
+
+function absoluteSameHostUrl(href: string, base: URL): string | null {
+  try {
+    const resolved = new URL(href, base);
+    if (!["http:", "https:"].includes(resolved.protocol)) {
+      return null;
+    }
+    if (resolved.host !== base.host) {
+      return null;
+    }
+    resolved.hash = "";
+    return resolved.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractWebsiteTextAndImportantLinks(html: string, pageUrl: URL): { title: string; text: string; links: string[] } {
+  const $ = load(html);
+
+  $("script, style, noscript, svg, canvas, iframe").remove();
+  const title = normalizeText($("title").first().text()) || pageUrl.host;
+  const metaDescription = normalizeText($("meta[name='description']").attr("content") || "");
+
+  const telOrMailtoLines: string[] = [];
+  $("a[href]").each((_, element) => {
+    const href = ($(element).attr("href") || "").trim();
+    const label = normalizeText($(element).text());
+    if (!href) {
+      return;
+    }
+    if (href.startsWith("tel:") || href.startsWith("mailto:")) {
+      const cleaned = `${label || "Contact"} ${href}`.trim();
+      if (cleaned) {
+        telOrMailtoLines.push(cleaned);
+      }
+    }
+  });
+
+  const bodyText = normalizeText($("body").text());
+  const textParts = [title, metaDescription, ...telOrMailtoLines, bodyText].filter(Boolean);
+  const merged = normalizeText(textParts.join("\n"));
+
+  const candidateLinks = new Set<string>();
+  $("a[href]").each((_, element) => {
+    const href = ($(element).attr("href") || "").trim();
+    const label = normalizeText($(element).text()).toLowerCase();
+    if (!href) {
+      return;
+    }
+
+    const absolute = absoluteSameHostUrl(href, pageUrl);
+    if (!absolute) {
+      return;
+    }
+
+    if (
+      /contact|about|support|help|faq|policy|terms|service|location|reach/i.test(absolute) ||
+      /contact|about|support|help|faq|policy|terms|service|location|reach/i.test(label)
+    ) {
+      candidateLinks.add(absolute);
+    }
+  });
+
+  return {
+    title,
+    text: merged,
+    links: Array.from(candidateLinks).slice(0, 4)
+  };
+}
+
 function tokenizeApprox(text: string): string[] {
   return text.match(/\S+/g) ?? [];
 }
@@ -462,23 +554,47 @@ export async function ingestManualText(userId: string, text: string): Promise<nu
 }
 
 export async function ingestWebsiteUrl(userId: string, url: string): Promise<number> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch website: ${response.status}`);
+  const rootUrl = resolveWebsiteUrl(url);
+  const rootHtml = await fetchWebsitePage(rootUrl.toString());
+  const rootExtracted = extractWebsiteTextAndImportantLinks(rootHtml, rootUrl);
+
+  const pagePayloads: Array<{ pageUrl: string; title: string; text: string }> = [
+    { pageUrl: rootUrl.toString(), title: rootExtracted.title, text: rootExtracted.text }
+  ];
+
+  for (const linkedUrl of rootExtracted.links) {
+    try {
+      const html = await fetchWebsitePage(linkedUrl);
+      const extracted = extractWebsiteTextAndImportantLinks(html, new URL(linkedUrl));
+      pagePayloads.push({
+        pageUrl: linkedUrl,
+        title: extracted.title,
+        text: extracted.text
+      });
+    } catch {
+      // Best-effort page crawl; keep ingesting with available pages.
+    }
   }
 
-  const html = await response.text();
-  const $ = load(html);
-  $("script, style, noscript").remove();
+  const chunks: IngestChunkInput[] = [];
+  for (const payload of pagePayloads) {
+    const pageChunks = prepareManualOrWebsiteChunks(payload.text, {
+      source: payload.title || rootUrl.host,
+      url: payload.pageUrl,
+      sourceKind: "website_page"
+    });
+    chunks.push(...pageChunks);
+  }
 
-  const title = $("title").text().trim() || url;
-  const text = $("body").text();
-  const chunks = prepareManualOrWebsiteChunks(text, { source: title, url });
+  if (chunks.length === 0) {
+    throw new Error("No readable text found on website. Try adding manual FAQ or a different page URL.");
+  }
 
+  const sourceName = rootExtracted.title || rootUrl.host;
   return ingestKnowledgeChunks({
     userId,
     sourceType: "website",
-    sourceName: title,
+    sourceName,
     chunks
   });
 }

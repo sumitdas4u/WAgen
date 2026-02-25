@@ -434,15 +434,62 @@ function extractQueryTerms(query: string): string[] {
   );
 }
 
+function normalizeTerm(term: string): string {
+  return term.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function buildQueryTermVariants(queryTerms: string[]): string[] {
+  const variants = new Set<string>();
+  for (const term of queryTerms) {
+    const normalized = normalizeTerm(term);
+    if (!normalized) {
+      continue;
+    }
+    variants.add(normalized);
+    if (normalized.length >= 5) {
+      variants.add(normalized.slice(0, Math.max(4, normalized.length - 1)));
+    }
+  }
+  return Array.from(variants);
+}
+
+function scoreChunkForQuery(chunk: string, queryTerms: string[]): number {
+  if (!chunk) {
+    return 0;
+  }
+
+  const normalizedChunk = normalizeTerm(chunk);
+  const termVariants = buildQueryTermVariants(queryTerms);
+  let score = 0;
+
+  for (const variant of termVariants) {
+    if (!variant) {
+      continue;
+    }
+    if (normalizedChunk.includes(variant)) {
+      score += 3;
+    } else if (variant.length >= 5 && normalizedChunk.includes(variant.slice(0, 4))) {
+      score += 1;
+    }
+  }
+
+  if (/\d/.test(chunk)) {
+    score += 1;
+  }
+
+  return score;
+}
+
 function compactChunkForQuery(chunk: string, queryTerms: string[], maxChars: number): string {
   if (!chunk) {
     return "";
   }
 
   const lowerChunk = chunk.toLowerCase();
+  const termVariants = buildQueryTermVariants(queryTerms);
   const snippets: string[] = [];
 
-  for (const term of queryTerms) {
+  for (const term of termVariants) {
     let fromIndex = 0;
     while (fromIndex < lowerChunk.length) {
       const hit = lowerChunk.indexOf(term, fromIndex);
@@ -528,13 +575,17 @@ function buildKnowledgeBlock(chunks: Awaited<ReturnType<typeof retrieveKnowledge
   }
 
   const queryTerms = extractQueryTerms(query);
-  const maxPromptChars = Math.max(1000, Math.min(env.RAG_MAX_PROMPT_CHARS, 1800));
-  const perChunkChars = Math.min(600, Math.max(220, Math.floor(maxPromptChars / Math.max(1, chunks.length))));
+  const rankedChunks = [...chunks].sort(
+    (a, b) => scoreChunkForQuery(b.content_chunk, queryTerms) - scoreChunkForQuery(a.content_chunk, queryTerms)
+  );
+
+  const maxPromptChars = Math.max(1400, Math.min(env.RAG_MAX_PROMPT_CHARS, 3200));
+  const perChunkChars = Math.min(1000, Math.max(260, Math.floor(maxPromptChars / Math.max(1, rankedChunks.length))));
   let usedChars = 0;
   const lines: string[] = [];
 
-  for (let index = 0; index < chunks.length; index += 1) {
-    const chunk = compactChunkForQuery(chunks[index].content_chunk, queryTerms, perChunkChars);
+  for (let index = 0; index < rankedChunks.length; index += 1) {
+    const chunk = compactChunkForQuery(rankedChunks[index].content_chunk, queryTerms, perChunkChars);
     const entry = `${index + 1}. ${chunk}`;
     if (usedChars + entry.length > maxPromptChars) {
       break;
@@ -545,6 +596,65 @@ function buildKnowledgeBlock(chunks: Awaited<ReturnType<typeof retrieveKnowledge
   }
 
   return lines.length > 0 ? lines.join("\n") : "No stored knowledge available.";
+}
+
+function buildStructuredKnowledgeHints(
+  chunks: Awaited<ReturnType<typeof retrieveKnowledge>>,
+  query: string
+): string {
+  if (chunks.length === 0) {
+    return "No structured hints.";
+  }
+
+  const queryTerms = extractQueryTerms(query);
+  if (queryTerms.length === 0) {
+    return "No structured hints.";
+  }
+
+  const hintLines: string[] = [];
+  const seen = new Set<string>();
+
+  for (const chunk of chunks) {
+    const text = chunk.content_chunk;
+    if (!text) {
+      continue;
+    }
+
+    const rowRegex = /([A-Za-z][A-Za-z0-9 '&().-]{2,})\s+(\d{2,5}(?:\s*\/\s*\d{2,5}){1,5})/g;
+    const variantsRegex = /\b([A-Z]{2,10}(?:\s*\/\s*[A-Z]{2,10}){1,5})\b/;
+    const normalized = text.toLowerCase();
+
+    let rowMatch: RegExpExecArray | null;
+    while ((rowMatch = rowRegex.exec(text)) !== null) {
+      const item = rowMatch[1]?.trim() ?? "";
+      const prices = rowMatch[2]?.replace(/\s+/g, "") ?? "";
+      if (!item || !prices) {
+        continue;
+      }
+
+      const normalizedItem = item.toLowerCase();
+      const isRelevant = queryTerms.some((term) => normalizedItem.includes(term) || normalized.includes(term));
+      if (!isRelevant) {
+        continue;
+      }
+
+      const beforeRow = text.slice(Math.max(0, rowMatch.index - 220), rowMatch.index);
+      const variantMatch = beforeRow.match(variantsRegex);
+      const variantLabels = variantMatch?.[1]?.replace(/\s+/g, " ") ?? "not specified";
+      const hint = `Item "${item}" has prices ${prices}; nearby variant labels: ${variantLabels}.`;
+
+      if (!seen.has(hint)) {
+        seen.add(hint);
+        hintLines.push(hint);
+      }
+
+      if (hintLines.length >= 6) {
+        return hintLines.join("\n");
+      }
+    }
+  }
+
+  return hintLines.length > 0 ? hintLines.join("\n") : "No structured hints.";
 }
 
 function buildFallbackReply(
@@ -591,8 +701,8 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
       knowledge = await retrieveKnowledge({
         userId: input.user.id,
         query: input.incomingMessage,
-        limit: Math.max(4, Math.min(6, env.RAG_RETRIEVAL_LIMIT)),
-        minSimilarity: Math.min(env.RAG_MIN_SIMILARITY, 0.1)
+        limit: Math.max(6, Math.min(10, env.RAG_RETRIEVAL_LIMIT)),
+        minSimilarity: 0
       });
     } catch {
       knowledge = [];
@@ -626,6 +736,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   ].join("\n");
 
   const knowledgeBlock = buildKnowledgeBlock(knowledge, input.incomingMessage);
+  const structuredHints = buildStructuredKnowledgeHints(knowledge, input.incomingMessage);
 
   const historyBlock = input.history
     .slice(-Math.max(2, Math.min(env.PROMPT_HISTORY_LIMIT, 4)))
@@ -643,6 +754,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     `AI Don't rules:\n${basics.aiDontRules || "No custom don't rules provided."}`,
     `Conversation with ${input.conversationPhone}:\n${historyBlock || "No prior messages."}`,
     `Retrieved knowledge:\n${knowledgeBlock}`,
+    `Structured hints from retrieved knowledge:\n${structuredHints}`,
     `Incoming message: ${input.incomingMessage}`,
     "Craft the best support response now."
   ].join("\n\n");
