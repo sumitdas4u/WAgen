@@ -60,4 +60,12 @@ export async function ensureDbCompatibility(): Promise<void> {
     CREATE INDEX IF NOT EXISTS knowledge_ingest_jobs_user_idx
       ON knowledge_ingest_jobs(user_id, created_at DESC)
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 }

@@ -6,5 +6,9 @@ declare module "fastify" {
       userId: string;
       email: string;
     };
+    adminUser?: {
+      email: string;
+      role: "super_admin";
+    };
   }
 }

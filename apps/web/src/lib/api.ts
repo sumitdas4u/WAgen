@@ -77,6 +77,73 @@ export function login(payload: { email: string; password: string }) {
   });
 }
 
+export interface AdminAuthResponse {
+  token: string;
+  role: "super_admin";
+}
+
+export function adminLogin(payload: { email: string; password: string }) {
+  return apiRequest<AdminAuthResponse>("/api/admin/login", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export interface AdminOverview {
+  totalUsers: number;
+  activeAgents: number;
+  totalConversations: number;
+  totalMessages: number;
+  totalChunks: number;
+  totalTokens: number;
+  totalCostInr: number;
+}
+
+export interface AdminUserUsage {
+  userId: string;
+  name: string;
+  email: string;
+  plan: string;
+  aiActive: boolean;
+  conversations: number;
+  messages: number;
+  chunks: number;
+  totalTokens: number;
+  costInr: number;
+  createdAt: string;
+}
+
+export function fetchAdminOverview(token: string) {
+  return apiRequest<{ overview: AdminOverview }>("/api/admin/overview", { token });
+}
+
+export function fetchAdminUsers(token: string, options?: { limit?: number }) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/admin/users?${query}` : "/api/admin/users";
+  return apiRequest<{ users: AdminUserUsage[] }>(path, { token });
+}
+
+export function fetchAdminModel(token: string) {
+  return apiRequest<{
+    currentModel: string;
+    overrideModel: string | null;
+    defaultModel: string;
+    availableModels: string[];
+  }>("/api/admin/model", { token });
+}
+
+export function updateAdminModel(token: string, model: string) {
+  return apiRequest<{ ok: boolean; model: string }>("/api/admin/model", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ model })
+  });
+}
+
 export function fetchMe(token: string) {
   return apiRequest<{ user: User }>("/api/auth/me", { token });
 }

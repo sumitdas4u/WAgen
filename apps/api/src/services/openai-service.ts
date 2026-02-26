@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { env } from "../config/env.js";
+import { getEffectiveChatModel } from "./model-settings-service.js";
 
 export class OpenAIService {
   private readonly client: OpenAI | null;
@@ -53,7 +54,8 @@ export class OpenAIService {
 
   async generateReply(
     systemPrompt: string,
-    userPrompt: string
+    userPrompt: string,
+    modelOverride?: string
   ): Promise<{
     content: string;
     model: string;
@@ -63,8 +65,9 @@ export class OpenAIService {
       throw new Error("OPENAI_API_KEY is not configured");
     }
 
+    const model = modelOverride?.trim() || (await getEffectiveChatModel());
     const response = await this.client.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL,
+      model,
       temperature: 0.4,
       max_tokens: env.OPENAI_MAX_OUTPUT_TOKENS,
       messages: [
@@ -75,7 +78,7 @@ export class OpenAIService {
 
     if (env.OPENAI_LOG_USAGE && response.usage) {
       console.info(
-        `[OpenAI] model=${env.OPENAI_CHAT_MODEL} prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens} total_tokens=${response.usage.total_tokens}`
+        `[OpenAI] model=${model} prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens} total_tokens=${response.usage.total_tokens}`
       );
     }
 
@@ -86,7 +89,7 @@ export class OpenAIService {
 
     return {
       content,
-      model: env.OPENAI_CHAT_MODEL,
+      model,
       usage: response.usage
         ? {
             promptTokens: response.usage.prompt_tokens,
@@ -97,13 +100,14 @@ export class OpenAIService {
     };
   }
 
-  async generateJson(systemPrompt: string, userPrompt: string): Promise<Record<string, unknown>> {
+  async generateJson(systemPrompt: string, userPrompt: string, modelOverride?: string): Promise<Record<string, unknown>> {
     if (!this.client) {
       throw new Error("OPENAI_API_KEY is not configured");
     }
 
+    const model = modelOverride?.trim() || (await getEffectiveChatModel());
     const response = await this.client.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL,
+      model,
       temperature: 0.2,
       max_tokens: Math.max(300, env.OPENAI_MAX_OUTPUT_TOKENS),
       messages: [
@@ -114,7 +118,7 @@ export class OpenAIService {
 
     if (env.OPENAI_LOG_USAGE && response.usage) {
       console.info(
-        `[OpenAI] model=${env.OPENAI_CHAT_MODEL} prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens} total_tokens=${response.usage.total_tokens}`
+        `[OpenAI] model=${model} prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens} total_tokens=${response.usage.total_tokens}`
       );
     }
 
@@ -135,14 +139,15 @@ export class OpenAIService {
     }
   }
 
-  async extractTextFromImage(imageBuffer: Buffer, mimeType: string): Promise<string> {
+  async extractTextFromImage(imageBuffer: Buffer, mimeType: string, modelOverride?: string): Promise<string> {
     if (!this.client) {
       throw new Error("OPENAI_API_KEY is not configured");
     }
 
     const dataUrl = `data:${mimeType};base64,${imageBuffer.toString("base64")}`;
+    const model = modelOverride?.trim() || (await getEffectiveChatModel());
     const response = await this.client.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL,
+      model,
       temperature: 0,
       max_tokens: Math.max(300, env.OPENAI_MAX_OUTPUT_TOKENS),
       messages: [

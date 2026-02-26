@@ -6,6 +6,7 @@ import websocket from "@fastify/websocket";
 import { env } from "./config/env.js";
 import { ensureDbCompatibility } from "./db/pool.js";
 import { authRoutes } from "./routes/auth.js";
+import { adminRoutes } from "./routes/admin.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { whatsappRoutes } from "./routes/whatsapp.js";
@@ -16,12 +17,14 @@ import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 declare module "fastify" {
   interface FastifyInstance {
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireSuperAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
 interface AuthTokenPayload {
-  userId: string;
+  userId?: string;
   email: string;
+  role?: "super_admin";
 }
 
 export async function buildApp() {
@@ -44,6 +47,9 @@ export async function buildApp() {
   app.decorate("requireAuth", async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const payload = await request.jwtVerify<AuthTokenPayload>();
+      if (!payload.userId) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
       request.authUser = {
         userId: payload.userId,
         email: payload.email
@@ -53,7 +59,23 @@ export async function buildApp() {
     }
   });
 
+  app.decorate("requireSuperAdmin", async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const payload = await request.jwtVerify<AuthTokenPayload>();
+      if (payload.role !== "super_admin") {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+      request.adminUser = {
+        email: payload.email,
+        role: "super_admin"
+      };
+    } catch {
+      reply.status(401).send({ error: "Unauthorized" });
+    }
+  });
+
   await authRoutes(app);
+  await adminRoutes(app);
   await onboardingRoutes(app);
   await knowledgeRoutes(app);
   await whatsappRoutes(app);

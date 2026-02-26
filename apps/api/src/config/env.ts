@@ -13,6 +13,8 @@ const EnvSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_CHAT_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
+  SUPER_ADMIN_EMAIL: z.string().optional(),
+  SUPER_ADMIN_PASSWORD: z.string().optional(),
   USD_TO_INR: z.coerce.number().positive().default(83),
   OPENAI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(220),
   OPENAI_LOG_USAGE: z.enum(["true", "false"]).default("true"),
