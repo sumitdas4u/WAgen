@@ -543,17 +543,18 @@ function buildPdfChunks(fileName: string, blocks: PdfLayoutBlock[]): IngestChunk
   return chunks;
 }
 
-export async function ingestManualText(userId: string, text: string): Promise<number> {
-  const chunks = prepareManualOrWebsiteChunks(text, { source: "Manual FAQ" });
+export async function ingestManualText(userId: string, text: string, sourceName?: string): Promise<number> {
+  const resolvedSource = (sourceName || "").trim() || `Manual-${new Date().toISOString()}`;
+  const chunks = prepareManualOrWebsiteChunks(text, { source: resolvedSource });
   return ingestKnowledgeChunks({
     userId,
     sourceType: "manual",
-    sourceName: "Manual FAQ",
+    sourceName: resolvedSource,
     chunks
   });
 }
 
-export async function ingestWebsiteUrl(userId: string, url: string): Promise<number> {
+export async function ingestWebsiteUrl(userId: string, url: string, sourceName?: string): Promise<number> {
   const rootUrl = resolveWebsiteUrl(url);
   const rootHtml = await fetchWebsitePage(rootUrl.toString());
   const rootExtracted = extractWebsiteTextAndImportantLinks(rootHtml, rootUrl);
@@ -590,11 +591,11 @@ export async function ingestWebsiteUrl(userId: string, url: string): Promise<num
     throw new Error("No readable text found on website. Try adding manual FAQ or a different page URL.");
   }
 
-  const sourceName = rootExtracted.title || rootUrl.host;
+  const resolvedSourceName = sourceName?.trim() || rootExtracted.title || rootUrl.host;
   return ingestKnowledgeChunks({
     userId,
     sourceType: "website",
-    sourceName,
+    sourceName: resolvedSourceName,
     chunks
   });
 }

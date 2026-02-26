@@ -27,6 +27,7 @@ type SupportIntent =
   | "complaint_handling";
 
 interface BusinessBasicsProfile {
+  companyName: string;
   whatDoYouSell: string;
   targetAudience: string;
   usp: string;
@@ -105,38 +106,6 @@ const PRICING_KEYWORDS = [
   "quotation"
 ];
 
-const LIGHTWEIGHT_NO_RAG_PATTERNS = [
-  "hi",
-  "hello",
-  "hey",
-  "ok",
-  "okay",
-  "thanks",
-  "thank you",
-  "cool",
-  "great",
-  "done",
-  "yes",
-  "no"
-];
-
-const KNOWLEDGE_REQUIRED_KEYWORDS = [
-  "price",
-  "pricing",
-  "policy",
-  "warranty",
-  "refund",
-  "return",
-  "delivery",
-  "shipping",
-  "timeline",
-  "feature",
-  "specification",
-  "how",
-  "why",
-  "what",
-  "which"
-];
 
 const DEFAULT_PLAYBOOKS: Record<SupportIntent, string> = {
   greeting:
@@ -260,6 +229,7 @@ function resolveCurrencySymbol(currencyCode: string, locale: string): string {
 
 function toBasicsProfile(rawBasics: Record<string, unknown>): BusinessBasicsProfile {
   return {
+    companyName: readString(rawBasics.companyName, "your company"),
     whatDoYouSell: readString(rawBasics.whatDoYouSell, "N/A"),
     targetAudience: readString(rawBasics.targetAudience, "N/A"),
     usp: readString(rawBasics.usp, "N/A"),
@@ -360,36 +330,6 @@ function trimForPrompt(text: string, maxChars: number): string {
   }
 
   return `${text.slice(0, maxChars - 1)}...`;
-}
-
-function shouldRetrieveKnowledge(incomingMessage: string): boolean {
-  if (!env.RAG_KNOWLEDGE_ROUTER) {
-    return true;
-  }
-
-  const normalized = incomingMessage.toLowerCase().trim();
-  if (!normalized) {
-    return false;
-  }
-
-  if (LIGHTWEIGHT_NO_RAG_PATTERNS.includes(normalized)) {
-    return false;
-  }
-
-  const wordCount = normalized.split(/\s+/g).filter(Boolean).length;
-  if (normalized.length < env.RAG_MIN_QUERY_LENGTH && wordCount <= 2 && !normalized.endsWith("?")) {
-    return false;
-  }
-
-  if (normalized.endsWith("?")) {
-    return true;
-  }
-
-  if (KNOWLEDGE_REQUIRED_KEYWORDS.some((keyword) => normalized.includes(keyword))) {
-    return true;
-  }
-
-  return wordCount >= 3;
 }
 
 function extractQueryTerms(query: string): string[] {
@@ -677,7 +617,7 @@ function buildFallbackReply(
     return "Thanks for reaching out. Please share your preferred date and time, and I will help you with the booking process.";
   }
 
-  return `Thanks for contacting support for ${basics.whatDoYouSell}. I can help with updates and issue resolution. Currency format for your region is ${localeContext.currencySymbol} (${localeContext.currencyCode}).`;
+  return `Thanks for contacting ${basics.companyName}. I can help with updates and issue resolution. Currency format for your region is ${localeContext.currencySymbol} (${localeContext.currencyCode}).`;
 }
 
 export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
@@ -696,17 +636,24 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   }
 
   let knowledge: Awaited<ReturnType<typeof retrieveKnowledge>> = [];
-  if (shouldRetrieveKnowledge(input.incomingMessage)) {
-    try {
-      knowledge = await retrieveKnowledge({
-        userId: input.user.id,
-        query: input.incomingMessage,
-        limit: Math.max(6, Math.min(10, env.RAG_RETRIEVAL_LIMIT)),
-        minSimilarity: 0
-      });
-    } catch {
-      knowledge = [];
-    }
+  try {
+    knowledge = await retrieveKnowledge({
+      userId: input.user.id,
+      query: input.incomingMessage,
+      limit: Math.max(6, Math.min(10, env.RAG_RETRIEVAL_LIMIT)),
+      minSimilarity: 0
+    });
+  } catch {
+    knowledge = [];
+  }
+
+  if (knowledge.length === 0) {
+    return {
+      text: "I could not find a matching answer in your knowledge base. Please add/update the relevant knowledge and try again.",
+      model: null,
+      usage: null,
+      retrievalChunks: 0
+    };
   }
 
   const personality = resolvePersonalityPrompt(input.user.personality, input.user.custom_personality_prompt);
@@ -729,6 +676,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     "- If uncertain, acknowledge and offer escalation support.",
     "- Never claim actions you cannot perform.",
     "- If retrieved knowledge is present, answer strictly from it and do not invent facts.",
+    "- Every reply must be grounded in retrieved knowledge chunks.",
     "- When user asks for item price/amount and a numeric value exists in retrieved knowledge near that item name, return that value.",
     "- If the answer is missing in retrieved knowledge, clearly say that and ask one clarifying question.",
     "- Prefer concise answers using only the minimum relevant details from retrieved knowledge.",
@@ -744,7 +692,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     .join("\n");
 
   const userPrompt = [
-    `Business context:\n- Support domain: ${basics.whatDoYouSell}\n- Audience: ${basics.targetAudience}\n- Promise/USP: ${basics.usp}\n- Common issues: ${basics.objections}`,
+    `Business context:\n- Company: ${basics.companyName}\n- Support domain: ${basics.whatDoYouSell}\n- Audience: ${basics.targetAudience}\n- Promise/USP: ${basics.usp}\n- Common issues: ${basics.objections}`,
     `Locale context:\n- User country: ${localeContext.countryName} (${localeContext.countryCode})\n- Currency: ${localeContext.currencyCode} (${localeContext.currencySymbol})\n- Locale format: ${localeContext.locale}`,
     `Detected support scenario: ${INTENT_LABELS[detectedIntent]}`,
     `Primary scenario playbook:\n${selectedPlaybook}`,

@@ -84,6 +84,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 export async function updateBusinessBasics(
   userId: string,
   basics: {
+    companyName: string;
     whatDoYouSell: string;
     targetAudience: string;
     usp: string;
@@ -102,6 +103,8 @@ export async function updateBusinessBasics(
     supportEmail: string;
     aiDoRules: string;
     aiDontRules: string;
+    websiteUrl?: string;
+    manualFaq?: string;
   }
 ): Promise<void> {
   await pool.query(

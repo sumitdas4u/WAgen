@@ -7,14 +7,16 @@ import {
   ingestWebsiteUrl
 } from "../services/knowledge-ingestion-service.js";
 import { createPdfIngestionJobs, listIngestionJobs } from "../services/knowledge-ingestion-jobs-service.js";
-import { deleteKnowledgeSource, getKnowledgeStats, listKnowledgeSources } from "../services/rag-service.js";
+import { deleteKnowledgeSource, getKnowledgeStats, listKnowledgeChunks, listKnowledgeSources } from "../services/rag-service.js";
 
 const ManualSchema = z.object({
-  text: z.string().min(20)
+  text: z.string().min(20),
+  sourceName: z.string().trim().max(180).optional()
 });
 
 const WebsiteSchema = z.object({
-  url: z.string().url()
+  url: z.string().url(),
+  sourceName: z.string().trim().max(180).optional()
 });
 
 const SourcesQuerySchema = z.object({
@@ -28,6 +30,12 @@ const DeleteSourceSchema = z.object({
 
 const IngestJobsQuerySchema = z.object({
   ids: z.string().optional()
+});
+
+const ChunksQuerySchema = z.object({
+  sourceType: z.enum(["pdf", "website", "manual"]).optional(),
+  sourceName: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional()
 });
 
 export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
@@ -54,7 +62,7 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Manual text must be at least 20 characters" });
       }
 
-      const chunks = await ingestManualText(request.authUser.userId, parsed.data.text);
+      const chunks = await ingestManualText(request.authUser.userId, parsed.data.text, parsed.data.sourceName);
       return reply.send({ ok: true, chunks });
     }
   );
@@ -68,7 +76,7 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Invalid website URL" });
       }
 
-      const chunks = await ingestWebsiteUrl(request.authUser.userId, parsed.data.url);
+      const chunks = await ingestWebsiteUrl(request.authUser.userId, parsed.data.url, parsed.data.sourceName);
       return reply.send({ ok: true, chunks });
     }
   );
@@ -134,6 +142,24 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
       }
       const jobs = await listIngestionJobs(request.authUser.userId, ids);
       return { jobs };
+    }
+  );
+
+  fastify.get(
+    "/api/knowledge/chunks",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = ChunksQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid chunks query" });
+      }
+      const chunks = await listKnowledgeChunks({
+        userId: request.authUser.userId,
+        sourceType: parsed.data.sourceType,
+        sourceName: parsed.data.sourceName?.trim() || undefined,
+        limit: parsed.data.limit
+      });
+      return { chunks };
     }
   );
 

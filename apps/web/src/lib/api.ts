@@ -97,6 +97,7 @@ export function fetchWhatsAppStatus(token: string) {
 }
 
 export interface BusinessBasicsPayload {
+  companyName: string;
   whatDoYouSell: string;
   targetAudience: string;
   usp: string;
@@ -115,6 +116,8 @@ export interface BusinessBasicsPayload {
   supportEmail: string;
   aiDoRules: string;
   aiDontRules: string;
+  websiteUrl?: string;
+  manualFaq?: string;
 }
 
 export function saveBusinessBasics(token: string, payload: BusinessBasicsPayload) {
@@ -139,19 +142,19 @@ export function autofillOnboarding(token: string, description: string) {
   });
 }
 
-export function ingestWebsite(token: string, url: string) {
+export function ingestWebsite(token: string, url: string, sourceName?: string) {
   return apiRequest<{ ok: boolean; chunks: number }>("/api/knowledge/ingest/website", {
     method: "POST",
     token,
-    body: JSON.stringify({ url })
+    body: JSON.stringify({ url, sourceName })
   });
 }
 
-export function ingestManual(token: string, text: string) {
+export function ingestManual(token: string, text: string, sourceName?: string) {
   return apiRequest<{ ok: boolean; chunks: number }>("/api/knowledge/ingest/manual", {
     method: "POST",
     token,
-    body: JSON.stringify({ text })
+    body: JSON.stringify({ text, sourceName })
   });
 }
 
@@ -200,6 +203,15 @@ export interface KnowledgeSource {
   last_ingested_at: string;
 }
 
+export interface KnowledgeChunkPreview {
+  id: string;
+  content_chunk: string;
+  source_type: "pdf" | "website" | "manual";
+  source_name: string | null;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export function fetchKnowledgeSources(
   token: string,
   options?: { sourceType?: KnowledgeSource["source_type"] }
@@ -223,6 +235,26 @@ export function deleteKnowledgeSource(
     token,
     body: JSON.stringify(payload)
   });
+}
+
+export function fetchKnowledgeChunks(
+  token: string,
+  options?: { sourceType?: KnowledgeSource["source_type"]; sourceName?: string; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.sourceType) {
+    params.set("sourceType", options.sourceType);
+  }
+  if (options?.sourceName) {
+    params.set("sourceName", options.sourceName);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+
+  const query = params.toString();
+  const path = query ? `/api/knowledge/chunks?${query}` : "/api/knowledge/chunks";
+  return apiRequest<{ chunks: KnowledgeChunkPreview[] }>(path, { token });
 }
 
 export function savePersonality(

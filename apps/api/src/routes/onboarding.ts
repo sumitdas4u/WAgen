@@ -4,6 +4,7 @@ import { setAgentActive, updateBusinessBasics, updatePersonality } from "../serv
 import { generateOnboardingDraft } from "../services/onboarding-autofill-service.js";
 
 const BusinessSchema = z.object({
+  companyName: z.string().trim().max(120).optional().default(""),
   whatDoYouSell: z.string().min(2),
   targetAudience: z.string().min(2),
   usp: z.string().min(2),
@@ -21,7 +22,9 @@ const BusinessSchema = z.object({
   supportContactName: z.string().trim().max(100).optional().default(""),
   supportEmail: z.union([z.string().trim().email(), z.literal("")]).optional().default(""),
   aiDoRules: z.string().trim().max(3000).optional().default(""),
-  aiDontRules: z.string().trim().max(3000).optional().default("")
+  aiDontRules: z.string().trim().max(3000).optional().default(""),
+  websiteUrl: z.string().trim().max(500).optional().default(""),
+  manualFaq: z.string().trim().max(20000).optional().default("")
 });
 
 const PersonalitySchema = z.object({

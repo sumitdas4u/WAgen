@@ -116,6 +116,7 @@ const CURRENCY_OPTIONS = ["INR", "USD", "GBP", "AED", "SAR", "SGD", "MYR", "AUD"
 const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const DEFAULT_BUSINESS_BASICS: BusinessBasicsPayload = {
+  companyName: "",
   whatDoYouSell: "",
   targetAudience: "",
   usp: "",
@@ -155,6 +156,7 @@ function loadSavedBusinessBasics(value: unknown): BusinessBasicsPayload {
   const saved = value as Record<string, unknown>;
 
   return {
+    companyName: readSavedString(saved.companyName, DEFAULT_BUSINESS_BASICS.companyName),
     whatDoYouSell: readSavedString(saved.whatDoYouSell, DEFAULT_BUSINESS_BASICS.whatDoYouSell),
     targetAudience: readSavedString(saved.targetAudience, DEFAULT_BUSINESS_BASICS.targetAudience),
     usp: readSavedString(saved.usp, DEFAULT_BUSINESS_BASICS.usp),
@@ -223,7 +225,11 @@ export function OnboardingPage() {
   const uploadPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setBusinessBasics(loadSavedBusinessBasics(user?.business_basics));
+    const savedBasics = loadSavedBusinessBasics(user?.business_basics);
+    const rawBasics = (user?.business_basics ?? {}) as Record<string, unknown>;
+    setBusinessBasics(savedBasics);
+    setWebsiteUrl(readSavedString(rawBasics.websiteUrl, ""));
+    setManualFaq(readSavedString(rawBasics.manualFaq, ""));
   }, [user?.business_basics]);
 
   const refreshUploadedPdfs = useCallback(async () => {
@@ -644,7 +650,9 @@ export function OnboardingPage() {
     const payload: BusinessBasicsPayload = {
       ...businessBasics,
       defaultCountry: businessBasics.defaultCountry.trim().toUpperCase() || "IN",
-      defaultCurrency: businessBasics.defaultCurrency.trim().toUpperCase() || "INR"
+      defaultCurrency: businessBasics.defaultCurrency.trim().toUpperCase() || "INR",
+      websiteUrl: websiteUrl.trim(),
+      manualFaq: manualFaq.trim()
     };
 
     setError(null);
@@ -655,17 +663,7 @@ export function OnboardingPage() {
       await saveBusinessBasics(token, payload);
       await refreshUser();
 
-      if (websiteUrl) {
-        setProcessingLog((previous) => [...previous, "Reading website and generating vectors..."]);
-        await ingestWebsite(token, websiteUrl);
-      }
-
-      if (manualFaq.trim().length > 20) {
-        setProcessingLog((previous) => [...previous, "Converting FAQ into knowledge chunks..."]);
-        await ingestManual(token, manualFaq.trim());
-      }
-
-      setProcessingLog((previous) => [...previous, "Support AI knowledge is ready."]);
+      setProcessingLog((previous) => [...previous, "Business profile saved. Configure Knowledge Base from Dashboard."]);
       setStep(4);
     } catch (trainError) {
       setError((trainError as Error).message);
@@ -812,6 +810,16 @@ export function OnboardingPage() {
               <section className="train-section">
                 <h3>Business Basics</h3>
                 <div className="train-grid two-col">
+                  <label>
+                    Company name
+                    <input
+                      name="companyName"
+                      required
+                      placeholder="Example: Sheetomatic"
+                      value={businessBasics.companyName}
+                      onChange={(event) => handleBasicsChange("companyName", event.target.value)}
+                    />
+                  </label>
                   <label>
                     What do you support?
                     <input
@@ -983,86 +991,9 @@ export function OnboardingPage() {
                 </div>
               </section>
 
-              <section className="train-section">
-                <h3>Knowledge Sources</h3>
-                <div className="train-grid two-col">
-                  <label>
-                    Website URL
-                    <input
-                      name="websiteUrl"
-                      type="url"
-                      placeholder="https://yourcompany.com"
-                      value={websiteUrl}
-                      onChange={(event) => setWebsiteUrl(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Upload PDF(s)
-                    <input
-                      name="pdfFiles"
-                      type="file"
-                      accept="application/pdf"
-                      multiple
-                      onChange={(event) => {
-                        const files = Array.from(event.target.files ?? []);
-                        queuePdfUploads(files);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                    {pdfUploadItems.length > 0 && (
-                      <div className="file-chip-list">
-                        {pdfUploadItems.map((item) => (
-                          <span className="file-chip" key={item.id}>
-                            {item.name}{" "}
-                            {item.status === "uploading"
-                              ? `${item.stage || "Uploading file"} (${item.progress ?? 0}%)`
-                              : item.status === "done"
-                                ? `Done (${item.chunks ?? 0} chunks)`
-                                : item.status === "error"
-                                  ? `Failed: ${item.error || "upload error"}`
-                                  : "Queued"}
-                            <button type="button" className="chip-remove" onClick={() => removeUploadItem(item.id)}>
-                              Clear
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {uploadedPdfSources.length > 0 && (
-                      <div className="uploaded-files-list">
-                        <small className="tiny-note">Uploaded PDFs</small>
-                        {uploadedPdfSources.map((source) => (
-                          <div className="uploaded-file-row" key={`${source.source_name}-${source.last_ingested_at}`}>
-                            <span>{source.source_name || "Untitled PDF"}</span>
-                            {source.source_name ? (
-                              <button
-                                type="button"
-                                className="ghost-btn"
-                                disabled={loading}
-                                onClick={() => handleDeleteUploadedPdf(source.source_name as string)}
-                              >
-                                Delete
-                              </button>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <small className="tiny-note">
-                      Files upload immediately after selection. You can upload multiple PDFs in one go.
-                    </small>
-                  </label>
-                  <label className="full-span">
-                    Manual FAQ
-                    <textarea
-                      name="manualFaq"
-                      placeholder="Paste FAQs, policies, support scripts, and troubleshooting notes"
-                      value={manualFaq}
-                      onChange={(event) => setManualFaq(event.target.value)}
-                    />
-                  </label>
-                </div>
-              </section>
+              <p className="tiny-note">
+                Knowledge Base uploads (URL, PDF, manual text) are now managed from the Dashboard `Knowledge Base` tab.
+              </p>
 
               <button className="primary-btn" disabled={loading || uploadingFiles} type="submit">
                 {uploadingFiles ? "Uploading files..." : loading ? "Processing..." : "Train My WAgen"}

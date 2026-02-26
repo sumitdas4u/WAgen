@@ -17,6 +17,15 @@ export interface KnowledgeSource {
   last_ingested_at: string;
 }
 
+export interface KnowledgeChunkPreview {
+  id: string;
+  content_chunk: string;
+  source_type: string;
+  source_name: string | null;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
 const ZERO_VECTOR = toVectorLiteral(Array.from({ length: 1536 }, () => 0));
 
 export interface IngestChunkInput {
@@ -323,4 +332,32 @@ export async function deleteKnowledgeSource(input: {
 
     return Number(result.rows[0]?.deleted_count ?? 0);
   });
+}
+
+export async function listKnowledgeChunks(input: {
+  userId: string;
+  sourceType?: "pdf" | "website" | "manual";
+  sourceName?: string;
+  limit?: number;
+}): Promise<KnowledgeChunkPreview[]> {
+  const limit = Math.max(1, Math.min(200, input.limit ?? 80));
+  const result = await pool.query<{
+    id: string;
+    content_chunk: string;
+    source_type: string;
+    source_name: string | null;
+    metadata_json: Record<string, unknown> | null;
+    created_at: string;
+  }>(
+    `SELECT id, content_chunk, source_type, source_name, metadata_json, created_at
+     FROM knowledge_base
+     WHERE user_id = $1
+       AND ($2::text IS NULL OR source_type = $2)
+       AND ($3::text IS NULL OR source_name = $3)
+     ORDER BY created_at DESC
+     LIMIT $4`,
+    [input.userId, input.sourceType ?? null, input.sourceName ?? null, limit]
+  );
+
+  return result.rows;
 }

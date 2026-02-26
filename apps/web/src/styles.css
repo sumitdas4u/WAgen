@@ -1243,6 +1243,71 @@ textarea {
 .dashboard-shell {
   display: grid;
   gap: 0.9rem;
+  background: linear-gradient(180deg, rgba(245, 249, 252, 0.96), rgba(237, 244, 250, 0.96));
+  border: 1px solid rgba(2, 17, 38, 0.08);
+  border-radius: 20px;
+  padding: 0.9rem;
+}
+
+.dashboard-frame {
+  grid-template-columns: 240px 1fr;
+  align-items: start;
+}
+
+.dashboard-left {
+  background: #eef2f6;
+  border: 1px solid rgba(2, 17, 38, 0.1);
+  border-radius: 16px;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.8rem;
+  position: sticky;
+  top: 0.9rem;
+}
+
+.dashboard-left-brand {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.dashboard-left-brand strong {
+  font-size: 1rem;
+}
+
+.dashboard-left-brand small {
+  color: var(--ink-soft);
+}
+
+.dashboard-left-nav {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.left-nav-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 10px;
+  text-align: left;
+  font: inherit;
+  padding: 0.56rem 0.62rem;
+  cursor: pointer;
+  color: #1e2d42;
+  font-weight: 600;
+}
+
+.left-nav-btn.active {
+  background: #ffffff;
+  border-color: rgba(2, 17, 38, 0.14);
+}
+
+.dashboard-left-actions {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.dashboard-right {
+  display: grid;
+  gap: 0.9rem;
 }
 
 .dashboard-header {
@@ -1289,19 +1354,22 @@ textarea {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  border-bottom: 1px solid rgba(2, 17, 38, 0.12);
+  padding-bottom: 0.5rem;
 }
 
 .dashboard-tabbar .active-tab {
   color: #fff;
-  background: linear-gradient(120deg, #1e77b8, #3ea4cf);
+  background: #101418;
   border-color: transparent;
 }
 
 .dashboard-main {
   display: grid;
-  grid-template-columns: 280px 1fr 240px;
+  grid-template-columns: 340px 1fr;
   gap: 0.8rem;
-  min-height: 58vh;
+  height: 72vh;
+  min-height: 72vh;
 }
 
 .finance-shell {
@@ -1325,6 +1393,171 @@ textarea {
   padding: 0.9rem;
   display: grid;
   gap: 0.7rem;
+}
+
+.finance-panel h2 {
+  font-size: 1.08rem;
+}
+
+.finance-panel .train-grid .primary-btn {
+  width: fit-content;
+}
+
+.kb-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.kb-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.kb-add-wrap {
+  position: relative;
+}
+
+.kb-add-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.45rem);
+  width: 300px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(2, 17, 38, 0.18);
+  z-index: 40;
+  overflow: hidden;
+}
+
+.kb-add-menu button {
+  width: 100%;
+  border: 0;
+  background: #fff;
+  text-align: left;
+  padding: 0.7rem 0.75rem;
+  display: grid;
+  gap: 0.2rem;
+  cursor: pointer;
+}
+
+.kb-add-menu button + button {
+  border-top: 1px solid var(--line);
+}
+
+.kb-add-menu button:hover {
+  background: #f4f8fc;
+}
+
+.kb-add-menu strong {
+  font-size: 0.95rem;
+}
+
+.kb-add-menu small {
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.kb-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 10, 22, 0.4);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+  padding: 1rem;
+}
+
+.kb-modal {
+  width: min(520px, 100%);
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.kb-modal-wide {
+  width: min(960px, 100%);
+  max-height: 80vh;
+}
+
+.kb-modal h3 {
+  font-size: 1.6rem;
+}
+
+.kb-modal textarea {
+  min-height: 160px;
+}
+
+.kb-modal-file-list {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.kb-modal-file {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.kb-modal-file button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: #8a2234;
+  font-weight: 700;
+}
+
+.kb-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.kb-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.kb-row-actions .ghost-btn {
+  padding: 0.35rem 0.6rem;
+}
+
+.kb-chunk-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+  overflow: auto;
+  max-height: 58vh;
+  background: rgba(247, 251, 255, 0.8);
+}
+
+.kb-chunk-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.kb-chunk-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
 }
 
 .finance-table-wrap {
@@ -1365,7 +1598,24 @@ textarea {
   display: grid;
   gap: 0.65rem;
   align-content: start;
+  overflow: hidden;
+}
+
+.whatsapp-list {
+  grid-template-rows: auto 1fr;
+}
+
+.conversation-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.conversation-list-scroll {
   overflow: auto;
+  display: grid;
+  gap: 0.5rem;
+  padding-right: 0.2rem;
 }
 
 .conversation-list h2,
@@ -1410,6 +1660,16 @@ textarea {
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 0.7rem;
+  overflow: hidden;
+}
+
+.whatsapp-chat {
+  background: linear-gradient(180deg, rgba(247, 251, 255, 0.9), rgba(241, 248, 255, 0.9));
+}
+
+.whatsapp-chat-head {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.5rem;
 }
 
 .chat-panel header {
@@ -1432,6 +1692,7 @@ textarea {
   overflow: auto;
   display: grid;
   gap: 0.6rem;
+  min-height: 0;
 }
 
 .bubble {
@@ -1462,7 +1723,7 @@ textarea {
 }
 
 .bubble.outbound {
-  background: #d7f6ea;
+  background: #dcf8c6;
   justify-self: end;
 }
 
@@ -1589,8 +1850,13 @@ textarea {
   .steps-grid,
   .overview-grid,
   .dashboard-main,
-  .onboarding-shell {
+  .onboarding-shell,
+  .dashboard-frame {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-left {
+    position: static;
   }
 
   .landing-auth-card {

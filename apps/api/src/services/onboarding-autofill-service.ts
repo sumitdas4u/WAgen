@@ -3,6 +3,7 @@ import { openAIService } from "./openai-service.js";
 
 export interface AutofillDraft {
   businessBasics: {
+    companyName: string;
     whatDoYouSell: string;
     targetAudience: string;
     usp: string;
@@ -28,6 +29,7 @@ export interface AutofillDraft {
 
 const DEFAULT_DRAFT: AutofillDraft = {
   businessBasics: {
+    companyName: "",
     whatDoYouSell: "",
     targetAudience: "",
     usp: "",
@@ -84,6 +86,7 @@ function mergeDraft(raw: Record<string, unknown>): AutofillDraft {
   const basics = (raw.businessBasics ?? {}) as Record<string, unknown>;
   return {
     businessBasics: {
+      companyName: readString(basics.companyName, DEFAULT_DRAFT.businessBasics.companyName),
       whatDoYouSell: readString(basics.whatDoYouSell, DEFAULT_DRAFT.businessBasics.whatDoYouSell),
       targetAudience: readString(basics.targetAudience, DEFAULT_DRAFT.businessBasics.targetAudience),
       usp: readString(basics.usp, DEFAULT_DRAFT.businessBasics.usp),
@@ -127,6 +130,7 @@ function fallbackDraft(description: string): AutofillDraft {
     ...DEFAULT_DRAFT,
     businessBasics: {
       ...DEFAULT_DRAFT.businessBasics,
+      companyName: "Support Team",
       whatDoYouSell: snippet || "Customer support services",
       targetAudience: inferredAudience,
       usp: snippet || "Fast and reliable support",
@@ -152,7 +156,7 @@ export async function generateOnboardingDraft(description: string): Promise<Auto
     "From this business + agent description, produce JSON with keys:",
     "{",
     '  "businessBasics": {',
-    '    "whatDoYouSell": "", "targetAudience": "", "usp": "", "objections": "",',
+    '    "companyName": "", "whatDoYouSell": "", "targetAudience": "", "usp": "", "objections": "",',
     '    "defaultCountry": "IN", "defaultCurrency": "INR",',
     '    "greetingScript": "", "availabilityScript": "", "objectionHandlingScript": "",',
     '    "bookingScript": "", "feedbackCollectionScript": "", "complaintHandlingScript": "",',
@@ -173,4 +177,3 @@ export async function generateOnboardingDraft(description: string): Promise<Auto
     return fallbackDraft(description);
   }
 }
-
