@@ -20,6 +20,7 @@ import { getMessageText, randomInt, wait } from "../utils/index.js";
 import {
   getConversationById,
   getConversationHistoryForPrompt,
+  reconcileConversationPhone,
   trackInboundMessage,
   trackOutboundMessage
 } from "./conversation-service.js";
@@ -49,49 +50,139 @@ function isDirectChatJid(jid: string): boolean {
   return jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid");
 }
 
-function normalizePhoneDigits(raw: string): string | null {
+type InboundMessageIdentifiers = {
+  senderPn?: string;
+  senderLid?: string;
+  participant?: string;
+  remoteJid?: string;
+  participantPn?: string;
+  participantLid?: string;
+  remoteJidAlt?: string;
+};
+
+function readInboundIdentifiers(message: WAMessage): {
+  keyFields: InboundMessageIdentifiers;
+  messageFields: InboundMessageIdentifiers;
+} {
+  const keyFields = (message.key as unknown as InboundMessageIdentifiers) ?? {};
+  const messageFields = (message as unknown as InboundMessageIdentifiers) ?? {};
+  return { keyFields, messageFields };
+}
+
+function normalizePhoneDigits(raw: string, maxDigits = 15): string | null {
   const digits = raw.replace(/\D/g, "");
-  if (!digits) {
+  if (!digits || digits.length < 8 || digits.length > maxDigits) {
     return null;
   }
   return digits;
 }
 
-function extractPhoneFromJidCandidate(candidate: unknown): string | null {
+function extractPhoneFromJidCandidate(candidate: unknown, maxDigits = 15): string | null {
   if (typeof candidate !== "string" || !candidate.trim()) {
     return null;
   }
 
   const value = candidate.trim();
   if (value.includes("@")) {
-    const jidUser = value.split("@")[0]?.split(":")[0] ?? "";
-    return normalizePhoneDigits(jidUser);
+    const [jidUserRaw, jidServerRaw] = value.split("@");
+    const jidUser = jidUserRaw?.split(":")[0] ?? "";
+    const jidServer = (jidServerRaw ?? "").toLowerCase();
+    if (jidServer === "lid") {
+      return null;
+    }
+    return normalizePhoneDigits(jidUser, maxDigits);
   }
 
-  return normalizePhoneDigits(value);
+  return normalizePhoneDigits(value, maxDigits);
 }
 
-function resolveInboundPhoneNumber(message: WAMessage): string | null {
-  const keyAny = message.key as unknown as {
-    remoteJid?: string;
-    participantPn?: string;
-    remoteJidAlt?: string;
-  };
-  const messageAny = message as unknown as {
-    participantPn?: string;
-    verifiedBizName?: string;
-    pushName?: string;
-  };
+function getAliasLookupKeys(candidate: unknown): string[] {
+  if (typeof candidate !== "string") {
+    return [];
+  }
 
-  const candidates: unknown[] = [
-    keyAny.participantPn,
-    messageAny.participantPn,
-    keyAny.remoteJidAlt,
-    keyAny.remoteJid
+  const value = candidate.trim().toLowerCase();
+  if (!value) {
+    return [];
+  }
+
+  const keys = new Set<string>([value]);
+  if (value.includes("@")) {
+    const [jidUserRaw] = value.split("@");
+    const jidUser = jidUserRaw?.split(":")[0] ?? "";
+    if (jidUser) {
+      keys.add(jidUser);
+    }
+  }
+
+  return [...keys];
+}
+
+function resolveInboundPhoneNumber(
+  message: WAMessage,
+  lookupAliasPhone?: (candidate: unknown) => string | null
+): string | null {
+  const { keyFields, messageFields } = readInboundIdentifiers(message);
+
+  const explicitPnCandidates: unknown[] = [
+    keyFields.senderPn,
+    messageFields.senderPn,
+    keyFields.participantPn,
+    messageFields.participantPn
   ];
 
-  for (const candidate of candidates) {
-    const phone = extractPhoneFromJidCandidate(candidate);
+  for (const candidate of explicitPnCandidates) {
+    const phone = extractPhoneFromJidCandidate(candidate, 15);
+    if (phone) {
+      return phone;
+    }
+  }
+
+  const aliasCandidates: unknown[] = [
+    keyFields.senderLid,
+    messageFields.senderLid,
+    keyFields.participantLid,
+    messageFields.participantLid,
+    keyFields.participant,
+    messageFields.participant,
+    keyFields.remoteJidAlt,
+    keyFields.remoteJid
+  ];
+
+  if (lookupAliasPhone) {
+    for (const candidate of aliasCandidates) {
+      const mapped = lookupAliasPhone(candidate);
+      if (mapped) {
+        return mapped;
+      }
+    }
+  }
+
+  const conservativeFallbackCandidates: unknown[] = [
+    keyFields.remoteJidAlt,
+    keyFields.remoteJid,
+    keyFields.participant,
+    messageFields.participant
+  ];
+
+  for (const candidate of conservativeFallbackCandidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+
+    const value = candidate.trim();
+    if (!value || !value.includes("@")) {
+      continue;
+    }
+
+    const [jidUserRaw, jidServerRaw] = value.split("@");
+    const jidServer = (jidServerRaw ?? "").toLowerCase();
+    if (jidServer !== "s.whatsapp.net" && jidServer !== "c.us") {
+      continue;
+    }
+
+    const jidUser = jidUserRaw?.split(":")[0] ?? "";
+    const phone = normalizePhoneDigits(jidUser, 15);
     if (phone) {
       return phone;
     }
@@ -145,6 +236,7 @@ class WhatsAppSessionManager {
   private readonly activeConnectAttempts = new Set<string>();
   private readonly reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly reconnectAttempts = new Map<string, number>();
+  private readonly phoneAliasMapByUser = new Map<string, Map<string, string>>();
   private readonly messageQueues = new Map<string, QueuedInboundMessage[]>();
   private readonly processingUsers = new Set<string>();
   private connectionSeq = 0;
@@ -191,6 +283,14 @@ class WhatsAppSessionManager {
       });
 
       socket.ev.on("creds.update", saveCreds);
+      (socket.ev as unknown as { on: (event: string, listener: (payload: unknown) => void) => void }).on(
+        "chats.phoneNumberShare",
+        (payload) => {
+          const update = payload as { lid?: string; jid?: string };
+          this.rememberPhoneAlias(userId, update.lid, update.jid);
+          this.rememberPhoneAlias(userId, update.jid, update.jid);
+        }
+      );
 
       socket.ev.on("connection.update", async (update: Partial<ConnectionState>) => {
         const runtime = this.sessions.get(userId);
@@ -219,6 +319,7 @@ class WhatsAppSessionManager {
               this.clearReconnectTimer(duplicateUserId);
               this.reconnectAttempts.delete(duplicateUserId);
               this.clearUserQueues(duplicateUserId);
+              this.clearPhoneAliasMap(duplicateUserId);
 
               const duplicateRuntime = this.sessions.get(duplicateUserId);
               if (duplicateRuntime) {
@@ -345,6 +446,52 @@ class WhatsAppSessionManager {
     return `${userId}::${jid}`;
   }
 
+  private getPhoneAliasMap(userId: string): Map<string, string> {
+    const existing = this.phoneAliasMapByUser.get(userId);
+    if (existing) {
+      return existing;
+    }
+    const created = new Map<string, string>();
+    this.phoneAliasMapByUser.set(userId, created);
+    return created;
+  }
+
+  private clearPhoneAliasMap(userId: string): void {
+    this.phoneAliasMapByUser.delete(userId);
+  }
+
+  private lookupPhoneAlias(userId: string, aliasCandidate: unknown): string | null {
+    const aliasMap = this.phoneAliasMapByUser.get(userId);
+    if (!aliasMap) {
+      return null;
+    }
+    const keys = getAliasLookupKeys(aliasCandidate);
+    for (const key of keys) {
+      const found = aliasMap.get(key);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private rememberPhoneAlias(userId: string, aliasCandidate: unknown, phoneCandidate: unknown): void {
+    const phone = extractPhoneFromJidCandidate(phoneCandidate, 15);
+    if (!phone) {
+      return;
+    }
+
+    const keys = getAliasLookupKeys(aliasCandidate);
+    if (keys.length === 0) {
+      return;
+    }
+
+    const aliasMap = this.getPhoneAliasMap(userId);
+    for (const key of keys) {
+      aliasMap.set(key, phone);
+    }
+  }
+
   private async resetUserSession(userId: string): Promise<void> {
     this.clearReconnectTimer(userId);
     this.reconnectAttempts.delete(userId);
@@ -360,6 +507,7 @@ class WhatsAppSessionManager {
     }
 
     this.clearUserQueues(userId);
+    this.clearPhoneAliasMap(userId);
     clearAuthStateCache(userId);
     await resetWhatsAppAuthState(userId);
     await updateWhatsAppStatus(userId, "disconnected");
@@ -604,10 +752,31 @@ class WhatsAppSessionManager {
       return;
     }
 
-    const phoneNumber = resolveInboundPhoneNumber(message);
+    const phoneNumber = resolveInboundPhoneNumber(message, (candidate) => this.lookupPhoneAlias(userId, candidate));
     if (!phoneNumber) {
       console.info(`[WA] inbound skipped user=${userId} reason=missing_phone jid=${remoteJid}`);
       return;
+    }
+
+    const { keyFields, messageFields } = readInboundIdentifiers(message);
+    const aliasCandidates: unknown[] = [
+      remoteJid,
+      keyFields.remoteJidAlt,
+      keyFields.senderLid,
+      messageFields.senderLid,
+      keyFields.participantLid,
+      messageFields.participantLid,
+      keyFields.participant,
+      messageFields.participant
+    ];
+
+    for (const aliasCandidate of aliasCandidates) {
+      this.rememberPhoneAlias(userId, aliasCandidate, phoneNumber);
+    }
+
+    const fallbackPhoneFromRemote = extractPhoneFromJidCandidate(remoteJid, 15);
+    if (fallbackPhoneFromRemote && fallbackPhoneFromRemote !== phoneNumber) {
+      await reconcileConversationPhone(userId, fallbackPhoneFromRemote, phoneNumber);
     }
 
     const senderName = resolveInboundSenderName(message);

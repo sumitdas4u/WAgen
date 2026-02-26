@@ -68,4 +68,14 @@ export async function ensureDbCompatibility(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS lead_summaries (
+      conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+      summary_text TEXT NOT NULL,
+      source_last_message_at TIMESTAMPTZ,
+      model TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 }

@@ -1,9 +1,10 @@
-import { pool } from "../db/pool.js";
+import { pool, withTransaction } from "../db/pool.js";
 import { clamp } from "../utils/index.js";
 import type { Conversation } from "../types/models.js";
 import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
+import { openAIService } from "./openai-service.js";
 
-function scoreMessage(text: string): number {
+function scoreMessageBase(text: string): number {
   const normalized = text.toLowerCase();
 
   const highIntentSignals = ["price", "pricing", "buy", "purchase", "subscribe", "book", "demo", "trial", "interested"];
@@ -27,6 +28,53 @@ function scoreMessage(text: string): number {
   }
 
   return clamp(delta, -20, 40);
+}
+
+function extractSearchTerms(text: string): string {
+  const tokens = (text.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])
+    .filter((token) => !["the", "and", "for", "with", "from", "that", "have", "this", "what", "when", "where"].includes(token));
+  const unique = Array.from(new Set(tokens)).slice(0, 14);
+  return unique.join(" ");
+}
+
+async function scoreKnowledgeIntent(userId: string, text: string): Promise<number> {
+  const terms = extractSearchTerms(text);
+  if (!terms) {
+    return 0;
+  }
+
+  const result = await pool.query<{ hits: string }>(
+    `SELECT COUNT(*)::text AS hits
+     FROM knowledge_base
+     WHERE user_id = $1
+       AND to_tsvector('simple', content_chunk) @@ plainto_tsquery('simple', $2)`,
+    [userId, terms]
+  );
+
+  const hits = Number(result.rows[0]?.hits ?? 0);
+  if (hits >= 5) {
+    return 14;
+  }
+  if (hits >= 2) {
+    return 8;
+  }
+  if (hits >= 1) {
+    return 4;
+  }
+  return 0;
+}
+
+function scoreFromRetrievalChunks(retrievalChunks: number | null | undefined): number {
+  if (!retrievalChunks || retrievalChunks <= 0) {
+    return 0;
+  }
+  if (retrievalChunks >= 4) {
+    return 5;
+  }
+  if (retrievalChunks >= 2) {
+    return 3;
+  }
+  return 2;
 }
 
 function stageFromScore(score: number): string {
@@ -59,6 +107,110 @@ export async function getOrCreateConversation(userId: string, phoneNumber: strin
   return created.rows[0];
 }
 
+export async function reconcileConversationPhone(
+  userId: string,
+  previousPhoneNumber: string,
+  canonicalPhoneNumber: string
+): Promise<void> {
+  const previous = previousPhoneNumber.replace(/\D/g, "");
+  const canonical = canonicalPhoneNumber.replace(/\D/g, "");
+
+  if (!previous || !canonical || previous === canonical) {
+    return;
+  }
+
+  await withTransaction(async (client) => {
+    const sourceResult = await client.query<Conversation>(
+      `SELECT * FROM conversations
+       WHERE user_id = $1 AND phone_number = $2
+       LIMIT 1`,
+      [userId, previous]
+    );
+    const source = sourceResult.rows[0];
+    if (!source) {
+      return;
+    }
+
+    const targetResult = await client.query<Conversation>(
+      `SELECT * FROM conversations
+       WHERE user_id = $1 AND phone_number = $2
+       LIMIT 1`,
+      [userId, canonical]
+    );
+    const target = targetResult.rows[0];
+
+    if (!target) {
+      await client.query(
+        `UPDATE conversations
+         SET phone_number = $1
+         WHERE id = $2`,
+        [canonical, source.id]
+      );
+      return;
+    }
+
+    if (target.id === source.id) {
+      return;
+    }
+
+    await client.query(
+      `UPDATE conversation_messages
+       SET conversation_id = $1
+       WHERE conversation_id = $2`,
+      [target.id, source.id]
+    );
+
+    await client.query(
+      `INSERT INTO lead_summaries (conversation_id, summary_text, source_last_message_at, model, updated_at)
+       SELECT $1, ls.summary_text, ls.source_last_message_at, ls.model, ls.updated_at
+       FROM lead_summaries ls
+       WHERE ls.conversation_id = $2
+       ON CONFLICT (conversation_id) DO UPDATE SET
+         summary_text = CASE
+           WHEN lead_summaries.updated_at >= EXCLUDED.updated_at THEN lead_summaries.summary_text
+           ELSE EXCLUDED.summary_text
+         END,
+         source_last_message_at = GREATEST(
+           lead_summaries.source_last_message_at,
+           EXCLUDED.source_last_message_at
+         ),
+         model = CASE
+           WHEN lead_summaries.updated_at >= EXCLUDED.updated_at THEN lead_summaries.model
+           ELSE EXCLUDED.model
+         END,
+         updated_at = GREATEST(lead_summaries.updated_at, EXCLUDED.updated_at)`,
+      [target.id, source.id]
+    );
+
+    const targetLastMessageAt = target.last_message_at ? new Date(target.last_message_at).getTime() : 0;
+    const sourceLastMessageAt = source.last_message_at ? new Date(source.last_message_at).getTime() : 0;
+    const useSourceLastMessage = sourceLastMessageAt > targetLastMessageAt;
+    const mergedLastMessage = useSourceLastMessage ? source.last_message : target.last_message;
+    const mergedLastMessageAt = useSourceLastMessage ? source.last_message_at : target.last_message_at;
+
+    const targetLastAiReplyAt = target.last_ai_reply_at ? new Date(target.last_ai_reply_at).getTime() : 0;
+    const sourceLastAiReplyAt = source.last_ai_reply_at ? new Date(source.last_ai_reply_at).getTime() : 0;
+    const mergedLastAiReplyAt =
+      sourceLastAiReplyAt > targetLastAiReplyAt ? source.last_ai_reply_at : target.last_ai_reply_at;
+
+    const mergedScore = Math.max(target.score, source.score);
+
+    await client.query(
+      `UPDATE conversations
+       SET score = $1,
+           stage = $2,
+           last_message = $3,
+           last_message_at = $4,
+           last_ai_reply_at = $5
+       WHERE id = $6`,
+      [mergedScore, stageFromScore(mergedScore), mergedLastMessage, mergedLastMessageAt, mergedLastAiReplyAt, target.id]
+    );
+
+    await client.query(`DELETE FROM lead_summaries WHERE conversation_id = $1`, [source.id]);
+    await client.query(`DELETE FROM conversations WHERE id = $1`, [source.id]);
+  });
+}
+
 export async function getConversationById(conversationId: string): Promise<Conversation | null> {
   const result = await pool.query<Conversation>(
     `SELECT *
@@ -78,7 +230,11 @@ export async function trackInboundMessage(
   senderName?: string
 ): Promise<Conversation> {
   const conversation = await getOrCreateConversation(userId, phoneNumber);
-  const delta = scoreMessage(message);
+  const [intentDelta, knowledgeDelta] = await Promise.all([
+    Promise.resolve(scoreMessageBase(message)),
+    scoreKnowledgeIntent(userId, message)
+  ]);
+  const delta = intentDelta + knowledgeDelta;
   const score = clamp(conversation.score + delta, 0, 100);
   const stage = stageFromScore(score);
 
@@ -136,13 +292,20 @@ export async function trackOutboundMessage(
     ]
   );
 
+  const retrievalDelta = scoreFromRetrievalChunks(usage?.retrievalChunks);
   await pool.query(
     `UPDATE conversations
      SET last_message = $1,
          last_message_at = NOW(),
-         last_ai_reply_at = NOW()
+         last_ai_reply_at = NOW(),
+         score = LEAST(100, GREATEST(0, score + $3)),
+         stage = CASE
+           WHEN LEAST(100, GREATEST(0, score + $3)) >= 75 THEN 'hot'
+           WHEN LEAST(100, GREATEST(0, score + $3)) >= 40 THEN 'warm'
+           ELSE 'cold'
+         END
      WHERE id = $2`,
-    [message, conversationId]
+    [message, conversationId, retrievalDelta]
   );
 }
 
@@ -166,6 +329,209 @@ export async function listConversations(userId: string): Promise<Conversation[]>
   );
 
   return result.rows;
+}
+
+export interface LeadConversation extends Conversation {
+  contact_name: string | null;
+  ai_summary: string;
+  summary_status: "ready" | "missing" | "stale";
+  summary_updated_at: string | null;
+}
+
+function fallbackLeadSummary(
+  conversation: { stage: string; score: number; last_message: string | null },
+  messages: Array<{ direction: "inbound" | "outbound"; message_text: string }>
+): string {
+  const latestInbound = [...messages].reverse().find((item) => item.direction === "inbound")?.message_text ?? "";
+  const latestOutbound = [...messages].reverse().find((item) => item.direction === "outbound")?.message_text ?? "";
+  const userNeed = latestInbound ? latestInbound.slice(0, 180) : conversation.last_message?.slice(0, 180) ?? "No clear intent yet.";
+  const nextStep = latestOutbound
+    ? `Continue with follow-up around: ${latestOutbound.slice(0, 120)}`
+    : "Ask one clarifying question and offer next action.";
+  return `Stage ${conversation.stage} (score ${conversation.score}). Customer asked: ${userNeed}. ${nextStep}`;
+}
+
+async function generateLeadSummary(
+  conversation: { stage: string; score: number; phone_number: string; last_message: string | null },
+  messages: Array<{ direction: "inbound" | "outbound"; message_text: string; created_at: string }>
+): Promise<{ summary: string; model: string | null }> {
+  const clipped = messages
+    .slice(-10)
+    .map((item) => `${item.direction === "inbound" ? "Customer" : "Agent"}: ${item.message_text.replace(/\s+/g, " ").trim().slice(0, 180)}`)
+    .join("\n");
+
+  if (!clipped) {
+    return {
+      summary: fallbackLeadSummary(conversation, []),
+      model: null
+    };
+  }
+
+  if (!openAIService.isConfigured()) {
+    return {
+      summary: fallbackLeadSummary(conversation, messages),
+      model: null
+    };
+  }
+
+  const systemPrompt = [
+    "You summarize customer lead conversations for CRM teams.",
+    "Return plain text only.",
+    "Keep response under 70 words.",
+    "Include: intent, objections/risk, and next best action."
+  ].join("\n");
+  const userPrompt = [
+    `Lead stage: ${conversation.stage}`,
+    `Lead score: ${conversation.score}`,
+    `Phone: ${conversation.phone_number}`,
+    "Conversation:",
+    clipped
+  ].join("\n");
+
+  try {
+    const response = await openAIService.generateReply(systemPrompt, userPrompt);
+    return { summary: response.content, model: response.model };
+  } catch {
+    return {
+      summary: fallbackLeadSummary(conversation, messages),
+      model: null
+    };
+  }
+}
+
+async function getRecentMessagesForSummary(
+  conversationId: string,
+  limit = 10
+): Promise<Array<{ direction: "inbound" | "outbound"; message_text: string; created_at: string }>> {
+  const result = await pool.query<{
+    direction: "inbound" | "outbound";
+    message_text: string;
+    created_at: string;
+  }>(
+    `SELECT direction, message_text, created_at
+     FROM conversation_messages
+     WHERE conversation_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [conversationId, limit]
+  );
+
+  return result.rows.reverse();
+}
+
+async function upsertLeadSummary(
+  conversationId: string,
+  summary: string,
+  sourceLastMessageAt: string | null,
+  model: string | null
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO lead_summaries (conversation_id, summary_text, source_last_message_at, model, updated_at)
+     VALUES ($1, $2, $3::timestamptz, $4, NOW())
+     ON CONFLICT (conversation_id)
+     DO UPDATE SET
+       summary_text = EXCLUDED.summary_text,
+       source_last_message_at = EXCLUDED.source_last_message_at,
+       model = EXCLUDED.model,
+       updated_at = NOW()`,
+    [conversationId, summary, sourceLastMessageAt, model]
+  );
+}
+
+type LeadSummaryRow = Conversation & {
+  contact_name: string | null;
+  ai_summary: string | null;
+  summary_source_last_message_at: string | null;
+  summary_updated_at: string | null;
+};
+
+function getLeadSummaryStatus(row: LeadSummaryRow): "ready" | "missing" | "stale" {
+  const hasSummary = typeof row.ai_summary === "string" && row.ai_summary.trim().length > 0;
+  if (!hasSummary) {
+    return "missing";
+  }
+
+  const lastMessageAt = row.last_message_at ? new Date(row.last_message_at).getTime() : 0;
+  const summaryForMessageAt = row.summary_source_last_message_at
+    ? new Date(row.summary_source_last_message_at).getTime()
+    : 0;
+  if (summaryForMessageAt < lastMessageAt) {
+    return "stale";
+  }
+
+  return "ready";
+}
+
+async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadSummaryRow[]> {
+  return pool.query<LeadSummaryRow>(
+    `SELECT
+       c.*,
+       (
+         SELECT cm.sender_name
+         FROM conversation_messages cm
+         WHERE cm.conversation_id = c.id
+           AND cm.direction = 'inbound'
+           AND cm.sender_name IS NOT NULL
+         ORDER BY cm.created_at DESC
+         LIMIT 1
+       ) AS contact_name,
+       ls.summary_text AS ai_summary,
+       ls.source_last_message_at::text AS summary_source_last_message_at,
+       ls.updated_at::text AS summary_updated_at
+     FROM conversations c
+     LEFT JOIN lead_summaries ls ON ls.conversation_id = c.id
+     WHERE c.user_id = $1
+     ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  ).then((result) => result.rows);
+}
+
+export async function listLeadsWithSummary(userId: string, limit = 250): Promise<LeadConversation[]> {
+  const clampedLimit = Math.max(1, Math.min(500, limit));
+  const rows = await listLeadSummaryRows(userId, clampedLimit);
+  return rows.map((row) => ({
+    ...row,
+    contact_name: row.contact_name,
+    ai_summary: row.ai_summary?.trim() || "",
+    summary_status: getLeadSummaryStatus(row),
+    summary_updated_at: row.summary_updated_at
+  }));
+}
+
+export async function summarizeLeadConversations(
+  userId: string,
+  options?: { limit?: number; forceAll?: boolean }
+): Promise<{ processed: number; updated: number; skipped: number; failed: number }> {
+  const clampedLimit = Math.max(1, Math.min(500, options?.limit ?? 250));
+  const rows = await listLeadSummaryRows(userId, clampedLimit);
+
+  let processed = 0;
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    const status = getLeadSummaryStatus(row);
+    const shouldProcess = options?.forceAll ? true : status !== "ready";
+    if (!shouldProcess) {
+      skipped += 1;
+      continue;
+    }
+
+    processed += 1;
+    try {
+      const history = await getRecentMessagesForSummary(row.id, 10);
+      const generated = await generateLeadSummary(row, history);
+      const summary = generated.summary.trim() || fallbackLeadSummary(row, history);
+      await upsertLeadSummary(row.id, summary, row.last_message_at, generated.model);
+      updated += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return { processed, updated, skipped, failed };
 }
 
 export interface ConversationMessage {

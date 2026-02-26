@@ -1,9 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
 import { useAuth } from "../lib/auth-context";
 import {
   connectWhatsApp,
   deleteKnowledgeSource,
+  fetchLeadConversations,
   fetchConversationMessages,
   fetchConversations,
   fetchDashboardOverview,
@@ -18,10 +20,12 @@ import {
   setAgentActive,
   setConversationPaused,
   setManualTakeover,
+  summarizeLeadConversations,
   type BusinessBasicsPayload,
   type Conversation,
   type ConversationMessage,
   type DashboardOverviewResponse,
+  type LeadConversation,
   type KnowledgeIngestJob,
   type KnowledgeChunkPreview,
   type KnowledgeSource
@@ -120,7 +124,13 @@ export function DashboardPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [activeTab, setActiveTab] = useState<"knowledge" | "bot_settings" | "conversations">("knowledge");
+  const [activeTab, setActiveTab] = useState<"knowledge" | "bot_settings" | "conversations" | "leads">("knowledge");
+  const [leadStageFilter, setLeadStageFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
+  const [leadRows, setLeadRows] = useState<LeadConversation[]>([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [summarizingLeads, setSummarizingLeads] = useState(false);
+  const [expandedLeadSummaries, setExpandedLeadSummaries] = useState<Record<string, boolean>>({});
+  const [expandedLeadMessages, setExpandedLeadMessages] = useState<Record<string, boolean>>({});
   const [businessBasics, setBusinessBasics] = useState<BusinessBasicsPayload>(DEFAULT_BUSINESS_BASICS);
   const [personality, setPersonality] = useState<(typeof PERSONALITIES)[number]["key"]>("friendly_warm");
   const [customPrompt, setCustomPrompt] = useState("");
@@ -161,17 +171,62 @@ export function DashboardPage() {
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId]
   );
+  const leads = useMemo(() => {
+    const sorted = [...leadRows].sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+      const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+      return bTime - aTime;
+    });
+    if (leadStageFilter === "all") {
+      return sorted;
+    }
+    return sorted.filter((lead) => lead.stage === leadStageFilter);
+  }, [leadRows, leadStageFilter]);
 
   const formatPhone = useCallback((value: string | null | undefined) => {
     if (!value) {
       return "Unknown";
     }
     const digits = value.replace(/\D/g, "");
-    if (!digits) {
+    if (!digits || digits.length < 8 || digits.length > 15) {
       return value;
     }
     return `+${digits}`;
   }, []);
+
+  const formatDateTime = useCallback((value: string | null | undefined) => {
+    if (!value) {
+      return "-";
+    }
+    return new Date(value).toLocaleString();
+  }, []);
+
+  const getSummaryStatusLabel = (status: LeadConversation["summary_status"]) => {
+    if (status === "ready") {
+      return "Ready";
+    }
+    if (status === "stale") {
+      return "Outdated";
+    }
+    return "Missing";
+  };
+
+  const toggleLeadSummary = (leadId: string) => {
+    setExpandedLeadSummaries((current) => ({
+      ...current,
+      [leadId]: !current[leadId]
+    }));
+  };
+
+  const toggleLeadMessage = (leadId: string) => {
+    setExpandedLeadMessages((current) => ({
+      ...current,
+      [leadId]: !current[leadId]
+    }));
+  };
 
   useEffect(() => {
     const savedBasics = loadSavedBusinessBasics(user?.business_basics);
@@ -213,12 +268,34 @@ export function DashboardPage() {
     setSelectedConversationId((current) => current ?? conversationsResponse.conversations[0]?.id ?? null);
   }, [token]);
 
+  const loadLeads = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+    setLeadsLoading(true);
+    try {
+      const response = await fetchLeadConversations(token, { limit: 300 });
+      setLeadRows(response.leads);
+    } finally {
+      setLeadsLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     void loadData().catch((loadError) => {
       setError((loadError as Error).message);
     });
     void refreshKnowledge();
   }, [loadData, refreshKnowledge]);
+
+  useEffect(() => {
+    if (activeTab !== "leads") {
+      return;
+    }
+    void loadLeads().catch((loadError) => {
+      setError((loadError as Error).message);
+    });
+  }, [activeTab, loadLeads]);
 
   useEffect(() => {
     if (!token || !selectedConversationId) {
@@ -247,6 +324,16 @@ export function DashboardPage() {
 
     return () => clearInterval(pollTimer);
   }, [loadData, selectedConversationId, token]);
+
+  useEffect(() => {
+    if (!token || activeTab !== "leads") {
+      return;
+    }
+    const timer = setInterval(() => {
+      void loadLeads().catch(() => undefined);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [activeTab, loadLeads, token]);
 
   useRealtime(
     token,
@@ -353,6 +440,63 @@ export function DashboardPage() {
       setError((pauseError as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleExportLeads = () => {
+    if (leads.length === 0) {
+      setInfo("No leads available to export.");
+      return;
+    }
+
+    const rows = leads.map((lead) => ({
+      Name: lead.contact_name || "",
+      Phone: formatPhone(lead.phone_number),
+      Stage: lead.stage,
+      Score: lead.score,
+      "AI Summary": lead.ai_summary || "",
+      "Last Message": lead.last_message || "",
+      "Last Activity": lead.last_message_at ? new Date(lead.last_message_at).toLocaleString() : ""
+    }));
+
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Leads");
+    const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([fileData], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    anchor.href = url;
+    anchor.download = `leads-summary-${stamp}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setInfo("Leads exported.");
+  };
+
+  const handleSummarizeLeads = async () => {
+    if (!token) {
+      return;
+    }
+
+    setSummarizingLeads(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const response = await summarizeLeadConversations(token, { limit: 300 });
+      await loadLeads();
+      setInfo(
+        `Lead summaries updated: ${response.updated}. Skipped: ${response.skipped}.` +
+          (response.failed > 0 ? ` Failed: ${response.failed}.` : "")
+      );
+    } catch (summarizeError) {
+      setError((summarizeError as Error).message);
+    } finally {
+      setSummarizingLeads(false);
     }
   };
 
@@ -645,6 +789,9 @@ export function DashboardPage() {
           <button className={activeTab === "conversations" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("conversations")}>
             Chats
           </button>
+          <button className={activeTab === "leads" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("leads")}>
+            Leads
+          </button>
         </nav>
         <div className="dashboard-left-actions">
           <button className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>Scan QR</button>
@@ -662,7 +809,7 @@ export function DashboardPage() {
 
       <section className="dashboard-right">
       <header className="dashboard-header">
-        <h1>{activeTab === "knowledge" ? "Knowledge Base" : activeTab === "bot_settings" ? "Bot Settings" : "Chats"} <small className="tiny-note">v2</small></h1>
+        <h1>{activeTab === "knowledge" ? "Knowledge Base" : activeTab === "bot_settings" ? "Bot Settings" : activeTab === "leads" ? "Leads" : "Chats"} <small className="tiny-note">v2</small></h1>
         <div className="header-actions">
           <button className="ghost-btn" disabled={busy} onClick={handleReconnectWhatsApp}>Reconnect WhatsApp</button>
           <button className="ghost-btn" disabled={busy} onClick={handlePauseAgent}>
@@ -1007,6 +1154,140 @@ export function DashboardPage() {
                 Save Bot Settings
               </button>
             </form>
+          </article>
+        </section>
+      )}
+
+      {activeTab === "leads" && (
+        <section className="finance-shell">
+          <article className="finance-panel">
+            <div className="kb-toolbar">
+              <h2>All Leads</h2>
+              <div className="header-actions">
+                <button
+                  className="primary-btn"
+                  type="button"
+                  onClick={() => void handleSummarizeLeads()}
+                  disabled={summarizingLeads || leadsLoading}
+                >
+                  {summarizingLeads ? "Summarizing..." : "Summarize All"}
+                </button>
+                <button className="ghost-btn" type="button" onClick={() => void loadLeads()} disabled={leadsLoading}>
+                  {leadsLoading ? "Refreshing..." : "Refresh"}
+                </button>
+                <button className="ghost-btn" type="button" onClick={handleExportLeads}>
+                  Export Excel
+                </button>
+                <select value={leadStageFilter} onChange={(event) => setLeadStageFilter(event.target.value as "all" | "hot" | "warm" | "cold")}>
+                  <option value="all">All stages</option>
+                  <option value="hot">Hot</option>
+                  <option value="warm">Warm</option>
+                  <option value="cold">Cold</option>
+                </select>
+              </div>
+            </div>
+            {leadsLoading && <p className="tiny-note">Refreshing leads...</p>}
+            {summarizingLeads && (
+              <p className="tiny-note">Generating summaries for all missing or outdated leads.</p>
+            )}
+            {leads.length === 0 ? (
+              <p className="empty-note">No leads found for the selected filter.</p>
+            ) : (
+              <div className="finance-table-wrap leads-table-wrap">
+                <table className="finance-table leads-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Phone</th>
+                      <th>Stage</th>
+                      <th>Score</th>
+                      <th>AI Summary</th>
+                      <th>Last Message</th>
+                      <th>Last Activity</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leads.map((lead) => {
+                      const summaryText =
+                        lead.ai_summary ||
+                        (lead.summary_status === "missing"
+                          ? "No summary yet. Click Summarize All."
+                          : "Summary is outdated. Click Summarize All.");
+                      const lastMessageText = lead.last_message || "-";
+                      const summaryExpanded = Boolean(expandedLeadSummaries[lead.id]);
+                      const messageExpanded = Boolean(expandedLeadMessages[lead.id]);
+                      const showSummaryToggle = summaryText.length > 140;
+                      const showMessageToggle = lead.last_message ? lead.last_message.length > 90 : false;
+
+                      return (
+                        <tr key={lead.id}>
+                          <td className="lead-name">{lead.contact_name || "Unknown"}</td>
+                          <td className="lead-phone">{formatPhone(lead.phone_number)}</td>
+                          <td>
+                            <span className={`lead-stage ${lead.stage}`}>{lead.stage}</span>
+                          </td>
+                          <td className="lead-score">{lead.score}</td>
+                          <td className="lead-summary-cell">
+                            <span className={`summary-status ${lead.summary_status}`}>
+                              {getSummaryStatusLabel(lead.summary_status)}
+                            </span>
+                            <p
+                              className={summaryExpanded ? "lead-summary-text expanded" : "lead-summary-text"}
+                              title={summaryText}
+                            >
+                              {summaryText}
+                            </p>
+                            {showSummaryToggle && (
+                              <button
+                                type="button"
+                                className="lead-expand-btn"
+                                onClick={() => toggleLeadSummary(lead.id)}
+                              >
+                                {summaryExpanded ? "Less" : "More"}
+                              </button>
+                            )}
+                            <small className="lead-summary-time">
+                              Updated: {formatDateTime(lead.summary_updated_at)}
+                            </small>
+                          </td>
+                          <td className="lead-last-message">
+                            <p
+                              className={messageExpanded ? "lead-last-message-text expanded" : "lead-last-message-text"}
+                              title={lastMessageText}
+                            >
+                              {lastMessageText}
+                            </p>
+                            {showMessageToggle && (
+                              <button
+                                type="button"
+                                className="lead-expand-btn"
+                                onClick={() => toggleLeadMessage(lead.id)}
+                              >
+                                {messageExpanded ? "Less" : "More"}
+                              </button>
+                            )}
+                          </td>
+                          <td>{formatDateTime(lead.last_message_at)}</td>
+                          <td>
+                            <button
+                              className="ghost-btn"
+                              type="button"
+                              onClick={() => {
+                                setSelectedConversationId(lead.id);
+                                setActiveTab("conversations");
+                              }}
+                            >
+                              Open Chat
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </article>
         </section>
       )}

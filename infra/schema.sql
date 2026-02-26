@@ -68,6 +68,14 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
 
 CREATE INDEX IF NOT EXISTS conversation_messages_conversation_idx ON conversation_messages(conversation_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS lead_summaries (
+  conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+  summary_text TEXT NOT NULL,
+  source_last_message_at TIMESTAMPTZ,
+  model TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS migrations (
   id TEXT PRIMARY KEY,
   executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

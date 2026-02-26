@@ -462,6 +462,44 @@ export function fetchConversations(token: string) {
   return apiRequest<{ conversations: Conversation[] }>("/api/conversations", { token });
 }
 
+export interface LeadConversation extends Conversation {
+  contact_name: string | null;
+  ai_summary: string;
+  summary_status: "ready" | "missing" | "stale";
+  summary_updated_at: string | null;
+}
+
+export function fetchLeadConversations(token: string, options?: { limit?: number }) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/conversations/leads?${query}` : "/api/conversations/leads";
+  return apiRequest<{ leads: LeadConversation[] }>(path, { token, timeoutMs: 120_000 });
+}
+
+export function summarizeLeadConversations(
+  token: string,
+  options?: { limit?: number; forceAll?: boolean }
+) {
+  return apiRequest<{
+    ok: true;
+    processed: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  }>("/api/conversations/leads/summarize", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      limit: options?.limit,
+      forceAll: options?.forceAll
+    }),
+    timeoutMs: 120_000
+  });
+}
+
 export interface ConversationMessage {
   id: string;
   direction: "inbound" | "outbound";

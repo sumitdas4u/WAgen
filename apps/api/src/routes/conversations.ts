@@ -2,8 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
 import {
+  listLeadsWithSummary,
   listConversationMessages,
   listConversations,
+  summarizeLeadConversations,
   setConversationAIPaused,
   setManualTakeover
 } from "../services/conversation-service.js";
@@ -13,6 +15,15 @@ const ToggleSchema = z.object({
   paused: z.boolean().optional()
 });
 
+const LeadsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional()
+});
+
+const LeadsSummarizeBodySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  forceAll: z.boolean().optional()
+});
+
 export async function conversationRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/api/conversations",
@@ -20,6 +31,36 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     async (request) => {
       const conversations = await listConversations(request.authUser.userId);
       return { conversations };
+    }
+  );
+
+  fastify.get(
+    "/api/conversations/leads",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = LeadsQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid leads query" });
+      }
+      const leads = await listLeadsWithSummary(request.authUser.userId, parsed.data.limit);
+      return { leads };
+    }
+  );
+
+  fastify.post(
+    "/api/conversations/leads/summarize",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = LeadsSummarizeBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid summarize payload" });
+      }
+
+      const result = await summarizeLeadConversations(request.authUser.userId, {
+        limit: parsed.data.limit,
+        forceAll: parsed.data.forceAll
+      });
+      return { ok: true, ...result };
     }
   );
 
