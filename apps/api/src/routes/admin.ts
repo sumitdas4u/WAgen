@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import { getAdminOverview, listAdminUserUsage } from "../services/admin-service.js";
+import { getUsageAnalytics } from "../services/conversation-service.js";
 import {
   getDefaultChatModel,
   getEffectiveChatModel,
@@ -22,6 +23,15 @@ const SetModelSchema = z.object({
 
 const UsersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional()
+});
+
+const UserUsageParamsSchema = z.object({
+  userId: z.string().uuid()
+});
+
+const UserUsageQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(120).optional(),
+  limit: z.coerce.number().int().min(20).max(500).optional()
 });
 
 export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
@@ -65,6 +75,29 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     const users = await listAdminUserUsage(parsed.data.limit);
     return { users };
   });
+
+  fastify.get(
+    "/api/admin/users/:userId/usage",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const paramsParsed = UserUsageParamsSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return reply.status(400).send({ error: "Invalid user usage params" });
+      }
+
+      const queryParsed = UserUsageQuerySchema.safeParse(request.query);
+      if (!queryParsed.success) {
+        return reply.status(400).send({ error: "Invalid user usage query" });
+      }
+
+      const usage = await getUsageAnalytics(paramsParsed.data.userId, {
+        days: queryParsed.data.days,
+        limit: queryParsed.data.limit
+      });
+
+      return { usage };
+    }
+  );
 
   fastify.get("/api/admin/model", { preHandler: [fastify.requireSuperAdmin] }, async () => {
     return {

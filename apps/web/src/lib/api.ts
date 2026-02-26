@@ -127,6 +127,23 @@ export function fetchAdminUsers(token: string, options?: { limit?: number }) {
   return apiRequest<{ users: AdminUserUsage[] }>(path, { token });
 }
 
+export function fetchAdminUserUsage(
+  token: string,
+  userId: string,
+  options?: { days?: number; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.days === "number") {
+    params.set("days", String(options.days));
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/admin/users/${userId}/usage?${query}` : `/api/admin/users/${userId}/usage`;
+  return apiRequest<UsageAnalyticsResponse>(path, { token });
+}
+
 export function fetchAdminModel(token: string) {
   return apiRequest<{
     currentModel: string;

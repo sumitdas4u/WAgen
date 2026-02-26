@@ -1,40 +1,7 @@
 import { pool } from "../db/pool.js";
 import { clamp } from "../utils/index.js";
 import type { Conversation } from "../types/models.js";
-import { env } from "../config/env.js";
-
-interface ModelPricing {
-  inputPerMillion: number;
-  outputPerMillion: number;
-}
-
-const MODEL_PRICING_USD: Record<string, ModelPricing> = {
-  "gpt-4o-mini": { inputPerMillion: 0.15, outputPerMillion: 0.6 },
-  "gpt-4.1-mini": { inputPerMillion: 0.4, outputPerMillion: 1.6 },
-  "gpt-4.1-nano": { inputPerMillion: 0.1, outputPerMillion: 0.4 },
-  "gpt-4o": { inputPerMillion: 2.5, outputPerMillion: 10 },
-  "gpt-4-turbo": { inputPerMillion: 10, outputPerMillion: 30 }
-};
-
-function normalizeModelName(model: string | null | undefined): string {
-  return (model || env.OPENAI_CHAT_MODEL || "unknown").trim().toLowerCase();
-}
-
-function resolvePricing(model: string | null | undefined): ModelPricing {
-  const normalized = normalizeModelName(model);
-  return MODEL_PRICING_USD[normalized] ?? MODEL_PRICING_USD["gpt-4o-mini"];
-}
-
-function estimateUsdCost(
-  model: string | null | undefined,
-  promptTokens: number,
-  completionTokens: number
-): number {
-  const pricing = resolvePricing(model);
-  const inputCost = (Math.max(0, promptTokens) / 1_000_000) * pricing.inputPerMillion;
-  const outputCost = (Math.max(0, completionTokens) / 1_000_000) * pricing.outputPerMillion;
-  return inputCost + outputCost;
-}
+import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
 
 function scoreMessage(text: string): number {
   const normalized = text.toLowerCase();
@@ -400,7 +367,7 @@ export async function getUsageAnalytics(
       completion_tokens: completionTokens,
       total_tokens: totalTokens,
       estimated_cost_usd: estimateUsdCost(model, promptTokens, completionTokens),
-      estimated_cost_inr: estimateUsdCost(model, promptTokens, completionTokens) * env.USD_TO_INR,
+      estimated_cost_inr: estimateInrCost(model, promptTokens, completionTokens),
       created_at: row.created_at
     };
   });

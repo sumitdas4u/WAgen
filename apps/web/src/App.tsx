@@ -26,8 +26,11 @@ export function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/super-admin/login" element={<SuperAdminLoginPage />} />
-      <Route path="/super-admin" element={<SuperAdminPage />} />
+      <Route path="/super-admin">
+        <Route path="login" element={<SuperAdminLoginPage />} />
+        <Route index element={<SuperAdminPage />} />
+        <Route path="*" element={<Navigate to="/super-admin/login" replace />} />
+      </Route>
       <Route element={<ProtectedLayout />}>
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />

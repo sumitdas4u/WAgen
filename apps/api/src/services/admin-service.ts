@@ -1,4 +1,5 @@
 import { pool } from "../db/pool.js";
+import { estimateInrCost } from "./usage-cost-service.js";
 
 export interface AdminOverview {
   totalUsers: number;
@@ -25,7 +26,7 @@ export interface AdminUserUsage {
 }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  const [usersResult, conversationsResult, messagesResult, chunksResult, tokensResult] = await Promise.all([
+  const [usersResult, conversationsResult, messagesResult, chunksResult, usageByModelResult] = await Promise.all([
     pool.query<{ total_users: string; active_agents: string }>(
       `SELECT COUNT(*)::text AS total_users,
               COUNT(*) FILTER (WHERE ai_active = true)::text AS active_agents
@@ -40,18 +41,32 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     pool.query<{ total_chunks: string }>(
       `SELECT COUNT(*)::text AS total_chunks FROM knowledge_base`
     ),
-    pool.query<{ total_tokens: string; total_cost_inr: string }>(
-      `SELECT COALESCE(SUM(total_tokens), 0)::text AS total_tokens,
-              COALESCE(SUM(
-                CASE
-                  WHEN ai_model LIKE 'gpt-4%' THEN (COALESCE(prompt_tokens,0) / 1000.0) * 0.01 + (COALESCE(completion_tokens,0) / 1000.0) * 0.03
-                  ELSE (COALESCE(prompt_tokens,0) / 1000.0) * 0.00015 + (COALESCE(completion_tokens,0) / 1000.0) * 0.0006
-                END
-              ) * 83, 0)::text AS total_cost_inr
+    pool.query<{ ai_model: string | null; prompt_tokens: string; completion_tokens: string; total_tokens: string }>(
+      `SELECT
+         ai_model,
+         COALESCE(SUM(COALESCE(prompt_tokens, 0)), 0)::text AS prompt_tokens,
+         COALESCE(SUM(COALESCE(completion_tokens, 0)), 0)::text AS completion_tokens,
+         COALESCE(
+           SUM(COALESCE(total_tokens, COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0))),
+           0
+         )::text AS total_tokens
        FROM conversation_messages
-       WHERE direction = 'outbound'`
+       WHERE direction = 'outbound'
+       GROUP BY ai_model`
     )
   ]);
+
+  const usageTotals = usageByModelResult.rows.reduce(
+    (acc, row) => {
+      const promptTokens = Number(row.prompt_tokens ?? 0);
+      const completionTokens = Number(row.completion_tokens ?? 0);
+      const totalTokens = Number(row.total_tokens ?? 0);
+      acc.totalTokens += totalTokens;
+      acc.totalCostInr += estimateInrCost(row.ai_model, promptTokens, completionTokens);
+      return acc;
+    },
+    { totalTokens: 0, totalCostInr: 0 }
+  );
 
   return {
     totalUsers: Number(usersResult.rows[0]?.total_users ?? 0),
@@ -59,14 +74,14 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     totalConversations: Number(conversationsResult.rows[0]?.total_conversations ?? 0),
     totalMessages: Number(messagesResult.rows[0]?.total_messages ?? 0),
     totalChunks: Number(chunksResult.rows[0]?.total_chunks ?? 0),
-    totalTokens: Number(tokensResult.rows[0]?.total_tokens ?? 0),
-    totalCostInr: Number(tokensResult.rows[0]?.total_cost_inr ?? 0)
+    totalTokens: usageTotals.totalTokens,
+    totalCostInr: usageTotals.totalCostInr
   };
 }
 
 export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]> {
   const clampedLimit = Math.max(1, Math.min(500, limit));
-  const result = await pool.query<{
+  const usersResult = await pool.query<{
     user_id: string;
     name: string;
     email: string;
@@ -75,8 +90,6 @@ export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]>
     conversations: string;
     messages: string;
     chunks: string;
-    total_tokens: string;
-    cost_inr: string;
     created_at: string;
   }>(
     `SELECT
@@ -88,8 +101,6 @@ export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]>
        COALESCE(c.conversations, 0)::text AS conversations,
        COALESCE(m.messages, 0)::text AS messages,
        COALESCE(k.chunks, 0)::text AS chunks,
-       COALESCE(t.total_tokens, 0)::text AS total_tokens,
-       COALESCE(t.cost_inr, 0)::text AS cost_inr,
        u.created_at
      FROM users u
      LEFT JOIN (
@@ -108,27 +119,53 @@ export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]>
        FROM knowledge_base
        GROUP BY user_id
      ) k ON k.user_id = u.id
-     LEFT JOIN (
-       SELECT
-         c.user_id,
-         COALESCE(SUM(m.total_tokens), 0) AS total_tokens,
-         COALESCE(SUM(
-           CASE
-             WHEN m.ai_model LIKE 'gpt-4%' THEN (COALESCE(m.prompt_tokens,0) / 1000.0) * 0.01 + (COALESCE(m.completion_tokens,0) / 1000.0) * 0.03
-             ELSE (COALESCE(m.prompt_tokens,0) / 1000.0) * 0.00015 + (COALESCE(m.completion_tokens,0) / 1000.0) * 0.0006
-           END
-         ) * 83, 0) AS cost_inr
-       FROM conversation_messages m
-       JOIN conversations c ON c.id = m.conversation_id
-       WHERE m.direction = 'outbound'
-       GROUP BY c.user_id
-     ) t ON t.user_id = u.id
      ORDER BY u.created_at DESC
      LIMIT $1`,
     [clampedLimit]
   );
 
-  return result.rows.map((row) => ({
+  const userIds = usersResult.rows.map((row) => row.user_id);
+  const usageByUser = new Map<string, { totalTokens: number; costInr: number }>();
+
+  if (userIds.length > 0) {
+    const usageResult = await pool.query<{
+      user_id: string;
+      ai_model: string | null;
+      prompt_tokens: string;
+      completion_tokens: string;
+      total_tokens: string;
+    }>(
+      `SELECT
+         c.user_id::text AS user_id,
+         m.ai_model,
+         COALESCE(SUM(COALESCE(m.prompt_tokens, 0)), 0)::text AS prompt_tokens,
+         COALESCE(SUM(COALESCE(m.completion_tokens, 0)), 0)::text AS completion_tokens,
+         COALESCE(
+           SUM(COALESCE(m.total_tokens, COALESCE(m.prompt_tokens, 0) + COALESCE(m.completion_tokens, 0))),
+           0
+         )::text AS total_tokens
+       FROM conversation_messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.direction = 'outbound'
+         AND c.user_id::text = ANY($1::text[])
+       GROUP BY c.user_id, m.ai_model`,
+      [userIds]
+    );
+
+    for (const row of usageResult.rows) {
+      const promptTokens = Number(row.prompt_tokens ?? 0);
+      const completionTokens = Number(row.completion_tokens ?? 0);
+      const totalTokens = Number(row.total_tokens ?? 0);
+      const userUsage = usageByUser.get(row.user_id) ?? { totalTokens: 0, costInr: 0 };
+      userUsage.totalTokens += totalTokens;
+      userUsage.costInr += estimateInrCost(row.ai_model, promptTokens, completionTokens);
+      usageByUser.set(row.user_id, userUsage);
+    }
+  }
+
+  return usersResult.rows.map((row) => {
+    const usage = usageByUser.get(row.user_id) ?? { totalTokens: 0, costInr: 0 };
+    return {
     userId: row.user_id,
     name: row.name,
     email: row.email,
@@ -137,8 +174,9 @@ export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]>
     conversations: Number(row.conversations),
     messages: Number(row.messages),
     chunks: Number(row.chunks),
-    totalTokens: Number(row.total_tokens),
-    costInr: Number(row.cost_inr),
+    totalTokens: usage.totalTokens,
+    costInr: usage.costInr,
     createdAt: row.created_at
-  }));
+    };
+  });
 }

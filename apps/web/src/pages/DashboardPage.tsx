@@ -10,7 +10,6 @@ import {
   fetchIngestionJobs,
   fetchKnowledgeChunks,
   fetchKnowledgeSources,
-  fetchUsageAnalytics,
   ingestManual,
   ingestPdf,
   ingestWebsite,
@@ -25,8 +24,7 @@ import {
   type DashboardOverviewResponse,
   type KnowledgeIngestJob,
   type KnowledgeChunkPreview,
-  type KnowledgeSource,
-  type UsageAnalyticsResponse
+  type KnowledgeSource
 } from "../lib/api";
 import { useRealtime } from "../lib/use-realtime";
 
@@ -122,8 +120,7 @@ export function DashboardPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [usage, setUsage] = useState<UsageAnalyticsResponse["usage"] | null>(null);
-  const [activeTab, setActiveTab] = useState<"knowledge" | "bot_settings" | "conversations" | "finance">("knowledge");
+  const [activeTab, setActiveTab] = useState<"knowledge" | "bot_settings" | "conversations">("knowledge");
   const [businessBasics, setBusinessBasics] = useState<BusinessBasicsPayload>(DEFAULT_BUSINESS_BASICS);
   const [personality, setPersonality] = useState<(typeof PERSONALITIES)[number]["key"]>("friendly_warm");
   const [customPrompt, setCustomPrompt] = useState("");
@@ -165,7 +162,6 @@ export function DashboardPage() {
     [conversations, selectedConversationId]
   );
 
-  const formatInr = useCallback((value: number) => `₹${value.toFixed(4)}`, []);
   const formatPhone = useCallback((value: string | null | undefined) => {
     if (!value) {
       return "Unknown";
@@ -207,15 +203,13 @@ export function DashboardPage() {
     }
 
     setError(null);
-    const [overviewResponse, conversationsResponse, usageResponse] = await Promise.all([
+    const [overviewResponse, conversationsResponse] = await Promise.all([
       fetchDashboardOverview(token),
-      fetchConversations(token),
-      fetchUsageAnalytics(token, { days: 30, limit: 200 })
+      fetchConversations(token)
     ]);
 
     setOverview(overviewResponse);
     setConversations(conversationsResponse.conversations);
-    setUsage(usageResponse.usage);
     setSelectedConversationId((current) => current ?? conversationsResponse.conversations[0]?.id ?? null);
   }, [token]);
 
@@ -651,9 +645,6 @@ export function DashboardPage() {
           <button className={activeTab === "conversations" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("conversations")}>
             Chats
           </button>
-          <button className={activeTab === "finance" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("finance")}>
-            Finance
-          </button>
         </nav>
         <div className="dashboard-left-actions">
           <button className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>Scan QR</button>
@@ -671,7 +662,7 @@ export function DashboardPage() {
 
       <section className="dashboard-right">
       <header className="dashboard-header">
-        <h1>{activeTab === "knowledge" ? "Knowledge Base" : activeTab === "bot_settings" ? "Bot Settings" : activeTab === "conversations" ? "Chats" : "Finance Analytics"} <small className="tiny-note">v2</small></h1>
+        <h1>{activeTab === "knowledge" ? "Knowledge Base" : activeTab === "bot_settings" ? "Bot Settings" : "Chats"} <small className="tiny-note">v2</small></h1>
         <div className="header-actions">
           <button className="ghost-btn" disabled={busy} onClick={handleReconnectWhatsApp}>Reconnect WhatsApp</button>
           <button className="ghost-btn" disabled={busy} onClick={handlePauseAgent}>
@@ -1086,97 +1077,6 @@ export function DashboardPage() {
               ))}
             </div>
           </section>
-        </section>
-      )}
-
-      {activeTab === "finance" && (
-        <section className="finance-shell">
-          <div className="overview-grid finance-grid">
-            <article>
-              <h3>Total AI Messages (30d)</h3>
-              <p>{usage?.messages ?? 0}</p>
-            </article>
-            <article>
-              <h3>Total Tokens</h3>
-              <p>{usage?.total_tokens ?? 0}</p>
-            </article>
-            <article>
-              <h3>Estimated Cost (INR)</h3>
-              <p>{formatInr(usage?.estimated_cost_inr ?? 0)}</p>
-            </article>
-            <article>
-              <h3>Avg Cost / Message</h3>
-              <p>
-                {formatInr(
-                  usage && usage.messages > 0 ? usage.estimated_cost_inr / usage.messages : 0
-                )}
-              </p>
-            </article>
-          </div>
-
-          <div className="finance-panels">
-            <article className="finance-panel">
-              <h2>Cost by Model</h2>
-              {usage?.by_model.length ? (
-                <div className="finance-table-wrap">
-                  <table className="finance-table">
-                    <thead>
-                      <tr>
-                        <th>Model</th>
-                        <th>Messages</th>
-                        <th>Tokens</th>
-                        <th>Cost (INR)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usage.by_model.map((row) => (
-                        <tr key={row.ai_model}>
-                          <td>{row.ai_model}</td>
-                          <td>{row.messages}</td>
-                          <td>{row.total_tokens}</td>
-                          <td>{formatInr(row.estimated_cost_inr)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="empty-note">No model usage data yet.</p>
-              )}
-            </article>
-
-            <article className="finance-panel">
-              <h2>Recent Message Cost History</h2>
-              {usage?.recent_messages.length ? (
-                <div className="finance-table-wrap">
-                  <table className="finance-table">
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>Phone</th>
-                        <th>Model</th>
-                        <th>Tokens</th>
-                        <th>Cost (INR)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usage.recent_messages.slice(0, 60).map((row) => (
-                        <tr key={row.message_id}>
-                          <td>{new Date(row.created_at).toLocaleString()}</td>
-                          <td>{row.conversation_phone}</td>
-                          <td>{row.ai_model}</td>
-                          <td>{row.total_tokens}</td>
-                          <td>{formatInr(row.estimated_cost_inr)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="empty-note">No outbound AI messages with token usage yet.</p>
-              )}
-            </article>
-          </div>
         </section>
       )}
 

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  fetchAdminUserUsage,
   fetchAdminModel,
   fetchAdminOverview,
   fetchAdminUsers,
   updateAdminModel,
   type AdminOverview,
-  type AdminUserUsage
+  type AdminUserUsage,
+  type UsageAnalyticsResponse
 } from "../lib/api";
 
 const ADMIN_TOKEN_KEY = "super_admin_token";
@@ -22,6 +24,9 @@ export function SuperAdminPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [usageUser, setUsageUser] = useState<AdminUserUsage | null>(null);
+  const [usage, setUsage] = useState<UsageAnalyticsResponse["usage"] | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -82,6 +87,31 @@ export function SuperAdminPage() {
     }
   };
 
+  const handleOpenUsage = async (user: AdminUserUsage) => {
+    if (!token) {
+      return;
+    }
+    setUsageUser(user);
+    setUsage(null);
+    setUsageLoading(true);
+    setError(null);
+    try {
+      const response = await fetchAdminUserUsage(token, user.userId, { days: 30, limit: 200 });
+      setUsage(response.usage);
+    } catch (usageError) {
+      setError((usageError as Error).message);
+    } finally {
+      setUsageLoading(false);
+    }
+  };
+
+  const closeUsageModal = () => {
+    setUsageUser(null);
+    setUsage(null);
+  };
+
+  const formatInr = (value: number) => `INR ${value.toFixed(4)}`;
+
   return (
     <main className="dashboard-shell">
       <header className="dashboard-header">
@@ -135,9 +165,10 @@ export function SuperAdminPage() {
                 <th>Conversations</th>
                 <th>Messages</th>
                 <th>Chunks</th>
-                <th>Tokens</th>
-                <th>Cost (INR)</th>
+                <th>Tokens (All Time)</th>
+                <th>Cost (INR, All Time)</th>
                 <th>Created</th>
+                <th>Usage</th>
               </tr>
             </thead>
             <tbody>
@@ -153,12 +184,117 @@ export function SuperAdminPage() {
                   <td>{user.totalTokens}</td>
                   <td>{user.costInr.toFixed(4)}</td>
                   <td>{new Date(user.createdAt).toLocaleDateString()}</td>
+                  <td>
+                    <button className="ghost-btn" type="button" onClick={() => void handleOpenUsage(user)}>
+                      View Usage
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
+
+      {usageUser && (
+        <div className="kb-modal-backdrop" onClick={closeUsageModal}>
+          <div className="kb-modal kb-modal-wide" onClick={(event) => event.stopPropagation()}>
+            <h3>Usage: {usageUser.name} (Last 30 days)</h3>
+            {usageLoading ? <p className="tiny-note">Loading usage...</p> : null}
+            {!usageLoading && usage ? (
+              <>
+                <div className="overview-grid finance-grid">
+                  <article>
+                    <h3>Total AI Messages</h3>
+                    <p>{usage.messages}</p>
+                  </article>
+                  <article>
+                    <h3>Total Tokens</h3>
+                    <p>{usage.total_tokens}</p>
+                  </article>
+                  <article>
+                    <h3>Estimated Cost (INR)</h3>
+                    <p>{formatInr(usage.estimated_cost_inr)}</p>
+                  </article>
+                  <article>
+                    <h3>Avg Cost / Message</h3>
+                    <p>{formatInr(usage.messages > 0 ? usage.estimated_cost_inr / usage.messages : 0)}</p>
+                  </article>
+                </div>
+
+                <div className="finance-panels">
+                  <article className="finance-panel">
+                    <h2>Cost by Model</h2>
+                    {usage.by_model.length ? (
+                      <div className="finance-table-wrap">
+                        <table className="finance-table">
+                          <thead>
+                            <tr>
+                              <th>Model</th>
+                              <th>Messages</th>
+                              <th>Tokens</th>
+                              <th>Cost (INR)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {usage.by_model.map((row) => (
+                              <tr key={row.ai_model}>
+                                <td>{row.ai_model}</td>
+                                <td>{row.messages}</td>
+                                <td>{row.total_tokens}</td>
+                                <td>{formatInr(row.estimated_cost_inr)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="empty-note">No model usage data yet.</p>
+                    )}
+                  </article>
+
+                  <article className="finance-panel">
+                    <h2>Recent Message Cost History</h2>
+                    {usage.recent_messages.length ? (
+                      <div className="finance-table-wrap">
+                        <table className="finance-table">
+                          <thead>
+                            <tr>
+                              <th>Time</th>
+                              <th>Phone</th>
+                              <th>Model</th>
+                              <th>Tokens</th>
+                              <th>Cost (INR)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {usage.recent_messages.slice(0, 60).map((row) => (
+                              <tr key={row.message_id}>
+                                <td>{new Date(row.created_at).toLocaleString()}</td>
+                                <td>{row.conversation_phone}</td>
+                                <td>{row.ai_model}</td>
+                                <td>{row.total_tokens}</td>
+                                <td>{formatInr(row.estimated_cost_inr)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="empty-note">No outbound AI messages with token usage yet.</p>
+                    )}
+                  </article>
+                </div>
+              </>
+            ) : null}
+            <div className="kb-modal-actions">
+              <button className="primary-btn" type="button" onClick={closeUsageModal}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {info && <p className="info-text">{info}</p>}
       {error && <p className="error-text">{error}</p>}
