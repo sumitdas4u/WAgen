@@ -133,6 +133,72 @@ export interface AdminUserUsage {
   createdAt: string;
 }
 
+export interface BillingPlan {
+  code: "starter" | "pro" | "business";
+  label: string;
+  amountInr: number;
+  trialDaysDefault: number;
+  totalCountDefault: number;
+  available: boolean;
+}
+
+export interface BillingPaymentSummary {
+  razorpayPaymentId: string;
+  status: string;
+  amountPaise: number;
+  currency: string;
+  method: string | null;
+  paidAt: string | null;
+  failureReason: string | null;
+}
+
+export interface BillingSubscriptionSummary {
+  id: string;
+  userId: string;
+  razorpayCustomerId: string | null;
+  razorpaySubscriptionId: string | null;
+  razorpayPlanId: string | null;
+  planCode: string;
+  status: string;
+  currentStartAt: string | null;
+  currentEndAt: string | null;
+  nextChargeAt: string | null;
+  cancelledAt: string | null;
+  endedAt: string | null;
+  expiryDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastPayment: BillingPaymentSummary | null;
+  plan: {
+    code: "starter" | "pro" | "business";
+    label: string;
+    amountInr: number;
+    totalCountDefault: number;
+    trialDaysDefault: number;
+  };
+}
+
+export interface AdminSubscriptionSummary {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  razorpayCustomerId: string | null;
+  razorpaySubscriptionId: string | null;
+  razorpayPlanId: string | null;
+  planCode: string;
+  status: string;
+  currentStartAt: string | null;
+  currentEndAt: string | null;
+  nextChargeAt: string | null;
+  cancelledAt: string | null;
+  endedAt: string | null;
+  expiryDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastPayment: BillingPaymentSummary | null;
+}
+
 export function fetchAdminOverview(token: string) {
   return apiRequest<{ overview: AdminOverview }>("/api/admin/overview", { token });
 }
@@ -164,6 +230,22 @@ export function fetchAdminUserUsage(
   return apiRequest<UsageAnalyticsResponse>(path, { token });
 }
 
+export function fetchAdminSubscriptions(
+  token: string,
+  options?: { status?: string; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/admin/subscriptions?${query}` : "/api/admin/subscriptions";
+  return apiRequest<{ subscriptions: AdminSubscriptionSummary[] }>(path, { token });
+}
+
 export function fetchAdminModel(token: string) {
   return apiRequest<{
     currentModel: string;
@@ -183,6 +265,55 @@ export function updateAdminModel(token: string, model: string) {
 
 export function fetchMe(token: string) {
   return apiRequest<{ user: User }>("/api/auth/me", { token });
+}
+
+export function fetchBillingPlans(options?: { includeUnconfigured?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.includeUnconfigured) {
+    params.set("includeUnconfigured", "true");
+  }
+  const query = params.toString();
+  const path = query ? `/api/billing/plans?${query}` : "/api/billing/plans";
+  return apiRequest<{ keyIdAvailable: boolean; plans: BillingPlan[] }>(path);
+}
+
+export function fetchMySubscription(token: string) {
+  return apiRequest<{ subscription: BillingSubscriptionSummary | null }>("/api/billing/subscription", {
+    token
+  });
+}
+
+export function createBillingSubscription(
+  token: string,
+  payload: {
+    planCode: BillingPlan["code"];
+    trialDays?: number;
+    totalCount?: number;
+  }
+) {
+  return apiRequest<{
+    keyId: string;
+    alreadyExists: boolean;
+    checkout: {
+      subscriptionId: string;
+      planCode: BillingPlan["code"];
+      planLabel: string;
+      amountInr: number;
+    };
+    subscription: BillingSubscriptionSummary;
+  }>("/api/billing/subscription", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function cancelBillingSubscription(token: string, payload?: { atCycleEnd?: boolean }) {
+  return apiRequest<{ subscription: BillingSubscriptionSummary }>("/api/billing/subscription/cancel", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload ?? {})
+  });
 }
 
 export function connectWhatsApp(token: string, options?: { resetAuth?: boolean }) {

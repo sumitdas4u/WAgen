@@ -7,6 +7,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { WidgetPage } from "./pages/WidgetPage";
 import { SuperAdminLoginPage } from "./pages/SuperAdminLoginPage";
 import { SuperAdminPage } from "./pages/SuperAdminPage";
+import { PurchasePage } from "./pages/PurchasePage";
 
 function ProtectedLayout() {
   const { token, loading } = useAuth();
@@ -35,6 +36,7 @@ export function App() {
       <Route element={<ProtectedLayout />}>
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/purchase" element={<PurchasePage />} />
         <Route path="/widget" element={<WidgetPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

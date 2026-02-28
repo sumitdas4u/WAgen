@@ -78,6 +78,48 @@ CREATE TABLE IF NOT EXISTS lead_summaries (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS user_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  razorpay_customer_id TEXT,
+  razorpay_subscription_id TEXT UNIQUE,
+  razorpay_plan_id TEXT,
+  plan_code TEXT NOT NULL DEFAULT 'starter',
+  status TEXT NOT NULL DEFAULT 'pending',
+  current_start_at TIMESTAMPTZ,
+  current_end_at TIMESTAMPTZ,
+  next_charge_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  ended_at TIMESTAMPTZ,
+  expiry_date TIMESTAMPTZ,
+  metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS user_subscriptions_status_idx ON user_subscriptions(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS user_subscriptions_plan_idx ON user_subscriptions(plan_code, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS subscription_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subscription_row_id UUID REFERENCES user_subscriptions(id) ON DELETE SET NULL,
+  razorpay_payment_id TEXT NOT NULL UNIQUE,
+  razorpay_subscription_id TEXT,
+  status TEXT NOT NULL,
+  amount_paise INTEGER NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  method TEXT,
+  description TEXT,
+  paid_at TIMESTAMPTZ,
+  failure_reason TEXT,
+  raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS subscription_payments_user_idx ON subscription_payments(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS subscription_payments_subscription_idx ON subscription_payments(razorpay_subscription_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS migrations (
   id TEXT PRIMARY KEY,
   executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -104,4 +146,9 @@ FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 DROP TRIGGER IF EXISTS whatsapp_sessions_touch_updated_at ON whatsapp_sessions;
 CREATE TRIGGER whatsapp_sessions_touch_updated_at
 BEFORE UPDATE ON whatsapp_sessions
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+DROP TRIGGER IF EXISTS user_subscriptions_touch_updated_at ON user_subscriptions;
+CREATE TRIGGER user_subscriptions_touch_updated_at
+BEFORE UPDATE ON user_subscriptions
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

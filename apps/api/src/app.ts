@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
+import fastifyRawBody from "fastify-raw-body";
 import { env } from "./config/env.js";
 import { ensureDbCompatibility } from "./db/pool.js";
 import { authRoutes } from "./routes/auth.js";
@@ -12,6 +13,7 @@ import { knowledgeRoutes } from "./routes/knowledge.js";
 import { whatsappRoutes } from "./routes/whatsapp.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { conversationRoutes } from "./routes/conversations.js";
+import { billingRoutes } from "./routes/billing.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 
 declare module "fastify" {
@@ -41,6 +43,12 @@ export async function buildApp() {
     limits: {
       fileSize: 20 * 1024 * 1024
     }
+  });
+  await app.register(fastifyRawBody, {
+    field: "rawBody",
+    global: false,
+    encoding: "utf8",
+    runFirst: true
   });
   await app.register(websocket);
 
@@ -80,6 +88,7 @@ export async function buildApp() {
   await knowledgeRoutes(app);
   await whatsappRoutes(app);
   await dashboardRoutes(app);
+  await billingRoutes(app);
   await conversationRoutes(app);
   await registerRealtimeRoutes(app);
 

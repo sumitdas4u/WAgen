@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { listAdminSubscriptionSummaries } from "../services/billing-service.js";
 import { env } from "../config/env.js";
 import { getAdminOverview, listAdminUserUsage } from "../services/admin-service.js";
 import { getUsageAnalytics } from "../services/conversation-service.js";
@@ -32,6 +33,11 @@ const UserUsageParamsSchema = z.object({
 const UserUsageQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(120).optional(),
   limit: z.coerce.number().int().min(20).max(500).optional()
+});
+
+const SubscriptionQuerySchema = z.object({
+  status: z.string().min(2).max(50).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional()
 });
 
 export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
@@ -98,6 +104,19 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       return { usage };
     }
   );
+
+  fastify.get("/api/admin/subscriptions", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = SubscriptionQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid subscriptions query" });
+    }
+
+    const subscriptions = await listAdminSubscriptionSummaries({
+      status: parsed.data.status,
+      limit: parsed.data.limit
+    });
+    return { subscriptions };
+  });
 
   fastify.get("/api/admin/model", { preHandler: [fastify.requireSuperAdmin] }, async () => {
     return {

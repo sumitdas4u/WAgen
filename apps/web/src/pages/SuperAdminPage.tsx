@@ -4,8 +4,10 @@ import {
   fetchAdminUserUsage,
   fetchAdminModel,
   fetchAdminOverview,
+  fetchAdminSubscriptions,
   fetchAdminUsers,
   updateAdminModel,
+  type AdminSubscriptionSummary,
   type AdminOverview,
   type AdminUserUsage,
   type UsageAnalyticsResponse
@@ -18,6 +20,7 @@ export function SuperAdminPage() {
   const [token, setToken] = useState<string | null>(null);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUserUsage[]>([]);
+  const [subscriptions, setSubscriptions] = useState<AdminSubscriptionSummary[]>([]);
   const [currentModel, setCurrentModel] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -44,13 +47,15 @@ export function SuperAdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [overviewResponse, usersResponse, modelResponse] = await Promise.all([
+      const [overviewResponse, usersResponse, modelResponse, subscriptionsResponse] = await Promise.all([
         fetchAdminOverview(token),
         fetchAdminUsers(token, { limit: 300 }),
-        fetchAdminModel(token)
+        fetchAdminModel(token),
+        fetchAdminSubscriptions(token, { limit: 300 })
       ]);
       setOverview(overviewResponse.overview);
       setUsers(usersResponse.users);
+      setSubscriptions(subscriptionsResponse.subscriptions);
       setCurrentModel(modelResponse.currentModel);
       setSelectedModel(modelResponse.currentModel);
       setAvailableModels(modelResponse.availableModels);
@@ -189,6 +194,46 @@ export function SuperAdminPage() {
                       View Usage
                     </button>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="finance-panel">
+        <h2>Subscription & Payment Details</h2>
+        <div className="finance-table-wrap">
+          <table className="finance-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Email</th>
+                <th>Plan</th>
+                <th>Status</th>
+                <th>Razorpay Subscription ID</th>
+                <th>Current End</th>
+                <th>Last Payment</th>
+                <th>Last Payment Status</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {subscriptions.map((subscription) => (
+                <tr key={subscription.id}>
+                  <td>{subscription.userName}</td>
+                  <td>{subscription.userEmail}</td>
+                  <td>{subscription.planCode}</td>
+                  <td>{subscription.status}</td>
+                  <td>{subscription.razorpaySubscriptionId ?? "-"}</td>
+                  <td>{subscription.currentEndAt ? new Date(subscription.currentEndAt).toLocaleString() : "-"}</td>
+                  <td>
+                    {subscription.lastPayment
+                      ? `${(subscription.lastPayment.amountPaise / 100).toFixed(2)} ${subscription.lastPayment.currency}`
+                      : "-"}
+                  </td>
+                  <td>{subscription.lastPayment?.status ?? "-"}</td>
+                  <td>{new Date(subscription.updatedAt).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

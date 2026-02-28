@@ -85,7 +85,7 @@ export function OrchidsLandingPage() {
             <Link to="/signup" className="orch-btn ghost">
               Log In
             </Link>
-            <Link to="/signup" className="orch-btn primary">
+            <Link to="/signup?plan=pro" className="orch-btn primary">
               Start Free Trial
             </Link>
           </div>
@@ -102,7 +102,7 @@ export function OrchidsLandingPage() {
             No API. No business approval. No coding. Scan QR, train AI, and go live.
           </p>
           <div className="orch-hero-actions">
-            <Link to="/signup" className="orch-btn primary big">
+            <Link to="/signup?plan=pro" className="orch-btn primary big">
               Start Free Trial
             </Link>
             <a href="#how-it-works" className="orch-btn outline big">
@@ -296,7 +296,10 @@ export function OrchidsLandingPage() {
                   <li key={feature}>{feature}</li>
                 ))}
               </ul>
-              <Link className={plan.featured ? "orch-btn primary" : "orch-btn outline"} to="/signup">
+              <Link
+                className={plan.featured ? "orch-btn primary" : "orch-btn outline"}
+                to={`/signup?plan=${plan.name.toLowerCase()}`}
+              >
                 Choose {plan.name}
               </Link>
             </article>

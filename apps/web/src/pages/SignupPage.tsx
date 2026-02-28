@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
 
 const BUSINESS_TYPES = ["E-commerce", "SaaS", "Agency", "Coaching", "Real Estate", "Healthcare", "Other"];
@@ -29,9 +29,22 @@ function mapAuthError(message: string): string {
   return message;
 }
 
+function readPlanFromSearch(search: string): "starter" | "pro" | "business" | null {
+  const value = new URLSearchParams(search).get("plan");
+  if (!value) {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "starter" || normalized === "pro" || normalized === "business") {
+    return normalized;
+  }
+  return null;
+}
+
 export function SignupPage() {
   const { signupAndLogin, loginWithPassword, loginWithGoogle, requestPasswordReset } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mode, setMode] = useState<"signup" | "login">("login");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -41,6 +54,7 @@ export function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [businessType, setBusinessType] = useState(BUSINESS_TYPES[0]);
+  const selectedPlan = readPlanFromSearch(location.search);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -60,7 +74,7 @@ export function SignupPage() {
         }
       } else {
         await loginWithPassword({ email, password });
-        navigate("/dashboard", { replace: true });
+        navigate(selectedPlan ? `/purchase?plan=${selectedPlan}` : "/dashboard", { replace: true });
         return;
       }
     } catch (submitError) {
@@ -76,7 +90,7 @@ export function SignupPage() {
     setLoading(true);
     try {
       await loginWithGoogle();
-      navigate("/dashboard", { replace: true });
+      navigate(selectedPlan ? `/purchase?plan=${selectedPlan}` : "/dashboard", { replace: true });
     } catch (submitError) {
       setError(mapAuthError((submitError as Error).message));
     } finally {

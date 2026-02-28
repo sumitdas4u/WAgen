@@ -10,5 +10,6 @@ declare module "fastify" {
       email: string;
       role: "super_admin";
     };
+    rawBody?: string | Buffer;
   }
 }

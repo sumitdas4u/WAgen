@@ -912,6 +912,9 @@ export function DashboardPage() {
               <span className={`status-badge status-${overview?.whatsapp.status ?? "not_connected"}`}>
                 {overview?.whatsapp.status ?? "disconnected"}
               </span>
+              <button className="ghost-btn" type="button" onClick={() => navigate("/purchase")}>
+                Billing
+              </button>
               <button className="ghost-btn" type="button" disabled={busy} onClick={handlePauseAgent}>
                 {overview?.agent.active ? "Pause Agent" : "Activate Agent"}
               </button>
