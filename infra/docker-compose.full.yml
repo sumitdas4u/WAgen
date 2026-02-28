@@ -41,6 +41,15 @@ services:
       - "4000:4000"
     restart: unless-stopped
 
+  landing:
+    build:
+      context: ..
+      dockerfile: apps/landing/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    restart: unless-stopped
+
   web:
     build:
       context: ..
@@ -49,6 +58,8 @@ services:
         VITE_API_URL: ""
     depends_on:
       api:
+        condition: service_started
+      landing:
         condition: service_started
     ports:
       - "8080:80"

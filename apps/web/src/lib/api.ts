@@ -58,6 +58,12 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface FirebaseSessionPayload {
+  idToken: string;
+  name?: string;
+  businessType?: string;
+}
+
 export function signup(payload: {
   name: string;
   email: string;
@@ -72,6 +78,20 @@ export function signup(payload: {
 
 export function login(payload: { email: string; password: string }) {
   return apiRequest<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function createFirebaseSession(payload: FirebaseSessionPayload) {
+  return apiRequest<AuthResponse>("/api/auth/firebase/session", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function migrateLegacyPasswordUser(payload: { email: string; password: string }) {
+  return apiRequest<{ ok: boolean; migrated: boolean }>("/api/auth/legacy/migrate", {
     method: "POST",
     body: JSON.stringify(payload)
   });

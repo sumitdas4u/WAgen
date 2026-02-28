@@ -1,0 +1,27 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f5fff8"/>
+      <stop offset="1" stop-color="#e8f6ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#bg)"/>
+  <circle cx="240" cy="180" r="130" fill="#d8f5e4"/>
+  <circle cx="980" cy="720" r="150" fill="#d7ebff"/>
+  <rect x="320" y="80" width="560" height="740" rx="44" fill="#ffffff" stroke="#d6e0ee" stroke-width="8"/>
+  <rect x="530" y="112" width="140" height="20" rx="10" fill="#1a2436"/>
+  <text x="600" y="200" text-anchor="middle" font-size="36" font-family="Arial, sans-serif" font-weight="700" fill="#2f4568">
+    Scan QR to Connect
+  </text>
+  <rect x="430" y="250" width="340" height="340" rx="24" fill="#f9fbff" stroke="#d6e0ee" stroke-width="6"/>
+  <rect x="466" y="286" width="82" height="82" fill="#1f2d45"/>
+  <rect x="652" y="286" width="82" height="82" fill="#1f2d45"/>
+  <rect x="466" y="472" width="82" height="82" fill="#1f2d45"/>
+  <rect x="580" y="340" width="64" height="64" fill="#1f2d45"/>
+  <rect x="598" y="448" width="40" height="40" fill="#1f2d45"/>
+  <rect x="560" y="438" width="30" height="30" fill="#1f2d45"/>
+  <rect x="388" y="640" width="424" height="96" rx="18" fill="#eff4fd"/>
+  <text x="600" y="698" text-anchor="middle" font-size="30" font-family="Arial, sans-serif" font-weight="700" fill="#3e5272">
+    WhatsApp Linked
+  </text>
+</svg>

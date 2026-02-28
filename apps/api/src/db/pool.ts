@@ -26,6 +26,22 @@ export async function withTransaction<T>(fn: (client: import("pg").PoolClient) =
 
 export async function ensureDbCompatibility(): Promise<void> {
   await pool.query(
+    `ALTER TABLE users
+       ADD COLUMN IF NOT EXISTS firebase_uid TEXT`
+  );
+
+  await pool.query(
+    `ALTER TABLE users
+       ALTER COLUMN password_hash DROP NOT NULL`
+  );
+
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique_idx
+       ON users(firebase_uid)
+       WHERE firebase_uid IS NOT NULL`
+  );
+
+  await pool.query(
     `ALTER TABLE conversation_messages
        ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER,
        ADD COLUMN IF NOT EXISTS completion_tokens INTEGER,

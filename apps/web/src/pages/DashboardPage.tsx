@@ -19,7 +19,6 @@ import {
   savePersonality,
   setAgentActive,
   setConversationPaused,
-  setManualTakeover,
   summarizeLeadConversations,
   type BusinessBasicsPayload,
   type Conversation,
@@ -40,6 +39,36 @@ const PERSONALITIES = [
   { key: "premium_consultant", label: "Premium Consultant" },
   { key: "custom", label: "Custom Prompt" }
 ] as const;
+const DASHBOARD_TAB_OPTIONS = [
+  { value: "conversations", label: "Chats", subtitle: "Live Inbox", icon: "C" },
+  { value: "leads", label: "Leads", subtitle: "Priority Queue", icon: "L" },
+  { value: "knowledge", label: "Knowledge", subtitle: "Content Library", icon: "K" },
+  { value: "bot_settings", label: "Settings", subtitle: "Agent Controls", icon: "S" }
+] as const;
+type DashboardTab = (typeof DASHBOARD_TAB_OPTIONS)[number]["value"];
+type ChatLeadFilter = "hot" | "warm" | "cold";
+
+const CHAT_LEAD_FILTER_OPTIONS: Array<{ value: ChatLeadFilter; label: string; icon: string }> = [
+  { value: "hot", label: "Hot Leads", icon: "H" },
+  { value: "warm", label: "Warm Leads", icon: "W" },
+  { value: "cold", label: "Cold Leads", icon: "C" }
+];
+
+function matchesChatLeadFilter(conversation: Conversation, filter: ChatLeadFilter): boolean {
+  return conversation.stage.toLowerCase() === filter;
+}
+
+function getConversationSortTime(conversation: Conversation): number {
+  if (!conversation.last_message_at) {
+    return 0;
+  }
+  const timestamp = new Date(conversation.last_message_at).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortConversationsByRecent(rows: Conversation[]): Conversation[] {
+  return [...rows].sort((a, b) => getConversationSortTime(b) - getConversationSortTime(a));
+}
 
 const DEFAULT_BUSINESS_BASICS: BusinessBasicsPayload = {
   companyName: "",
@@ -124,7 +153,9 @@ export function DashboardPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [activeTab, setActiveTab] = useState<"knowledge" | "bot_settings" | "conversations" | "leads">("knowledge");
+  const [activeTab, setActiveTab] = useState<DashboardTab>("conversations");
+  const [chatLeadFilter, setChatLeadFilter] = useState<ChatLeadFilter | null>(null);
+  const [chatSearch, setChatSearch] = useState("");
   const [leadStageFilter, setLeadStageFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   const [leadRows, setLeadRows] = useState<LeadConversation[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
@@ -139,6 +170,7 @@ export function DashboardPage() {
   const [showKnowledgeMenu, setShowKnowledgeMenu] = useState(false);
   const [knowledgeModal, setKnowledgeModal] = useState<"manual" | "website" | "pdf" | null>(null);
   const [knowledgeMode, setKnowledgeMode] = useState<"add" | "edit">("add");
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [editingSource, setEditingSource] = useState<{ sourceType: KnowledgeSource["source_type"]; sourceName: string } | null>(null);
   const [modalSourceName, setModalSourceName] = useState("");
   const [modalWebsiteUrl, setModalWebsiteUrl] = useState("");
@@ -166,6 +198,8 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const uploadPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
@@ -203,6 +237,37 @@ export function DashboardPage() {
     }
     return new Date(value).toLocaleString();
   }, []);
+
+  const filteredConversations = useMemo(() => {
+    const inFolder = chatLeadFilter
+      ? conversations.filter((conversation) => matchesChatLeadFilter(conversation, chatLeadFilter))
+      : conversations;
+    const query = chatSearch.trim().toLowerCase();
+    if (!query) {
+      return sortConversationsByRecent(inFolder);
+    }
+    return sortConversationsByRecent(
+      inFolder.filter((conversation) => {
+        const haystack = `${conversation.contact_name ?? ""} ${formatPhone(conversation.phone_number)} ${
+          conversation.last_message ?? ""
+        }`.toLowerCase();
+        return haystack.includes(query);
+      })
+    );
+  }, [chatSearch, conversations, formatPhone, chatLeadFilter]);
+
+  const chatLeadCounts = useMemo(
+    () =>
+      CHAT_LEAD_FILTER_OPTIONS.reduce<Record<ChatLeadFilter, number>>(
+        (counts, option) => ({ ...counts, [option.value]: conversations.filter((row) => matchesChatLeadFilter(row, option.value)).length }),
+        {
+          hot: 0,
+          warm: 0,
+          cold: 0
+        }
+      ),
+    [conversations]
+  );
 
   const getSummaryStatusLabel = (status: LeadConversation["summary_status"]) => {
     if (status === "ready") {
@@ -263,9 +328,15 @@ export function DashboardPage() {
       fetchConversations(token)
     ]);
 
+    const sortedConversations = sortConversationsByRecent(conversationsResponse.conversations);
     setOverview(overviewResponse);
-    setConversations(conversationsResponse.conversations);
-    setSelectedConversationId((current) => current ?? conversationsResponse.conversations[0]?.id ?? null);
+    setConversations(sortedConversations);
+    setSelectedConversationId((current) => {
+      if (current && sortedConversations.some((conversation) => conversation.id === current)) {
+        return current;
+      }
+      return sortedConversations[0]?.id ?? null;
+    });
   }, [token]);
 
   const loadLeads = useCallback(async () => {
@@ -307,6 +378,42 @@ export function DashboardPage() {
       .then((response) => setMessages(response.messages))
       .catch((loadError) => setError((loadError as Error).message));
   }, [selectedConversationId, token]);
+
+  useEffect(() => {
+    const scrollHost = messagesScrollRef.current;
+    if (!scrollHost) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      scrollHost.scrollTop = scrollHost.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [messages, selectedConversationId]);
+
+  useEffect(() => {
+    if (!showSettingsMenu) {
+      return;
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      const menuRoot = settingsMenuRef.current;
+      if (!menuRoot) {
+        return;
+      }
+      if (event.target instanceof Node && !menuRoot.contains(event.target)) {
+        setShowSettingsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [showSettingsMenu]);
+
+  useEffect(() => {
+    if (activeTab !== "bot_settings" && showSettingsMenu) {
+      setShowSettingsMenu(false);
+    }
+  }, [activeTab, showSettingsMenu]);
 
   useEffect(() => {
     if (!token) {
@@ -366,25 +473,6 @@ export function DashboardPage() {
       [loadData, selectedConversationId, token]
     )
   );
-
-  const handleManualToggle = async () => {
-    if (!token || !selectedConversation) {
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    setInfo(null);
-    try {
-      await setManualTakeover(token, selectedConversation.id, !selectedConversation.manual_takeover);
-      await loadData();
-      setInfo(selectedConversation.manual_takeover ? "Manual takeover disabled." : "Manual takeover enabled.");
-    } catch (toggleError) {
-      setError((toggleError as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const handlePauseToggle = async () => {
     if (!token || !selectedConversation) {
@@ -771,84 +859,64 @@ export function DashboardPage() {
     (typeof user?.business_basics?.companyName === "string" ? String(user.business_basics.companyName) : "") ||
     user?.name ||
     "WAgen";
+  const currentSection = DASHBOARD_TAB_OPTIONS.find((option) => option.value === activeTab) ?? DASHBOARD_TAB_OPTIONS[0];
+  const selectedConversationLabel = selectedConversation
+    ? selectedConversation.contact_name || formatPhone(selectedConversation.phone_number)
+    : "Select a conversation";
 
   return (
-    <main className="dashboard-shell dashboard-frame">
-      <aside className="dashboard-left">
-        <div className="dashboard-left-brand">
-          <strong>{companyLabel}</strong>
-          <small>Agent Console</small>
-        </div>
-        <nav className="dashboard-left-nav">
-          <button className={activeTab === "knowledge" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("knowledge")}>
-            Knowledge Base
+    <main className="dashboard-shell dashboard-clone-shell">
+      <section className="clone-workspace">
+        <aside className="clone-icon-rail">
+          <button className="clone-rail-logo" type="button" onClick={() => setActiveTab("conversations")}>
+            <span className="clone-rail-icon">W</span>
+            <span className="clone-rail-label">WAgenai</span>
           </button>
-          <button className={activeTab === "bot_settings" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("bot_settings")}>
-            Bot Settings
-          </button>
-          <button className={activeTab === "conversations" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("conversations")}>
-            Chats
-          </button>
-          <button className={activeTab === "leads" ? "left-nav-btn active" : "left-nav-btn"} onClick={() => setActiveTab("leads")}>
-            Leads
-          </button>
-        </nav>
-        <div className="dashboard-left-actions">
-          <button className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>Scan QR</button>
+          <nav className="clone-rail-menu">
+            {DASHBOARD_TAB_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={activeTab === option.value ? "clone-rail-btn active" : "clone-rail-btn"}
+                type="button"
+                title={option.label}
+                onClick={() => setActiveTab(option.value)}
+              >
+                <span className="clone-rail-icon">{option.icon}</span>
+                <span className="clone-rail-label">{option.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="clone-rail-divider" />
+          <div className="clone-rail-spacer" />
           <button
-            className="ghost-btn"
+            className="clone-rail-btn"
+            type="button"
+            title="Logout"
             onClick={() => {
               logout();
               navigate("/signup", { replace: true });
             }}
           >
-            Logout
+            <span className="clone-rail-icon">L</span>
+            <span className="clone-rail-label">Logout</span>
           </button>
-        </div>
-      </aside>
+        </aside>
 
-      <section className="dashboard-right">
-      <header className="dashboard-header">
-        <h1>{activeTab === "knowledge" ? "Knowledge Base" : activeTab === "bot_settings" ? "Bot Settings" : activeTab === "leads" ? "Leads" : "Chats"} <small className="tiny-note">v2</small></h1>
-        <div className="header-actions">
-          <button className="ghost-btn" disabled={busy} onClick={handleReconnectWhatsApp}>Reconnect WhatsApp</button>
-          <button className="ghost-btn" disabled={busy} onClick={handlePauseAgent}>
-            {overview?.agent.active ? "Pause Agent" : "Activate Agent"}
-          </button>
-        </div>
-      </header>
-
-      <section className="overview-grid">
-        <article>
-          <h3>Conversations Today</h3>
-          <p>{overview?.overview.leadsToday ?? 0}</p>
-        </article>
-        <article>
-          <h3>Priority Chats</h3>
-          <p>{overview?.overview.hotLeads ?? 0}</p>
-        </article>
-        <article>
-          <h3>Active Follow-ups</h3>
-          <p>{overview?.overview.warmLeads ?? 0}</p>
-        </article>
-        <article>
-          <h3>Resolved Threads</h3>
-          <p>{overview?.overview.closedDeals ?? 0}</p>
-        </article>
-      </section>
-
-      <section className="status-row">
-        <span>
-          WhatsApp: <strong>{overview?.whatsapp.status ?? "disconnected"}</strong>
-        </span>
-        {overview?.whatsapp.hasQr ? <span>QR ready. Open Onboarding to scan.</span> : null}
-        <span>
-          Knowledge Chunks: <strong>{overview?.knowledge.chunks ?? 0}</strong>
-        </span>
-        <span>
-          WAgen: <strong>{overview?.agent.active ? "Live" : "Paused"}</strong>
-        </span>
-      </section>
+        <section className="clone-main">
+          <header className="clone-main-header">
+            <div>
+              <h1>{activeTab === "conversations" ? "Unassigned" : currentSection.label}</h1>
+              <p>{currentSection.subtitle}</p>
+            </div>
+            <div className="clone-main-actions">
+              <span className={`status-badge status-${overview?.whatsapp.status ?? "not_connected"}`}>
+                {overview?.whatsapp.status ?? "disconnected"}
+              </span>
+              <button className="ghost-btn" type="button" disabled={busy} onClick={handlePauseAgent}>
+                {overview?.agent.active ? "Pause Agent" : "Activate Agent"}
+              </button>
+            </div>
+          </header>
 
       {activeTab === "knowledge" && (
         <section className="finance-shell">
@@ -1085,76 +1153,238 @@ export function DashboardPage() {
       )}
 
       {activeTab === "bot_settings" && (
-        <section className="finance-shell">
-          <article className="finance-panel">
-            <h2>Bot Settings</h2>
-            <form className="stack-form" onSubmit={handleSaveBotSettings}>
-              <div className="train-grid two-col">
-                <label>
-                  Company Name
-                  <input required value={businessBasics.companyName} onChange={(event) => handleBasicsChange("companyName", event.target.value)} />
-                </label>
-                <label>
-                  Support Domain
-                  <input required value={businessBasics.whatDoYouSell} onChange={(event) => handleBasicsChange("whatDoYouSell", event.target.value)} />
-                </label>
-                <label>
-                  Target Audience
-                  <input required value={businessBasics.targetAudience} onChange={(event) => handleBasicsChange("targetAudience", event.target.value)} />
-                </label>
-                <label>
-                  USP
-                  <textarea required value={businessBasics.usp} onChange={(event) => handleBasicsChange("usp", event.target.value)} />
-                </label>
-                <label>
-                  Common Issues
-                  <textarea required value={businessBasics.objections} onChange={(event) => handleBasicsChange("objections", event.target.value)} />
-                </label>
-                <label>
-                  Escalation Contact Name
-                  <input required value={businessBasics.supportContactName} onChange={(event) => handleBasicsChange("supportContactName", event.target.value)} />
-                </label>
-                <label>
-                  Escalation Phone
-                  <input required value={businessBasics.supportPhoneNumber} onChange={(event) => handleBasicsChange("supportPhoneNumber", event.target.value)} />
-                </label>
-                <label className="full-span">
-                  AI Do Rules
-                  <textarea required value={businessBasics.aiDoRules} onChange={(event) => handleBasicsChange("aiDoRules", event.target.value)} />
-                </label>
-                <label className="full-span">
-                  AI Don't Rules
-                  <textarea required value={businessBasics.aiDontRules} onChange={(event) => handleBasicsChange("aiDontRules", event.target.value)} />
-                </label>
+        <section className="clone-settings-view">
+          <div className="clone-settings-top">
+            <h2>Settings</h2>
+            <div className="clone-settings-top-actions">
+              <span>{overview?.whatsapp.phoneNumber || "No number"}</span>
+              <div className="clone-settings-menu-wrap" ref={settingsMenuRef}>
+                <button
+                  type="button"
+                  className="clone-settings-menu-trigger"
+                  aria-label="Settings quick actions"
+                  aria-expanded={showSettingsMenu}
+                  onClick={() => setShowSettingsMenu((current) => !current)}
+                >
+                  ≡
+                </button>
+                {showSettingsMenu && (
+                  <div className="clone-settings-menu-dropdown">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSettingsMenu(false);
+                        navigate("/widget");
+                      }}
+                    >
+                      <span className="clone-rail-icon">W</span>
+                      <span>Widget Builder</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setShowSettingsMenu(false);
+                        void handleReconnectWhatsApp();
+                      }}
+                    >
+                      <span className="clone-rail-icon">R</span>
+                      <span>Reconnect</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSettingsMenu(false);
+                        navigate("/onboarding?focus=qr");
+                      }}
+                    >
+                      <span className="clone-rail-icon">Q</span>
+                      <span>Scan QR</span>
+                    </button>
+                  </div>
+                )}
               </div>
-
-              <fieldset className="personality-grid">
-                {PERSONALITIES.map((option) => (
-                  <label key={option.key} className={personality === option.key ? "selected" : ""}>
-                    <input
-                      type="radio"
-                      name="personality"
-                      value={option.key}
-                      checked={personality === option.key}
-                      onChange={() => setPersonality(option.key)}
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </fieldset>
-
-              {personality === "custom" && (
-                <label>
-                  Custom Prompt
-                  <textarea value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} />
-                </label>
-              )}
-
-              <button className="primary-btn" type="submit" disabled={busy}>
-                Save Bot Settings
+              <button type="button" className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>
+                Manage Connections
               </button>
-            </form>
-          </article>
+            </div>
+          </div>
+
+          <form className="stack-form clone-settings-form" onSubmit={handleSaveBotSettings}>
+            <div className="train-grid two-col">
+              <label>
+                Company Name
+                <input
+                  required
+                  value={businessBasics.companyName}
+                  onChange={(event) => handleBasicsChange("companyName", event.target.value)}
+                />
+              </label>
+              <label>
+                Support Domain
+                <input
+                  required
+                  value={businessBasics.whatDoYouSell}
+                  onChange={(event) => handleBasicsChange("whatDoYouSell", event.target.value)}
+                />
+              </label>
+              <label>
+                Target Audience
+                <input
+                  required
+                  value={businessBasics.targetAudience}
+                  onChange={(event) => handleBasicsChange("targetAudience", event.target.value)}
+                />
+              </label>
+              <label>
+                Default Country
+                <input
+                  required
+                  value={businessBasics.defaultCountry}
+                  onChange={(event) => handleBasicsChange("defaultCountry", event.target.value.toUpperCase())}
+                />
+              </label>
+              <label>
+                Default Currency
+                <input
+                  required
+                  value={businessBasics.defaultCurrency}
+                  onChange={(event) => handleBasicsChange("defaultCurrency", event.target.value.toUpperCase())}
+                />
+              </label>
+              <label>
+                Escalation Contact Name
+                <input
+                  required
+                  value={businessBasics.supportContactName}
+                  onChange={(event) => handleBasicsChange("supportContactName", event.target.value)}
+                />
+              </label>
+              <label>
+                Escalation Phone
+                <input
+                  required
+                  value={businessBasics.supportPhoneNumber}
+                  onChange={(event) => handleBasicsChange("supportPhoneNumber", event.target.value)}
+                />
+              </label>
+              <label>
+                Escalation Email
+                <input
+                  required
+                  type="email"
+                  value={businessBasics.supportEmail}
+                  onChange={(event) => handleBasicsChange("supportEmail", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                Address
+                <textarea
+                  required
+                  value={businessBasics.supportAddress}
+                  onChange={(event) => handleBasicsChange("supportAddress", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                USP / Business Description
+                <textarea required value={businessBasics.usp} onChange={(event) => handleBasicsChange("usp", event.target.value)} />
+              </label>
+              <label className="full-span">
+                Common Issues / Objections
+                <textarea
+                  required
+                  value={businessBasics.objections}
+                  onChange={(event) => handleBasicsChange("objections", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                Greeting Script
+                <textarea
+                  required
+                  value={businessBasics.greetingScript}
+                  onChange={(event) => handleBasicsChange("greetingScript", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                Availability Script
+                <textarea
+                  required
+                  value={businessBasics.availabilityScript}
+                  onChange={(event) => handleBasicsChange("availabilityScript", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                Objection Handling Script
+                <textarea
+                  required
+                  value={businessBasics.objectionHandlingScript}
+                  onChange={(event) => handleBasicsChange("objectionHandlingScript", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                Booking Script
+                <textarea
+                  required
+                  value={businessBasics.bookingScript}
+                  onChange={(event) => handleBasicsChange("bookingScript", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                Feedback Collection Script
+                <textarea
+                  required
+                  value={businessBasics.feedbackCollectionScript}
+                  onChange={(event) => handleBasicsChange("feedbackCollectionScript", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                Complaint Handling Script
+                <textarea
+                  required
+                  value={businessBasics.complaintHandlingScript}
+                  onChange={(event) => handleBasicsChange("complaintHandlingScript", event.target.value)}
+                />
+              </label>
+              <label className="full-span">
+                AI Do Rules
+                <textarea required value={businessBasics.aiDoRules} onChange={(event) => handleBasicsChange("aiDoRules", event.target.value)} />
+              </label>
+              <label className="full-span">
+                AI Do Not Rules
+                <textarea
+                  required
+                  value={businessBasics.aiDontRules}
+                  onChange={(event) => handleBasicsChange("aiDontRules", event.target.value)}
+                />
+              </label>
+            </div>
+
+            <fieldset className="personality-grid">
+              {PERSONALITIES.map((option) => (
+                <label key={option.key} className={personality === option.key ? "selected" : ""}>
+                  <input
+                    type="radio"
+                    name="personality"
+                    value={option.key}
+                    checked={personality === option.key}
+                    onChange={() => setPersonality(option.key)}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </fieldset>
+
+            {personality === "custom" && (
+              <label>
+                Custom Prompt
+                <textarea value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} />
+              </label>
+            )}
+
+            <button className="primary-btn" type="submit" disabled={busy}>
+              Save Bot Settings
+            </button>
+          </form>
         </section>
       )}
 
@@ -1293,77 +1523,125 @@ export function DashboardPage() {
       )}
 
       {activeTab === "conversations" && (
-        <section className="dashboard-main">
-          <aside className="conversation-list whatsapp-list">
-            <div className="conversation-list-head">
-              <h2>All chats</h2>
-              <small>{conversations.length}</small>
-            </div>
-            <div className="conversation-list-scroll">
-              {conversations.length === 0 ? (
-                <p className="empty-note">
-                  No conversations yet. Send a new inbound message from another number to this WhatsApp to create leads.
-                </p>
-              ) : null}
-              {conversations.map((conversation) => (
+        <section className="clone-chat-wrap">
+          <div className="clone-chat-filterbar">
+            <label className="clone-chat-search">
+              <input
+                value={chatSearch}
+                onChange={(event) => setChatSearch(event.target.value)}
+                placeholder="Search chats..."
+              />
+            </label>
+            <nav className="clone-chat-filter-pills">
+              {CHAT_LEAD_FILTER_OPTIONS.map((filter) => (
                 <button
-                  key={conversation.id}
-                  className={conversation.id === selectedConversationId ? "conversation-item active" : "conversation-item"}
-                  onClick={() => setSelectedConversationId(conversation.id)}
+                  key={filter.value}
+                  type="button"
+                  className={chatLeadFilter === filter.value ? "active" : ""}
+                  onClick={() => setChatLeadFilter((current) => (current === filter.value ? null : filter.value))}
                 >
-                  <header>
-                    <strong>{conversation.contact_name || formatPhone(conversation.phone_number)}</strong>
-                    <small>{conversation.last_message_at ? new Date(conversation.last_message_at).toLocaleTimeString() : ""}</small>
-                  </header>
-                  <p>{conversation.last_message || "No messages yet"}</p>
+                  {filter.label} ({chatLeadCounts[filter.value]})
                 </button>
               ))}
-            </div>
-          </aside>
-
-          <section className="chat-panel whatsapp-chat">
-            <header className="whatsapp-chat-head">
-              <div>
-                <h2>{selectedConversation ? selectedConversation.contact_name || formatPhone(selectedConversation.phone_number) : "Select a conversation"}</h2>
-                {selectedConversation ? (
-                  <small className="tiny-note">{formatPhone(selectedConversation.phone_number)} | Score {selectedConversation.score} | {selectedConversation.stage}</small>
-                ) : null}
-              </div>
-              {selectedConversation && (
-                <div className="chat-actions">
-                  <button className="ghost-btn" disabled={busy} onClick={handleManualToggle}>
-                    {selectedConversation.manual_takeover ? "Disable Manual" : "Manual Takeover"}
-                  </button>
-                  <button className="ghost-btn" disabled={busy} onClick={handlePauseToggle}>
-                    {selectedConversation.ai_paused ? "Resume AI" : "Pause AI"}
-                  </button>
-                </div>
+            </nav>
+          </div>
+          <section className="clone-chat-layout">
+            <aside className="clone-thread-list">
+              {filteredConversations.length === 0 ? (
+                <p className="empty-note">
+                  {chatSearch.trim()
+                    ? "No conversations match your search."
+                    : "No conversations yet. Send a new inbound message to start chat tracking."}
+                </p>
+              ) : (
+                filteredConversations.map((conversation) => {
+                  const label = conversation.contact_name || formatPhone(conversation.phone_number);
+                  const stage = conversation.stage.toLowerCase();
+                  const stageClass = stage === "hot" || stage === "warm" || stage === "cold" ? stage : "cold";
+                  const stageLabel = `${stageClass.charAt(0).toUpperCase()}${stageClass.slice(1)} Lead`;
+                  const initials = label
+                    .split(" ")
+                    .map((part) => part[0] ?? "")
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase();
+                  return (
+                    <button
+                      key={conversation.id}
+                      className={
+                        conversation.id === selectedConversationId
+                          ? `clone-thread-item stage-${stageClass} active`
+                          : `clone-thread-item stage-${stageClass}`
+                      }
+                      onClick={() => setSelectedConversationId(conversation.id)}
+                    >
+                      <span className="clone-thread-avatar">{initials || "U"}</span>
+                      <div>
+                        <header>
+                          <div className="clone-thread-title">
+                            <strong>{label}</strong>
+                            <span className={`clone-thread-stage ${stageClass}`}>{stageLabel}</span>
+                          </div>
+                          <small>{conversation.last_message_at ? new Date(conversation.last_message_at).toLocaleTimeString() : ""}</small>
+                        </header>
+                        <p>{conversation.last_message || "No messages yet"}</p>
+                      </div>
+                    </button>
+                  );
+                })
               )}
-            </header>
+            </aside>
 
-            <div className="messages-scroll">
-              {messages.map((message) => (
-                <div key={message.id} className={`bubble ${message.direction}`}>
-                  <p>{message.message_text}</p>
-                  {message.direction === "outbound" && message.total_tokens ? (
-                    <small className="token-meta">
-                      Tokens: {message.total_tokens}
-                      {typeof message.prompt_tokens === "number" ? ` (P:${message.prompt_tokens}` : ""}
-                      {typeof message.completion_tokens === "number" ? ` C:${message.completion_tokens})` : ""}
-                      {message.ai_model ? ` | ${message.ai_model}` : ""}
+            <section className="clone-chat-panel">
+              <header className="clone-chat-head">
+                <div>
+                  <h2>{selectedConversationLabel}</h2>
+                  {selectedConversation ? (
+                    <small>
+                      {formatPhone(selectedConversation.phone_number)} | Score {selectedConversation.score} | {selectedConversation.stage}
                     </small>
                   ) : null}
-                  <small>{new Date(message.created_at).toLocaleTimeString()}</small>
                 </div>
-              ))}
-            </div>
+                {selectedConversation && (
+                  <div className="chat-actions">
+                    <button className="ghost-btn" disabled={busy} onClick={handlePauseToggle}>
+                      {selectedConversation.ai_paused ? "Resume AI" : "Pause AI"}
+                    </button>
+                  </div>
+                )}
+              </header>
+
+              <div ref={messagesScrollRef} className="clone-messages messages-scroll">
+                {messages.length === 0 ? (
+                  <p className="empty-note">No messages in this chat yet.</p>
+                ) : (
+                  messages.map((message) => (
+                    <div key={message.id} className={`bubble ${message.direction}`}>
+                      <p>{message.message_text}</p>
+                      {message.direction === "outbound" && message.total_tokens ? (
+                        <small className="token-meta">
+                          Tokens: {message.total_tokens}
+                          {typeof message.prompt_tokens === "number" ? ` (P:${message.prompt_tokens}` : ""}
+                          {typeof message.completion_tokens === "number" ? ` C:${message.completion_tokens})` : ""}
+                          {message.ai_model ? ` | ${message.ai_model}` : ""}
+                        </small>
+                      ) : null}
+                      <small>{new Date(message.created_at).toLocaleTimeString()}</small>
+                    </div>
+                  ))
+                )}
+              </div>
+
+            </section>
           </section>
         </section>
       )}
 
+        </section>
+      </section>
+
       {info && <p className="info-text">{info}</p>}
       {error && <p className="error-text">{error}</p>}
-      </section>
     </main>
   );
 }

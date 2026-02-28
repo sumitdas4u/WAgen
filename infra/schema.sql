@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT,
+  firebase_uid TEXT UNIQUE,
   business_type TEXT,
   subscription_plan TEXT NOT NULL DEFAULT 'trial',
   business_basics JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
 
 CREATE INDEX IF NOT EXISTS knowledge_user_id_idx ON knowledge_base(user_id);
 CREATE INDEX IF NOT EXISTS knowledge_embedding_idx ON knowledge_base USING ivfflat (embedding_vector vector_cosine_ops) WITH (lists = 100);
+CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique_idx ON users(firebase_uid) WHERE firebase_uid IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

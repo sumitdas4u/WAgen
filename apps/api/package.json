@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "lint": "tsc --noEmit",
-    "db:migrate": "tsx src/scripts/migrate.ts"
+    "db:migrate": "tsx src/scripts/migrate.ts",
+    "auth:migrate:firebase": "tsx src/scripts/migrate-users-to-firebase.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
@@ -19,6 +20,7 @@
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
+    "firebase-admin": "^13.7.0",
     "ioredis": "^5.4.1",
     "openai": "^4.71.0",
     "pdf-parse": "^1.1.1",
@@ -27,10 +29,10 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/pg": "^8.11.10",
-    "@types/ws": "^8.5.12",
     "@types/node": "^22.7.9",
     "@types/pdf-parse": "^1.1.4",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.12",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   }
