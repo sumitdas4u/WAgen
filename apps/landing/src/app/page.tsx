@@ -78,6 +78,9 @@ export default function Home() {
                   No API. No business approval. No coding. <br className="hidden sm:inline" />
                   Just scan your WhatsApp QR, train AI, and go live.
                 </p>
+                <p className="mx-auto max-w-[600px] text-sm text-zinc-500 dark:text-zinc-400 lg:mx-0">
+                  Most WhatsApp chatbot tools require Business API approval. WagenAI works instantly with your existing number.
+                </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
                   <Button asChild size="lg" className="bg-green-600 hover:bg-green-700 text-white h-14 px-8 text-lg font-semibold">
                     <Link href="/signup">Start Free Trial</Link>
