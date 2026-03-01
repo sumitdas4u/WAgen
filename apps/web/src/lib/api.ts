@@ -355,6 +355,30 @@ export interface BusinessBasicsPayload {
   manualFaq?: string;
 }
 
+export interface AgentProfilePayload {
+  name: string;
+  channelType: "qr" | "api";
+  linkedNumber: string;
+  businessBasics: BusinessBasicsPayload;
+  personality: User["personality"];
+  customPrompt?: string;
+  isActive?: boolean;
+}
+
+export interface AgentProfile {
+  id: string;
+  userId: string;
+  name: string;
+  channelType: "qr" | "api";
+  linkedNumber: string;
+  businessBasics: BusinessBasicsPayload;
+  personality: User["personality"];
+  customPrompt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function saveBusinessBasics(token: string, payload: BusinessBasicsPayload) {
   return apiRequest<{ ok: boolean }>("/api/onboarding/business", {
     method: "POST",
@@ -508,6 +532,33 @@ export function setAgentActive(token: string, active: boolean) {
     method: "POST",
     token,
     body: JSON.stringify({ active })
+  });
+}
+
+export function fetchAgentProfiles(token: string) {
+  return apiRequest<{ profiles: AgentProfile[] }>("/api/agents/profiles", { token });
+}
+
+export function createAgentProfile(token: string, payload: AgentProfilePayload) {
+  return apiRequest<{ ok: boolean; profile: AgentProfile }>("/api/agents/profiles", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateAgentProfile(token: string, profileId: string, payload: AgentProfilePayload) {
+  return apiRequest<{ ok: boolean; profile: AgentProfile }>(`/api/agents/profiles/${profileId}`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteAgentProfile(token: string, profileId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/agents/profiles/${profileId}`, {
+    method: "DELETE",
+    token
   });
 }
 

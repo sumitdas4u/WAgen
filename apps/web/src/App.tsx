@@ -8,6 +8,9 @@ import { WidgetPage } from "./pages/WidgetPage";
 import { SuperAdminLoginPage } from "./pages/SuperAdminLoginPage";
 import { SuperAdminPage } from "./pages/SuperAdminPage";
 import { PurchasePage } from "./pages/PurchasePage";
+import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
+import { TermsOfServicePage } from "./pages/TermsOfServicePage";
+import { ContactUsPage } from "./pages/ContactUsPage";
 
 function ProtectedLayout() {
   const { token, loading } = useAuth();
@@ -27,6 +30,9 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+      <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+      <Route path="/contact-us" element={<ContactUsPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/super-admin">
         <Route path="login" element={<SuperAdminLoginPage />} />

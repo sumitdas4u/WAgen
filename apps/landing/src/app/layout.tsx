@@ -3,6 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { VisualEditsMessenger } from "orchids-visual-edits";
 
+const shouldEnableVisualEdits =
+  process.env.NEXT_PUBLIC_ENABLE_VISUAL_EDITS === "true";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -15,34 +18,34 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://wagenai.com"),
-  title: "WhatsApp AI Bot Without API | 24/7 AI Receptionist – WagenAI",
+  title: "WhatsApp AI Platform | QR Setup & Official API - WagenAI",
   description:
-    "Turn your WhatsApp number into a 24/7 AI receptionist in just 2 minutes. No API, no business approval, no coding required. Start free today.",
+    "WagenAI is a WhatsApp AI automation platform with Instant QR Mode for quick starts and Official WhatsApp API Mode for reliable scale.",
   keywords: [
-    "whatsapp ai bot without api",
-    "whatsapp ai receptionist",
-    "whatsapp chatbot no api",
-    "24/7 ai receptionist",
-    "whatsapp chatbot without business api approval",
-    "wagenai"
+    "whatsapp ai automation platform",
+    "whatsapp qr setup",
+    "official whatsapp api",
+    "whatsapp ai for startups",
+    "whatsapp ai for smb",
+    "wagenai",
   ],
   openGraph: {
-    title: "WhatsApp AI Bot Without API | 24/7 AI Receptionist – WagenAI",
+    title: "WhatsApp AI Platform | QR Setup & Official API - WagenAI",
     description:
-      "Turn your WhatsApp number into a 24/7 AI receptionist in just 2 minutes. No API, no business approval, no coding required. Start free today.",
+      "Start with instant QR setup and upgrade anytime to Official WhatsApp API mode for high-volume business automation.",
     url: "/",
     siteName: "WagenAI",
-    type: "website"
+    type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "WhatsApp AI Bot Without API | 24/7 AI Receptionist – WagenAI",
+    title: "WhatsApp AI Platform | QR Setup & Official API - WagenAI",
     description:
-      "Turn your WhatsApp number into a 24/7 AI receptionist in just 2 minutes. No API, no business approval, no coding required. Start free today."
+      "Start with instant QR setup and upgrade anytime to Official WhatsApp API mode for high-volume business automation.",
   },
   alternates: {
-    canonical: "/"
-  }
+    canonical: "/",
+  },
 };
 
 export default function RootLayout({
@@ -56,8 +59,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
-        <VisualEditsMessenger />
+        {shouldEnableVisualEdits ? <VisualEditsMessenger /> : null}
       </body>
     </html>
   );
 }
+

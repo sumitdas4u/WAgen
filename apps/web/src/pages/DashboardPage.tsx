@@ -3,8 +3,11 @@ import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { useAuth } from "../lib/auth-context";
 import {
+  createAgentProfile,
   connectWhatsApp,
+  deleteAgentProfile,
   deleteKnowledgeSource,
+  fetchAgentProfiles,
   fetchLeadConversations,
   fetchConversationMessages,
   fetchConversations,
@@ -20,6 +23,8 @@ import {
   setAgentActive,
   setConversationPaused,
   summarizeLeadConversations,
+  updateAgentProfile,
+  type AgentProfile as AgentProfileApi,
   type BusinessBasicsPayload,
   type Conversation,
   type ConversationMessage,
@@ -43,10 +48,13 @@ const DASHBOARD_TAB_OPTIONS = [
   { value: "conversations", label: "Chats", subtitle: "Live Inbox", icon: "C" },
   { value: "leads", label: "Leads", subtitle: "Priority Queue", icon: "L" },
   { value: "knowledge", label: "Knowledge", subtitle: "Content Library", icon: "K" },
-  { value: "bot_settings", label: "Settings", subtitle: "Agent Controls", icon: "S" }
+  { value: "bot_agents", label: "Bot Agents", subtitle: "Create and assign agents", icon: "A" },
+  { value: "settings", label: "Settings", subtitle: "WhatsApp connection setup", icon: "S" }
 ] as const;
 type DashboardTab = (typeof DASHBOARD_TAB_OPTIONS)[number]["value"];
 type ChatLeadFilter = "hot" | "warm" | "cold";
+type SettingsSubmenu = "setup_qr" | "setup_api";
+type AgentProfile = AgentProfileApi;
 
 const CHAT_LEAD_FILTER_OPTIONS: Array<{ value: ChatLeadFilter; label: string; icon: string }> = [
   { value: "hot", label: "Hot Leads", icon: "H" },
@@ -170,7 +178,12 @@ export function DashboardPage() {
   const [showKnowledgeMenu, setShowKnowledgeMenu] = useState(false);
   const [knowledgeModal, setKnowledgeModal] = useState<"manual" | "website" | "pdf" | null>(null);
   const [knowledgeMode, setKnowledgeMode] = useState<"add" | "edit">("add");
-  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [settingsSubmenu, setSettingsSubmenu] = useState<SettingsSubmenu>("setup_qr");
+  const [agentProfiles, setAgentProfiles] = useState<AgentProfile[]>([]);
+  const [selectedAgentProfileId, setSelectedAgentProfileId] = useState<string>("");
+  const [agentName, setAgentName] = useState("");
+  const [agentLinkedNumber, setAgentLinkedNumber] = useState("");
+  const [agentChannelType, setAgentChannelType] = useState<"qr" | "api">("qr");
   const [editingSource, setEditingSource] = useState<{ sourceType: KnowledgeSource["source_type"]; sourceName: string } | null>(null);
   const [modalSourceName, setModalSourceName] = useState("");
   const [modalWebsiteUrl, setModalWebsiteUrl] = useState("");
@@ -199,7 +212,6 @@ export function DashboardPage() {
   const [info, setInfo] = useState<string | null>(null);
   const uploadPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
-  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
@@ -352,12 +364,23 @@ export function DashboardPage() {
     }
   }, [token]);
 
+  const loadAgentProfiles = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+    const response = await fetchAgentProfiles(token);
+    setAgentProfiles(response.profiles);
+  }, [token]);
+
   useEffect(() => {
     void loadData().catch((loadError) => {
       setError((loadError as Error).message);
     });
     void refreshKnowledge();
-  }, [loadData, refreshKnowledge]);
+    void loadAgentProfiles().catch((loadError) => {
+      setError((loadError as Error).message);
+    });
+  }, [loadData, refreshKnowledge, loadAgentProfiles]);
 
   useEffect(() => {
     if (activeTab !== "leads") {
@@ -391,29 +414,10 @@ export function DashboardPage() {
   }, [messages, selectedConversationId]);
 
   useEffect(() => {
-    if (!showSettingsMenu) {
-      return;
+    if (overview?.whatsapp.phoneNumber) {
+      setAgentLinkedNumber((current) => current || overview.whatsapp.phoneNumber || "");
     }
-    const handlePointerDown = (event: MouseEvent) => {
-      const menuRoot = settingsMenuRef.current;
-      if (!menuRoot) {
-        return;
-      }
-      if (event.target instanceof Node && !menuRoot.contains(event.target)) {
-        setShowSettingsMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-    };
-  }, [showSettingsMenu]);
-
-  useEffect(() => {
-    if (activeTab !== "bot_settings" && showSettingsMenu) {
-      setShowSettingsMenu(false);
-    }
-  }, [activeTab, showSettingsMenu]);
+  }, [overview?.whatsapp.phoneNumber]);
 
   useEffect(() => {
     if (!token) {
@@ -531,6 +535,15 @@ export function DashboardPage() {
     }
   };
 
+  const handleOpenBusinessApiSetup = () => {
+    const subject = encodeURIComponent("Official WhatsApp Business API Setup Request");
+    const body = encodeURIComponent(
+      "Hi WagenAI team,\n\nI want to connect Official WhatsApp Business API mode for my account.\nPlease help me with onboarding steps.\n"
+    );
+    window.open(`mailto:sales@wagenai.com?subject=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
+    setInfo("Business API setup request opened in your email client.");
+  };
+
   const handleExportLeads = () => {
     if (leads.length === 0) {
       setInfo("No leads available to export.");
@@ -606,8 +619,12 @@ export function DashboardPage() {
     [stopUploadPolling]
   );
 
-  const handleSaveBotSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const persistBotSettings = async (
+    basics: BusinessBasicsPayload,
+    selectedPersonality: (typeof PERSONALITIES)[number]["key"],
+    selectedCustomPrompt: string,
+    successMessage: string
+  ) => {
     if (!token) {
       return;
     }
@@ -617,20 +634,139 @@ export function DashboardPage() {
     setInfo(null);
     try {
       await saveBusinessBasics(token, {
-        ...businessBasics,
-        defaultCountry: businessBasics.defaultCountry.trim().toUpperCase() || "IN",
-        defaultCurrency: businessBasics.defaultCurrency.trim().toUpperCase() || "INR",
+        ...basics,
+        defaultCountry: basics.defaultCountry.trim().toUpperCase() || "IN",
+        defaultCurrency: basics.defaultCurrency.trim().toUpperCase() || "INR",
         websiteUrl: websiteUrl.trim(),
         manualFaq: manualFaq.trim()
       });
       await savePersonality(token, {
-        personality,
-        customPrompt: personality === "custom" ? customPrompt.trim() : undefined
+        personality: selectedPersonality,
+        customPrompt: selectedPersonality === "custom" ? selectedCustomPrompt.trim() : undefined
       });
       await refreshUser();
-      setInfo("Bot settings saved.");
+      setInfo(successMessage);
     } catch (saveError) {
       setError((saveError as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveBotSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await persistBotSettings(businessBasics, personality, customPrompt, "Bot settings saved.");
+  };
+
+  const handleCreateOrUpdateAgentProfile = async () => {
+    if (!token) {
+      return;
+    }
+    const cleanName = agentName.trim();
+    const cleanNumber = agentLinkedNumber.trim();
+    if (!cleanName) {
+      setError("Agent name is required.");
+      return;
+    }
+    if (!cleanNumber) {
+      setError("Linked number is required.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const payload = {
+        name: cleanName,
+        linkedNumber: cleanNumber,
+        channelType: agentChannelType,
+        businessBasics: { ...businessBasics },
+        personality,
+        customPrompt
+      };
+
+      const response = selectedAgentProfileId
+        ? await updateAgentProfile(token, selectedAgentProfileId, payload)
+        : await createAgentProfile(token, payload);
+
+      setSelectedAgentProfileId(response.profile.id);
+      setAgentProfiles((current) => {
+        const exists = current.some((item) => item.id === response.profile.id);
+        if (exists) {
+          return current.map((item) => (item.id === response.profile.id ? response.profile : item));
+        }
+        return [response.profile, ...current];
+      });
+      setInfo(`Agent profile "${cleanName}" saved.`);
+    } catch (saveError) {
+      setError((saveError as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLoadAgentProfile = (profile: AgentProfile) => {
+    setSelectedAgentProfileId(profile.id);
+    setAgentName(profile.name);
+    setAgentLinkedNumber(profile.linkedNumber);
+    setAgentChannelType(profile.channelType);
+    setBusinessBasics(profile.businessBasics);
+    setPersonality(profile.personality);
+    setCustomPrompt(profile.customPrompt ?? "");
+    setInfo(`Loaded profile "${profile.name}" in editor.`);
+    setError(null);
+  };
+
+  const handleDeleteAgentProfile = async (profileId: string) => {
+    if (!token) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await deleteAgentProfile(token, profileId);
+      setAgentProfiles((current) => current.filter((profile) => profile.id !== profileId));
+      if (selectedAgentProfileId === profileId) {
+        setSelectedAgentProfileId("");
+        setAgentName("");
+      }
+      setInfo("Agent profile removed.");
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleApplyAgentProfile = async () => {
+    if (!token) {
+      return;
+    }
+    const profile = agentProfiles.find((item) => item.id === selectedAgentProfileId);
+    if (!profile) {
+      setError("Select an agent profile first.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await updateAgentProfile(token, profile.id, {
+        name: profile.name,
+        linkedNumber: profile.linkedNumber,
+        channelType: profile.channelType,
+        businessBasics: profile.businessBasics,
+        personality: profile.personality,
+        customPrompt: profile.customPrompt ?? "",
+        isActive: true
+      });
+      await loadAgentProfiles();
+      setInfo(`Agent "${profile.name}" is now active for ${profile.linkedNumber} (${profile.channelType.toUpperCase()}).`);
+    } catch (applyError) {
+      setError((applyError as Error).message);
     } finally {
       setBusy(false);
     }
@@ -860,6 +996,9 @@ export function DashboardPage() {
     user?.name ||
     "WAgen";
   const currentSection = DASHBOARD_TAB_OPTIONS.find((option) => option.value === activeTab) ?? DASHBOARD_TAB_OPTIONS[0];
+  const selectedAgentProfile =
+    agentProfiles.find((profile) => profile.id === selectedAgentProfileId) ?? null;
+  const isWhatsAppConnected = overview?.whatsapp.status === "connected";
   const selectedConversationLabel = selectedConversation
     ? selectedConversation.contact_name || formatPhone(selectedConversation.phone_number)
     : "Select a conversation";
@@ -1154,240 +1293,365 @@ export function DashboardPage() {
           </div>
         </div>
       )}
-
-      {activeTab === "bot_settings" && (
+      {activeTab === "settings" && (
         <section className="clone-settings-view">
           <div className="clone-settings-top">
             <h2>Settings</h2>
             <div className="clone-settings-top-actions">
-              <span>{overview?.whatsapp.phoneNumber || "No number"}</span>
-              <div className="clone-settings-menu-wrap" ref={settingsMenuRef}>
-                <button
-                  type="button"
-                  className="clone-settings-menu-trigger"
-                  aria-label="Settings quick actions"
-                  aria-expanded={showSettingsMenu}
-                  onClick={() => setShowSettingsMenu((current) => !current)}
-                >
-                  ≡
-                </button>
-                {showSettingsMenu && (
-                  <div className="clone-settings-menu-dropdown">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowSettingsMenu(false);
-                        navigate("/widget");
-                      }}
-                    >
-                      <span className="clone-rail-icon">W</span>
-                      <span>Widget Builder</span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setShowSettingsMenu(false);
-                        void handleReconnectWhatsApp();
-                      }}
-                    >
-                      <span className="clone-rail-icon">R</span>
-                      <span>Reconnect</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowSettingsMenu(false);
-                        navigate("/onboarding?focus=qr");
-                      }}
-                    >
-                      <span className="clone-rail-icon">Q</span>
-                      <span>Scan QR</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-              <button type="button" className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>
-                Manage Connections
-              </button>
+              <span>{overview?.whatsapp.phoneNumber || "No number linked"}</span>
             </div>
           </div>
 
-          <form className="stack-form clone-settings-form" onSubmit={handleSaveBotSettings}>
-            <div className="train-grid two-col">
-              <label>
-                Company Name
-                <input
-                  required
-                  value={businessBasics.companyName}
-                  onChange={(event) => handleBasicsChange("companyName", event.target.value)}
-                />
-              </label>
-              <label>
-                Support Domain
-                <input
-                  required
-                  value={businessBasics.whatDoYouSell}
-                  onChange={(event) => handleBasicsChange("whatDoYouSell", event.target.value)}
-                />
-              </label>
-              <label>
-                Target Audience
-                <input
-                  required
-                  value={businessBasics.targetAudience}
-                  onChange={(event) => handleBasicsChange("targetAudience", event.target.value)}
-                />
-              </label>
-              <label>
-                Default Country
-                <input
-                  required
-                  value={businessBasics.defaultCountry}
-                  onChange={(event) => handleBasicsChange("defaultCountry", event.target.value.toUpperCase())}
-                />
-              </label>
-              <label>
-                Default Currency
-                <input
-                  required
-                  value={businessBasics.defaultCurrency}
-                  onChange={(event) => handleBasicsChange("defaultCurrency", event.target.value.toUpperCase())}
-                />
-              </label>
-              <label>
-                Escalation Contact Name
-                <input
-                  required
-                  value={businessBasics.supportContactName}
-                  onChange={(event) => handleBasicsChange("supportContactName", event.target.value)}
-                />
-              </label>
-              <label>
-                Escalation Phone
-                <input
-                  required
-                  value={businessBasics.supportPhoneNumber}
-                  onChange={(event) => handleBasicsChange("supportPhoneNumber", event.target.value)}
-                />
-              </label>
-              <label>
-                Escalation Email
-                <input
-                  required
-                  type="email"
-                  value={businessBasics.supportEmail}
-                  onChange={(event) => handleBasicsChange("supportEmail", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                Address
-                <textarea
-                  required
-                  value={businessBasics.supportAddress}
-                  onChange={(event) => handleBasicsChange("supportAddress", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                USP / Business Description
-                <textarea required value={businessBasics.usp} onChange={(event) => handleBasicsChange("usp", event.target.value)} />
-              </label>
-              <label className="full-span">
-                Common Issues / Objections
-                <textarea
-                  required
-                  value={businessBasics.objections}
-                  onChange={(event) => handleBasicsChange("objections", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                Greeting Script
-                <textarea
-                  required
-                  value={businessBasics.greetingScript}
-                  onChange={(event) => handleBasicsChange("greetingScript", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                Availability Script
-                <textarea
-                  required
-                  value={businessBasics.availabilityScript}
-                  onChange={(event) => handleBasicsChange("availabilityScript", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                Objection Handling Script
-                <textarea
-                  required
-                  value={businessBasics.objectionHandlingScript}
-                  onChange={(event) => handleBasicsChange("objectionHandlingScript", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                Booking Script
-                <textarea
-                  required
-                  value={businessBasics.bookingScript}
-                  onChange={(event) => handleBasicsChange("bookingScript", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                Feedback Collection Script
-                <textarea
-                  required
-                  value={businessBasics.feedbackCollectionScript}
-                  onChange={(event) => handleBasicsChange("feedbackCollectionScript", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                Complaint Handling Script
-                <textarea
-                  required
-                  value={businessBasics.complaintHandlingScript}
-                  onChange={(event) => handleBasicsChange("complaintHandlingScript", event.target.value)}
-                />
-              </label>
-              <label className="full-span">
-                AI Do Rules
-                <textarea required value={businessBasics.aiDoRules} onChange={(event) => handleBasicsChange("aiDoRules", event.target.value)} />
-              </label>
-              <label className="full-span">
-                AI Do Not Rules
-                <textarea
-                  required
-                  value={businessBasics.aiDontRules}
-                  onChange={(event) => handleBasicsChange("aiDontRules", event.target.value)}
-                />
-              </label>
-            </div>
-
-            <fieldset className="personality-grid">
-              {PERSONALITIES.map((option) => (
-                <label key={option.key} className={personality === option.key ? "selected" : ""}>
-                  <input
-                    type="radio"
-                    name="personality"
-                    value={option.key}
-                    checked={personality === option.key}
-                    onChange={() => setPersonality(option.key)}
-                  />
-                  {option.label}
-                </label>
-              ))}
-            </fieldset>
-
-            {personality === "custom" && (
-              <label>
-                Custom Prompt
-                <textarea value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} />
-              </label>
-            )}
-
-            <button className="primary-btn" type="submit" disabled={busy}>
-              Save Bot Settings
+          <nav className="clone-settings-submenu">
+            <button
+              type="button"
+              className={settingsSubmenu === "setup_qr" ? "active" : ""}
+              onClick={() => setSettingsSubmenu("setup_qr")}
+            >
+              1. Setup QR
             </button>
-          </form>
+            <button
+              type="button"
+              className={settingsSubmenu === "setup_api" ? "active" : ""}
+              onClick={() => setSettingsSubmenu("setup_api")}
+            >
+              2. Connect WhatsApp Business API
+            </button>
+          </nav>
+
+          {settingsSubmenu === "setup_qr" ? (
+            <article className="clone-setup-panel">
+              <h3>Instant QR Mode Setup</h3>
+              <p>Connect WhatsApp quickly for starter usage. Best for testing and small-scale automation.</p>
+              <div className="clone-channel-meta">
+                <div>
+                  <h3>Status</h3>
+                  <p>{overview?.whatsapp.status ?? "not_connected"}</p>
+                </div>
+                <div>
+                  <h3>Linked Number</h3>
+                  <p>{overview?.whatsapp.phoneNumber || "Not linked"}</p>
+                </div>
+                <div>
+                  <h3>Session</h3>
+                  <p>{overview?.whatsapp.hasQr ? "QR generated" : "Not generated"}</p>
+                </div>
+              </div>
+              <div className="clone-hero-actions">
+                <button type="button" className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>
+                  Setup QR
+                </button>
+                <button type="button" className="ghost-btn" disabled={busy} onClick={() => void handleReconnectWhatsApp()}>
+                  Reconnect
+                </button>
+              </div>
+              <p className="tiny-note">
+                QR mode is ideal for testing and early-stage businesses. For long-term growth, use Official API mode.
+              </p>
+            </article>
+          ) : (
+            <article className="clone-setup-panel">
+              <h3>Official WhatsApp Business API</h3>
+              <p>Use Official API mode for stable high-volume messaging, lower risk, and scale operations.</p>
+              <div className="clone-channel-meta">
+                <div>
+                  <h3>Mode</h3>
+                  <p>Scale</p>
+                </div>
+                <div>
+                  <h3>Approval</h3>
+                  <p>Required by Meta</p>
+                </div>
+                <div>
+                  <h3>Best For</h3>
+                  <p>Growing teams and enterprises</p>
+                </div>
+              </div>
+              <div className="clone-hero-actions">
+                <button type="button" className="primary-btn" onClick={handleOpenBusinessApiSetup}>
+                  Connect Business API
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => window.open("mailto:support@wagenai.com", "_blank", "noopener,noreferrer")}
+                >
+                  Contact Support
+                </button>
+              </div>
+              <p className="tiny-note">API setup usually takes 1-2 working days after business verification.</p>
+            </article>
+          )}
+        </section>
+      )}
+
+      {activeTab === "bot_agents" && (
+        <section className="clone-settings-view">
+          <div className="clone-settings-top">
+            <h2>Bot Agents</h2>
+            <div className="clone-settings-top-actions">
+              <span>{selectedAgentProfile ? `Editing: ${selectedAgentProfile.name}` : "Create an agent profile"}</span>
+            </div>
+          </div>
+
+          <div className="agent-profile-grid">
+            <aside className="agent-profile-list">
+              <div className="agent-profile-toolbar">
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => {
+                    setSelectedAgentProfileId("");
+                    setAgentName("");
+                    setAgentChannelType("qr");
+                    setAgentLinkedNumber(overview?.whatsapp.phoneNumber || "");
+                  }}
+                >
+                  New Agent
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  disabled={!selectedAgentProfileId || busy}
+                  onClick={() => void handleApplyAgentProfile()}
+                >
+                  Apply to Live Bot
+                </button>
+              </div>
+              {agentProfiles.length === 0 ? (
+                <p className="empty-note">No agent profiles yet. Create your first agent and tag it to a linked number.</p>
+              ) : (
+                agentProfiles.map((profile) => (
+                  <article
+                    key={profile.id}
+                    className={selectedAgentProfileId === profile.id ? "agent-profile-card active" : "agent-profile-card"}
+                  >
+                    <header>
+                      <strong>{profile.name}</strong>
+                      <span>{profile.channelType.toUpperCase()}</span>
+                    </header>
+                    <p>{profile.linkedNumber}</p>
+                    <small>{new Date(profile.createdAt).toLocaleString()}</small>
+                    <div className="agent-profile-actions">
+                      <button type="button" className="ghost-btn" onClick={() => handleLoadAgentProfile(profile)}>
+                        Load
+                      </button>
+                      <button type="button" className="ghost-btn" onClick={() => handleDeleteAgentProfile(profile.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </aside>
+
+            <form
+              className="stack-form clone-settings-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleCreateOrUpdateAgentProfile();
+              }}
+            >
+              <div className="train-grid two-col">
+                <label>
+                  Agent Name
+                  <input required value={agentName} onChange={(event) => setAgentName(event.target.value)} />
+                </label>
+                <label>
+                  Linked Number
+                  <input required value={agentLinkedNumber} onChange={(event) => setAgentLinkedNumber(event.target.value)} />
+                </label>
+                <label>
+                  Channel Mode
+                  <select value={agentChannelType} onChange={(event) => setAgentChannelType(event.target.value as "qr" | "api")}>
+                    <option value="qr">QR Mode</option>
+                    <option value="api">Official API Mode</option>
+                  </select>
+                </label>
+                <label>
+                  Company Name
+                  <input
+                    required
+                    value={businessBasics.companyName}
+                    onChange={(event) => handleBasicsChange("companyName", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Support Domain
+                  <input
+                    required
+                    value={businessBasics.whatDoYouSell}
+                    onChange={(event) => handleBasicsChange("whatDoYouSell", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Target Audience
+                  <input
+                    required
+                    value={businessBasics.targetAudience}
+                    onChange={(event) => handleBasicsChange("targetAudience", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Default Country
+                  <input
+                    required
+                    value={businessBasics.defaultCountry}
+                    onChange={(event) => handleBasicsChange("defaultCountry", event.target.value.toUpperCase())}
+                  />
+                </label>
+                <label>
+                  Default Currency
+                  <input
+                    required
+                    value={businessBasics.defaultCurrency}
+                    onChange={(event) => handleBasicsChange("defaultCurrency", event.target.value.toUpperCase())}
+                  />
+                </label>
+                <label>
+                  Escalation Contact Name
+                  <input
+                    required
+                    value={businessBasics.supportContactName}
+                    onChange={(event) => handleBasicsChange("supportContactName", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Escalation Phone
+                  <input
+                    required
+                    value={businessBasics.supportPhoneNumber}
+                    onChange={(event) => handleBasicsChange("supportPhoneNumber", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Escalation Email
+                  <input
+                    required
+                    type="email"
+                    value={businessBasics.supportEmail}
+                    onChange={(event) => handleBasicsChange("supportEmail", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  Address
+                  <textarea
+                    required
+                    value={businessBasics.supportAddress}
+                    onChange={(event) => handleBasicsChange("supportAddress", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  USP / Business Description
+                  <textarea required value={businessBasics.usp} onChange={(event) => handleBasicsChange("usp", event.target.value)} />
+                </label>
+                <label className="full-span">
+                  Common Issues / Objections
+                  <textarea
+                    required
+                    value={businessBasics.objections}
+                    onChange={(event) => handleBasicsChange("objections", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  Greeting Script
+                  <textarea
+                    required
+                    value={businessBasics.greetingScript}
+                    onChange={(event) => handleBasicsChange("greetingScript", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  Availability Script
+                  <textarea
+                    required
+                    value={businessBasics.availabilityScript}
+                    onChange={(event) => handleBasicsChange("availabilityScript", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  Objection Handling Script
+                  <textarea
+                    required
+                    value={businessBasics.objectionHandlingScript}
+                    onChange={(event) => handleBasicsChange("objectionHandlingScript", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  Booking Script
+                  <textarea
+                    required
+                    value={businessBasics.bookingScript}
+                    onChange={(event) => handleBasicsChange("bookingScript", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  Feedback Collection Script
+                  <textarea
+                    required
+                    value={businessBasics.feedbackCollectionScript}
+                    onChange={(event) => handleBasicsChange("feedbackCollectionScript", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  Complaint Handling Script
+                  <textarea
+                    required
+                    value={businessBasics.complaintHandlingScript}
+                    onChange={(event) => handleBasicsChange("complaintHandlingScript", event.target.value)}
+                  />
+                </label>
+                <label className="full-span">
+                  AI Do Rules
+                  <textarea required value={businessBasics.aiDoRules} onChange={(event) => handleBasicsChange("aiDoRules", event.target.value)} />
+                </label>
+                <label className="full-span">
+                  AI Do Not Rules
+                  <textarea
+                    required
+                    value={businessBasics.aiDontRules}
+                    onChange={(event) => handleBasicsChange("aiDontRules", event.target.value)}
+                  />
+                </label>
+              </div>
+
+              <fieldset className="personality-grid">
+                {PERSONALITIES.map((option) => (
+                  <label key={option.key} className={personality === option.key ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="personality"
+                      value={option.key}
+                      checked={personality === option.key}
+                      onChange={() => setPersonality(option.key)}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </fieldset>
+
+              {personality === "custom" && (
+                <label>
+                  Custom Prompt
+                  <textarea value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} />
+                </label>
+              )}
+
+              <div className="clone-hero-actions">
+                <button className="primary-btn" type="submit" disabled={busy}>
+                  {selectedAgentProfile ? "Update Agent Profile" : "Save Agent Profile"}
+                </button>
+                <button
+                  className="ghost-btn"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void persistBotSettings(businessBasics, personality, customPrompt, "Live bot settings saved.")}
+                >
+                  Save Live Settings
+                </button>
+              </div>
+            </form>
+          </div>
         </section>
       )}
 
@@ -1524,119 +1788,159 @@ export function DashboardPage() {
           </article>
         </section>
       )}
-
       {activeTab === "conversations" && (
         <section className="clone-chat-wrap">
-          <div className="clone-chat-filterbar">
-            <label className="clone-chat-search">
-              <input
-                value={chatSearch}
-                onChange={(event) => setChatSearch(event.target.value)}
-                placeholder="Search chats..."
-              />
-            </label>
-            <nav className="clone-chat-filter-pills">
-              {CHAT_LEAD_FILTER_OPTIONS.map((filter) => (
-                <button
-                  key={filter.value}
-                  type="button"
-                  className={chatLeadFilter === filter.value ? "active" : ""}
-                  onClick={() => setChatLeadFilter((current) => (current === filter.value ? null : filter.value))}
-                >
-                  {filter.label} ({chatLeadCounts[filter.value]})
-                </button>
-              ))}
-            </nav>
-          </div>
-          <section className="clone-chat-layout">
-            <aside className="clone-thread-list">
-              {filteredConversations.length === 0 ? (
-                <p className="empty-note">
-                  {chatSearch.trim()
-                    ? "No conversations match your search."
-                    : "No conversations yet. Send a new inbound message to start chat tracking."}
-                </p>
-              ) : (
-                filteredConversations.map((conversation) => {
-                  const label = conversation.contact_name || formatPhone(conversation.phone_number);
-                  const stage = conversation.stage.toLowerCase();
-                  const stageClass = stage === "hot" || stage === "warm" || stage === "cold" ? stage : "cold";
-                  const stageLabel = `${stageClass.charAt(0).toUpperCase()}${stageClass.slice(1)} Lead`;
-                  const initials = label
-                    .split(" ")
-                    .map((part) => part[0] ?? "")
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase();
-                  return (
-                    <button
-                      key={conversation.id}
-                      className={
-                        conversation.id === selectedConversationId
-                          ? `clone-thread-item stage-${stageClass} active`
-                          : `clone-thread-item stage-${stageClass}`
-                      }
-                      onClick={() => setSelectedConversationId(conversation.id)}
-                    >
-                      <span className="clone-thread-avatar">{initials || "U"}</span>
-                      <div>
-                        <header>
-                          <div className="clone-thread-title">
-                            <strong>{label}</strong>
-                            <span className={`clone-thread-stage ${stageClass}`}>{stageLabel}</span>
-                          </div>
-                          <small>{conversation.last_message_at ? new Date(conversation.last_message_at).toLocaleTimeString() : ""}</small>
-                        </header>
-                        <p>{conversation.last_message || "No messages yet"}</p>
-                      </div>
+          {!isWhatsAppConnected ? (
+            <section className="clone-chat-setup">
+              <h2>Connect WhatsApp to Start Chat Automation</h2>
+              <p>Choose your setup mode below. Once connected, your live inbox and AI replies start automatically.</p>
+              <div className="clone-setup-grid">
+                <article className="clone-setup-panel">
+                  <h3>Instant QR Mode</h3>
+                  <p>Best for fast setup, testing, and starter usage.</p>
+                  <div className="clone-hero-actions">
+                    <button type="button" className="primary-btn" onClick={() => navigate("/onboarding?focus=qr")}>
+                      Setup QR
                     </button>
-                  );
-                })
-              )}
-            </aside>
-
-            <section className="clone-chat-panel">
-              <header className="clone-chat-head">
-                <div>
-                  <h2>{selectedConversationLabel}</h2>
-                  {selectedConversation ? (
-                    <small>
-                      {formatPhone(selectedConversation.phone_number)} | Score {selectedConversation.score} | {selectedConversation.stage}
-                    </small>
-                  ) : null}
-                </div>
-                {selectedConversation && (
-                  <div className="chat-actions">
-                    <button className="ghost-btn" disabled={busy} onClick={handlePauseToggle}>
-                      {selectedConversation.ai_paused ? "Resume AI" : "Pause AI"}
+                    <button type="button" className="ghost-btn" disabled={busy} onClick={() => void handleReconnectWhatsApp()}>
+                      Reconnect
                     </button>
                   </div>
-                )}
-              </header>
+                </article>
+                <article className="clone-setup-panel">
+                  <h3>Official WhatsApp API</h3>
+                  <p>Recommended for scaling, higher volume, and production reliability.</p>
+                  <div className="clone-hero-actions">
+                    <button type="button" className="primary-btn" onClick={handleOpenBusinessApiSetup}>
+                      Connect Business API
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => {
+                        setActiveTab("settings");
+                        setSettingsSubmenu("setup_api");
+                      }}
+                    >
+                      Open Settings
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </section>
+          ) : (
+            <>
+              <div className="clone-chat-filterbar">
+                <label className="clone-chat-search">
+                  <input
+                    value={chatSearch}
+                    onChange={(event) => setChatSearch(event.target.value)}
+                    placeholder="Search chats..."
+                  />
+                </label>
+                <nav className="clone-chat-filter-pills">
+                  {CHAT_LEAD_FILTER_OPTIONS.map((filter) => (
+                    <button
+                      key={filter.value}
+                      type="button"
+                      className={chatLeadFilter === filter.value ? "active" : ""}
+                      onClick={() => setChatLeadFilter((current) => (current === filter.value ? null : filter.value))}
+                    >
+                      {filter.label} ({chatLeadCounts[filter.value]})
+                    </button>
+                  ))}
+                </nav>
+              </div>
+              <section className="clone-chat-layout">
+                <aside className="clone-thread-list">
+                  {filteredConversations.length === 0 ? (
+                    <p className="empty-note">
+                      {chatSearch.trim()
+                        ? "No conversations match your search."
+                        : "No conversations yet. Send a new inbound message to start chat tracking."}
+                    </p>
+                  ) : (
+                    filteredConversations.map((conversation) => {
+                      const label = conversation.contact_name || formatPhone(conversation.phone_number);
+                      const stage = conversation.stage.toLowerCase();
+                      const stageClass = stage === "hot" || stage === "warm" || stage === "cold" ? stage : "cold";
+                      const stageLabel = `${stageClass.charAt(0).toUpperCase()}${stageClass.slice(1)} Lead`;
+                      const initials = label
+                        .split(" ")
+                        .map((part) => part[0] ?? "")
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase();
+                      return (
+                        <button
+                          key={conversation.id}
+                          className={
+                            conversation.id === selectedConversationId
+                              ? `clone-thread-item stage-${stageClass} active`
+                              : `clone-thread-item stage-${stageClass}`
+                          }
+                          onClick={() => setSelectedConversationId(conversation.id)}
+                        >
+                          <span className="clone-thread-avatar">{initials || "U"}</span>
+                          <div>
+                            <header>
+                              <div className="clone-thread-title">
+                                <strong>{label}</strong>
+                                <span className={`clone-thread-stage ${stageClass}`}>{stageLabel}</span>
+                              </div>
+                              <small>{conversation.last_message_at ? new Date(conversation.last_message_at).toLocaleTimeString() : ""}</small>
+                            </header>
+                            <p>{conversation.last_message || "No messages yet"}</p>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </aside>
 
-              <div ref={messagesScrollRef} className="clone-messages messages-scroll">
-                {messages.length === 0 ? (
-                  <p className="empty-note">No messages in this chat yet.</p>
-                ) : (
-                  messages.map((message) => (
-                    <div key={message.id} className={`bubble ${message.direction}`}>
-                      <p>{message.message_text}</p>
-                      {message.direction === "outbound" && message.total_tokens ? (
-                        <small className="token-meta">
-                          Tokens: {message.total_tokens}
-                          {typeof message.prompt_tokens === "number" ? ` (P:${message.prompt_tokens}` : ""}
-                          {typeof message.completion_tokens === "number" ? ` C:${message.completion_tokens})` : ""}
-                          {message.ai_model ? ` | ${message.ai_model}` : ""}
+                <section className="clone-chat-panel">
+                  <header className="clone-chat-head">
+                    <div>
+                      <h2>{selectedConversationLabel}</h2>
+                      {selectedConversation ? (
+                        <small>
+                          {formatPhone(selectedConversation.phone_number)} | Score {selectedConversation.score} | {selectedConversation.stage}
                         </small>
                       ) : null}
-                      <small>{new Date(message.created_at).toLocaleTimeString()}</small>
                     </div>
-                  ))
-                )}
-              </div>
+                    {selectedConversation && (
+                      <div className="chat-actions">
+                        <button className="ghost-btn" disabled={busy} onClick={handlePauseToggle}>
+                          {selectedConversation.ai_paused ? "Resume AI" : "Pause AI"}
+                        </button>
+                      </div>
+                    )}
+                  </header>
 
-            </section>
-          </section>
+                  <div ref={messagesScrollRef} className="clone-messages messages-scroll">
+                    {messages.length === 0 ? (
+                      <p className="empty-note">No messages in this chat yet.</p>
+                    ) : (
+                      messages.map((message) => (
+                        <div key={message.id} className={`bubble ${message.direction}`}>
+                          <p>{message.message_text}</p>
+                          {message.direction === "outbound" && message.total_tokens ? (
+                            <small className="token-meta">
+                              Tokens: {message.total_tokens}
+                              {typeof message.prompt_tokens === "number" ? ` (P:${message.prompt_tokens}` : ""}
+                              {typeof message.completion_tokens === "number" ? ` C:${message.completion_tokens})` : ""}
+                              {message.ai_model ? ` | ${message.ai_model}` : ""}
+                            </small>
+                          ) : null}
+                          <small>{new Date(message.created_at).toLocaleTimeString()}</small>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </section>
+            </>
+          )}
         </section>
       )}
 

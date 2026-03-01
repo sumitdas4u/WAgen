@@ -78,6 +78,26 @@ CREATE TABLE IF NOT EXISTS lead_summaries (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  channel_type TEXT NOT NULL CHECK (channel_type IN ('qr', 'api')),
+  linked_number TEXT NOT NULL,
+  business_basics JSONB NOT NULL DEFAULT '{}'::jsonb,
+  personality TEXT NOT NULL DEFAULT 'friendly_warm',
+  custom_personality_prompt TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_profiles_user_idx ON agent_profiles(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS agent_profiles_channel_lookup_idx ON agent_profiles(user_id, channel_type, linked_number, is_active);
+CREATE UNIQUE INDEX IF NOT EXISTS agent_profiles_unique_active_channel_idx
+  ON agent_profiles(user_id, channel_type, linked_number)
+  WHERE is_active = TRUE;
+
 CREATE TABLE IF NOT EXISTS user_subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -151,4 +171,9 @@ FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 DROP TRIGGER IF EXISTS user_subscriptions_touch_updated_at ON user_subscriptions;
 CREATE TRIGGER user_subscriptions_touch_updated_at
 BEFORE UPDATE ON user_subscriptions
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+DROP TRIGGER IF EXISTS agent_profiles_touch_updated_at ON agent_profiles;
+CREATE TRIGGER agent_profiles_touch_updated_at
+BEFORE UPDATE ON agent_profiles
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

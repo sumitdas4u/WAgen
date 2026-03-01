@@ -609,6 +609,165 @@
   width: fit-content;
 }
 
+.clone-settings-submenu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.clone-settings-submenu button {
+  border: 1px solid #d2dceb;
+  background: #f7f9fc;
+  color: #3d5677;
+  border-radius: 999px;
+  padding: 0.42rem 0.8rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clone-settings-submenu button.active {
+  border-color: #2e79d8;
+  background: #e7f0ff;
+  color: #1e57ad;
+}
+
+.clone-chat-setup {
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.clone-chat-setup h2 {
+  font-size: 1.55rem;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+.clone-chat-setup p {
+  color: #5a6f8b;
+}
+
+.clone-setup-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.clone-setup-panel {
+  border: 1px solid #d7e0ef;
+  border-radius: 12px;
+  background: #f7f9fc;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.clone-setup-panel h3 {
+  font-size: 1.08rem;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+.clone-setup-panel p {
+  color: #536883;
+}
+
+.clone-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.clone-hero-actions .primary-btn,
+.clone-hero-actions .ghost-btn {
+  border-radius: 8px;
+  padding: 0.45rem 0.82rem;
+}
+
+.agent-profile-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+}
+
+.agent-profile-list {
+  border: 1px solid #d6deeb;
+  border-radius: 12px;
+  background: #f7f9fc;
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.agent-profile-toolbar {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.agent-profile-toolbar .primary-btn,
+.agent-profile-toolbar .ghost-btn {
+  border-radius: 8px;
+  padding: 0.42rem 0.72rem;
+}
+
+.agent-profile-card {
+  border: 1px solid #d7dfec;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.62rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.agent-profile-card.active {
+  border-color: #9dc4f2;
+  background: #eef5ff;
+}
+
+.agent-profile-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.agent-profile-card header strong {
+  font-size: 0.95rem;
+}
+
+.agent-profile-card header span {
+  border: 1px solid #c6d7ef;
+  border-radius: 999px;
+  padding: 0.1rem 0.42rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #2d578c;
+  background: #ecf3ff;
+}
+
+.agent-profile-card p {
+  color: #3d5675;
+  font-size: 0.85rem;
+}
+
+.agent-profile-card small {
+  color: #72849d;
+  font-size: 0.75rem;
+}
+
+.agent-profile-actions {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.agent-profile-actions .ghost-btn {
+  border-radius: 8px;
+  padding: 0.32rem 0.62rem;
+}
+
 @media (max-width: 1200px) {
   .clone-icon-rail {
     width: 48px;
@@ -621,6 +780,11 @@
 
   .clone-chat-layout {
     grid-template-columns: 300px minmax(0, 1fr);
+  }
+
+  .clone-setup-grid,
+  .agent-profile-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -3724,6 +3888,83 @@ textarea {
   padding: 0.45rem 0.8rem;
 }
 
+.policy-page {
+  width: min(1040px, calc(100% - 2rem));
+  margin: 1.1rem auto 2rem;
+  padding: 0;
+}
+
+.policy-card {
+  border: 1px solid #d8e1ee;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 1.2rem;
+  color: #10253f;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.policy-top {
+  display: grid;
+  gap: 0.4rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid #e4ebf5;
+}
+
+.policy-back {
+  color: #0a7b48;
+  font-weight: 700;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.policy-back:hover {
+  text-decoration: underline;
+}
+
+.policy-top h1 {
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: 1.8rem;
+  line-height: 1.15;
+}
+
+.policy-card h2 {
+  margin-top: 0.9rem;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: 1.14rem;
+  line-height: 1.2;
+}
+
+.policy-card h3 {
+  margin-top: 0.25rem;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.policy-card p,
+.policy-card li {
+  color: #2f4968;
+  line-height: 1.55;
+}
+
+.policy-card ul {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.policy-card a {
+  color: #0f6abf;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.policy-card a:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 980px) {
   .widget-builder-page {
     width: min(100%, calc(100% - 1rem));
@@ -3739,6 +3980,14 @@ textarea {
 
   .widget-builder-topbar {
     flex-wrap: wrap;
+  }
+
+  .policy-page {
+    width: min(100%, calc(100% - 1rem));
+  }
+
+  .policy-card {
+    padding: 0.95rem;
   }
 }
 
@@ -3812,4 +4061,256 @@ textarea {
     margin: 0.2rem;
     height: calc(100vh - 0.4rem);
   }
+}
+
+/* Unified landing-style palette across dashboard/auth/legal routes. */
+:root {
+  --bg-start: #ffffff;
+  --bg-end: #f4f8f6;
+  --panel: #ffffff;
+  --ink: #0b1324;
+  --ink-soft: #5f6f8a;
+  --brand: #17a65a;
+  --brand-dark: #0f8b49;
+  --line: #d8e0ed;
+  --success: #17a65a;
+}
+
+body {
+  background: linear-gradient(180deg, #ffffff 0%, #f6f7fb 100%);
+}
+
+.loading-screen {
+  color: #203652;
+}
+
+input,
+textarea,
+select {
+  border-color: #d3dceb;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #7ac89b;
+  box-shadow: 0 0 0 3px rgba(23, 166, 90, 0.14);
+}
+
+.primary-btn {
+  background: linear-gradient(130deg, var(--brand), var(--brand-dark));
+  box-shadow: 0 14px 30px rgba(23, 166, 90, 0.25);
+}
+
+.ghost-btn {
+  border-color: #cad5e6;
+  color: #203652;
+  background: #ffffff;
+}
+
+.info-text {
+  color: #1f8f52;
+}
+
+.tiny-note a {
+  color: #16834b;
+}
+
+.firebase-auth-shell {
+  background:
+    radial-gradient(circle at 8% 88%, rgba(130, 202, 160, 0.26), transparent 44%),
+    radial-gradient(circle at 92% 18%, rgba(203, 237, 218, 0.52), transparent 40%),
+    linear-gradient(180deg, #eff8f2 0%, #e3f3ea 100%);
+}
+
+.firebase-auth-shell::before,
+.firebase-auth-shell::after {
+  border-color: rgba(95, 170, 128, 0.35);
+}
+
+.firebase-auth-brand-mark {
+  background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+}
+
+.firebase-auth-title {
+  color: #1f3f31;
+}
+
+.firebase-auth-field input,
+.firebase-auth-field select,
+.firebase-auth-password-wrap {
+  background: #f8fcf9;
+  border-color: #d3e4d9;
+}
+
+.firebase-auth-password-toggle {
+  background: #edf6ef;
+  color: #2f5f45;
+}
+
+.firebase-auth-submit {
+  background: linear-gradient(130deg, var(--brand), var(--brand-dark));
+}
+
+.firebase-auth-switch-btn,
+.auth-inline-btn {
+  color: #0f8b49;
+}
+
+.wizard-step {
+  background: linear-gradient(130deg, rgba(226, 248, 234, 0.78), rgba(245, 251, 248, 0.75));
+  border-color: #d2e9db;
+}
+
+.wizard-step strong {
+  background: linear-gradient(140deg, #dcf5e5, #e9f8ee);
+  color: #1f7142;
+}
+
+.wizard-step.current {
+  background: linear-gradient(130deg, rgba(206, 241, 220, 0.8), rgba(235, 249, 242, 0.78));
+  border-color: #8fd1aa;
+}
+
+.wizard-step.done {
+  background: linear-gradient(130deg, rgba(220, 245, 230, 0.76), rgba(236, 251, 244, 0.72));
+}
+
+.panel {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(243, 250, 246, 0.95));
+}
+
+.train-section,
+.scenario-card {
+  border-color: #d7e8dd;
+  background: linear-gradient(170deg, rgba(255, 255, 255, 0.9), rgba(243, 251, 247, 0.78));
+}
+
+.personality-grid label.selected {
+  border-color: #9ad7b5;
+  background: rgba(223, 246, 232, 0.8);
+}
+
+.dashboard-shell {
+  border-color: #d8e2ef;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(178, 231, 198, 0.28), transparent 36%),
+    radial-gradient(circle at 88% 10%, rgba(221, 244, 230, 0.55), transparent 36%),
+    #f4f8f6;
+}
+
+.dashboard-shell .primary-btn {
+  background: linear-gradient(130deg, var(--brand), var(--brand-dark));
+  border-color: var(--brand);
+}
+
+.dashboard-topbar,
+.conversation-list,
+.chat-panel {
+  border-color: #d7e3ef;
+  background: #f9fcfa;
+}
+
+.dashboard-brand-mark {
+  background: #d9f4e4;
+  color: #1d6e41;
+}
+
+.top-nav-badge {
+  border-color: #cde3d7;
+  background: #ebf8f0;
+  color: #1f7142;
+}
+
+.top-nav-dropdown:focus {
+  border-color: #71bd92;
+  box-shadow: 0 0 0 2px rgba(23, 166, 90, 0.2);
+}
+
+.conversation-item.active {
+  border-color: #a6d8bc;
+  background: #ecf8f0;
+}
+
+.bubble.outbound {
+  background: #17a65a;
+}
+
+.dashboard-shell.dashboard-clone-shell {
+  border-color: #d8e2ef;
+  background: #f3f7f5;
+}
+
+.clone-icon-rail,
+.clone-main-header,
+.clone-chat-filterbar,
+.clone-thread-list {
+  border-color: #d7e2ee;
+  background: #f8fbf9;
+}
+
+.clone-main {
+  background: #ffffff;
+}
+
+.clone-rail-logo {
+  background: #e9f8ef;
+  color: #1f7847;
+}
+
+.clone-rail-icon {
+  border-color: #d2e6da;
+  background: #edf9f2;
+  color: #226f44;
+}
+
+.clone-rail-btn.active {
+  background: #e8f7ee;
+  border-color: #c5e2d0;
+  color: #1f6f42;
+}
+
+.clone-main-header h1,
+.clone-settings-top h2 {
+  color: #10253f;
+}
+
+.clone-chat-filter-pills button.active {
+  border-color: #71bd92;
+  background: #e9f8ef;
+  color: #1f7142;
+}
+
+.clone-thread-item.active {
+  background: #eaf5ef;
+  border-color: #cfe2d7;
+}
+
+.clone-chat-panel,
+.clone-messages.messages-scroll {
+  border-color: #d7e2ee;
+  background: #f2f7f4;
+}
+
+.clone-settings-menu-dropdown button:hover,
+.clone-settings-menu-trigger:hover {
+  background: #edf8f1;
+}
+
+.clone-warning {
+  border-color: #c7e6d5;
+  background: #ebf9f1;
+}
+
+.clone-warning p {
+  color: #1f6f42;
+}
+
+.policy-back {
+  color: #0f8b49;
+}
+
+.policy-card a {
+  color: #0f8b49;
 }

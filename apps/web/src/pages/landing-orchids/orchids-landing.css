@@ -629,6 +629,20 @@
   margin-top: 1rem;
 }
 
+.orch-legal-section {
+  padding-top: 2.2rem;
+  padding-bottom: 2.2rem;
+}
+
+.orch-legal-section .policy-page {
+  margin: 0 auto;
+}
+
+.orch-legal-section .policy-card {
+  border-color: #d8e2f0;
+  box-shadow: 0 16px 36px rgba(11, 19, 36, 0.08);
+}
+
 @media (max-width: 1100px) {
   .orch-hero {
     grid-template-columns: 1fr;

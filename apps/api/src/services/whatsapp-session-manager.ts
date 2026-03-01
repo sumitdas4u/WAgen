@@ -26,6 +26,7 @@ import {
 } from "./conversation-service.js";
 import { buildSalesReply } from "./ai-reply-service.js";
 import { extractInboundMediaText } from "./inbound-media-service.js";
+import { resolveAgentProfileForChannel, type ChannelType } from "./agent-profile-service.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
@@ -44,6 +45,8 @@ interface QueuedInboundMessage {
   text: string;
   conversationId: string;
   shouldAutoReply: boolean;
+  channelType: ChannelType;
+  channelLinkedNumber: string | null;
 }
 
 function isDirectChatJid(jid: string): boolean {
@@ -663,8 +666,28 @@ class WhatsAppSessionManager {
     }
 
     const history = await getConversationHistoryForPrompt(conversation.id, 10);
+    const channelAgentProfile = await resolveAgentProfileForChannel(
+      job.userId,
+      job.channelType,
+      job.channelLinkedNumber
+    );
+    const effectiveUser = channelAgentProfile
+      ? {
+          ...user,
+          business_basics: channelAgentProfile.businessBasics,
+          personality: channelAgentProfile.personality,
+          custom_personality_prompt: channelAgentProfile.customPrompt
+        }
+      : user;
+
+    if (channelAgentProfile) {
+      console.info(
+        `[WA] auto-reply agent_resolved user=${job.userId} conversation=${job.conversationId} agent=${channelAgentProfile.name} channel=${job.channelType}:${job.channelLinkedNumber}`
+      );
+    }
+
     const reply = await buildSalesReply({
-      user,
+      user: effectiveUser,
       incomingMessage: job.text,
       conversationPhone: job.phoneNumber,
       history
@@ -782,6 +805,7 @@ class WhatsAppSessionManager {
     const senderName = resolveInboundSenderName(message);
     const conversation = await trackInboundMessage(userId, phoneNumber, text, senderName);
     console.info(`[WA] inbound tracked user=${userId} conversation=${conversation.id} phone=${phoneNumber}`);
+    const channelLinkedNumber = runtime ? extractPhoneFromJidCandidate(runtime.socket.user?.id, 15) : null;
 
     realtimeHub.broadcast(userId, "conversation.updated", {
       conversationId: conversation.id,
@@ -798,7 +822,9 @@ class WhatsAppSessionManager {
       phoneNumber,
       text,
       conversationId: conversation.id,
-      shouldAutoReply
+      shouldAutoReply,
+      channelType: "qr",
+      channelLinkedNumber
     });
   }
 }

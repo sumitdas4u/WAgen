@@ -14,6 +14,7 @@ import { whatsappRoutes } from "./routes/whatsapp.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { conversationRoutes } from "./routes/conversations.js";
 import { billingRoutes } from "./routes/billing.js";
+import { agentRoutes } from "./routes/agents.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 
 declare module "fastify" {
@@ -89,6 +90,7 @@ export async function buildApp() {
   await whatsappRoutes(app);
   await dashboardRoutes(app);
   await billingRoutes(app);
+  await agentRoutes(app);
   await conversationRoutes(app);
   await registerRealtimeRoutes(app);
 
