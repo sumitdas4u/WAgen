@@ -258,6 +258,51 @@ async function graphPost<T>(
   return parseGraphResponse<T>(response);
 }
 
+type PhoneRegistrationAttempt = {
+  attempted: boolean;
+  success: boolean;
+  reason: "registered" | "already_registered" | "missing_pin" | "failed";
+  error?: string;
+};
+
+async function registerPhoneNumberIfConfigured(accessToken: string, phoneNumberId: string): Promise<PhoneRegistrationAttempt> {
+  const pin = env.META_PHONE_REGISTRATION_PIN?.trim();
+  if (!pin) {
+    return {
+      attempted: false,
+      success: false,
+      reason: "missing_pin"
+    };
+  }
+
+  try {
+    await graphPost(`/${phoneNumberId}/register`, accessToken, {
+      messaging_product: "whatsapp",
+      pin
+    });
+    return {
+      attempted: true,
+      success: true,
+      reason: "registered"
+    };
+  } catch (error) {
+    const message = (error as Error).message || "Unknown registration failure";
+    if (message.toLowerCase().includes("already") && message.toLowerCase().includes("registered")) {
+      return {
+        attempted: true,
+        success: true,
+        reason: "already_registered"
+      };
+    }
+    return {
+      attempted: true,
+      success: false,
+      reason: "failed",
+      error: message
+    };
+  }
+}
+
 async function graphGetWithFieldFallback(
   path: string,
   accessToken: string,
@@ -508,6 +553,8 @@ async function upsertConnection(args: {
   displayPhoneNumber: string | null;
   accessToken: string;
   expiresInSeconds: number | null;
+  subscriptionStatus?: string;
+  status?: string;
   metadata?: Record<string, unknown>;
 }): Promise<MetaConnection> {
   const linkedNumber = normalizePhoneDigits(args.displayPhoneNumber);
@@ -530,10 +577,9 @@ async function upsertConnection(args: {
        status,
        metadata_json
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'connected', $10::jsonb)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
      ON CONFLICT (phone_number_id)
      DO UPDATE SET
-       user_id = EXCLUDED.user_id,
        meta_business_id = EXCLUDED.meta_business_id,
        waba_id = EXCLUDED.waba_id,
        display_phone_number = EXCLUDED.display_phone_number,
@@ -541,8 +587,9 @@ async function upsertConnection(args: {
        access_token_encrypted = EXCLUDED.access_token_encrypted,
        token_expires_at = EXCLUDED.token_expires_at,
        subscription_status = EXCLUDED.subscription_status,
-       status = 'connected',
+       status = EXCLUDED.status,
        metadata_json = COALESCE(whatsapp_business_connections.metadata_json, '{}'::jsonb) || EXCLUDED.metadata_json
+     WHERE whatsapp_business_connections.user_id = EXCLUDED.user_id
      RETURNING id,
                user_id,
                meta_business_id,
@@ -566,15 +613,49 @@ async function upsertConnection(args: {
       linkedNumber,
       encryptToken(args.accessToken),
       tokenExpiresAt,
-      "active",
+      args.subscriptionStatus ?? "pending",
+      args.status ?? "pending",
       JSON.stringify(args.metadata ?? {})
     ]
   );
 
-  return mapConnection(result.rows[0]);
+  if (result.rows[0]) {
+    return mapConnection(result.rows[0]);
+  }
+
+  const ownerCheck = await pool.query<{ user_id: string }>(
+    `SELECT user_id
+     FROM whatsapp_business_connections
+     WHERE phone_number_id = $1
+     LIMIT 1`,
+    [args.phoneNumberId]
+  );
+  const existingOwner = ownerCheck.rows[0]?.user_id;
+  if (existingOwner && existingOwner !== args.userId) {
+    throw new Error("This WhatsApp API phone number is already connected to another account.");
+  }
+
+  throw new Error("Failed to save WhatsApp Business API connection.");
 }
 
-async function getConnectionRowByPhoneNumberId(phoneNumberId: string): Promise<MetaConnectionRow | null> {
+function deriveConnectionStatusFromSubscription(
+  subscriptionStatus: string,
+  currentStatus: string
+): string {
+  if (currentStatus === "disconnected") {
+    return "disconnected";
+  }
+  if (subscriptionStatus === "active") {
+    return "connected";
+  }
+  return "pending";
+}
+
+async function getConnectionRowByPhoneNumberId(
+  phoneNumberId: string,
+  options?: { includePending?: boolean }
+): Promise<MetaConnectionRow | null> {
+  const includePending = Boolean(options?.includePending);
   const result = await pool.query<MetaConnectionRow>(
     `SELECT id,
             user_id,
@@ -592,9 +673,14 @@ async function getConnectionRowByPhoneNumberId(phoneNumberId: string): Promise<M
             updated_at::text
      FROM whatsapp_business_connections
      WHERE phone_number_id = $1
-       AND status = 'connected'
+       AND (
+         ($2::boolean = TRUE AND status <> 'disconnected')
+         OR
+         ($2::boolean = FALSE AND status = 'connected')
+       )
+     ORDER BY updated_at DESC
      LIMIT 1`,
-    [phoneNumberId]
+    [phoneNumberId, includePending]
   );
 
   return result.rows[0] ?? null;
@@ -618,8 +704,9 @@ async function getLatestConnectionRowByUserId(userId: string): Promise<MetaConne
             updated_at::text
      FROM whatsapp_business_connections
      WHERE user_id = $1
-       AND status = 'connected'
-     ORDER BY updated_at DESC
+       AND status <> 'disconnected'
+     ORDER BY CASE WHEN status = 'connected' THEN 0 ELSE 1 END,
+              updated_at DESC
      LIMIT 1`,
     [userId]
   );
@@ -746,6 +833,7 @@ async function persistMetaStatusSnapshot(
   const nextDisplayPhone = snapshot.displayPhoneNumber ?? row.display_phone_number;
   const nextLinkedNumber = normalizePhoneDigits(nextDisplayPhone) ?? row.linked_number;
   const nextSubscriptionStatus = deriveSubscriptionStatusFromMeta(row.subscription_status, snapshot);
+  const nextConnectionStatus = deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status);
   const metadataPatch: Record<string, unknown> = {
     metaHealth: snapshot,
     lastMetaSyncAt: snapshot.syncedAt
@@ -756,7 +844,8 @@ async function persistMetaStatusSnapshot(
      SET display_phone_number = $2,
          linked_number = $3,
          subscription_status = $4,
-         metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $5::jsonb
+         status = $5,
+         metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $6::jsonb
      WHERE id = $1
      RETURNING id,
                user_id,
@@ -772,7 +861,7 @@ async function persistMetaStatusSnapshot(
                metadata_json,
                created_at::text,
                updated_at::text`,
-    [row.id, nextDisplayPhone, nextLinkedNumber, nextSubscriptionStatus, JSON.stringify(metadataPatch)]
+    [row.id, nextDisplayPhone, nextLinkedNumber, nextSubscriptionStatus, nextConnectionStatus, JSON.stringify(metadataPatch)]
   );
 
   return result.rows[0] ?? row;
@@ -824,7 +913,7 @@ export async function getMetaBusinessStatus(
     }
   }
   return {
-    connected: Boolean(row),
+    connected: row?.status === "connected",
     connection: row ? mapConnection(row) : null
   };
 }
@@ -934,6 +1023,7 @@ export async function completeMetaEmbeddedSignup(
     );
   }
 
+  const registration = await registerPhoneNumberIfConfigured(resolvedToken, discovered.phoneNumberId);
   const connection = await upsertConnection({
     userId,
     metaBusinessId: discovered.metaBusinessId,
@@ -942,18 +1032,32 @@ export async function completeMetaEmbeddedSignup(
     displayPhoneNumber: discovered.displayPhoneNumber,
     accessToken: resolvedToken,
     expiresInSeconds: resolvedExpiry,
+    subscriptionStatus: registration.success ? "active" : "pending",
+    status: registration.success ? "connected" : "pending",
     metadata: {
       source: "embedded_signup",
-      connectedAt: new Date().toISOString()
+      connectedAt: new Date().toISOString(),
+      registration: {
+        ...registration,
+        attemptedAt: new Date().toISOString()
+      }
     }
   });
 
-  const row = await getConnectionRowByPhoneNumberId(connection.phoneNumberId);
+  const row = await getConnectionRowByPhoneNumberId(connection.phoneNumberId, { includePending: true });
   if (!row) {
     return connection;
   }
   try {
     const synced = await refreshConnectionStatusFromMeta(row, { forceRefresh: true });
+    if (!registration.success && synced.status !== "connected") {
+      if (registration.reason === "missing_pin") {
+        throw new Error("WhatsApp number is pending. Set META_PHONE_REGISTRATION_PIN and reconnect to finish registration.");
+      }
+      if (registration.error) {
+        throw new Error(`WhatsApp number registration failed: ${registration.error}`);
+      }
+    }
     return mapConnection(synced);
   } catch (error) {
     console.warn(

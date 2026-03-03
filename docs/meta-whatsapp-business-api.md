@@ -29,13 +29,15 @@ META_APP_SECRET=...
 META_EMBEDDED_SIGNUP_CONFIG_ID=...
 META_VERIFY_TOKEN=...
 META_REDIRECT_URI=https://wagenai.com/meta-callback
+META_PHONE_REGISTRATION_PIN=123456
 META_GRAPH_VERSION=v19.0
 META_TOKEN_ENCRYPTION_KEY=long-random-secret
 ```
 
 Notes:
 - Access tokens are stored encrypted in DB (`whatsapp_business_connections.access_token_encrypted`).
-- If `META_TOKEN_ENCRYPTION_KEY` is missing, encryption key falls back to `JWT_SECRET`.
+- `META_TOKEN_ENCRYPTION_KEY` is required whenever Meta integration is configured.
+- `META_PHONE_REGISTRATION_PIN` should be a 6-digit PIN used for `/{phone-number-id}/register`.
 
 ## 3) Implemented API endpoints
 

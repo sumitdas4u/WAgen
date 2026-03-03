@@ -30,6 +30,7 @@ const BaseEnvSchema = z.object({
   META_EMBEDDED_SIGNUP_CONFIG_ID: z.string().optional(),
   META_VERIFY_TOKEN: z.string().optional(),
   META_REDIRECT_URI: z.string().optional(),
+  META_PHONE_REGISTRATION_PIN: z.string().optional(),
   META_GRAPH_VERSION: z.string().default("v19.0"),
   META_STATUS_SYNC_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
   META_TOKEN_ENCRYPTION_KEY: z.string().optional(),
@@ -89,6 +90,13 @@ const EnvSchema = BaseEnvSchema.superRefine((data, ctx) => {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "META_TOKEN_ENCRYPTION_KEY is required when Meta integration is configured"
+    });
+  }
+
+  if (data.META_PHONE_REGISTRATION_PIN && !/^\d{6}$/.test(data.META_PHONE_REGISTRATION_PIN)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "META_PHONE_REGISTRATION_PIN must be a 6-digit numeric PIN"
     });
   }
 });

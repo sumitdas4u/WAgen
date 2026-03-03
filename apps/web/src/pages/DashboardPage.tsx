@@ -1304,11 +1304,11 @@ export function DashboardPage() {
   }, [loadData, refreshKnowledge, loadAgentProfiles]);
 
   useEffect(() => {
-    if (activeTab !== "settings" || settingsSubmenu !== "setup_api" || !metaBusinessStatus.connected) {
+    if (activeTab !== "settings" || settingsSubmenu !== "setup_api" || !metaBusinessStatus.connection) {
       return;
     }
     void refreshMetaBusinessStatus(true).catch(() => undefined);
-  }, [activeTab, settingsSubmenu, metaBusinessStatus.connected, refreshMetaBusinessStatus]);
+  }, [activeTab, settingsSubmenu, metaBusinessStatus.connection, refreshMetaBusinessStatus]);
 
   useEffect(() => {
     if (activeTab !== "leads") {
@@ -1711,7 +1711,7 @@ export function DashboardPage() {
           ...captured
         });
 
-        setMetaBusinessStatus({ connected: true, connection: signup.connection });
+        setMetaBusinessStatus({ connected: signup.connection.status === "connected", connection: signup.connection });
         await loadData({ forceMetaRefresh: true });
         setInfo("Official WhatsApp Business API connected successfully.");
       } finally {
@@ -1725,7 +1725,7 @@ export function DashboardPage() {
   };
 
   const handleRefreshMetaApiStatus = async () => {
-    if (!token || !metaBusinessStatus.connected) {
+    if (!token || !metaBusinessStatus.connection) {
       return;
     }
     setBusy(true);
@@ -1770,7 +1770,7 @@ export function DashboardPage() {
       return;
     }
 
-    if (metaBusinessStatus.connected) {
+    if (metaBusinessStatus.connection) {
       setBusy(true);
       setError(null);
       setInfo(null);
@@ -3793,7 +3793,7 @@ export function DashboardPage() {
               <div className="clone-channel-meta">
                 <div>
                   <h3>Status</h3>
-                  <p>{metaBusinessStatus.connected ? "connected" : "disconnected"}</p>
+                  <p>{metaBusinessStatus.connection?.status ?? "disconnected"}</p>
                 </div>
                 <div>
                   <h3>Linked Number</h3>
@@ -3949,12 +3949,12 @@ export function DashboardPage() {
               </form>
               <div className="clone-hero-actions">
                 <button type="button" className="primary-btn" disabled={busy} onClick={() => void handleOpenBusinessApiSetup()}>
-                  {metaBusinessStatus.connected ? "Reconnect API" : "Connect API"}
+                  {metaBusinessStatus.connection ? "Reconnect API" : "Connect API"}
                 </button>
                 <button
                   type="button"
                   className="ghost-btn"
-                  disabled={busy || !metaBusinessStatus.connected}
+                  disabled={busy || !metaBusinessStatus.connection}
                   onClick={() => void handleRefreshMetaApiStatus()}
                 >
                   Refresh status
@@ -3962,7 +3962,7 @@ export function DashboardPage() {
                 <button
                   type="button"
                   className="ghost-btn"
-                  disabled={busy || !metaBusinessStatus.connected}
+                  disabled={busy || !metaBusinessStatus.connection}
                   onClick={() => void handleToggleApiChannel()}
                 >
                   Disconnect
