@@ -594,14 +594,25 @@ export async function listConversations(
     `SELECT
        c.*,
        ap.name AS assigned_agent_name,
-       (
-         SELECT cm.sender_name
-         FROM conversation_messages cm
-         WHERE cm.conversation_id = c.id
-           AND cm.direction = 'inbound'
-           AND cm.sender_name IS NOT NULL
-         ORDER BY cm.created_at DESC
-         LIMIT 1
+       COALESCE(
+         (
+           SELECT cm.sender_name
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.sender_name IS NOT NULL
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         (
+           SELECT (regexp_match(cm.message_text, 'Name=([^,]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
        ) AS contact_name,
        (
          SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
@@ -779,14 +790,25 @@ async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadS
     `SELECT
        c.*,
        ap.name AS assigned_agent_name,
-       (
-         SELECT cm.sender_name
-         FROM conversation_messages cm
-         WHERE cm.conversation_id = c.id
-           AND cm.direction = 'inbound'
-           AND cm.sender_name IS NOT NULL
-         ORDER BY cm.created_at DESC
-         LIMIT 1
+       COALESCE(
+         (
+           SELECT cm.sender_name
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.sender_name IS NOT NULL
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         (
+           SELECT (regexp_match(cm.message_text, 'Name=([^,]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
        ) AS contact_name,
        (
          SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
