@@ -2496,14 +2496,27 @@ export function DashboardPage() {
     "WAgen AI";
   const selectedAgentProfile =
     agentProfiles.find((profile) => profile.id === selectedAgentProfileId) ?? null;
-  const isWhatsAppConnected = overview?.whatsapp.status === "connected" || metaBusinessStatus.connected;
-  const connectionBadgeStatus = isWhatsAppConnected ? "connected" : (overview?.whatsapp.status ?? "not_connected");
-  const connectionBadgeLabel =
-    overview?.whatsapp.status === "connected"
-      ? "QR connected"
-      : metaBusinessStatus.connected
-        ? "API connected"
-        : (overview?.whatsapp.status ?? "disconnected");
+  const websiteChannelEnabled = Boolean(overview?.agent.active);
+  const qrChannelStatus = overview?.whatsapp.status ?? "not_connected";
+  const qrChannelConnected = qrChannelStatus === "connected";
+  const apiChannelConnected = metaBusinessStatus.connected;
+  const isAnyChannelConnected = websiteChannelEnabled || qrChannelConnected || apiChannelConnected;
+  const connectionBadgeStatus = isAnyChannelConnected
+    ? "connected"
+    : qrChannelStatus === "waiting_scan" || qrChannelStatus === "connecting"
+      ? qrChannelStatus
+      : "not_connected";
+  const connectionBadgeLabel = qrChannelConnected
+    ? "QR connected"
+    : apiChannelConnected
+      ? "API connected"
+      : websiteChannelEnabled
+        ? "Web connected"
+        : qrChannelStatus === "waiting_scan"
+          ? "QR waiting scan"
+          : qrChannelStatus === "connecting"
+            ? "QR connecting"
+            : "disconnected";
   const selectedConversationLabel = selectedConversation
     ? selectedConversation.contact_name || formatPhone(selectedConversation.phone_number)
     : "Select a conversation";
@@ -2528,9 +2541,6 @@ export function DashboardPage() {
         : chatFolderFilter === "mine"
           ? "My chats"
           : "Bot chats";
-  const websiteChannelEnabled = Boolean(overview?.agent.active);
-  const qrChannelConnected = overview?.whatsapp.status === "connected";
-  const apiChannelConnected = metaBusinessStatus.connected;
   const metaHealthRecord = getNestedRecord(metaBusinessStatus.connection?.metadata?.metaHealth);
   const apiBusinessVerificationStatus = readMetaString(metaHealthRecord, "businessVerificationStatus");
   const apiWabaReviewStatus = readMetaString(metaHealthRecord, "wabaReviewStatus");
@@ -2572,11 +2582,11 @@ export function DashboardPage() {
   const isStudioTab = STUDIO_TABS.has(activeTab);
   const dashboardHeaderTitle =
     activeTab === "conversations"
-      ? (isWhatsAppConnected ? "Chats" : "Go Live")
+      ? (isAnyChannelConnected ? "Chats" : "Go Live")
       : currentSection.label;
   const dashboardHeaderSubtitle =
     activeTab === "conversations"
-      ? (isWhatsAppConnected ? "Live Inbox" : "Connect your channels and launch chatbot automation.")
+      ? (isAnyChannelConnected ? "Live Inbox" : "Connect your channels and launch chatbot automation.")
       : currentSection.subtitle;
 
   const renderStudioLayout = (content: ReactNode) => (
@@ -4332,7 +4342,7 @@ export function DashboardPage() {
       )}
       {activeTab === "conversations" && (
         <section className="clone-chat-wrap">
-          {!isWhatsAppConnected ? (
+          {!isAnyChannelConnected ? (
             <section className="clone-chat-setup">
               <h2>Go Live</h2>
               <p>Connect your channels and go live.</p>
