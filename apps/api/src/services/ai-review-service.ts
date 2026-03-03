@@ -315,43 +315,6 @@ const IRRELEVANT_QUESTION_PATTERNS = [
   "zxcv"
 ];
 
-const BUSINESS_QUERY_HINTS = [
-  "menu",
-  "price",
-  "cost",
-  "timing",
-  "open",
-  "close",
-  "reservation",
-  "book",
-  "order",
-  "delivery",
-  "table",
-  "available",
-  "availability",
-  "serve",
-  "serves",
-  "offering",
-  "offer",
-  "offers",
-  "dish",
-  "food",
-  "burger",
-  "pizza",
-  "biryani",
-  "kebab",
-  "momo",
-  "momos",
-  "spring roll",
-  "veg",
-  "non veg",
-  "location",
-  "address",
-  "contact",
-  "phone",
-  "support"
-];
-
 export type AiReviewQueueStatus = "pending" | "resolved";
 
 export interface AiReviewQueueItem {
@@ -459,31 +422,6 @@ function getQuestionRejectionReason(question: string): string | null {
   return null;
 }
 
-function isBusinessRelevantQuestion(question: string): boolean {
-  const normalized = normalizeText(question);
-  if (!normalized) {
-    return false;
-  }
-
-  const directIntentPrefixes = [
-    "do you",
-    "can i",
-    "can you",
-    "what is",
-    "what are",
-    "how much",
-    "is there",
-    "are there",
-    "where is",
-    "when is"
-  ];
-  if (directIntentPrefixes.some((prefix) => normalized.startsWith(prefix))) {
-    return true;
-  }
-
-  return BUSINESS_QUERY_HINTS.some((hint) => normalized.includes(hint));
-}
-
 function shouldQueueFailureForLearning(input: {
   question: string;
   aiResponse: string;
@@ -494,14 +432,11 @@ function shouldQueueFailureForLearning(input: {
     return { shouldQueue: false, reason: questionRejection };
   }
 
-  if (!isBusinessRelevantQuestion(input.question)) {
-    return { shouldQueue: false, reason: "not_business_relevant" };
-  }
-
   const strongUnknown = isStrongUnknownResponse(input.aiResponse);
   const clarification = isClarificationStyleResponse(input.aiResponse);
-  if (clarification && !strongUnknown) {
-    return { shouldQueue: false, reason: "clarification_response" };
+  const tokenCount = normalizeText(input.question).split(" ").filter(Boolean).length;
+  if (clarification && tokenCount <= 3) {
+    return { shouldQueue: false, reason: "clarification_for_short_question" };
   }
 
   const hasFallbackSignal = input.signals.includes("fallback_response");
