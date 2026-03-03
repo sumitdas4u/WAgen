@@ -25,6 +25,7 @@ type SupportIntent =
   | "booking"
   | "feedback_collection"
   | "complaint_handling";
+type QueryComplexity = "simple" | "medium" | "complex";
 
 interface BusinessBasicsProfile {
   companyName: string;
@@ -40,9 +41,6 @@ interface BusinessBasicsProfile {
   bookingScript: string;
   feedbackCollectionScript: string;
   complaintHandlingScript: string;
-  supportAddress: string;
-  supportPhoneNumber: string;
-  supportContactName: string;
   supportEmail: string;
   aiDoRules: string;
   aiDontRules: string;
@@ -244,9 +242,6 @@ function toBasicsProfile(rawBasics: Record<string, unknown>): BusinessBasicsProf
     bookingScript: readString(rawBasics.bookingScript),
     feedbackCollectionScript: readString(rawBasics.feedbackCollectionScript),
     complaintHandlingScript: readString(rawBasics.complaintHandlingScript),
-    supportAddress: readString(rawBasics.supportAddress),
-    supportPhoneNumber: readString(rawBasics.supportPhoneNumber),
-    supportContactName: readString(rawBasics.supportContactName),
     supportEmail: readString(rawBasics.supportEmail),
     aiDoRules: readString(rawBasics.aiDoRules),
     aiDontRules: readString(rawBasics.aiDontRules),
@@ -270,6 +265,56 @@ function detectSupportIntent(message: string): SupportIntent {
 function isPricingQuery(message: string): boolean {
   const normalized = message.toLowerCase();
   return PRICING_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function estimateQueryComplexity(message: string): QueryComplexity {
+  const normalized = message.toLowerCase();
+  const tokenCount = normalized.split(/\s+/).filter(Boolean).length;
+  const questionCount = (normalized.match(/\?/g) ?? []).length;
+
+  if (
+    questionCount >= 2 ||
+    tokenCount > 32 ||
+    normalized.includes("what if") ||
+    normalized.includes("compare") ||
+    normalized.includes("difference")
+  ) {
+    return "complex";
+  }
+
+  if (questionCount <= 1 && tokenCount <= 14) {
+    return "simple";
+  }
+
+  return "medium";
+}
+
+function resolveHistoryWindow(complexity: QueryComplexity, topSimilarity: number): number {
+  const maxAllowed = Math.max(1, Math.min(env.PROMPT_HISTORY_LIMIT, 6));
+
+  if (topSimilarity >= 0.9) {
+    return 0;
+  }
+  if (complexity === "simple") {
+    return Math.min(1, maxAllowed);
+  }
+  if (complexity === "medium") {
+    return Math.min(2, maxAllowed);
+  }
+
+  return Math.min(4, maxAllowed);
+}
+
+function resolveKnowledgePromptBudget(complexity: QueryComplexity): number {
+  const configuredBudget = Math.max(900, Math.min(env.RAG_MAX_PROMPT_CHARS, 3200));
+  if (complexity === "simple") {
+    return Math.min(1200, configuredBudget);
+  }
+  if (complexity === "medium") {
+    return Math.min(2000, configuredBudget);
+  }
+
+  return configuredBudget;
 }
 
 function resolveLocaleContext(conversationPhone: string, basics: BusinessBasicsProfile): LocaleContext {
@@ -317,15 +362,7 @@ function playbookForIntent(intent: SupportIntent, basics: BusinessBasicsProfile)
 }
 
 function buildSupportContactLine(basics: BusinessBasicsProfile): string {
-  const contactName = basics.supportContactName || "support team";
-  const channels = [basics.supportPhoneNumber, basics.supportEmail].filter(Boolean).join(" | ");
-  const address = basics.supportAddress ? ` Address: ${basics.supportAddress}.` : "";
-
-  if (channels) {
-    return `${contactName} (${channels}).${address}`;
-  }
-
-  return `${contactName}.${address}`;
+  return basics.supportEmail ? `support team (${basics.supportEmail}).` : "support team.";
 }
 
 function trimForPrompt(text: string, maxChars: number): string {
@@ -513,7 +550,11 @@ function compactChunkForQuery(chunk: string, queryTerms: string[], maxChars: num
   return selected.join(" ");
 }
 
-function buildKnowledgeBlock(chunks: Awaited<ReturnType<typeof retrieveKnowledge>>, query: string): string {
+function buildKnowledgeBlock(
+  chunks: Awaited<ReturnType<typeof retrieveKnowledge>>,
+  query: string,
+  maxPromptCharsOverride?: number
+): string {
   if (chunks.length === 0) {
     return "No stored knowledge available.";
   }
@@ -523,7 +564,8 @@ function buildKnowledgeBlock(chunks: Awaited<ReturnType<typeof retrieveKnowledge
     (a, b) => scoreChunkForQuery(b.content_chunk, queryTerms) - scoreChunkForQuery(a.content_chunk, queryTerms)
   );
 
-  const maxPromptChars = Math.max(1400, Math.min(env.RAG_MAX_PROMPT_CHARS, 3200));
+  const requestedBudget = maxPromptCharsOverride ?? env.RAG_MAX_PROMPT_CHARS;
+  const maxPromptChars = Math.max(900, Math.min(requestedBudget, 3200));
   const perChunkChars = Math.min(1000, Math.max(260, Math.floor(maxPromptChars / Math.max(1, rankedChunks.length))));
   let usedChars = 0;
   const lines: string[] = [];
@@ -627,6 +669,7 @@ function buildFallbackReply(
 export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   const basics = toBasicsProfile(input.user.business_basics as Record<string, unknown>);
   const detectedIntent = detectSupportIntent(input.incomingMessage);
+  const queryComplexity = estimateQueryComplexity(input.incomingMessage);
   const localeContext = resolveLocaleContext(input.conversationPhone, basics);
   const supportLine = buildSupportContactLine(basics);
 
@@ -667,23 +710,22 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     return `- ${INTENT_LABELS[intent]}: ${playbookForIntent(intent, basics)}`;
   }).join("\n");
 
+  const topSimilarity = Math.max(0, Math.min(1, Number(knowledge[0]?.similarity ?? 0)));
+  const historyWindow = resolveHistoryWindow(queryComplexity, topSimilarity);
+  const knowledgeBudget = resolveKnowledgePromptBudget(queryComplexity);
+
   const systemPrompt = [
     "You are WAgen AI, a WhatsApp customer support agent.",
     "Rules:",
     "- Primary role is customer support, not sales.",
-    "- Reply only with plain conversational text.",
-    "- Keep messages short (under 120 words unless user asks for details).",
+    "- Reply in plain conversational text, usually under 120 words.",
     "- Ask at most one follow-up question.",
-    "- Never ask budget, pricing expectation, or package preference.",
-    "- If user asks pricing and exact pricing is unavailable, provide support handoff details.",
-    "- When money is mentioned, format it in the user's currency.",
-    "- If uncertain, acknowledge and offer escalation support.",
+    "- Use retrieved knowledge only; do not invent facts.",
+    "- If the answer is missing in knowledge, say that clearly and offer support handoff.",
+    "- If item price/amount is present near item name in knowledge, return that numeric value.",
+    "- Format money in the user's currency.",
     "- Never claim actions you cannot perform.",
-    "- If retrieved knowledge is present, answer strictly from it and do not invent facts.",
-    "- Every reply must be grounded in retrieved knowledge chunks.",
-    "- When user asks for item price/amount and a numeric value exists in retrieved knowledge near that item name, return that value.",
-    "- If the answer is missing in retrieved knowledge, clearly say that and ask one clarifying question.",
-    "- Prefer concise answers using only the minimum relevant details from retrieved knowledge.",
+    `- Query complexity: ${queryComplexity}. Match response depth to this.`,
     `- Agent objective: ${basics.agentObjectiveType || "hybrid"}.`,
     basics.agentTaskDescription
       ? `- Agent-specific task: ${trimForPrompt(basics.agentTaskDescription, 300)}`
@@ -691,31 +733,57 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     `Personality: ${personality}`
   ].join("\n");
 
-  const knowledgeBlock = buildKnowledgeBlock(knowledge, input.incomingMessage);
-  const structuredHints = buildStructuredKnowledgeHints(knowledge, input.incomingMessage);
+  const knowledgeBlock = buildKnowledgeBlock(knowledge, input.incomingMessage, knowledgeBudget);
+  const includeStructuredHints = queryComplexity !== "simple" || isPricingQuery(input.incomingMessage);
+  const structuredHints = includeStructuredHints
+    ? buildStructuredKnowledgeHints(knowledge, input.incomingMessage)
+    : "Not required for this query.";
 
-  const historyBlock = input.history
-    .slice(-Math.max(2, Math.min(env.PROMPT_HISTORY_LIMIT, 4)))
+  const selectedHistory = historyWindow > 0 ? input.history.slice(-historyWindow) : [];
+  const historyBlock = selectedHistory
     .map((item) => `${item.direction === "inbound" ? "User" : "WAgen AI"}: ${item.message_text}`)
     .join("\n");
 
-  const userPrompt = [
-    `Business context:\n- Company: ${basics.companyName}\n- Support domain: ${basics.whatDoYouSell}\n- Audience: ${basics.targetAudience}\n- Promise/USP: ${basics.usp}\n- Common issues: ${basics.objections}`,
+  const baseSections = [
+    `Business context:\n- Company: ${basics.companyName}\n- Support domain: ${basics.whatDoYouSell}`,
     `Locale context:\n- User country: ${localeContext.countryName} (${localeContext.countryCode})\n- Currency: ${localeContext.currencyCode} (${localeContext.currencySymbol})\n- Locale format: ${localeContext.locale}`,
     `Detected support scenario: ${INTENT_LABELS[detectedIntent]}`,
     `Primary scenario playbook:\n${selectedPlaybook}`,
-    `All configured playbooks:\n${allPlaybooksBlock}`,
-    `Support handoff contact:\n${supportLine}`,
+    `Support handoff contact:\n${supportLine}`
+  ];
+
+  const mediumSections = [
+    `Customer fit context:\n- Audience: ${basics.targetAudience}\n- Promise/USP: ${basics.usp}\n- Common issues: ${basics.objections}`,
     `AI Do rules:\n${basics.aiDoRules || "No custom do rules provided."}`,
-    `AI Don't rules:\n${basics.aiDontRules || "No custom don't rules provided."}`,
+    `AI Don't rules:\n${basics.aiDontRules || "No custom don't rules provided."}`
+  ];
+
+  const complexSections = [
+    `All configured playbooks:\n${allPlaybooksBlock}`,
     `Agent objective type:\n${basics.agentObjectiveType || "hybrid"}`,
-    `Agent task guideline:\n${basics.agentTaskDescription || "No extra task guidance."}`,
-    `Conversation with ${input.conversationPhone}:\n${historyBlock || "No prior messages."}`,
-    `Retrieved knowledge:\n${knowledgeBlock}`,
-    `Structured hints from retrieved knowledge:\n${structuredHints}`,
-    `Incoming message: ${input.incomingMessage}`,
-    "Craft the best support response now."
-  ].join("\n\n");
+    `Agent task guideline:\n${basics.agentTaskDescription || "No extra task guidance."}`
+  ];
+
+  const promptSections = [...baseSections];
+  if (queryComplexity !== "simple") {
+    promptSections.push(...mediumSections);
+  }
+  if (queryComplexity === "complex") {
+    promptSections.push(...complexSections);
+  }
+
+  promptSections.push(
+    `Conversation with ${input.conversationPhone}:\n${historyBlock || "No prior messages used for this turn."}`,
+    `Retrieved knowledge:\n${knowledgeBlock}`
+  );
+
+  if (includeStructuredHints && structuredHints !== "No structured hints.") {
+    promptSections.push(`Structured hints from retrieved knowledge:\n${structuredHints}`);
+  }
+
+  promptSections.push(`Incoming message: ${input.incomingMessage}`, "Craft the best support response now.");
+
+  const userPrompt = promptSections.join("\n\n");
 
   try {
     const response = await openAIService.generateReply(systemPrompt, userPrompt);

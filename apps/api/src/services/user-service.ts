@@ -175,9 +175,6 @@ export async function updateBusinessBasics(
     bookingScript: string;
     feedbackCollectionScript: string;
     complaintHandlingScript: string;
-    supportAddress: string;
-    supportPhoneNumber: string;
-    supportContactName: string;
     supportEmail: string;
     aiDoRules: string;
     aiDontRules: string;

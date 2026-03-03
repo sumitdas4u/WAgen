@@ -502,9 +502,6 @@ const DEFAULT_BUSINESS_BASICS: BusinessBasicsPayload = {
     "Thank the customer, ask for concise feedback, and capture one suggestion to improve support quality.",
   complaintHandlingScript:
     "Apologize clearly, acknowledge the issue, share corrective action, and provide escalation contact if needed.",
-  supportAddress: "",
-  supportPhoneNumber: "",
-  supportContactName: "",
   supportEmail: "",
   aiDoRules:
     "Be polite and empathetic.\nAnswer clearly using available business knowledge.\nEscalate to support contact when needed.",
@@ -557,9 +554,6 @@ function loadSavedBusinessBasics(value: unknown): BusinessBasicsPayload {
       saved.complaintHandlingScript,
       DEFAULT_BUSINESS_BASICS.complaintHandlingScript
     ),
-    supportAddress: readSavedString(saved.supportAddress, DEFAULT_BUSINESS_BASICS.supportAddress),
-    supportPhoneNumber: readSavedString(saved.supportPhoneNumber, DEFAULT_BUSINESS_BASICS.supportPhoneNumber),
-    supportContactName: readSavedString(saved.supportContactName, DEFAULT_BUSINESS_BASICS.supportContactName),
     supportEmail: readSavedString(saved.supportEmail, DEFAULT_BUSINESS_BASICS.supportEmail),
     aiDoRules: readSavedString(saved.aiDoRules, DEFAULT_BUSINESS_BASICS.aiDoRules),
     aiDontRules: readSavedString(saved.aiDontRules, DEFAULT_BUSINESS_BASICS.aiDontRules)

@@ -16,9 +16,6 @@ export interface AutofillDraft {
     bookingScript: string;
     feedbackCollectionScript: string;
     complaintHandlingScript: string;
-    supportAddress: string;
-    supportPhoneNumber: string;
-    supportContactName: string;
     supportEmail: string;
     aiDoRules: string;
     aiDontRules: string;
@@ -47,9 +44,6 @@ const DEFAULT_DRAFT: AutofillDraft = {
       "Thank the customer and ask for concise feedback with one optional follow-up question.",
     complaintHandlingScript:
       "Apologize clearly, acknowledge the issue, provide corrective action, and offer escalation contact.",
-    supportAddress: "",
-    supportPhoneNumber: "",
-    supportContactName: "",
     supportEmail: "",
     aiDoRules:
       "Be polite and empathetic.\nAnswer clearly using business context.\nEscalate when confidence is low.",
@@ -111,9 +105,6 @@ function mergeDraft(raw: Record<string, unknown>): AutofillDraft {
         basics.complaintHandlingScript,
         DEFAULT_DRAFT.businessBasics.complaintHandlingScript
       ),
-      supportAddress: readString(basics.supportAddress, DEFAULT_DRAFT.businessBasics.supportAddress),
-      supportPhoneNumber: readString(basics.supportPhoneNumber, DEFAULT_DRAFT.businessBasics.supportPhoneNumber),
-      supportContactName: readString(basics.supportContactName, DEFAULT_DRAFT.businessBasics.supportContactName),
       supportEmail: readString(basics.supportEmail, DEFAULT_DRAFT.businessBasics.supportEmail),
       aiDoRules: readString(basics.aiDoRules, DEFAULT_DRAFT.businessBasics.aiDoRules),
       aiDontRules: readString(basics.aiDontRules, DEFAULT_DRAFT.businessBasics.aiDontRules)
@@ -133,8 +124,7 @@ function fallbackDraft(description: string): AutofillDraft {
       companyName: "Support Team",
       whatDoYouSell: snippet || "Customer support services",
       targetAudience: inferredAudience,
-      usp: snippet || "Fast and reliable support",
-      supportContactName: "Support Team"
+      usp: snippet || "Fast and reliable support"
     }
   };
 }
@@ -160,7 +150,7 @@ export async function generateOnboardingDraft(description: string): Promise<Auto
     '    "defaultCountry": "IN", "defaultCurrency": "INR",',
     '    "greetingScript": "", "availabilityScript": "", "objectionHandlingScript": "",',
     '    "bookingScript": "", "feedbackCollectionScript": "", "complaintHandlingScript": "",',
-    '    "supportAddress": "", "supportPhoneNumber": "", "supportContactName": "", "supportEmail": "",',
+    '    "supportEmail": "",',
     '    "aiDoRules": "", "aiDontRules": ""',
     "  },",
     '  "personality": "friendly_warm|professional|hard_closer|premium_consultant|custom",',
