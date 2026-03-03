@@ -6,13 +6,37 @@ const REVIEW_CONFIDENCE_THRESHOLD = 70;
 const DUPLICATE_WINDOW_SECONDS = 6 * 60 * 60;
 
 const FALLBACK_REPLY_PATTERNS = [
+  // "I don't know" variations (10 patterns)
   "i'm not sure",
   "i am not sure",
   "i dont know",
   "i don't know",
   "i do not know",
+  "do not know",
+  "won't know",
+  "can't say for sure",
+  "not certain",
+  "uncertain",
+
+  // "Don't have information" variations (30+ patterns)
   "do not have that information",
   "don't have that information",
+  "do not have information",
+  "don't have information",
+  "do not have any information",
+  "don't have any information",
+  "do not have specific information",
+  "don't have specific information",
+  "do not have details",
+  "don't have details",
+  "do not have data",
+  "don't have data",
+  "do not have records",
+  "don't have records",
+  "do not have that on file",
+  "don't have that on file",
+  "do not have that in my system",
+  "don't have that in my system",
   "i don't have the exact",
   "i do not have the exact",
   "i don't have the exact number",
@@ -22,15 +46,210 @@ const FALLBACK_REPLY_PATTERNS = [
   "unfortunately, i don't have",
   "unfortunately i don't have",
   "unfortunately i do not have",
-  "i appreciate your inquiry",
+  "not in my records",
+  "not in my system",
+  "not on file",
+  "not in my knowledge",
+  "not in the database",
+  "not available in my system",
+  "no information available",
+  "no data available",
+  "no such information",
+  "no record of",
+  "no details available",
+
+  // "I appreciate your" variations (3 patterns)
+  "i appreciate your",
+  "thanks for your",
+  "thank you for your",
+
+  // "Contact support" variations (8 patterns)
   "please contact support",
+  "contact support",
+  "reach out to support",
+  "please reach out",
+  "contact our team",
+  "reach out to our team",
+  "contact the team",
+  "get in touch with support",
+
+  // "Unable to" variations (12 patterns)
   "unable to find",
   "unable to help",
+  "unable to provide",
+  "unable to assist",
+  "unable to access",
+  "unable to retrieve",
+  "unable to locate",
+  "unable to answer",
+  "unable to respond",
+  "unable to comment",
+  "unable to verify",
+  "unable to determine",
+
+  // "Cannot/Can't" variations (18 patterns)
   "cannot help with that",
   "can't help with that",
-  "not familiar with",  // Added to catch "I'm not familiar with Sujay"
+  "cannot provide",
+  "can't provide",
+  "cannot assist",
+  "can't assist",
+  "cannot find",
+  "can't find",
+  "cannot access",
+  "can't access",
+  "cannot retrieve",
+  "can't retrieve",
+  "cannot confirm",
+  "can't confirm",
+  "cannot determine",
+  "can't determine",
+  "cannot verify",
+  "can't verify",
+
+  // "Not familiar" variations (8 patterns)
+  "not familiar with",
   "i'm not familiar",
-  "i am not familiar"
+  "i am not familiar",
+  "i'm not sure about",
+  "i am not sure about",
+  "not acquainted with",
+  "not aware of",
+  "unfamiliar with",
+
+  // "Don't understand" variations (12 patterns)
+  "i don't understand",
+  "i do not understand",
+  "don't understand",
+  "i don't comprehend",
+  "i do not comprehend",
+  "i'm confused",
+  "i am confused",
+  "i'm not aware",
+  "i am not aware",
+  "not clear",
+  "unclear",
+  "confusing question",
+
+  // General disclaimer patterns (8 patterns)
+  "i'm sorry, but i can't",
+  "i am sorry, but i can't",
+  "i'm sorry but i can't",
+  "sorry but i can't",
+  "i'm sorry, but i don't",
+  "i am sorry, but i don't",
+  "sorry i can't",
+  "sorry i don't",
+
+  // "Don't have access" variations (6 patterns)
+  "don't have access",
+  "do not have access",
+  "don't have permission",
+  "do not have permission",
+  "i'm unable to",
+  "i am unable to",
+
+  // "Not found" variations (10 patterns)
+  "not found",
+  "not located",
+  "couldn't find",
+  "could not find",
+  "not available",
+  "unavailable",
+  "currently unavailable",
+  "out of stock",
+  "not in stock",
+  "not listed",
+
+  // "Need clarification" variations (8 patterns)
+  "need more information",
+  "need clarification",
+  "please clarify",
+  "could you clarify",
+  "could you be more specific",
+  "need more details",
+  "specify",
+  "more details needed",
+
+  // "Beyond scope" variations (10 patterns)
+  "beyond my knowledge",
+  "outside my scope",
+  "beyond my scope",
+  "not my area",
+  "not my expertise",
+  "beyond what i know",
+  "not my specialty",
+  "beyond what i can help",
+  "outside my expertise",
+  "not within my knowledge",
+
+  // "Refer to someone else" variations (8 patterns)
+  "you should ask",
+  "you might want to ask",
+  "better to ask",
+  "best to ask",
+  "contact the manager",
+  "speak to the manager",
+  "ask the team",
+  "check with",
+
+  // "Limited by system" variations (8 patterns)
+  "my system doesn't have",
+  "my system doesn't show",
+  "not in my system",
+  "not stored in my system",
+  "my database doesn't contain",
+  "no access to that",
+  "not accessible",
+  "not retrievable",
+
+  // "Apologizing/Unable" variations (8 patterns)
+  "sorry, i can't help",
+  "sorry i cannot help",
+  "afraid i cannot",
+  "afraid i can't",
+  "regret i cannot",
+  "regret i can't",
+  "unfortunate that i can't",
+  "hate that i can't",
+
+  // "Lack of expertise" variations (6 patterns)
+  "not an expert",
+  "not my expertise",
+  "outside my expertise",
+  "beyond my expertise",
+  "limited knowledge",
+  "limited information",
+
+  // "Don't have authority" variations (6 patterns)
+  "don't have the authority",
+  "not authorized to",
+  "not my decision",
+  "not in my power",
+  "can't make that decision",
+  "not my call",
+
+  // Additional catch-all patterns (15+ patterns)
+  "i lack",
+  "lacking information",
+  "insufficient information",
+  "not enough information",
+  "incomplete information",
+  "partial information only",
+  "limited details",
+  "vague",
+  "general information",
+  "unclear how to",
+  "no idea",
+  "no clue",
+  "haven't got",
+  "haven't a",
+  "no way to",
+  "no means to",
+  "no method to",
+  "unable to verify",
+  "can't verify",
+  "cannot validate"
 ];
 
 const NEGATIVE_FEEDBACK_PATTERNS = [
@@ -92,7 +311,11 @@ function clampConfidence(value: number): number {
 }
 
 function isFallbackResponse(aiResponse: string): boolean {
-  return includesPattern(aiResponse, FALLBACK_REPLY_PATTERNS);
+  const isFallback = includesPattern(aiResponse, FALLBACK_REPLY_PATTERNS);
+  if (isFallback) {
+    console.log(`[AI-Review] Fallback response detected: "${aiResponse.substring(0, 80)}..."`);
+  }
+  return isFallback;
 }
 
 function isNegativeFeedbackMessage(message: string): boolean {
@@ -139,34 +362,37 @@ async function findPendingDuplicate(input: {
   aiResponse: string;
 }): Promise<string | null> {
   const normalizedQuestion = normalizeText(input.question);
-  const normalizedAiResponse = normalizeText(input.aiResponse);
 
   // Only check for duplicate by question within 6 hour window
   // Different responses to same question should each be tracked
   // This prevents losing unique AI failure patterns
-  const result = await pool.query<{ id: string }>(
-    `SELECT id
+  // OPTIMIZED: Check only user_id, conversation_id, and status for fast index lookup
+  // Then filter in-memory by normalized question to avoid expensive regex queries
+  const result = await pool.query<{ id: string; question: string }>(
+    `SELECT id, question
      FROM ai_review_queue
      WHERE user_id = $1
        AND conversation_id = $2
        AND status = 'pending'
-       AND created_at >= NOW() - ($4::text || ' seconds')::interval
-       AND trim(regexp_replace(lower(question), '[^a-z0-9]+', ' ', 'g')) = $3
-     LIMIT 1`,
+       AND created_at >= NOW() - ($3::text || ' seconds')::interval
+     ORDER BY created_at DESC
+     LIMIT 10`,
     [
       input.userId,
       input.conversationId,
-      normalizedQuestion,
       String(DUPLICATE_WINDOW_SECONDS)
     ]
   );
 
-  const isDuplicate = result.rows[0]?.id ?? null;
-  if (isDuplicate) {
-    console.log(`[AI-Review] Found duplicate question (6hr window): existing_id=${isDuplicate}, question="${input.question.substring(0, 50)}..."`);
+  // Filter in-memory instead of in SQL - avoids expensive regex on database
+  for (const row of result.rows) {
+    if (normalizeText(row.question) === normalizedQuestion) {
+      console.log(`[AI-Review] Found duplicate question (6hr window): existing_id=${row.id}, question="${input.question.substring(0, 50)}..."`);
+      return row.id;
+    }
   }
 
-  return isDuplicate;
+  return null;
 }
 
 async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: boolean; itemId: string | null }> {
@@ -261,6 +487,8 @@ export async function queueAiFailureForReview(input: {
   aiResponse: string;
   retrievalChunks: number;
 }): Promise<{ queued: boolean; signals: string[]; confidenceScore: number; itemId: string | null }> {
+  console.log(`[AI-Review] Processing response: "${input.aiResponse.substring(0, 100)}..."`);
+
   const confidenceScore = estimateConfidenceScore({
     retrievalChunks: input.retrievalChunks,
     aiResponse: input.aiResponse
@@ -274,9 +502,12 @@ export async function queueAiFailureForReview(input: {
   console.log(`[AI-Review] Failure detection: chunks=${input.retrievalChunks}, confidence=${confidenceScore}, signals=[${signals.join(",")}]`);
 
   if (signals.length === 0) {
-    console.log(`[AI-Review] No failure signals inferred - response appears normal (confidence=${confidenceScore})`);
+    console.log(`[AI-Review] ❌ No failure signals inferred - response appears normal (confidence=${confidenceScore}%)`);
+    console.log(`[AI-Review] Response text: "${input.aiResponse.substring(0, 150)}..."`);
     return { queued: false, signals: [], confidenceScore, itemId: null };
   }
+
+  console.log(`[AI-Review] ✓ Signals detected: ${signals.join(", ")}`);
 
   const created = await createQueueItem({
     userId: input.userId,
