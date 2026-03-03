@@ -584,6 +584,9 @@ export function DashboardPage() {
     }
   ]);
   const [activeTab, setActiveTab] = useState<DashboardTab>("conversations");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobileConversationOpen, setIsMobileConversationOpen] = useState(false);
   const [isTestChatOverlayOpen, setIsTestChatOverlayOpen] = useState(false);
   const [widgetSetupDraft, setWidgetSetupDraft] = useState<WidgetSetupDraft>(DEFAULT_WIDGET_SETUP_DRAFT);
   const [whatsAppBusinessDraft, setWhatsAppBusinessDraft] = useState<WhatsAppBusinessProfileDraft>(
@@ -708,6 +711,44 @@ export function DashboardPage() {
       }
     }
   }, [location.search]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1100px)");
+    const syncViewport = () => {
+      setIsMobileViewport(mediaQuery.matches);
+    };
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+    return () => {
+      mediaQuery.removeEventListener("change", syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setIsMobileSidebarOpen(false);
+      setIsMobileConversationOpen(false);
+      return;
+    }
+    if (activeTab !== "conversations") {
+      setIsMobileConversationOpen(false);
+    }
+  }, [activeTab, isMobileViewport]);
+
+  useEffect(() => {
+    if (!isMobileSidebarOpen) {
+      return;
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isMobileSidebarOpen]);
 
   const openTestChatOverlay = useCallback(() => {
     setIsTestChatOverlayOpen(true);
@@ -2585,6 +2626,31 @@ export function DashboardPage() {
     activeTab === "conversations"
       ? (isAnyChannelConnected ? "Live Inbox" : "Connect your channels and launch chatbot automation.")
       : currentSection.subtitle;
+  const showConversationListPane = !isMobileViewport || !isMobileConversationOpen;
+  const showConversationDetailPane = !isMobileViewport || isMobileConversationOpen;
+
+  const handleSelectTab = useCallback(
+    (tab: DashboardTab) => {
+      setActiveTab(tab);
+      if (isMobileViewport) {
+        setIsMobileSidebarOpen(false);
+        if (tab !== "conversations") {
+          setIsMobileConversationOpen(false);
+        }
+      }
+    },
+    [isMobileViewport]
+  );
+
+  const handleOpenConversation = useCallback(
+    (conversationId: string) => {
+      setSelectedConversationId(conversationId);
+      if (isMobileViewport) {
+        setIsMobileConversationOpen(true);
+      }
+    },
+    [isMobileViewport]
+  );
 
   const renderStudioLayout = (content: ReactNode) => (
     <section className="chatbot-studio-shell dashboard-flat-studio">
@@ -2623,8 +2689,15 @@ export function DashboardPage() {
   return (
     <main className="dashboard-shell dashboard-clone-shell dashboard-flat-shell">
       <section className="clone-workspace">
-        <aside className="clone-icon-rail dashboard-flat-sidebar">
-          <button className="clone-rail-logo dashboard-flat-brand" type="button" onClick={() => setActiveTab("conversations")}>
+        <aside
+          className={
+            isMobileViewport
+              ? `clone-icon-rail dashboard-flat-sidebar ${isMobileSidebarOpen ? "mobile-open" : "mobile-closed"}`
+              : "clone-icon-rail dashboard-flat-sidebar"
+          }
+          id="dashboard-mobile-sidebar"
+        >
+          <button className="clone-rail-logo dashboard-flat-brand" type="button" onClick={() => handleSelectTab("conversations")}>
             <span className="clone-rail-icon">
               <NavIcon name="brand" />
             </span>
@@ -2639,7 +2712,7 @@ export function DashboardPage() {
                   className={isActive ? "clone-rail-btn dashboard-flat-item active" : "clone-rail-btn dashboard-flat-item"}
                   type="button"
                   title={option.label}
-                  onClick={() => setActiveTab(option.value)}
+                  onClick={() => handleSelectTab(option.value)}
                 >
                   <span className="clone-rail-icon">
                     <NavIcon name={option.icon} />
@@ -2656,6 +2729,9 @@ export function DashboardPage() {
             type="button"
             title="Logout"
             onClick={() => {
+              if (isMobileViewport) {
+                setIsMobileSidebarOpen(false);
+              }
               logout();
               navigate("/signup", { replace: true });
             }}
@@ -2666,12 +2742,34 @@ export function DashboardPage() {
             <span className="clone-rail-label">Logout</span>
           </button>
         </aside>
+        {isMobileViewport && isMobileSidebarOpen ? (
+          <button
+            type="button"
+            className="dashboard-mobile-scrim"
+            aria-label="Close menu"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        ) : null}
 
         <section className="clone-main dashboard-flat-main">
           <header className="clone-main-header dashboard-flat-header">
-            <div>
+            <div className="dashboard-header-left">
+              {isMobileViewport ? (
+                <button
+                  type="button"
+                  className="dashboard-mobile-menu-btn"
+                  aria-label="Open menu"
+                  aria-expanded={isMobileSidebarOpen}
+                  aria-controls="dashboard-mobile-sidebar"
+                  onClick={() => setIsMobileSidebarOpen((current) => !current)}
+                >
+                  &#9776;
+                </button>
+              ) : null}
+              <div>
               <h1>{dashboardHeaderTitle}</h1>
               <p>{dashboardHeaderSubtitle}</p>
+              </div>
             </div>
             <div className="clone-main-actions">
               <span className={`status-badge status-${connectionBadgeStatus}`}>
@@ -4322,6 +4420,9 @@ export function DashboardPage() {
                               onClick={() => {
                                 setSelectedConversationId(lead.id);
                                 setActiveTab("conversations");
+                                if (isMobileViewport) {
+                                  setIsMobileConversationOpen(true);
+                                }
                               }}
                             >
                               Open Chat
@@ -4432,7 +4533,14 @@ export function DashboardPage() {
             </section>
           ) : (
             <>
-              <section className="clone-chat-layout">
+              <section
+                className={
+                  isMobileViewport
+                    ? `clone-chat-layout ${isMobileConversationOpen ? "mobile-conversation-panel" : "mobile-conversation-list"}`
+                    : "clone-chat-layout"
+                }
+              >
+                {showConversationListPane ? (
                 <aside className="clone-thread-list">
                   <div className="clone-thread-top-tabs">
                     {CHAT_FOLDER_FILTER_OPTIONS.map((filter) => (
@@ -4485,7 +4593,7 @@ export function DashboardPage() {
                               ? `clone-thread-item stage-${stageClass} active`
                               : `clone-thread-item stage-${stageClass}`
                           }
-                          onClick={() => setSelectedConversationId(conversation.id)}
+                          onClick={() => handleOpenConversation(conversation.id)}
                         >
                           <span className="clone-thread-avatar">{initials || "U"}</span>
                           <div>
@@ -4503,10 +4611,18 @@ export function DashboardPage() {
                     })
                   )}
                 </aside>
+                ) : null}
 
+                {showConversationDetailPane ? (
                 <section className="clone-chat-panel">
                   <header className="clone-chat-head">
-                    <div>
+                    <div className="clone-chat-head-main">
+                      {isMobileViewport ? (
+                        <button type="button" className="chat-mobile-back-btn" onClick={() => setIsMobileConversationOpen(false)}>
+                          Back
+                        </button>
+                      ) : null}
+                      <div>
                       <h2>{selectedConversationLabel}</h2>
                       {selectedConversation ? (
                         <div className="chat-meta-row">
@@ -4521,6 +4637,7 @@ export function DashboardPage() {
                           </span>
                         </div>
                       ) : null}
+                      </div>
                     </div>
                     {selectedConversation && (
                       <div className="chat-actions" ref={chatAiMenuRef}>
@@ -4596,6 +4713,7 @@ export function DashboardPage() {
                     </form>
                   )}
                 </section>
+                ) : null}
               </section>
             </>
           )}
