@@ -571,8 +571,26 @@ export async function trackOutboundMessage(
   );
 }
 
-export async function listConversations(userId: string): Promise<Conversation[]> {
-  const result = await pool.query<Conversation & { contact_name: string | null; assigned_agent_name: string | null }>(
+export async function listConversations(
+  userId: string
+): Promise<
+  Array<
+    Conversation & {
+      contact_name: string | null;
+      contact_phone: string | null;
+      contact_email: string | null;
+      assigned_agent_name: string | null;
+    }
+  >
+> {
+  const result = await pool.query<
+    Conversation & {
+      contact_name: string | null;
+      contact_phone: string | null;
+      contact_email: string | null;
+      assigned_agent_name: string | null;
+    }
+  >(
     `SELECT
        c.*,
        ap.name AS assigned_agent_name,
@@ -584,7 +602,25 @@ export async function listConversations(userId: string): Promise<Conversation[]>
            AND cm.sender_name IS NOT NULL
          ORDER BY cm.created_at DESC
          LIMIT 1
-       ) AS contact_name
+       ) AS contact_name,
+       (
+         SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
+         FROM conversation_messages cm
+         WHERE cm.conversation_id = c.id
+           AND cm.direction = 'inbound'
+           AND cm.message_text LIKE 'Lead details captured:%'
+         ORDER BY cm.created_at DESC
+         LIMIT 1
+       ) AS contact_phone,
+       (
+         SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
+         FROM conversation_messages cm
+         WHERE cm.conversation_id = c.id
+           AND cm.direction = 'inbound'
+           AND cm.message_text LIKE 'Lead details captured:%'
+         ORDER BY cm.created_at DESC
+         LIMIT 1
+       ) AS contact_email
      FROM conversations c
      LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
      WHERE c.user_id = $1
@@ -597,6 +633,8 @@ export async function listConversations(userId: string): Promise<Conversation[]>
 
 export interface LeadConversation extends Conversation {
   contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
   assigned_agent_name: string | null;
   requires_reply: boolean;
   ai_summary: string;
@@ -707,6 +745,8 @@ async function upsertLeadSummary(
 
 type LeadSummaryRow = Conversation & {
   contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
   assigned_agent_name: string | null;
   ai_summary: string | null;
   summary_source_last_message_at: string | null;
@@ -748,6 +788,24 @@ async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadS
          ORDER BY cm.created_at DESC
          LIMIT 1
        ) AS contact_name,
+       (
+         SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
+         FROM conversation_messages cm
+         WHERE cm.conversation_id = c.id
+           AND cm.direction = 'inbound'
+           AND cm.message_text LIKE 'Lead details captured:%'
+         ORDER BY cm.created_at DESC
+         LIMIT 1
+       ) AS contact_phone,
+       (
+         SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
+         FROM conversation_messages cm
+         WHERE cm.conversation_id = c.id
+           AND cm.direction = 'inbound'
+           AND cm.message_text LIKE 'Lead details captured:%'
+         ORDER BY cm.created_at DESC
+         LIMIT 1
+       ) AS contact_email,
        ls.summary_text AS ai_summary,
        ls.source_last_message_at::text AS summary_source_last_message_at,
        ls.updated_at::text AS summary_updated_at
@@ -777,6 +835,8 @@ export async function listLeadsWithSummary(
   const mapped = rows.map((row) => ({
     ...row,
     contact_name: row.contact_name,
+    contact_phone: row.contact_phone,
+    contact_email: row.contact_email,
     assigned_agent_name: row.assigned_agent_name,
     requires_reply: needsReply(row),
     ai_summary: row.ai_summary?.trim() || "",

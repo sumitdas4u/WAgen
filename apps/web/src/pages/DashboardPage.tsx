@@ -1035,7 +1035,9 @@ export function DashboardPage() {
     }
     return sortConversationsByRecent(
       inFolder.filter((conversation) => {
-        const haystack = `${conversation.contact_name ?? ""} ${formatPhone(conversation.phone_number)} ${
+        const haystack = `${conversation.contact_name ?? ""} ${
+          formatPhone(conversation.contact_phone || conversation.phone_number)
+        } ${conversation.contact_email ?? ""} ${
           conversation.last_message ?? ""
         }`.toLowerCase();
         return haystack.includes(query);
@@ -1842,7 +1844,8 @@ export function DashboardPage() {
 
     const rows = leads.map((lead) => ({
       Name: lead.contact_name || "",
-      Phone: formatPhone(lead.phone_number),
+      Phone: formatPhone(lead.contact_phone || lead.phone_number),
+      Email: lead.contact_email || "",
       Type: getLeadKindLabel(lead.lead_kind),
       Stage: lead.stage,
       Score: lead.score,
@@ -2512,7 +2515,7 @@ export function DashboardPage() {
             ? "QR connecting"
             : "disconnected";
   const selectedConversationLabel = selectedConversation
-    ? selectedConversation.contact_name || formatPhone(selectedConversation.phone_number)
+    ? selectedConversation.contact_name || formatPhone(selectedConversation.contact_phone || selectedConversation.phone_number)
     : "Select a conversation";
   const selectedConversationAiTimer =
     selectedConversation ? chatAiTimers[selectedConversation.id] ?? null : null;
@@ -4256,7 +4259,7 @@ export function DashboardPage() {
                       return (
                         <tr key={lead.id}>
                           <td className="lead-name">{lead.contact_name || "Unknown"}</td>
-                          <td className="lead-phone">{formatPhone(lead.phone_number)}</td>
+                          <td className="lead-phone">{formatPhone(lead.contact_phone || lead.phone_number)}</td>
                           <td>
                             <span className={`lead-kind ${lead.lead_kind}`}>{getLeadKindLabel(lead.lead_kind)}</span>
                           </td>
@@ -4464,7 +4467,7 @@ export function DashboardPage() {
                     </p>
                   ) : (
                     filteredConversations.map((conversation) => {
-                      const label = conversation.contact_name || formatPhone(conversation.phone_number);
+                      const label = conversation.contact_name || formatPhone(conversation.contact_phone || conversation.phone_number);
                       const stage = conversation.stage.toLowerCase();
                       const stageClass = stage === "hot" || stage === "warm" || stage === "cold" ? stage : "cold";
                       const stageLabel = `${stageClass.charAt(0).toUpperCase()}${stageClass.slice(1)} Lead`;
@@ -4507,7 +4510,8 @@ export function DashboardPage() {
                       <h2>{selectedConversationLabel}</h2>
                       {selectedConversation ? (
                         <div className="chat-meta-row">
-                          <span>{formatPhone(selectedConversation.phone_number)}</span>
+                          <span>{formatPhone(selectedConversation.contact_phone || selectedConversation.phone_number)}</span>
+                          {selectedConversation.contact_email ? <span>{selectedConversation.contact_email}</span> : null}
                           <span className="chat-channel-badge">{getConversationChannelBadge(selectedConversation.channel_type)}</span>
                           <span>{getLeadKindLabel(selectedConversation.lead_kind)}</span>
                           <span>Score {selectedConversation.score}</span>

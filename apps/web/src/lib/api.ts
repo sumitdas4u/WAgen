@@ -760,6 +760,8 @@ export interface Conversation {
   id: string;
   phone_number: string;
   contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
   assigned_agent_name?: string | null;
   assigned_agent_profile_id: string | null;
   channel_type: "web" | "qr" | "api";
@@ -780,6 +782,8 @@ export function fetchConversations(token: string) {
 
 export interface LeadConversation extends Conversation {
   contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
   assigned_agent_name: string | null;
   requires_reply: boolean;
   ai_summary: string;
