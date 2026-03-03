@@ -1,5 +1,10 @@
 import { buildApp } from "./app.js";
 import { env } from "./config/env.js";
+import { runMigrations } from "./scripts/migrate.js";
+
+await runMigrations({
+  silent: env.NODE_ENV === "production"
+});
 
 const app = await buildApp();
 
