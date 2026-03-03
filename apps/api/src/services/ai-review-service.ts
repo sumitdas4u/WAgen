@@ -265,6 +265,56 @@ const NEGATIVE_FEEDBACK_PATTERNS = [
   "this is wrong"
 ];
 
+const STRONG_UNKNOWN_REPLY_PATTERNS = [
+  "i don't know",
+  "i do not know",
+  "i'm not sure",
+  "i am not sure",
+  "i don't have",
+  "i do not have",
+  "not familiar with",
+  "unable to find",
+  "unable to help",
+  "cannot help with that",
+  "can't help with that",
+  "please contact support",
+  "no information available",
+  "not in my system",
+  "not in my knowledge"
+];
+
+const CLARIFICATION_REPLY_PATTERNS = [
+  "please clarify",
+  "could you clarify",
+  "could you provide more details",
+  "please provide more details",
+  "please share more details",
+  "could you share more details",
+  "which one",
+  "what exactly",
+  "can you be more specific"
+];
+
+const IRRELEVANT_QUESTION_PATTERNS = [
+  "hi",
+  "hello",
+  "hey",
+  "ok",
+  "okay",
+  "k",
+  "kk",
+  "hmm",
+  "hmmm",
+  "thanks",
+  "thank you",
+  "test",
+  "testing",
+  "typo",
+  "asdf",
+  "qwerty",
+  "zxcv"
+];
+
 export type AiReviewQueueStatus = "pending" | "resolved";
 
 export interface AiReviewQueueItem {
@@ -322,6 +372,83 @@ function isNegativeFeedbackMessage(message: string): boolean {
   return includesPattern(message, NEGATIVE_FEEDBACK_PATTERNS);
 }
 
+function isStrongUnknownResponse(aiResponse: string): boolean {
+  return includesPattern(aiResponse, STRONG_UNKNOWN_REPLY_PATTERNS);
+}
+
+function isClarificationStyleResponse(aiResponse: string): boolean {
+  return includesPattern(aiResponse, CLARIFICATION_REPLY_PATTERNS);
+}
+
+function getQuestionRejectionReason(question: string): string | null {
+  const normalized = normalizeText(question);
+  if (!normalized) {
+    return "empty_question";
+  }
+
+  if (IRRELEVANT_QUESTION_PATTERNS.includes(normalized)) {
+    return "irrelevant_short_message";
+  }
+
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (tokens.length === 0) {
+    return "empty_tokens";
+  }
+
+  if (tokens.length === 1 && tokens[0].length <= 3) {
+    return "single_token_too_short";
+  }
+
+  const lettersOnly = normalized.replace(/[^a-z]/g, "");
+  if (lettersOnly.length < 3) {
+    return "insufficient_letters";
+  }
+
+  if (/(.)\1{4,}/.test(lettersOnly)) {
+    return "repeated_char_noise";
+  }
+
+  if (lettersOnly.length >= 5) {
+    const vowelCount = (lettersOnly.match(/[aeiou]/g) ?? []).length;
+    if (vowelCount === 0) {
+      return "likely_typo_or_gibberish";
+    }
+  }
+
+  if (tokens.every((token) => token.length <= 2)) {
+    return "token_quality_too_low";
+  }
+
+  return null;
+}
+
+function shouldQueueFailureForLearning(input: {
+  question: string;
+  aiResponse: string;
+  signals: string[];
+}): { shouldQueue: boolean; reason: string | null } {
+  const questionRejection = getQuestionRejectionReason(input.question);
+  if (questionRejection) {
+    return { shouldQueue: false, reason: questionRejection };
+  }
+
+  const strongUnknown = isStrongUnknownResponse(input.aiResponse);
+  const clarification = isClarificationStyleResponse(input.aiResponse);
+  if (clarification && !strongUnknown) {
+    return { shouldQueue: false, reason: "clarification_response" };
+  }
+
+  if (!strongUnknown) {
+    return { shouldQueue: false, reason: "response_not_confidently_unknown" };
+  }
+
+  if (!input.signals.includes("fallback_response") && !input.signals.includes("no_knowledge_match")) {
+    return { shouldQueue: false, reason: "weak_failure_signals" };
+  }
+
+  return { shouldQueue: true, reason: null };
+}
+
 function estimateConfidenceScore(input: {
   retrievalChunks: number;
   aiResponse: string;
@@ -363,12 +490,35 @@ async function findPendingDuplicate(input: {
 }): Promise<string | null> {
   const normalizedQuestion = normalizeText(input.question);
 
-  // Only check for duplicate by question within 6 hour window
-  // Different responses to same question should each be tracked
-  // This prevents losing unique AI failure patterns
-  // OPTIMIZED: Check only user_id, conversation_id, and status for fast index lookup
-  // Then filter in-memory by normalized question to avoid expensive regex queries
-  const result = await pool.query<{ id: string; question: string }>(
+  // Check for RESOLVED items globally (across all conversations)
+  // If a question is already resolved and has knowledge in KB, don't queue it again
+  // This prevents duplicate learning center items for the same question
+  const result = await pool.query<{ id: string; question: string; status: string }>(
+    `SELECT id, question, status
+     FROM ai_review_queue
+     WHERE user_id = $1
+       AND status = 'resolved'
+       AND created_at >= NOW() - ($2::text || ' seconds')::interval
+     ORDER BY created_at DESC
+     LIMIT 50`,  // Check more resolved items globally
+    [
+      input.userId,
+      String(DUPLICATE_WINDOW_SECONDS * 4)  // Extend window for resolved items (24 hours)
+    ]
+  );
+
+  // Check if this question has already been resolved before
+  for (const row of result.rows) {
+    if (normalizeText(row.question) === normalizedQuestion) {
+      console.log(`[AI-Review] ✓ SKIP QUEUE - Question already resolved: existing_id=${row.id}, question="${input.question.substring(0, 50)}..."`);
+      console.log(`[AI-Review]   Reason: This question has knowledge in the database from previous resolution`);
+      return row.id;  // Return existing ID to skip queuing
+    }
+  }
+
+  // Also check for PENDING duplicates in SAME conversation only (6-hour window)
+  // This prevents rapid duplicate submissions in the same conversation
+  const pendingResult = await pool.query<{ id: string; question: string }>(
     `SELECT id, question
      FROM ai_review_queue
      WHERE user_id = $1
@@ -384,10 +534,9 @@ async function findPendingDuplicate(input: {
     ]
   );
 
-  // Filter in-memory instead of in SQL - avoids expensive regex on database
-  for (const row of result.rows) {
+  for (const row of pendingResult.rows) {
     if (normalizeText(row.question) === normalizedQuestion) {
-      console.log(`[AI-Review] Found duplicate question (6hr window): existing_id=${row.id}, question="${input.question.substring(0, 50)}..."`);
+      console.log(`[AI-Review] Found duplicate pending question (6hr window): existing_id=${row.id}, question="${input.question.substring(0, 50)}..."`);
       return row.id;
     }
   }
@@ -410,6 +559,14 @@ async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: 
     return { created: false, itemId: null };
   }
 
+  const questionRejection = getQuestionRejectionReason(question);
+  if (questionRejection) {
+    console.log(
+      `[AI-Review] Queue item rejected: question filtered as irrelevant (reason=${questionRejection}, conversation=${input.conversationId})`
+    );
+    return { created: false, itemId: null };
+  }
+
   if (input.signals.length === 0) {
     console.log(`[AI-Review] Queue item rejected: no trigger signals detected (conversation=${input.conversationId})`);
     console.log(`  Question: "${question.substring(0, 100)}..."`);
@@ -424,7 +581,9 @@ async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: 
     aiResponse
   });
   if (duplicateId) {
-    console.log(`[AI-Review] Queue item rejected: duplicate found (existing_id=${duplicateId})`);
+    console.log(`[AI-Review] Queue item rejected: ALREADY RESOLVED - skipping duplicate queue (existing_id=${duplicateId})`);
+    console.log(`[AI-Review]   User already provided answer for: "${question.substring(0, 70)}..."`);
+    console.log(`[AI-Review]   Knowledge is now available in knowledge base for this question`);
     return { created: false, itemId: duplicateId };
   }
 
@@ -507,7 +666,19 @@ export async function queueAiFailureForReview(input: {
     return { queued: false, signals: [], confidenceScore, itemId: null };
   }
 
-  console.log(`[AI-Review] ✓ Signals detected: ${signals.join(", ")}`);
+  const queueDecision = shouldQueueFailureForLearning({
+    question: input.question,
+    aiResponse: input.aiResponse,
+    signals
+  });
+  if (!queueDecision.shouldQueue) {
+    console.log(
+      `[AI-Review] Queue item skipped by smart filter: reason=${queueDecision.reason}, question="${input.question.substring(0, 80)}..."`
+    );
+    return { queued: false, signals, confidenceScore, itemId: null };
+  }
+
+  console.log(`[AI-Review] Signals detected: ${signals.join(", ")}`);
 
   const created = await createQueueItem({
     userId: input.userId,
