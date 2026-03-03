@@ -100,6 +100,24 @@ Stop:
 npm run dev:full:down
 ```
 
+## Production Reverse Proxy (Required for Websocket)
+
+If you put another Nginx in front of the `web` container (for TLS/domain routing), it must forward websocket upgrade headers.
+Use [`infra/nginx/host-default.conf`](infra/nginx/host-default.conf) as the base host config.
+
+Quick validation from any machine that can reach production:
+
+```bash
+curl --http1.1 -i \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+  "https://wagenai.com/ws?token=<jwt>"
+```
+
+Expected response starts with `HTTP/1.1 101 Switching Protocols`.
+
 ## Backend Flow
 
 1. User signs up.
