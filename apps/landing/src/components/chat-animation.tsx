@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 const messages = [
   { id: 1, text: "Hi! I'm interested in your products.", sender: "user", delay: 1 },
-  { id: 2, text: "Hello! I'm WagenAI, your 24/7 receptionist. How can I help you today?", sender: "ai", delay: 3 },
+  { id: 2, text: "Hello! I'm WAgen AI, your 24/7 receptionist. How can I help you today?", sender: "ai", delay: 3 },
   { id: 3, text: "Do you have any availability tomorrow?", sender: "user", delay: 5 },
   { id: 4, text: "Yes! We have slots at 10 AM and 3 PM. Would you like to book one?", sender: "ai", delay: 7 },
   { id: 5, text: "10 AM works for me. What's the price?", sender: "user", delay: 9 },

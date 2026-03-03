@@ -8,21 +8,24 @@
   ],
   "scripts": {
     "dev": "npm-run-all --parallel dev:api dev:web",
-    "agent:dev": "tsx src/index.ts",
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
+    "dev:full": "docker compose -f infra/docker-compose.full.yml up --build --watch",
+    "dev:full:once": "docker compose -f infra/docker-compose.full.yml up --build",
+    "dev:full:watch": "docker compose -f infra/docker-compose.full.yml up --build --watch",
+    "dev:full:down": "docker compose -f infra/docker-compose.full.yml down",
+    "dev:full:rebuild:web": "docker compose -f infra/docker-compose.full.yml build --no-cache web && docker compose -f infra/docker-compose.full.yml up -d --force-recreate web",
     "build": "npm-run-all build:api build:web",
     "build:api": "npm --workspace apps/api run build",
     "build:web": "npm --workspace apps/web run build",
     "lint": "npm-run-all lint:api lint:web",
     "lint:api": "npm --workspace apps/api run lint",
     "lint:web": "npm --workspace apps/web run lint",
-    "db:migrate": "npm --workspace apps/api run db:migrate"
+    "db:migrate": "npm --workspace apps/api run db:migrate",
+    "db:migrate:status": "npm --workspace apps/api run db:migrate:status",
+    "db:reset:dev": "npm --workspace apps/api run db:reset:dev --"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5"
-  },
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18"
   }
 }

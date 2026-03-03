@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { MarketingShell } from "@/components/marketing-shell";
 
 export const metadata: Metadata = {
-  title: "Contact Us | WagenAI",
-  description: "Contact and support details for WagenAI.",
+  title: "Contact Us | WAgen AI",
+  description: "Contact and support details for WAgen AI.",
 };
 
 export default function ContactUsPage() {
@@ -15,7 +15,7 @@ export default function ContactUsPage() {
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Contact Us</h1>
 
             <div className="mt-8 space-y-5 text-zinc-700">
-              <p>WagenAI is a product of KEYLINE DIGITECH PVT. LTD.</p>
+              <p>WAgen AI is a product of KEYLINE DIGITECH PVT. LTD.</p>
               <p>
                 We are committed to providing secure and scalable WhatsApp automation solutions for businesses of all
                 sizes.

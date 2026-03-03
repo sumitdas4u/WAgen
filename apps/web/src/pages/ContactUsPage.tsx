@@ -14,7 +14,7 @@ export function ContactUsPage() {
               <h1>Contact Us</h1>
             </div>
 
-            <p>WagenAI is a product of KEYLINE DIGITECH PVT. LTD.</p>
+            <p>WAgen AI is a product of KEYLINE DIGITECH PVT. LTD.</p>
             <p>
               We are committed to providing secure and scalable WhatsApp automation solutions for businesses of all
               sizes.

@@ -33,12 +33,22 @@ const BusinessSchema = z.object({
 
 const AgentPayloadSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  channelType: z.enum(["qr", "api"]),
-  linkedNumber: z.string().trim().min(8).max(30),
+  channelType: z.enum(["web", "qr", "api"]),
+  linkedNumber: z.string().trim().max(30).optional().default(""),
   businessBasics: BusinessSchema,
   personality: z.enum(["friendly_warm", "professional", "hard_closer", "premium_consultant", "custom"]),
   customPrompt: z.string().optional(),
+  objectiveType: z.enum(["lead", "feedback", "complaint", "hybrid"]).optional().default("lead"),
+  taskDescription: z.string().trim().max(2000).optional().default(""),
   isActive: z.boolean().optional()
+}).superRefine((value, ctx) => {
+  if (value.channelType !== "web" && value.linkedNumber.replace(/\D/g, "").length < 8) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["linkedNumber"],
+      message: "Linked number must contain at least 8 digits for WhatsApp channels."
+    });
+  }
 });
 
 const AgentParamsSchema = z.object({

@@ -40,6 +40,20 @@ services:
     ports:
       - "4000:4000"
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ../apps/api
+          ignore:
+            - node_modules/
+            - dist/
+            - .env
+        - action: rebuild
+          path: ../apps/api/package.json
+        - action: rebuild
+          path: ../package-lock.json
+        - action: rebuild
+          path: ../package.json
 
   landing:
     build:
@@ -47,8 +61,21 @@ services:
       dockerfile: apps/landing/Dockerfile
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: 8080
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ../apps/landing
+          ignore:
+            - node_modules/
+            - .next/
+        - action: rebuild
+          path: ../apps/landing/package.json
+        - action: rebuild
+          path: ../package-lock.json
+        - action: rebuild
+          path: ../package.json
 
   web:
     build:
@@ -62,8 +89,24 @@ services:
       landing:
         condition: service_started
     ports:
-      - "8080:80"
+      - "8080:8080"
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ../apps/web
+          ignore:
+            - node_modules/
+            - dist/
+            - tsconfig.tsbuildinfo
+        - action: rebuild
+          path: ../apps/web/package.json
+        - action: rebuild
+          path: ../apps/web/nginx.conf
+        - action: rebuild
+          path: ../package-lock.json
+        - action: rebuild
+          path: ../package.json
 
 volumes:
   postgres_data:

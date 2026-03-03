@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { setAgentActive, updateBusinessBasics, updatePersonality } from "../services/user-service.js";
+import { getUserById, setAgentActive, updateBusinessBasics, updatePersonality } from "../services/user-service.js";
 import { generateOnboardingDraft } from "../services/onboarding-autofill-service.js";
+import { buildSalesReply } from "../services/ai-reply-service.js";
 
 const BusinessSchema = z.object({
   companyName: z.string().trim().max(120).optional().default(""),
@@ -39,6 +40,28 @@ const ActivateSchema = z.object({
 const AutofillSchema = z.object({
   description: z.string().trim().min(20).max(6000)
 });
+
+const TestChatSchema = z.object({
+  message: z.string().trim().min(1).max(2000),
+  history: z
+    .array(
+      z.object({
+        sender: z.enum(["user", "bot"]),
+        text: z.string().trim().min(1).max(2000)
+      })
+    )
+    .max(20)
+    .optional(),
+  phone: z.string().trim().max(30).optional()
+});
+
+function resolveTestPhone(value?: string): string {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (digits.length >= 8 && digits.length <= 15) {
+    return digits;
+  }
+  return "919999999999";
+}
 
 export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
@@ -94,6 +117,42 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
 
       await setAgentActive(request.authUser.userId, parsed.data.active);
       return reply.send({ ok: true, active: parsed.data.active });
+    }
+  );
+
+  fastify.post(
+    "/api/onboarding/test-chat",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = TestChatSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid test chat payload" });
+      }
+
+      const user = await getUserById(request.authUser.userId);
+      if (!user) {
+        return reply.status(404).send({ error: "User not found" });
+      }
+
+      const history = (parsed.data.history ?? []).map((item) => ({
+        direction: item.sender === "user" ? ("inbound" as const) : ("outbound" as const),
+        message_text: item.text
+      }));
+
+      const response = await buildSalesReply({
+        user,
+        incomingMessage: parsed.data.message,
+        conversationPhone: resolveTestPhone(parsed.data.phone),
+        history
+      });
+
+      return reply.send({
+        ok: true,
+        reply: response.text,
+        model: response.model,
+        usage: response.usage,
+        retrievalChunks: response.retrievalChunks
+      });
     }
   );
 }

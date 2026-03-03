@@ -324,11 +324,91 @@ export function connectWhatsApp(token: string, options?: { resetAuth?: boolean }
   });
 }
 
+export function disconnectWhatsApp(token: string) {
+  return apiRequest<{ ok: boolean }>("/api/whatsapp/disconnect", {
+    method: "POST",
+    token
+  });
+}
+
 export function fetchWhatsAppStatus(token: string) {
   return apiRequest<{ status: string; phoneNumber: string | null; hasQr: boolean; qr: string | null }>(
     "/api/whatsapp/status",
     { token }
   );
+}
+
+export interface MetaBusinessConfig {
+  configured: boolean;
+  appId: string | null;
+  embeddedSignupConfigId: string | null;
+  redirectUri: string;
+  graphVersion: string;
+  webhookPath: string;
+  pricing: {
+    platformFeeInrMonthly: number;
+    metaConversationChargesSeparate: boolean;
+  };
+}
+
+export interface MetaBusinessConnection {
+  id: string;
+  userId: string;
+  metaBusinessId: string | null;
+  wabaId: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string | null;
+  linkedNumber: string | null;
+  tokenExpiresAt: string | null;
+  subscriptionStatus: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MetaBusinessStatus {
+  connected: boolean;
+  connection: MetaBusinessConnection | null;
+}
+
+export interface CompleteMetaSignupPayload {
+  code: string;
+  redirectUri?: string;
+  metaBusinessId?: string;
+  wabaId?: string;
+  phoneNumberId?: string;
+  displayPhoneNumber?: string;
+}
+
+export function fetchMetaBusinessConfig(token: string) {
+  return apiRequest<MetaBusinessConfig>("/api/meta/business/config", { token });
+}
+
+export function fetchMetaBusinessStatus(token: string, options?: { forceRefresh?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.forceRefresh) {
+    params.set("forceRefresh", "true");
+  }
+  const query = params.toString();
+  const path = query ? `/api/meta/business/status?${query}` : "/api/meta/business/status";
+  return apiRequest<MetaBusinessStatus>(path, { token });
+}
+
+export function completeMetaBusinessSignup(token: string, payload: CompleteMetaSignupPayload) {
+  return apiRequest<{ ok: boolean; connection: MetaBusinessConnection }>("/api/meta/business/complete", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function disconnectMetaBusiness(token: string, payload?: { connectionId?: string }) {
+  return apiRequest<{ ok: boolean }>("/api/meta/business/disconnect", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload ?? {})
+  });
 }
 
 export interface BusinessBasicsPayload {
@@ -357,11 +437,13 @@ export interface BusinessBasicsPayload {
 
 export interface AgentProfilePayload {
   name: string;
-  channelType: "qr" | "api";
+  channelType: "web" | "qr" | "api";
   linkedNumber: string;
   businessBasics: BusinessBasicsPayload;
   personality: User["personality"];
   customPrompt?: string;
+  objectiveType: "lead" | "feedback" | "complaint" | "hybrid";
+  taskDescription: string;
   isActive?: boolean;
 }
 
@@ -369,11 +451,13 @@ export interface AgentProfile {
   id: string;
   userId: string;
   name: string;
-  channelType: "qr" | "api";
+  channelType: "web" | "qr" | "api";
   linkedNumber: string;
   businessBasics: BusinessBasicsPayload;
   personality: User["personality"];
   customPrompt: string | null;
+  objectiveType: "lead" | "feedback" | "complaint" | "hybrid";
+  taskDescription: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -535,6 +619,32 @@ export function setAgentActive(token: string, active: boolean) {
   });
 }
 
+export interface TestChatHistoryItem {
+  sender: "user" | "bot";
+  text: string;
+}
+
+export function requestTestChatbotReply(
+  token: string,
+  payload: {
+    message: string;
+    history?: TestChatHistoryItem[];
+    phone?: string;
+  }
+) {
+  return apiRequest<{
+    ok: boolean;
+    reply: string;
+    model: string | null;
+    usage: { promptTokens: number; completionTokens: number; totalTokens: number } | null;
+    retrievalChunks: number;
+  }>("/api/onboarding/test-chat", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
 export function fetchAgentProfiles(token: string) {
   return apiRequest<{ profiles: AgentProfile[] }>("/api/agents/profiles", { token });
 }
@@ -578,6 +688,7 @@ export interface DashboardOverviewResponse {
     hasQr: boolean;
     qr: string | null;
   };
+  metaApi: MetaBusinessStatus;
   agent: {
     active: boolean;
     personality: string;
@@ -652,6 +763,12 @@ export interface Conversation {
   id: string;
   phone_number: string;
   contact_name?: string | null;
+  assigned_agent_name?: string | null;
+  assigned_agent_profile_id: string | null;
+  channel_type: "web" | "qr" | "api";
+  channel_linked_number: string | null;
+  lead_kind: "lead" | "feedback" | "complaint" | "other";
+  classification_confidence: number;
   stage: string;
   score: number;
   last_message: string | null;
@@ -666,15 +783,42 @@ export function fetchConversations(token: string) {
 
 export interface LeadConversation extends Conversation {
   contact_name: string | null;
+  assigned_agent_name: string | null;
+  requires_reply: boolean;
   ai_summary: string;
   summary_status: "ready" | "missing" | "stale";
   summary_updated_at: string | null;
 }
 
-export function fetchLeadConversations(token: string, options?: { limit?: number }) {
+export function fetchLeadConversations(
+  token: string,
+  options?: {
+    limit?: number;
+    stage?: "hot" | "warm" | "cold";
+    kind?: "lead" | "feedback" | "complaint" | "other";
+    channelType?: "web" | "qr" | "api";
+    todayOnly?: boolean;
+    requiresReply?: boolean;
+  }
+) {
   const params = new URLSearchParams();
   if (typeof options?.limit === "number") {
     params.set("limit", String(options.limit));
+  }
+  if (options?.stage) {
+    params.set("stage", options.stage);
+  }
+  if (options?.kind) {
+    params.set("kind", options.kind);
+  }
+  if (options?.channelType) {
+    params.set("channelType", options.channelType);
+  }
+  if (typeof options?.todayOnly === "boolean") {
+    params.set("todayOnly", options.todayOnly ? "true" : "false");
+  }
+  if (typeof options?.requiresReply === "boolean") {
+    params.set("requiresReply", options.requiresReply ? "true" : "false");
   }
   const query = params.toString();
   const path = query ? `/api/conversations/leads?${query}` : "/api/conversations/leads";
@@ -732,5 +876,88 @@ export function setConversationPaused(token: string, conversationId: string, pau
     method: "PATCH",
     token,
     body: JSON.stringify({ paused })
+  });
+}
+
+export function assignConversationAgent(
+  token: string,
+  conversationId: string,
+  agentProfileId: string | null
+) {
+  return apiRequest<{ ok: boolean }>(`/api/conversations/${conversationId}/assign-agent`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ agentProfileId })
+  });
+}
+
+export function sendConversationManualMessage(
+  token: string,
+  conversationId: string,
+  text: string,
+  options?: { lockToManual?: boolean }
+) {
+  return apiRequest<{
+    ok: boolean;
+    delivered: {
+      conversationId: string;
+      channelType: "web" | "qr" | "api";
+      delivered: boolean;
+    };
+  }>(`/api/conversations/${conversationId}/messages`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      text,
+      lockToManual: options?.lockToManual
+    })
+  });
+}
+
+export interface AiReviewQueueItem {
+  id: string;
+  user_id: string;
+  conversation_id: string | null;
+  customer_phone: string;
+  question: string;
+  ai_response: string;
+  confidence_score: number;
+  trigger_signals: string[];
+  status: "pending" | "resolved";
+  resolution_answer: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  created_at: string;
+}
+
+export function fetchAiReviewQueue(
+  token: string,
+  options?: { status?: "all" | "pending" | "resolved"; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/ai-review/queue?${query}` : "/api/ai-review/queue";
+  return apiRequest<{ queue: AiReviewQueueItem[] }>(path, { token });
+}
+
+export function resolveAiReviewQueueItem(
+  token: string,
+  reviewId: string,
+  payload: { resolutionAnswer?: string; addToKnowledgeBase?: boolean }
+) {
+  return apiRequest<{
+    ok: boolean;
+    item: AiReviewQueueItem;
+    knowledgeChunks: number;
+  }>(`/api/ai-review/${reviewId}/resolve`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
   });
 }

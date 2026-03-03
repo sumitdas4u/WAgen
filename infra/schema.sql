@@ -45,10 +45,16 @@ CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   phone_number TEXT NOT NULL,
+  lead_kind TEXT NOT NULL DEFAULT 'lead' CHECK (lead_kind IN ('lead', 'feedback', 'complaint', 'other')),
+  classification_confidence INTEGER NOT NULL DEFAULT 50,
+  channel_type TEXT NOT NULL DEFAULT 'qr' CHECK (channel_type IN ('web', 'qr', 'api')),
+  channel_linked_number TEXT,
+  assigned_agent_profile_id UUID,
   stage TEXT NOT NULL DEFAULT 'new',
   score INTEGER NOT NULL DEFAULT 0,
   last_message TEXT,
   last_message_at TIMESTAMPTZ,
+  last_classified_at TIMESTAMPTZ,
   ai_paused BOOLEAN NOT NULL DEFAULT FALSE,
   manual_takeover BOOLEAN NOT NULL DEFAULT FALSE,
   last_ai_reply_at TIMESTAMPTZ,
@@ -58,6 +64,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 CREATE INDEX IF NOT EXISTS conversations_user_idx ON conversations(user_id);
+CREATE INDEX IF NOT EXISTS conversations_user_kind_stage_idx ON conversations(user_id, lead_kind, stage, last_message_at DESC);
 
 CREATE TABLE IF NOT EXISTS conversation_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -78,15 +85,38 @@ CREATE TABLE IF NOT EXISTS lead_summaries (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS ai_review_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  customer_phone TEXT NOT NULL,
+  question TEXT NOT NULL,
+  ai_response TEXT NOT NULL,
+  confidence_score INTEGER NOT NULL DEFAULT 0 CHECK (confidence_score >= 0 AND confidence_score <= 100),
+  trigger_signals TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'resolved')),
+  resolution_answer TEXT,
+  resolved_at TIMESTAMPTZ,
+  resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ai_review_queue_user_status_idx
+  ON ai_review_queue(user_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ai_review_queue_conversation_idx
+  ON ai_review_queue(conversation_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS agent_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  channel_type TEXT NOT NULL CHECK (channel_type IN ('qr', 'api')),
+  channel_type TEXT NOT NULL CHECK (channel_type IN ('web', 'qr', 'api')),
   linked_number TEXT NOT NULL,
   business_basics JSONB NOT NULL DEFAULT '{}'::jsonb,
   personality TEXT NOT NULL DEFAULT 'friendly_warm',
   custom_personality_prompt TEXT,
+  objective_type TEXT NOT NULL DEFAULT 'lead' CHECK (objective_type IN ('lead', 'feedback', 'complaint', 'hybrid')),
+  task_description TEXT NOT NULL DEFAULT '',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -97,6 +127,35 @@ CREATE INDEX IF NOT EXISTS agent_profiles_channel_lookup_idx ON agent_profiles(u
 CREATE UNIQUE INDEX IF NOT EXISTS agent_profiles_unique_active_channel_idx
   ON agent_profiles(user_id, channel_type, linked_number)
   WHERE is_active = TRUE;
+
+ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_assigned_agent_profile_id_fkey;
+ALTER TABLE conversations
+  ADD CONSTRAINT conversations_assigned_agent_profile_id_fkey
+  FOREIGN KEY (assigned_agent_profile_id)
+  REFERENCES agent_profiles(id)
+  ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS whatsapp_business_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  meta_business_id TEXT,
+  waba_id TEXT NOT NULL,
+  phone_number_id TEXT NOT NULL UNIQUE,
+  display_phone_number TEXT,
+  linked_number TEXT,
+  access_token_encrypted TEXT NOT NULL,
+  token_expires_at TIMESTAMPTZ,
+  subscription_status TEXT NOT NULL DEFAULT 'unknown',
+  status TEXT NOT NULL DEFAULT 'connected',
+  metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS whatsapp_business_connections_user_idx
+  ON whatsapp_business_connections(user_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS whatsapp_business_connections_lookup_idx
+  ON whatsapp_business_connections(phone_number_id, status);
 
 CREATE TABLE IF NOT EXISTS user_subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -176,4 +235,9 @@ FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 DROP TRIGGER IF EXISTS agent_profiles_touch_updated_at ON agent_profiles;
 CREATE TRIGGER agent_profiles_touch_updated_at
 BEFORE UPDATE ON agent_profiles
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+DROP TRIGGER IF EXISTS whatsapp_business_connections_touch_updated_at ON whatsapp_business_connections;
+CREATE TRIGGER whatsapp_business_connections_touch_updated_at
+BEFORE UPDATE ON whatsapp_business_connections
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

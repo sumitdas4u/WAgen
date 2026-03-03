@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { MarketingShell } from "@/components/marketing-shell";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | WagenAI",
-  description: "Privacy Policy for WagenAI WhatsApp AI automation platform.",
+  title: "Privacy Policy | WAgen AI",
+  description: "Privacy Policy for WAgen AI WhatsApp AI automation platform.",
 };
 
 export default function PrivacyPolicyPage() {
@@ -20,9 +20,9 @@ export default function PrivacyPolicyPage() {
             </p>
 
             <div className="mt-8 space-y-5 text-zinc-700">
-              <p>Welcome to WagenAI (“Company”, “we”, “our”, “us”).</p>
+              <p>Welcome to WAgen AI (“Company”, “we”, “our”, “us”).</p>
               <p>
-                WagenAI provides AI-powered WhatsApp automation services including WhatsApp QR-based automation and
+                WAgen AI provides AI-powered WhatsApp automation services including WhatsApp QR-based automation and
                 Official WhatsApp Business API integrations.
               </p>
               <p>
@@ -32,7 +32,7 @@ export default function PrivacyPolicyPage() {
 
               <h2 className="pt-4 text-xl font-bold text-zinc-900">1. INFORMATION WE COLLECT</h2>
               <h3 className="text-lg font-semibold text-zinc-900">1.1 Account Information</h3>
-              <p>When you register on WagenAI, we may collect:</p>
+              <p>When you register on WAgen AI, we may collect:</p>
               <ul className="list-disc space-y-1 pl-5">
                 <li>Name</li>
                 <li>Email address</li>
@@ -88,7 +88,7 @@ export default function PrivacyPolicyPage() {
               </ul>
 
               <h2 className="pt-4 text-xl font-bold text-zinc-900">3. WHATSAPP BUSINESS API DATA HANDLING</h2>
-              <p>If you use Official WhatsApp Business API through WagenAI:</p>
+              <p>If you use Official WhatsApp Business API through WAgen AI:</p>
               <ul className="list-disc space-y-1 pl-5">
                 <li>We act as a technology service provider.</li>
                 <li>Message data is processed to enable automation and AI responses.</li>
@@ -107,7 +107,7 @@ export default function PrivacyPolicyPage() {
               </ul>
 
               <h2 className="pt-4 text-xl font-bold text-zinc-900">5. AI PROCESSING</h2>
-              <p>WagenAI uses AI technologies to:</p>
+              <p>WAgen AI uses AI technologies to:</p>
               <ul className="list-disc space-y-1 pl-5">
                 <li>Analyze conversation context</li>
                 <li>Generate automated replies</li>
@@ -147,7 +147,7 @@ export default function PrivacyPolicyPage() {
               <p>We do not sell personal data.</p>
 
               <h2 className="pt-4 text-xl font-bold text-zinc-900">9. USER RESPONSIBILITIES</h2>
-              <p>As a WagenAI user, you agree to:</p>
+              <p>As a WAgen AI user, you agree to:</p>
               <ul className="list-disc space-y-1 pl-5">
                 <li>Obtain consent from your customers before messaging them</li>
                 <li>Comply with WhatsApp Business policies</li>
@@ -179,7 +179,7 @@ export default function PrivacyPolicyPage() {
               </p>
 
               <h2 className="pt-4 text-xl font-bold text-zinc-900">12. CHILDREN’S PRIVACY</h2>
-              <p>WagenAI is not intended for users under 18 years of age.</p>
+              <p>WAgen AI is not intended for users under 18 years of age.</p>
               <p>We do not knowingly collect data from minors.</p>
 
               <h2 className="pt-4 text-xl font-bold text-zinc-900">13. CHANGES TO THIS POLICY</h2>
@@ -188,7 +188,7 @@ export default function PrivacyPolicyPage() {
 
               <h2 className="pt-4 text-xl font-bold text-zinc-900">14. CONTACT US</h2>
               <p>
-                WagenAI
+                WAgen AI
                 <br />
                 Email:{" "}
                 <a className="font-semibold text-emerald-700 hover:text-emerald-600" href="mailto:support@wagenai.com">

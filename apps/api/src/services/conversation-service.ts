@@ -1,8 +1,9 @@
 import { pool, withTransaction } from "../db/pool.js";
 import { clamp } from "../utils/index.js";
-import type { Conversation } from "../types/models.js";
+import type { AgentChannelType, Conversation, ConversationKind } from "../types/models.js";
 import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
 import { openAIService } from "./openai-service.js";
+import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
 
 function scoreMessageBase(text: string): number {
   const normalized = text.toLowerCase();
@@ -87,21 +88,212 @@ function stageFromScore(score: number): string {
   return "cold";
 }
 
-export async function getOrCreateConversation(userId: string, phoneNumber: string): Promise<Conversation> {
+const LEAD_KIND_KEYWORDS: Record<ConversationKind, string[]> = {
+  lead: [
+    "price",
+    "pricing",
+    "cost",
+    "buy",
+    "purchase",
+    "plan",
+    "quote",
+    "trial",
+    "demo",
+    "interested",
+    "subscribe"
+  ],
+  feedback: [
+    "feedback",
+    "review",
+    "rating",
+    "suggestion",
+    "improve",
+    "feature request",
+    "experience",
+    "recommendation"
+  ],
+  complaint: [
+    "complaint",
+    "issue",
+    "problem",
+    "delay",
+    "bad",
+    "angry",
+    "refund",
+    "cancel",
+    "not working",
+    "poor support",
+    "worst"
+  ],
+  other: []
+};
+
+const KIND_PRIORITY_DELTA: Record<ConversationKind, number> = {
+  lead: 8,
+  feedback: 2,
+  complaint: 12,
+  other: 0
+};
+
+function inferKindFromHeuristics(
+  message: string,
+  objectiveType: AgentProfileRecord["objectiveType"] | null
+): { kind: ConversationKind; confidence: number; ambiguous: boolean } {
+  const normalized = message.toLowerCase();
+  const scores: Record<ConversationKind, number> = {
+    lead: 0,
+    feedback: 0,
+    complaint: 0,
+    other: 0
+  };
+
+  for (const [kind, keywords] of Object.entries(LEAD_KIND_KEYWORDS) as Array<[ConversationKind, string[]]>) {
+    for (const keyword of keywords) {
+      if (normalized.includes(keyword)) {
+        scores[kind] += 2;
+      }
+    }
+  }
+
+  if (message.length > 120) {
+    scores.lead += 1;
+    scores.feedback += 1;
+  }
+
+  if (objectiveType && objectiveType !== "hybrid") {
+    scores[objectiveType] += 2;
+  }
+
+  const sorted = (Object.entries(scores) as Array<[ConversationKind, number]>).sort((a, b) => b[1] - a[1]);
+  const top = sorted[0];
+  const second = sorted[1];
+
+  if (!top || top[1] <= 0) {
+    return { kind: objectiveType && objectiveType !== "hybrid" ? objectiveType : "lead", confidence: 46, ambiguous: true };
+  }
+
+  const confidence = clamp(54 + top[1] * 10 - (second?.[1] ?? 0) * 6, 35, 94);
+  return { kind: top[0], confidence, ambiguous: top[1] - (second?.[1] ?? 0) <= 1 };
+}
+
+function parseClassificationKind(value: unknown): ConversationKind | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "lead" || normalized === "feedback" || normalized === "complaint" || normalized === "other") {
+    return normalized;
+  }
+  return null;
+}
+
+async function classifyInboundMessage(input: {
+  message: string;
+  agentProfile: AgentProfileRecord | null;
+}): Promise<{ kind: ConversationKind; confidence: number }> {
+  const heuristic = inferKindFromHeuristics(input.message, input.agentProfile?.objectiveType ?? null);
+
+  const shouldUseLlm =
+    openAIService.isConfigured() &&
+    input.message.trim().length >= 8 &&
+    (heuristic.ambiguous || input.message.length >= 160);
+
+  if (!shouldUseLlm) {
+    return { kind: heuristic.kind, confidence: heuristic.confidence };
+  }
+
+  try {
+    const payload = await openAIService.generateJson(
+      [
+        "Classify customer chat intent.",
+        "Return valid JSON only.",
+        "Schema: {\"kind\":\"lead|feedback|complaint|other\",\"confidence\":number}.",
+        "confidence must be integer from 0 to 100."
+      ].join("\n"),
+      [
+        `Agent objective: ${input.agentProfile?.objectiveType ?? "hybrid"}`,
+        `Agent task description: ${input.agentProfile?.taskDescription ?? "N/A"}`,
+        `Customer message: ${input.message}`
+      ].join("\n")
+    );
+
+    const kind = parseClassificationKind(payload.kind);
+    if (!kind) {
+      return { kind: heuristic.kind, confidence: heuristic.confidence };
+    }
+
+    const confidenceRaw = Number(payload.confidence);
+    const confidence = Number.isFinite(confidenceRaw)
+      ? clamp(Math.round(confidenceRaw), 20, 99)
+      : heuristic.confidence;
+
+    return { kind, confidence };
+  } catch {
+    return { kind: heuristic.kind, confidence: heuristic.confidence };
+  }
+}
+
+export async function getOrCreateConversation(
+  userId: string,
+  phoneNumber: string,
+  options?: {
+    channelType?: AgentChannelType;
+    channelLinkedNumber?: string | null;
+    assignedAgentProfileId?: string | null;
+  }
+): Promise<Conversation> {
   const existing = await pool.query<Conversation>(
     `SELECT * FROM conversations WHERE user_id = $1 AND phone_number = $2`,
     [userId, phoneNumber]
   );
 
   if ((existing.rowCount ?? 0) > 0) {
-    return existing.rows[0];
+    const row = existing.rows[0];
+    const nextChannelType = options?.channelType ?? row.channel_type ?? "qr";
+    const nextChannelLinkedNumber = options?.channelLinkedNumber ?? row.channel_linked_number ?? null;
+    const nextAssignedAgentId = options?.assignedAgentProfileId ?? row.assigned_agent_profile_id ?? null;
+
+    if (
+      row.channel_type !== nextChannelType ||
+      row.channel_linked_number !== nextChannelLinkedNumber ||
+      row.assigned_agent_profile_id !== nextAssignedAgentId
+    ) {
+      const updated = await pool.query<Conversation>(
+        `UPDATE conversations
+         SET channel_type = $1,
+             channel_linked_number = $2,
+             assigned_agent_profile_id = $3
+         WHERE id = $4
+         RETURNING *`,
+        [nextChannelType, nextChannelLinkedNumber, nextAssignedAgentId, row.id]
+      );
+      return updated.rows[0] ?? row;
+    }
+
+    return row;
   }
 
   const created = await pool.query<Conversation>(
-    `INSERT INTO conversations (user_id, phone_number, stage, score)
-     VALUES ($1, $2, 'cold', 0)
+    `INSERT INTO conversations (
+       user_id,
+       phone_number,
+       lead_kind,
+       classification_confidence,
+       channel_type,
+       channel_linked_number,
+       assigned_agent_profile_id,
+       stage,
+       score
+     )
+     VALUES ($1, $2, 'lead', 50, $3, $4, $5, 'cold', 0)
      RETURNING *`,
-    [userId, phoneNumber]
+    [
+      userId,
+      phoneNumber,
+      options?.channelType ?? "qr",
+      options?.channelLinkedNumber ?? null,
+      options?.assignedAgentProfileId ?? null
+    ]
   );
 
   return created.rows[0];
@@ -194,16 +386,53 @@ export async function reconcileConversationPhone(
       sourceLastAiReplyAt > targetLastAiReplyAt ? source.last_ai_reply_at : target.last_ai_reply_at;
 
     const mergedScore = Math.max(target.score, source.score);
+    const mergedKindPriority = Math.max(
+      KIND_PRIORITY_DELTA[target.lead_kind ?? "lead"] ?? 0,
+      KIND_PRIORITY_DELTA[source.lead_kind ?? "lead"] ?? 0
+    );
+    const mergedKind =
+      (Object.entries(KIND_PRIORITY_DELTA).find(([, weight]) => weight === mergedKindPriority)?.[0] as
+        | ConversationKind
+        | undefined) ?? target.lead_kind ?? "lead";
+
+    const mergedClassificationConfidence = Math.max(
+      Number(target.classification_confidence ?? 0),
+      Number(source.classification_confidence ?? 0)
+    );
+
+    const mergedChannelType = target.channel_type || source.channel_type || "qr";
+    const mergedChannelLinkedNumber = target.channel_linked_number || source.channel_linked_number || null;
+    const mergedAssignedAgentProfileId = target.assigned_agent_profile_id || source.assigned_agent_profile_id || null;
+    const mergedLastClassifiedAt = target.last_classified_at || source.last_classified_at || null;
 
     await client.query(
       `UPDATE conversations
        SET score = $1,
            stage = $2,
-           last_message = $3,
-           last_message_at = $4,
-           last_ai_reply_at = $5
-       WHERE id = $6`,
-      [mergedScore, stageFromScore(mergedScore), mergedLastMessage, mergedLastMessageAt, mergedLastAiReplyAt, target.id]
+           lead_kind = $3,
+           classification_confidence = $4,
+           channel_type = $5,
+           channel_linked_number = $6,
+           assigned_agent_profile_id = $7,
+           last_message = $8,
+           last_message_at = $9,
+           last_ai_reply_at = $10,
+           last_classified_at = $11
+       WHERE id = $12`,
+      [
+        mergedScore,
+        stageFromScore(mergedScore),
+        mergedKind,
+        mergedClassificationConfidence,
+        mergedChannelType,
+        mergedChannelLinkedNumber,
+        mergedAssignedAgentProfileId,
+        mergedLastMessage,
+        mergedLastMessageAt,
+        mergedLastAiReplyAt,
+        mergedLastClassifiedAt,
+        target.id
+      ]
     );
 
     await client.query(`DELETE FROM lead_summaries WHERE conversation_id = $1`, [source.id]);
@@ -227,14 +456,31 @@ export async function trackInboundMessage(
   userId: string,
   phoneNumber: string,
   message: string,
-  senderName?: string
+  senderName?: string,
+  options?: {
+    channelType?: AgentChannelType;
+    channelLinkedNumber?: string | null;
+  }
 ): Promise<Conversation> {
-  const conversation = await getOrCreateConversation(userId, phoneNumber);
+  const channelType = options?.channelType ?? "qr";
+  const channelLinkedNumber = options?.channelLinkedNumber ?? null;
+  const agentProfile = await resolveAgentProfileForChannel(userId, channelType, channelLinkedNumber);
+  const conversation = await getOrCreateConversation(userId, phoneNumber, {
+    channelType,
+    channelLinkedNumber,
+    assignedAgentProfileId: agentProfile?.id ?? null
+  });
+
+  const classification = await classifyInboundMessage({
+    message,
+    agentProfile
+  });
+
   const [intentDelta, knowledgeDelta] = await Promise.all([
     Promise.resolve(scoreMessageBase(message)),
     scoreKnowledgeIntent(userId, message)
   ]);
-  const delta = intentDelta + knowledgeDelta;
+  const delta = intentDelta + knowledgeDelta + KIND_PRIORITY_DELTA[classification.kind];
   const score = clamp(conversation.score + delta, 0, 100);
   const stage = stageFromScore(score);
 
@@ -242,11 +488,27 @@ export async function trackInboundMessage(
     `UPDATE conversations
      SET score = $1,
          stage = $2,
-         last_message = $3,
-         last_message_at = NOW()
-     WHERE id = $4
+         lead_kind = $3,
+         classification_confidence = $4,
+         channel_type = $5,
+         channel_linked_number = $6,
+         assigned_agent_profile_id = $7,
+         last_message = $8,
+         last_message_at = NOW(),
+         last_classified_at = NOW()
+     WHERE id = $9
      RETURNING *`,
-    [score, stage, message, conversation.id]
+    [
+      score,
+      stage,
+      classification.kind,
+      classification.confidence,
+      channelType,
+      channelLinkedNumber,
+      agentProfile?.id ?? conversation.assigned_agent_profile_id ?? null,
+      message,
+      conversation.id
+    ]
   );
 
   await pool.query(
@@ -310,9 +572,10 @@ export async function trackOutboundMessage(
 }
 
 export async function listConversations(userId: string): Promise<Conversation[]> {
-  const result = await pool.query<Conversation & { contact_name: string | null }>(
+  const result = await pool.query<Conversation & { contact_name: string | null; assigned_agent_name: string | null }>(
     `SELECT
        c.*,
+       ap.name AS assigned_agent_name,
        (
          SELECT cm.sender_name
          FROM conversation_messages cm
@@ -323,6 +586,7 @@ export async function listConversations(userId: string): Promise<Conversation[]>
          LIMIT 1
        ) AS contact_name
      FROM conversations c
+     LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
      WHERE c.user_id = $1
      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC`,
     [userId]
@@ -333,13 +597,15 @@ export async function listConversations(userId: string): Promise<Conversation[]>
 
 export interface LeadConversation extends Conversation {
   contact_name: string | null;
+  assigned_agent_name: string | null;
+  requires_reply: boolean;
   ai_summary: string;
   summary_status: "ready" | "missing" | "stale";
   summary_updated_at: string | null;
 }
 
 function fallbackLeadSummary(
-  conversation: { stage: string; score: number; last_message: string | null },
+  conversation: { stage: string; score: number; lead_kind?: ConversationKind; last_message: string | null },
   messages: Array<{ direction: "inbound" | "outbound"; message_text: string }>
 ): string {
   const latestInbound = [...messages].reverse().find((item) => item.direction === "inbound")?.message_text ?? "";
@@ -348,11 +614,11 @@ function fallbackLeadSummary(
   const nextStep = latestOutbound
     ? `Continue with follow-up around: ${latestOutbound.slice(0, 120)}`
     : "Ask one clarifying question and offer next action.";
-  return `Stage ${conversation.stage} (score ${conversation.score}). Customer asked: ${userNeed}. ${nextStep}`;
+  return `Type ${conversation.lead_kind ?? "lead"}, stage ${conversation.stage} (score ${conversation.score}). Customer asked: ${userNeed}. ${nextStep}`;
 }
 
 async function generateLeadSummary(
-  conversation: { stage: string; score: number; phone_number: string; last_message: string | null },
+  conversation: { stage: string; score: number; lead_kind: ConversationKind; phone_number: string; last_message: string | null },
   messages: Array<{ direction: "inbound" | "outbound"; message_text: string; created_at: string }>
 ): Promise<{ summary: string; model: string | null }> {
   const clipped = messages
@@ -381,6 +647,7 @@ async function generateLeadSummary(
     "Include: intent, objections/risk, and next best action."
   ].join("\n");
   const userPrompt = [
+    `Conversation type: ${conversation.lead_kind}`,
     `Lead stage: ${conversation.stage}`,
     `Lead score: ${conversation.score}`,
     `Phone: ${conversation.phone_number}`,
@@ -440,10 +707,15 @@ async function upsertLeadSummary(
 
 type LeadSummaryRow = Conversation & {
   contact_name: string | null;
+  assigned_agent_name: string | null;
   ai_summary: string | null;
   summary_source_last_message_at: string | null;
   summary_updated_at: string | null;
 };
+
+function needsReply(row: Pick<LeadSummaryRow, "lead_kind" | "stage">): boolean {
+  return row.lead_kind === "complaint" || row.stage === "hot";
+}
 
 function getLeadSummaryStatus(row: LeadSummaryRow): "ready" | "missing" | "stale" {
   const hasSummary = typeof row.ai_summary === "string" && row.ai_summary.trim().length > 0;
@@ -466,6 +738,7 @@ async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadS
   return pool.query<LeadSummaryRow>(
     `SELECT
        c.*,
+       ap.name AS assigned_agent_name,
        (
          SELECT cm.sender_name
          FROM conversation_messages cm
@@ -479,6 +752,7 @@ async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadS
        ls.source_last_message_at::text AS summary_source_last_message_at,
        ls.updated_at::text AS summary_updated_at
      FROM conversations c
+     LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
      LEFT JOIN lead_summaries ls ON ls.conversation_id = c.id
      WHERE c.user_id = $1
      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
@@ -487,16 +761,54 @@ async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadS
   ).then((result) => result.rows);
 }
 
-export async function listLeadsWithSummary(userId: string, limit = 250): Promise<LeadConversation[]> {
+export async function listLeadsWithSummary(
+  userId: string,
+  limit = 250,
+  filters?: {
+    stage?: "hot" | "warm" | "cold";
+    kind?: ConversationKind;
+    channelType?: AgentChannelType;
+    todayOnly?: boolean;
+    requiresReply?: boolean;
+  }
+): Promise<LeadConversation[]> {
   const clampedLimit = Math.max(1, Math.min(500, limit));
   const rows = await listLeadSummaryRows(userId, clampedLimit);
-  return rows.map((row) => ({
+  const mapped = rows.map((row) => ({
     ...row,
     contact_name: row.contact_name,
+    assigned_agent_name: row.assigned_agent_name,
+    requires_reply: needsReply(row),
     ai_summary: row.ai_summary?.trim() || "",
     summary_status: getLeadSummaryStatus(row),
     summary_updated_at: row.summary_updated_at
   }));
+
+  return mapped.filter((row) => {
+    if (filters?.stage && row.stage !== filters.stage) {
+      return false;
+    }
+    if (filters?.kind && row.lead_kind !== filters.kind) {
+      return false;
+    }
+    if (filters?.channelType && row.channel_type !== filters.channelType) {
+      return false;
+    }
+    if (filters?.todayOnly) {
+      if (!row.last_message_at) {
+        return false;
+      }
+      const rowDate = new Date(row.last_message_at);
+      const now = new Date();
+      if (rowDate.toDateString() !== now.toDateString()) {
+        return false;
+      }
+    }
+    if (filters?.requiresReply && !row.requires_reply) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export async function summarizeLeadConversations(
@@ -547,6 +859,29 @@ export interface ConversationMessage {
   created_at: string;
 }
 
+export interface ConversationMessageSnapshot {
+  direction: "inbound" | "outbound";
+  message_text: string;
+  created_at: string;
+}
+
+export async function listRecentConversationMessages(
+  conversationId: string,
+  limit = 20
+): Promise<ConversationMessageSnapshot[]> {
+  const clampedLimit = Math.max(1, Math.min(100, limit));
+  const result = await pool.query<ConversationMessageSnapshot>(
+    `SELECT direction, message_text, created_at
+     FROM conversation_messages
+     WHERE conversation_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [conversationId, clampedLimit]
+  );
+
+  return result.rows.reverse();
+}
+
 export async function listConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
   const result = await pool.query<ConversationMessage>(
     `SELECT
@@ -584,6 +919,18 @@ export async function setConversationAIPaused(userId: string, conversationId: st
      SET ai_paused = $1
      WHERE id = $2 AND user_id = $3`,
     [paused, conversationId, userId]
+  );
+}
+
+export async function setConversationManualAndPaused(userId: string, conversationId: string): Promise<void> {
+  await pool.query(
+    `UPDATE conversations
+     SET manual_takeover = TRUE,
+         ai_paused = TRUE
+     WHERE id = $1
+       AND user_id = $2
+       AND (manual_takeover = FALSE OR ai_paused = FALSE)`,
+    [conversationId, userId]
   );
 }
 

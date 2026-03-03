@@ -1,4 +1,8 @@
+import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
+import { decryptJsonPayload, encryptJsonPayload } from "../utils/encryption.js";
+
+const SESSION_AUTH_ENCRYPTED_FIELD = "__enc_v1";
 
 export interface WhatsAppSessionRecord {
   id: string;
@@ -6,6 +10,41 @@ export interface WhatsAppSessionRecord {
   session_auth_json: Record<string, unknown>;
   status: string;
   phone_number: string | null;
+}
+
+function getSessionEncryptionSecret(): string {
+  return env.WA_SESSION_ENCRYPTION_KEY || env.JWT_SECRET;
+}
+
+function decodeSessionAuthState(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const payload = value as Record<string, unknown>;
+  const encrypted = payload[SESSION_AUTH_ENCRYPTED_FIELD];
+  if (typeof encrypted !== "string" || !encrypted) {
+    return payload;
+  }
+
+  try {
+    return decryptJsonPayload<Record<string, unknown>>(encrypted, getSessionEncryptionSecret());
+  } catch {
+    return {};
+  }
+}
+
+function encodeSessionAuthState(value: Record<string, unknown>): Record<string, string> {
+  return {
+    [SESSION_AUTH_ENCRYPTED_FIELD]: encryptJsonPayload(value, getSessionEncryptionSecret())
+  };
+}
+
+function mapSessionRecord(row: WhatsAppSessionRecord): WhatsAppSessionRecord {
+  return {
+    ...row,
+    session_auth_json: decodeSessionAuthState(row.session_auth_json)
+  };
 }
 
 export async function getOrCreateWhatsAppSession(userId: string): Promise<WhatsAppSessionRecord> {
@@ -17,7 +56,7 @@ export async function getOrCreateWhatsAppSession(userId: string): Promise<WhatsA
   );
 
   if ((existing.rowCount ?? 0) > 0) {
-    return existing.rows[0];
+    return mapSessionRecord(existing.rows[0]);
   }
 
   const created = await pool.query<WhatsAppSessionRecord>(
@@ -27,15 +66,16 @@ export async function getOrCreateWhatsAppSession(userId: string): Promise<WhatsA
     [userId]
   );
 
-  return created.rows[0];
+  return mapSessionRecord(created.rows[0]);
 }
 
 export async function saveWhatsAppAuthState(userId: string, authState: Record<string, unknown>): Promise<void> {
+  const encrypted = encodeSessionAuthState(authState);
   await pool.query(
     `UPDATE whatsapp_sessions
      SET session_auth_json = $1::jsonb
      WHERE user_id = $2`,
-    [JSON.stringify(authState), userId]
+    [JSON.stringify(encrypted), userId]
   );
 }
 

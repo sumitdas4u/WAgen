@@ -18,9 +18,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://wagenai.com"),
-  title: "WhatsApp AI Platform | QR Setup & Official API - WagenAI",
+  title: "WhatsApp AI Platform | QR Setup & Official API - WAgen AI",
   description:
-    "WagenAI is a WhatsApp AI automation platform with Instant QR Mode for quick starts and Official WhatsApp API Mode for reliable scale.",
+    "WAgen AI is a WhatsApp AI automation platform with Instant QR Mode for quick starts and Official WhatsApp API Mode for reliable scale.",
   keywords: [
     "whatsapp ai automation platform",
     "whatsapp qr setup",
@@ -30,16 +30,16 @@ export const metadata: Metadata = {
     "wagenai",
   ],
   openGraph: {
-    title: "WhatsApp AI Platform | QR Setup & Official API - WagenAI",
+    title: "WhatsApp AI Platform | QR Setup & Official API - WAgen AI",
     description:
       "Start with instant QR setup and upgrade anytime to Official WhatsApp API mode for high-volume business automation.",
     url: "/",
-    siteName: "WagenAI",
+    siteName: "WAgen AI",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "WhatsApp AI Platform | QR Setup & Official API - WagenAI",
+    title: "WhatsApp AI Platform | QR Setup & Official API - WAgen AI",
     description:
       "Start with instant QR setup and upgrade anytime to Official WhatsApp API mode for high-volume business automation.",
   },

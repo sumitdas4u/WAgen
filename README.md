@@ -13,7 +13,8 @@ A SaaS-ready foundation for a QR-based WhatsApp AI sales assistant with:
 
 - `apps/api`: Fastify + Baileys backend
 - `apps/web`: React + Vite frontend
-- `infra/schema.sql`: PostgreSQL schema
+- `infra/schema.sql`: baseline PostgreSQL schema
+- `infra/migrations`: versioned incremental migrations
 - `infra/docker-compose.yml`: Postgres (`pgvector`) + Redis
 
 ## Prerequisites
@@ -34,7 +35,7 @@ A SaaS-ready foundation for a QR-based WhatsApp AI sales assistant with:
 3. Configure environment files:
    - Copy `apps/api/.env.example` to `apps/api/.env`
    - Copy `apps/web/.env.example` to `apps/web/.env`
-4. Run migration:
+4. Run migrations:
    ```bash
    npm run db:migrate
    ```
@@ -42,23 +43,61 @@ A SaaS-ready foundation for a QR-based WhatsApp AI sales assistant with:
    ```bash
    npm run dev
    ```
-6. Open `http://localhost:5173`
+6. Open `http://localhost:8080`
+
+## Production-safe DB Migrations
+
+Use these commands during deploys so schema changes are explicit and tracked, without runtime auto-DDL in app startup.
+
+```bash
+npm run db:migrate
+npm run db:migrate:status
+```
+
+Recommended deploy order:
+
+1. Build new API image/release.
+2. Run `npm run db:migrate` against production DB.
+3. Start/roll out new API version.
+
+Local cleanup (dev only):
+
+```bash
+ALLOW_DB_RESET=true npm run db:reset:dev -- --force
+```
+
+`db:reset:dev` is blocked in `NODE_ENV=production` and requires explicit `ALLOW_DB_RESET=true` + `--force`.
 
 ## Docker Full Stack
 
 Run everything (`api`, `web`, `postgres`, `redis`) in containers:
 
 ```bash
-docker compose -f infra/docker-compose.full.yml up -d --build
+npm run dev:full
 ```
 
 - Web: `http://localhost:8080`
 - API: `http://localhost:4000`
 
+`dev:full` now runs in `--watch` mode by default (auto rebuild on file changes).
+Run once without watch:
+
+```bash
+npm run dev:full:once
+```
+
+Manual rebuild only `web` container (forced no-cache, if UI updates are not reflecting):
+
+```bash
+npm run dev:full:rebuild:web
+```
+
+After rebuild, hard refresh the browser on `http://localhost:8080/dashboard` (`Ctrl+Shift+R`).
+
 Stop:
 
 ```bash
-docker compose -f infra/docker-compose.full.yml down
+npm run dev:full:down
 ```
 
 ## Backend Flow

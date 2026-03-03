@@ -5,6 +5,10 @@ export type PersonalityOption =
   | "premium_consultant"
   | "custom";
 
+export type AgentChannelType = "web" | "qr" | "api";
+export type AgentObjectiveType = "lead" | "feedback" | "complaint" | "hybrid";
+export type ConversationKind = "lead" | "feedback" | "complaint" | "other";
+
 export interface User {
   id: string;
   name: string;
@@ -23,6 +27,12 @@ export interface Conversation {
   phone_number: string;
   stage: string;
   score: number;
+  lead_kind: ConversationKind;
+  classification_confidence: number;
+  channel_type: AgentChannelType;
+  channel_linked_number: string | null;
+  assigned_agent_profile_id: string | null;
+  last_classified_at: string | null;
   last_message: string | null;
   last_message_at: string | null;
   ai_paused: boolean;

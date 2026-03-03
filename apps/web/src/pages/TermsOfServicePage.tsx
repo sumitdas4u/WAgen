@@ -20,17 +20,17 @@ export function TermsOfServicePage() {
               </p>
             </div>
 
-            <p>Welcome to WagenAI ("Company", "we", "our", or "us").</p>
+            <p>Welcome to WAgen AI ("Company", "we", "our", or "us").</p>
             <p>
-              These Terms of Service ("Terms") govern your access to and use of the WagenAI platform, including our
+              These Terms of Service ("Terms") govern your access to and use of the WAgen AI platform, including our
               website, dashboard, QR-based WhatsApp automation services, and Official WhatsApp Business API
               integrations.
             </p>
-            <p>By accessing or using WagenAI, you agree to these Terms.</p>
+            <p>By accessing or using WAgen AI, you agree to these Terms.</p>
             <p>If you do not agree, do not use our services.</p>
 
             <h2>1. DESCRIPTION OF SERVICE</h2>
-            <p>WagenAI provides:</p>
+            <p>WAgen AI provides:</p>
             <ul>
               <li>AI-powered WhatsApp automation tools</li>
               <li>QR-based WhatsApp connection (Starter Mode)</li>
@@ -38,7 +38,7 @@ export function TermsOfServicePage() {
               <li>Automated message responses</li>
               <li>Subscription-based SaaS services</li>
             </ul>
-            <p>WagenAI is a technology platform and is not affiliated with or endorsed by WhatsApp or Meta.</p>
+            <p>WAgen AI is a technology platform and is not affiliated with or endorsed by WhatsApp or Meta.</p>
 
             <h2>2. ELIGIBILITY</h2>
             <p>You must:</p>
@@ -50,7 +50,7 @@ export function TermsOfServicePage() {
             </ul>
 
             <h2>3. ACCOUNT REGISTRATION</h2>
-            <p>To use WagenAI:</p>
+            <p>To use WAgen AI:</p>
             <ul>
               <li>You must create an account</li>
               <li>Provide accurate information</li>
@@ -67,7 +67,7 @@ export function TermsOfServicePage() {
               <li>May be restricted by WhatsApp</li>
               <li>Is intended for testing or limited use</li>
             </ul>
-            <p>WagenAI is not responsible for account bans or restrictions caused by misuse.</p>
+            <p>WAgen AI is not responsible for account bans or restrictions caused by misuse.</p>
 
             <h3>4.2 Official WhatsApp Business API Mode</h3>
             <p>For API-based integration:</p>
@@ -80,7 +80,7 @@ export function TermsOfServicePage() {
             <p>Failure to comply may result in suspension or termination.</p>
 
             <h2>5. PROHIBITED USE</h2>
-            <p>You agree NOT to use WagenAI to:</p>
+            <p>You agree NOT to use WAgen AI to:</p>
             <ul>
               <li>Send spam or unsolicited messages</li>
               <li>Distribute illegal content</li>
@@ -93,7 +93,7 @@ export function TermsOfServicePage() {
 
             <h2>6. SUBSCRIPTIONS &amp; BILLING</h2>
             <h3>6.1 Subscription Plans</h3>
-            <p>WagenAI offers:</p>
+            <p>WAgen AI offers:</p>
             <ul>
               <li>Starter (QR Mode)</li>
               <li>Growth / API Mode</li>
@@ -126,14 +126,14 @@ export function TermsOfServicePage() {
             <p>We reserve the right to suspend or terminate accounts for violation of Terms.</p>
 
             <h2>8. DATA RESPONSIBILITY</h2>
-            <p>You are the data controller of customer data processed via WagenAI.</p>
+            <p>You are the data controller of customer data processed via WAgen AI.</p>
             <p>You agree:</p>
             <ul>
               <li>To obtain proper consent from your customers</li>
               <li>To comply with applicable privacy laws</li>
               <li>Not to process unlawful data</li>
             </ul>
-            <p>WagenAI acts as a technology service provider.</p>
+            <p>WAgen AI acts as a technology service provider.</p>
 
             <h2>9. INTELLECTUAL PROPERTY</h2>
             <p>All platform content, including:</p>
@@ -143,7 +143,7 @@ export function TermsOfServicePage() {
               <li>UI design</li>
               <li>AI automation systems</li>
             </ul>
-            <p>Are property of WagenAI.</p>
+            <p>Are property of WAgen AI.</p>
             <p>You may not:</p>
             <ul>
               <li>Copy</li>
@@ -154,7 +154,7 @@ export function TermsOfServicePage() {
             <p>Without written permission.</p>
 
             <h2>10. LIMITATION OF LIABILITY</h2>
-            <p>WagenAI provides services "as is".</p>
+            <p>WAgen AI provides services "as is".</p>
             <p>We are not liable for:</p>
             <ul>
               <li>WhatsApp account bans</li>
@@ -166,7 +166,7 @@ export function TermsOfServicePage() {
             <p>Use of the service is at your own risk.</p>
 
             <h2>11. THIRD-PARTY SERVICES</h2>
-            <p>WagenAI integrates with:</p>
+            <p>WAgen AI integrates with:</p>
             <ul>
               <li>WhatsApp Business Platform (Meta)</li>
               <li>Razorpay (payments)</li>
@@ -194,7 +194,7 @@ export function TermsOfServicePage() {
 
             <h2>15. CONTACT INFORMATION</h2>
             <p>
-              WagenAI
+              WAgen AI
               <br />
               Email: <a href="mailto:support@wagenai.com">support@wagenai.com</a>
               <br />

@@ -32,7 +32,7 @@ export function ChatAnimation() {
       <div className="orch-chat-head">
         <div className="orch-chat-avatar">AI</div>
         <div>
-          <strong>WagenAI Receptionist</strong>
+          <strong>WAgen AI Receptionist</strong>
           <small>Online now</small>
         </div>
       </div>

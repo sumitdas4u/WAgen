@@ -20,9 +20,9 @@ export function PrivacyPolicyPage() {
               </p>
             </div>
 
-            <p>Welcome to WagenAI ("Company", "we", "our", "us").</p>
+            <p>Welcome to WAgen AI ("Company", "we", "our", "us").</p>
             <p>
-              WagenAI provides AI-powered WhatsApp automation services including WhatsApp QR-based automation and
+              WAgen AI provides AI-powered WhatsApp automation services including WhatsApp QR-based automation and
               Official WhatsApp Business API integrations.
             </p>
             <p>
@@ -32,7 +32,7 @@ export function PrivacyPolicyPage() {
 
             <h2>1. INFORMATION WE COLLECT</h2>
             <h3>1.1 Account Information</h3>
-            <p>When you register on WagenAI, we may collect:</p>
+            <p>When you register on WAgen AI, we may collect:</p>
             <ul>
               <li>Name</li>
               <li>Email address</li>
@@ -90,7 +90,7 @@ export function PrivacyPolicyPage() {
             </ul>
 
             <h2>3. WHATSAPP BUSINESS API DATA HANDLING</h2>
-            <p>If you use Official WhatsApp Business API through WagenAI:</p>
+            <p>If you use Official WhatsApp Business API through WAgen AI:</p>
             <ul>
               <li>We act as a technology service provider.</li>
               <li>Message data is processed to enable automation and AI responses.</li>
@@ -109,7 +109,7 @@ export function PrivacyPolicyPage() {
             </ul>
 
             <h2>5. AI PROCESSING</h2>
-            <p>WagenAI uses AI technologies to:</p>
+            <p>WAgen AI uses AI technologies to:</p>
             <ul>
               <li>Analyze conversation context</li>
               <li>Generate automated replies</li>
@@ -149,7 +149,7 @@ export function PrivacyPolicyPage() {
             <p>We do not sell personal data.</p>
 
             <h2>9. USER RESPONSIBILITIES</h2>
-            <p>As a WagenAI user, you agree to:</p>
+            <p>As a WAgen AI user, you agree to:</p>
             <ul>
               <li>Obtain consent from your customers before messaging them</li>
               <li>Comply with WhatsApp Business policies</li>
@@ -177,7 +177,7 @@ export function PrivacyPolicyPage() {
             </p>
 
             <h2>12. CHILDREN&apos;S PRIVACY</h2>
-            <p>WagenAI is not intended for users under 18 years of age.</p>
+            <p>WAgen AI is not intended for users under 18 years of age.</p>
             <p>We do not knowingly collect data from minors.</p>
 
             <h2>13. CHANGES TO THIS POLICY</h2>
@@ -187,7 +187,7 @@ export function PrivacyPolicyPage() {
             <h2>14. CONTACT US</h2>
             <p>If you have questions about this Privacy Policy, contact:</p>
             <p>
-              WagenAI
+              WAgen AI
               <br />
               Email: <a href="mailto:support@wagenai.com">support@wagenai.com</a>
               <br />

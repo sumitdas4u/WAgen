@@ -1,17 +1,19 @@
 import { pool } from "../db/pool.js";
-import type { PersonalityOption } from "../types/models.js";
+import type { AgentChannelType, AgentObjectiveType, PersonalityOption } from "../types/models.js";
 
-export type ChannelType = "qr" | "api";
+export type ChannelType = AgentChannelType;
 
 export interface AgentProfileRecord {
   id: string;
   userId: string;
   name: string;
-  channelType: ChannelType;
+  channelType: AgentChannelType;
   linkedNumber: string;
   businessBasics: Record<string, unknown>;
   personality: PersonalityOption;
   customPrompt: string | null;
+  objectiveType: AgentObjectiveType;
+  taskDescription: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -21,11 +23,13 @@ type AgentProfileRow = {
   id: string;
   user_id: string;
   name: string;
-  channel_type: ChannelType;
+  channel_type: AgentChannelType;
   linked_number: string;
   business_basics: Record<string, unknown>;
   personality: PersonalityOption;
   custom_personality_prompt: string | null;
+  objective_type: AgentObjectiveType;
+  task_description: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -41,13 +45,19 @@ function mapRow(row: AgentProfileRow): AgentProfileRecord {
     businessBasics: row.business_basics,
     personality: row.personality,
     customPrompt: row.custom_personality_prompt,
+    objectiveType: row.objective_type,
+    taskDescription: row.task_description,
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-export function normalizeLinkedNumber(raw: string): string {
+export function normalizeLinkedNumber(raw: string, channelType: AgentChannelType): string {
+  if (channelType === "web") {
+    return "web";
+  }
+
   const digits = raw.replace(/\D/g, "");
   if (digits.length < 8 || digits.length > 15) {
     throw new Error("Linked number must contain 8 to 15 digits.");
@@ -57,7 +67,7 @@ export function normalizeLinkedNumber(raw: string): string {
 
 async function deactivateOtherProfiles(
   userId: string,
-  channelType: ChannelType,
+  channelType: AgentChannelType,
   linkedNumber: string,
   keepId?: string
 ): Promise<void> {
@@ -83,6 +93,8 @@ export async function listAgentProfiles(userId: string): Promise<AgentProfileRec
             business_basics,
             personality,
             custom_personality_prompt,
+            objective_type,
+            task_description,
             is_active,
             created_at::text,
             updated_at::text
@@ -99,15 +111,17 @@ export async function createAgentProfile(
   userId: string,
   payload: {
     name: string;
-    channelType: ChannelType;
+    channelType: AgentChannelType;
     linkedNumber: string;
     businessBasics: Record<string, unknown>;
     personality: PersonalityOption;
     customPrompt?: string;
+    objectiveType: AgentObjectiveType;
+    taskDescription?: string;
     isActive?: boolean;
   }
 ): Promise<AgentProfileRecord> {
-  const linkedNumber = normalizeLinkedNumber(payload.linkedNumber);
+  const linkedNumber = normalizeLinkedNumber(payload.linkedNumber, payload.channelType);
   const isActive = payload.isActive ?? true;
   if (isActive) {
     await deactivateOtherProfiles(userId, payload.channelType, linkedNumber);
@@ -122,9 +136,11 @@ export async function createAgentProfile(
        business_basics,
        personality,
        custom_personality_prompt,
+       objective_type,
+       task_description,
        is_active
      )
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
      RETURNING id,
                user_id,
                name,
@@ -133,6 +149,8 @@ export async function createAgentProfile(
                business_basics,
                personality,
                custom_personality_prompt,
+               objective_type,
+               task_description,
                is_active,
                created_at::text,
                updated_at::text`,
@@ -144,6 +162,8 @@ export async function createAgentProfile(
       JSON.stringify(payload.businessBasics ?? {}),
       payload.personality,
       payload.customPrompt?.trim() || null,
+      payload.objectiveType,
+      payload.taskDescription?.trim() || "",
       isActive
     ]
   );
@@ -156,15 +176,17 @@ export async function updateAgentProfile(
   profileId: string,
   payload: {
     name: string;
-    channelType: ChannelType;
+    channelType: AgentChannelType;
     linkedNumber: string;
     businessBasics: Record<string, unknown>;
     personality: PersonalityOption;
     customPrompt?: string;
+    objectiveType: AgentObjectiveType;
+    taskDescription?: string;
     isActive?: boolean;
   }
 ): Promise<AgentProfileRecord | null> {
-  const linkedNumber = normalizeLinkedNumber(payload.linkedNumber);
+  const linkedNumber = normalizeLinkedNumber(payload.linkedNumber, payload.channelType);
   const isActive = payload.isActive ?? true;
   if (isActive) {
     await deactivateOtherProfiles(userId, payload.channelType, linkedNumber, profileId);
@@ -178,9 +200,11 @@ export async function updateAgentProfile(
          business_basics = $4::jsonb,
          personality = $5,
          custom_personality_prompt = $6,
-         is_active = $7
-     WHERE id = $8
-       AND user_id = $9
+         objective_type = $7,
+         task_description = $8,
+         is_active = $9
+     WHERE id = $10
+       AND user_id = $11
      RETURNING id,
                user_id,
                name,
@@ -189,6 +213,8 @@ export async function updateAgentProfile(
                business_basics,
                personality,
                custom_personality_prompt,
+               objective_type,
+               task_description,
                is_active,
                created_at::text,
                updated_at::text`,
@@ -199,6 +225,8 @@ export async function updateAgentProfile(
       JSON.stringify(payload.businessBasics ?? {}),
       payload.personality,
       payload.customPrompt?.trim() || null,
+      payload.objectiveType,
+      payload.taskDescription?.trim() || "",
       isActive,
       profileId,
       userId
@@ -224,16 +252,16 @@ export async function deleteAgentProfile(userId: string, profileId: string): Pro
 
 export async function resolveAgentProfileForChannel(
   userId: string,
-  channelType: ChannelType,
+  channelType: AgentChannelType,
   linkedNumber: string | null | undefined
 ): Promise<AgentProfileRecord | null> {
-  if (!linkedNumber) {
+  if (channelType !== "web" && !linkedNumber) {
     return null;
   }
 
   let normalized: string;
   try {
-    normalized = normalizeLinkedNumber(linkedNumber);
+    normalized = normalizeLinkedNumber(linkedNumber ?? "web", channelType);
   } catch {
     return null;
   }
@@ -247,6 +275,8 @@ export async function resolveAgentProfileForChannel(
             business_basics,
             personality,
             custom_personality_prompt,
+            objective_type,
+            task_description,
             is_active,
             created_at::text,
             updated_at::text

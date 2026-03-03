@@ -44,7 +44,7 @@ export function MarketingShell({ children }: MarketingShellProps) {
       <footer className="border-t border-zinc-200 bg-white py-10">
         <div className="container mx-auto flex flex-col gap-4 px-4 md:flex-row md:items-center md:justify-between md:px-6">
           <p className="text-sm text-zinc-600">
-            Copyright 2026 WagenAI. WhatsApp AI Automation Platform for Startups, SMBs and Enterprises.
+            Copyright 2026 WAgen AI. WhatsApp AI Automation Platform for Startups, SMBs and Enterprises.
           </p>
           <div className="flex gap-5 text-sm text-zinc-600">
             <Link href="/#features" className="hover:text-emerald-600">

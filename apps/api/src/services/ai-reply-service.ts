@@ -46,6 +46,8 @@ interface BusinessBasicsProfile {
   supportEmail: string;
   aiDoRules: string;
   aiDontRules: string;
+  agentObjectiveType: string;
+  agentTaskDescription: string;
 }
 
 interface LocaleContext {
@@ -247,7 +249,9 @@ function toBasicsProfile(rawBasics: Record<string, unknown>): BusinessBasicsProf
     supportContactName: readString(rawBasics.supportContactName),
     supportEmail: readString(rawBasics.supportEmail),
     aiDoRules: readString(rawBasics.aiDoRules),
-    aiDontRules: readString(rawBasics.aiDontRules)
+    aiDontRules: readString(rawBasics.aiDontRules),
+    agentObjectiveType: readString(rawBasics.agentObjectiveType, "hybrid"),
+    agentTaskDescription: readString(rawBasics.agentTaskDescription)
   };
 }
 
@@ -664,7 +668,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   }).join("\n");
 
   const systemPrompt = [
-    "You are WAgen, a WhatsApp customer support agent.",
+    "You are WAgen AI, a WhatsApp customer support agent.",
     "Rules:",
     "- Primary role is customer support, not sales.",
     "- Reply only with plain conversational text.",
@@ -680,6 +684,10 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     "- When user asks for item price/amount and a numeric value exists in retrieved knowledge near that item name, return that value.",
     "- If the answer is missing in retrieved knowledge, clearly say that and ask one clarifying question.",
     "- Prefer concise answers using only the minimum relevant details from retrieved knowledge.",
+    `- Agent objective: ${basics.agentObjectiveType || "hybrid"}.`,
+    basics.agentTaskDescription
+      ? `- Agent-specific task: ${trimForPrompt(basics.agentTaskDescription, 300)}`
+      : "- Agent-specific task: none.",
     `Personality: ${personality}`
   ].join("\n");
 
@@ -688,7 +696,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
 
   const historyBlock = input.history
     .slice(-Math.max(2, Math.min(env.PROMPT_HISTORY_LIMIT, 4)))
-    .map((item) => `${item.direction === "inbound" ? "User" : "WAgen"}: ${item.message_text}`)
+    .map((item) => `${item.direction === "inbound" ? "User" : "WAgen AI"}: ${item.message_text}`)
     .join("\n");
 
   const userPrompt = [
@@ -700,6 +708,8 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     `Support handoff contact:\n${supportLine}`,
     `AI Do rules:\n${basics.aiDoRules || "No custom do rules provided."}`,
     `AI Don't rules:\n${basics.aiDontRules || "No custom don't rules provided."}`,
+    `Agent objective type:\n${basics.agentObjectiveType || "hybrid"}`,
+    `Agent task guideline:\n${basics.agentTaskDescription || "No extra task guidance."}`,
     `Conversation with ${input.conversationPhone}:\n${historyBlock || "No prior messages."}`,
     `Retrieved knowledge:\n${knowledgeBlock}`,
     `Structured hints from retrieved knowledge:\n${structuredHints}`,

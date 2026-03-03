@@ -4,6 +4,7 @@ import { getDashboardOverview, getUsageAnalytics } from "../services/conversatio
 import { getKnowledgeStats } from "../services/rag-service.js";
 import { getUserById } from "../services/user-service.js";
 import { whatsappSessionManager } from "../services/whatsapp-session-manager.js";
+import { getMetaBusinessStatus } from "../services/meta-whatsapp-service.js";
 
 const UsageQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(120).optional(),
@@ -20,16 +21,18 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: "User not found" });
       }
 
-      const [overview, knowledge, whatsapp] = await Promise.all([
+      const [overview, knowledge, whatsapp, metaApi] = await Promise.all([
         getDashboardOverview(request.authUser.userId),
         getKnowledgeStats(request.authUser.userId),
-        whatsappSessionManager.getStatus(request.authUser.userId)
+        whatsappSessionManager.getStatus(request.authUser.userId),
+        getMetaBusinessStatus(request.authUser.userId)
       ]);
 
       return {
         overview,
         knowledge,
         whatsapp,
+        metaApi,
         agent: {
           active: user.ai_active,
           personality: user.personality

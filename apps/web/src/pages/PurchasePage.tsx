@@ -126,7 +126,7 @@ export function PurchasePage() {
 
       const razorpay = new window.Razorpay({
         key: response.keyId,
-        name: "WagenAI",
+        name: "WAgen AI",
         description: `${response.checkout.planLabel} monthly subscription`,
         subscription_id: response.checkout.subscriptionId,
         handler: () => {

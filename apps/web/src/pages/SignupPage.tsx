@@ -122,7 +122,7 @@ export function SignupPage() {
       <section className="auth-card firebase-auth-card">
         <div className="firebase-auth-brand">
           <span className="firebase-auth-brand-mark">w</span>
-          <strong>wagenai</strong>
+          <strong>WAgen AI</strong>
         </div>
 
         <h1 className="firebase-auth-title">{mode === "signup" ? "Create your account" : "Login to your account"}</h1>

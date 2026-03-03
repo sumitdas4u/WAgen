@@ -141,7 +141,7 @@ export function OrchidsLandingPage() {
         </div>
         <div className="orch-grid-2">
           <article className="orch-card">
-            <h3>What WagenAI Offers</h3>
+            <h3>What WAgen AI Offers</h3>
             <ul>
               <li>Instant QR for testing</li>
               <li>Official API for long-term growth</li>
@@ -283,7 +283,7 @@ export function OrchidsLandingPage() {
             <Link to="/signup?plan=growth">Get Official API</Link>
           </article>
         </div>
-        <p className="orch-copy">Copyright 2026 WagenAI. All rights reserved.</p>
+        <p className="orch-copy">Copyright 2026 WAgen AI. All rights reserved.</p>
       </footer>
     </main>
   );

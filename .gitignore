@@ -5,3 +5,8 @@ dist
 !.env.example
 coverage
 apps/api/uploads
+*.log
+tmp/
+tools/
+~/
+*.tsbuildinfo

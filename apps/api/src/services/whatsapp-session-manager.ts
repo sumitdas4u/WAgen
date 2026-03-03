@@ -6,7 +6,6 @@ import type {
   ConnectionState
 } from "@whiskeysockets/baileys";
 import { env } from "../config/env.js";
-import { getUserById } from "./user-service.js";
 import { clearAuthStateCache, useDbAuthState } from "./baileys-auth-state.js";
 import {
   disconnectSessionsByPhoneNumber,
@@ -17,16 +16,9 @@ import {
 } from "./whatsapp-session-store.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { getMessageText, randomInt, wait } from "../utils/index.js";
-import {
-  getConversationById,
-  getConversationHistoryForPrompt,
-  reconcileConversationPhone,
-  trackInboundMessage,
-  trackOutboundMessage
-} from "./conversation-service.js";
-import { buildSalesReply } from "./ai-reply-service.js";
+import { reconcileConversationPhone } from "./conversation-service.js";
 import { extractInboundMediaText } from "./inbound-media-service.js";
-import { resolveAgentProfileForChannel, type ChannelType } from "./agent-profile-service.js";
+import { processIncomingMessage } from "./message-router-service.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
@@ -43,9 +35,8 @@ interface QueuedInboundMessage {
   remoteJid: string;
   phoneNumber: string;
   text: string;
-  conversationId: string;
+  senderName?: string;
   shouldAutoReply: boolean;
-  channelType: ChannelType;
   channelLinkedNumber: string | null;
 }
 
@@ -445,6 +436,25 @@ class WhatsAppSessionManager {
     };
   }
 
+  async disconnectUser(userId: string): Promise<void> {
+    await this.resetUserSession(userId);
+  }
+
+  async sendManualMessage(input: { userId: string; phoneNumber: string; text: string }): Promise<void> {
+    const runtime = this.sessions.get(input.userId);
+    if (!runtime || runtime.status !== "connected") {
+      throw new Error("WhatsApp QR session is not connected.");
+    }
+
+    const to = `${input.phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+    const message = input.text.trim();
+    if (!message) {
+      throw new Error("Message text is required.");
+    }
+
+    await runtime.socket.sendMessage(to, { text: message });
+  }
+
   private queueKey(userId: string, jid: string): string {
     return `${userId}::${jid}`;
   }
@@ -560,7 +570,7 @@ class WhatsAppSessionManager {
     this.messageQueues.set(key, queue);
 
     console.info(
-      `[WA] queue.enqueue user=${job.userId} jid=${job.remoteJid} conversation=${job.conversationId} size=${queue.length}`
+      `[WA] queue.enqueue user=${job.userId} jid=${job.remoteJid} contact=${job.phoneNumber} size=${queue.length}`
     );
 
     void this.processQueue(key);
@@ -590,7 +600,7 @@ class WhatsAppSessionManager {
           await this.processQueuedMessage(job);
         } catch (error) {
           console.error(
-            `[WA] queue.job_failed conversation=${job.conversationId} jid=${job.remoteJid}`,
+            `[WA] queue.job_failed contact=${job.phoneNumber} jid=${job.remoteJid}`,
             error
           );
         }
@@ -611,140 +621,57 @@ class WhatsAppSessionManager {
   }
 
   private async processQueuedMessage(job: QueuedInboundMessage): Promise<void> {
-    if (!job.shouldAutoReply) {
-      console.info(
-        `[WA] auto-reply skipped user=${job.userId} reason=non_notify_event conversation=${job.conversationId}`
-      );
-      return;
-    }
-
-    const user = await getUserById(job.userId);
-    if (!user) {
-      console.info(`[WA] auto-reply skipped user=${job.userId} reason=missing_user conversation=${job.conversationId}`);
-      return;
-    }
-
-    if (!user.ai_active) {
-      console.info(
-        `[WA] auto-reply skipped user=${job.userId} reason=agent_inactive conversation=${job.conversationId}`
-      );
-      return;
-    }
-
-    const conversation = await getConversationById(job.conversationId);
-    if (!conversation) {
-      console.info(
-        `[WA] auto-reply skipped user=${job.userId} reason=missing_conversation conversation=${job.conversationId}`
-      );
-      return;
-    }
-
-    if (conversation.manual_takeover) {
-      console.info(
-        `[WA] auto-reply skipped user=${job.userId} reason=manual_takeover conversation=${job.conversationId}`
-      );
-      return;
-    }
-
-    if (conversation.ai_paused) {
-      console.info(
-        `[WA] auto-reply skipped user=${job.userId} reason=conversation_paused conversation=${job.conversationId}`
-      );
-      return;
-    }
-
-    if (conversation.last_ai_reply_at) {
-      const elapsedSeconds = (Date.now() - new Date(conversation.last_ai_reply_at).getTime()) / 1000;
-      if (elapsedSeconds < env.CONTACT_COOLDOWN_SECONDS) {
-        console.info(
-          `[WA] auto-reply skipped user=${job.userId} reason=cooldown conversation=${job.conversationId} elapsed=${Math.round(
-            elapsedSeconds
-          )}s required=${env.CONTACT_COOLDOWN_SECONDS}s`
-        );
-        return;
-      }
-    }
-
-    const history = await getConversationHistoryForPrompt(conversation.id, 10);
-    const channelAgentProfile = await resolveAgentProfileForChannel(
-      job.userId,
-      job.channelType,
-      job.channelLinkedNumber
-    );
-    const effectiveUser = channelAgentProfile
-      ? {
-          ...user,
-          business_basics: channelAgentProfile.businessBasics,
-          personality: channelAgentProfile.personality,
-          custom_personality_prompt: channelAgentProfile.customPrompt
+    const result = await processIncomingMessage({
+      userId: job.userId,
+      channelType: "qr",
+      channelLinkedNumber: job.channelLinkedNumber,
+      customerIdentifier: job.phoneNumber,
+      messageText: job.text,
+      senderName: job.senderName,
+      shouldAutoReply: job.shouldAutoReply,
+      sendReply: async ({ text }) => {
+        const runtime = this.sessions.get(job.userId);
+        if (!runtime || runtime.status !== "connected") {
+          throw new Error("session_unavailable");
         }
-      : user;
 
-    if (channelAgentProfile) {
-      console.info(
-        `[WA] auto-reply agent_resolved user=${job.userId} conversation=${job.conversationId} agent=${channelAgentProfile.name} channel=${job.channelType}:${job.channelLinkedNumber}`
-      );
-    }
+        console.info(
+          `[WA] auto-reply queued user=${job.userId} contact=${job.phoneNumber} wait=${HUMAN_REPLY_DELAY_MIN_MS}-${HUMAN_REPLY_DELAY_MAX_MS}ms jid=${job.remoteJid}`
+        );
+        await randomDelay(HUMAN_REPLY_DELAY_MIN_MS, HUMAN_REPLY_DELAY_MAX_MS);
 
-    const reply = await buildSalesReply({
-      user: effectiveUser,
-      incomingMessage: job.text,
-      conversationPhone: job.phoneNumber,
-      history
+        let composingSet = false;
+        try {
+          try {
+            await simulateTyping(runtime.socket, job.remoteJid, text.length);
+            composingSet = true;
+          } catch (presenceError) {
+            console.warn(`[WA] typing presence failed user=${job.userId} jid=${job.remoteJid}`, presenceError);
+          }
+
+          await runtime.socket.sendMessage(job.remoteJid, { text });
+        } finally {
+          if (composingSet) {
+            try {
+              await runtime.socket.sendPresenceUpdate("paused", job.remoteJid);
+            } catch (presenceError) {
+              console.warn(`[WA] presence reset failed user=${job.userId} jid=${job.remoteJid}`, presenceError);
+            }
+          }
+        }
+      }
     });
 
-    const runtime = this.sessions.get(job.userId);
-    if (!runtime || runtime.status !== "connected") {
+    if (!result.autoReplySent) {
       console.info(
-        `[WA] auto-reply skipped user=${job.userId} reason=session_unavailable conversation=${job.conversationId}`
+        `[WA] auto-reply skipped user=${job.userId} conversation=${result.conversationId} reason=${result.reason} contact=${job.phoneNumber}`
       );
       return;
     }
 
     console.info(
-        `[WA] auto-reply queued user=${job.userId} conversation=${job.conversationId} wait=${HUMAN_REPLY_DELAY_MIN_MS}-${HUMAN_REPLY_DELAY_MAX_MS}ms jid=${job.remoteJid}`
+      `[WA] auto-reply sent user=${job.userId} conversation=${result.conversationId} contact=${job.phoneNumber}`
     );
-    await randomDelay(HUMAN_REPLY_DELAY_MIN_MS, HUMAN_REPLY_DELAY_MAX_MS);
-
-    let composingSet = false;
-    try {
-      try {
-        await simulateTyping(runtime.socket, job.remoteJid, reply.text.length);
-        composingSet = true;
-      } catch (presenceError) {
-        console.warn(`[WA] typing presence failed user=${job.userId} jid=${job.remoteJid}`, presenceError);
-      }
-
-      await runtime.socket.sendMessage(job.remoteJid, { text: reply.text });
-      await trackOutboundMessage(conversation.id, reply.text, {
-        promptTokens: reply.usage?.promptTokens,
-        completionTokens: reply.usage?.completionTokens,
-        totalTokens: reply.usage?.totalTokens,
-        aiModel: reply.model,
-        retrievalChunks: reply.retrievalChunks
-      });
-
-      console.info(
-        `[WA] auto-reply sent user=${job.userId} conversation=${job.conversationId} phone=${job.phoneNumber}`
-      );
-
-      realtimeHub.broadcast(job.userId, "conversation.updated", {
-        conversationId: conversation.id,
-        phoneNumber: job.phoneNumber,
-        direction: "outbound",
-        message: reply.text,
-        score: conversation.score,
-        stage: conversation.stage
-      });
-    } finally {
-      if (composingSet) {
-        try {
-          await runtime.socket.sendPresenceUpdate("paused", job.remoteJid);
-        } catch (presenceError) {
-          console.warn(`[WA] presence reset failed user=${job.userId} jid=${job.remoteJid}`, presenceError);
-        }
-      }
-    }
   }
 
   private async handleInboundMessage(userId: string, message: WAMessage, shouldAutoReply: boolean): Promise<void> {
@@ -802,28 +729,21 @@ class WhatsAppSessionManager {
       await reconcileConversationPhone(userId, fallbackPhoneFromRemote, phoneNumber);
     }
 
-    const senderName = resolveInboundSenderName(message);
-    const conversation = await trackInboundMessage(userId, phoneNumber, text, senderName);
-    console.info(`[WA] inbound tracked user=${userId} conversation=${conversation.id} phone=${phoneNumber}`);
     const channelLinkedNumber = runtime ? extractPhoneFromJidCandidate(runtime.socket.user?.id, 15) : null;
+    if (channelLinkedNumber && phoneNumber === channelLinkedNumber) {
+      console.info(`[WA] inbound skipped user=${userId} reason=from_own_number phone=${phoneNumber}`);
+      return;
+    }
 
-    realtimeHub.broadcast(userId, "conversation.updated", {
-      conversationId: conversation.id,
-      phoneNumber,
-      direction: "inbound",
-      message: text,
-      score: conversation.score,
-      stage: conversation.stage
-    });
+    const senderName = resolveInboundSenderName(message);
 
     this.enqueueInboundMessage({
       userId,
       remoteJid,
       phoneNumber,
       text,
-      conversationId: conversation.id,
+      senderName,
       shouldAutoReply,
-      channelType: "qr",
       channelLinkedNumber
     });
   }

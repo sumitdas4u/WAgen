@@ -58,7 +58,7 @@ export function LandingScaffold({ children }: LandingScaffoldProps) {
             <Link to="/signup?plan=growth">Get Official API</Link>
           </article>
         </div>
-        <p className="orch-copy">Copyright 2026 WagenAI. All rights reserved.</p>
+        <p className="orch-copy">Copyright 2026 WAgen AI. All rights reserved.</p>
       </footer>
     </main>
   );

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
+import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
 import {
   listLeadsWithSummary,
   listConversationMessages,
@@ -15,8 +16,22 @@ const ToggleSchema = z.object({
   paused: z.boolean().optional()
 });
 
+const AssignAgentSchema = z.object({
+  agentProfileId: z.string().uuid().nullable().optional()
+});
+
+const ManualMessageSchema = z.object({
+  text: z.string().trim().min(1).max(4000),
+  lockToManual: z.boolean().optional()
+});
+
 const LeadsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(500).optional()
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  stage: z.enum(["hot", "warm", "cold"]).optional(),
+  kind: z.enum(["lead", "feedback", "complaint", "other"]).optional(),
+  channelType: z.enum(["web", "qr", "api"]).optional(),
+  todayOnly: z.coerce.boolean().optional(),
+  requiresReply: z.coerce.boolean().optional()
 });
 
 const LeadsSummarizeBodySchema = z.object({
@@ -42,7 +57,13 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       if (!parsed.success) {
         return reply.status(400).send({ error: "Invalid leads query" });
       }
-      const leads = await listLeadsWithSummary(request.authUser.userId, parsed.data.limit);
+      const leads = await listLeadsWithSummary(request.authUser.userId, parsed.data.limit, {
+        stage: parsed.data.stage,
+        kind: parsed.data.kind,
+        channelType: parsed.data.channelType,
+        todayOnly: parsed.data.todayOnly,
+        requiresReply: parsed.data.requiresReply
+      });
       return { leads };
     }
   );
@@ -110,6 +131,81 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
       await setConversationAIPaused(request.authUser.userId, params.conversationId, parsed.data.paused);
       return { ok: true };
+    }
+  );
+
+  fastify.patch(
+    "/api/conversations/:conversationId/assign-agent",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const parsed = AssignAgentSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid assign agent payload" });
+      }
+
+      const conversationExists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [params.conversationId, request.authUser.userId]
+      );
+      if ((conversationExists.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+
+      const agentProfileId = parsed.data.agentProfileId ?? null;
+      if (agentProfileId) {
+        const agentExists = await pool.query(
+          `SELECT id
+           FROM agent_profiles
+           WHERE id = $1
+             AND user_id = $2
+           LIMIT 1`,
+          [agentProfileId, request.authUser.userId]
+        );
+        if ((agentExists.rowCount ?? 0) === 0) {
+          return reply.status(404).send({ error: "Agent profile not found" });
+        }
+      }
+
+      await pool.query(
+        `UPDATE conversations
+         SET assigned_agent_profile_id = $1,
+             manual_takeover = CASE WHEN $1::uuid IS NOT NULL THEN TRUE ELSE manual_takeover END,
+             ai_paused = CASE WHEN $1::uuid IS NOT NULL THEN TRUE ELSE ai_paused END
+         WHERE id = $2
+           AND user_id = $3`,
+        [agentProfileId, params.conversationId, request.authUser.userId]
+      );
+
+      return { ok: true };
+    }
+  );
+
+  fastify.post(
+    "/api/conversations/:conversationId/messages",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const parsed = ManualMessageSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid message payload" });
+      }
+
+      try {
+        const delivered = await sendManualConversationMessage({
+          userId: request.authUser.userId,
+          conversationId: params.conversationId,
+          text: parsed.data.text,
+          lockToManual: parsed.data.lockToManual
+        });
+        return { ok: true, delivered };
+      } catch (error) {
+        const message = (error as Error).message;
+        if (message.toLowerCase().includes("not found")) {
+          return reply.status(404).send({ error: message });
+        }
+        return reply.status(400).send({ error: message });
+      }
     }
   );
 }

@@ -5,7 +5,6 @@ import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import fastifyRawBody from "fastify-raw-body";
 import { env } from "./config/env.js";
-import { ensureDbCompatibility } from "./db/pool.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
@@ -15,7 +14,11 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { conversationRoutes } from "./routes/conversations.js";
 import { billingRoutes } from "./routes/billing.js";
 import { agentRoutes } from "./routes/agents.js";
+import { metaRoutes } from "./routes/meta.js";
+import { aiReviewRoutes } from "./routes/ai-review.js";
+import { sdkRoutes } from "./routes/sdk.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
+import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -32,7 +35,6 @@ interface AuthTokenPayload {
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
-  await ensureDbCompatibility();
 
   await app.register(cors, {
     origin: env.APP_BASE_URL,
@@ -90,9 +92,13 @@ export async function buildApp() {
   await whatsappRoutes(app);
   await dashboardRoutes(app);
   await billingRoutes(app);
+  await metaRoutes(app);
   await agentRoutes(app);
+  await aiReviewRoutes(app);
+  await sdkRoutes(app);
   await conversationRoutes(app);
   await registerRealtimeRoutes(app);
+  await registerWidgetChatGatewayRoutes(app);
 
   app.get("/api/health", async () => ({ ok: true }));
 

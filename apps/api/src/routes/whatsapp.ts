@@ -34,4 +34,13 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
       return whatsappSessionManager.getStatus(request.authUser.userId);
     }
   );
+
+  fastify.post(
+    "/api/whatsapp/disconnect",
+    { preHandler: [fastify.requireAuth] },
+    async (request) => {
+      await whatsappSessionManager.disconnectUser(request.authUser.userId);
+      return { ok: true };
+    }
+  );
 }

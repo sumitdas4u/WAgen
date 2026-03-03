@@ -3,11 +3,11 @@ import { z } from "zod";
 
 dotenv.config();
 
-const EnvSchema = z.object({
+const BaseEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(4000),
   APP_BASE_URL: z.string().default("http://localhost:5173"),
-  JWT_SECRET: z.string().min(16, "JWT_SECRET must be set"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL must be set"),
   FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional(),
   FIREBASE_PROJECT_ID: z.string().optional(),
@@ -25,6 +25,15 @@ const EnvSchema = z.object({
   RAZORPAY_PLAN_STARTER_ID: z.string().optional(),
   RAZORPAY_PLAN_PRO_ID: z.string().optional(),
   RAZORPAY_PLAN_BUSINESS_ID: z.string().optional(),
+  META_APP_ID: z.string().optional(),
+  META_APP_SECRET: z.string().optional(),
+  META_EMBEDDED_SIGNUP_CONFIG_ID: z.string().optional(),
+  META_VERIFY_TOKEN: z.string().optional(),
+  META_REDIRECT_URI: z.string().optional(),
+  META_GRAPH_VERSION: z.string().default("v19.0"),
+  META_STATUS_SYNC_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
+  META_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  WA_SESSION_ENCRYPTION_KEY: z.string().optional(),
   USD_TO_INR: z.coerce.number().positive().default(83),
   OPENAI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(220),
   OPENAI_LOG_USAGE: z.enum(["true", "false"]).default("true"),
@@ -46,10 +55,42 @@ const EnvSchema = z.object({
   INBOUND_MEDIA_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
   INBOUND_MEDIA_TIMEOUT_MS: z.coerce.number().int().positive().default(45000),
   INBOUND_MEDIA_MAX_TEXT_CHARS: z.coerce.number().int().positive().default(2200),
+  BOT_LOOP_DETECTION_ENABLED: z.enum(["true", "false"]).default("true"),
+  BOT_LOOP_QUICK_REPLY_SECONDS: z.coerce.number().int().positive().default(8),
+  BOT_LOOP_REPEAT_WINDOW_SECONDS: z.coerce.number().int().positive().default(180),
+  BOT_LOOP_DETECTION_KEYWORDS: z
+    .string()
+    .default(
+      "automated,auto-reply,auto reply,do not reply,this is an automated message,virtual assistant,chatbot,bot"
+    ),
   REPLY_DELAY_MIN_MS: z.coerce.number().default(2000),
   REPLY_DELAY_MAX_MS: z.coerce.number().default(5000),
   CONTACT_COOLDOWN_SECONDS: z.coerce.number().default(0),
   AUTO_RECONNECT: z.enum(["true", "false"]).default("true")
+});
+
+const EnvSchema = BaseEnvSchema.superRefine((data, ctx) => {
+  if (data.META_TOKEN_ENCRYPTION_KEY && data.META_TOKEN_ENCRYPTION_KEY.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "META_TOKEN_ENCRYPTION_KEY must be at least 32 characters"
+    });
+  }
+
+  if (data.WA_SESSION_ENCRYPTION_KEY && data.WA_SESSION_ENCRYPTION_KEY.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "WA_SESSION_ENCRYPTION_KEY must be at least 32 characters"
+    });
+  }
+
+  const metaConfigured = Boolean(data.META_APP_ID || data.META_APP_SECRET || data.META_EMBEDDED_SIGNUP_CONFIG_ID);
+  if (metaConfigured && !data.META_TOKEN_ENCRYPTION_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "META_TOKEN_ENCRYPTION_KEY is required when Meta integration is configured"
+    });
+  }
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -63,5 +104,6 @@ export const env = {
   ...parsed.data,
   OPENAI_LOG_USAGE: parsed.data.OPENAI_LOG_USAGE === "true",
   RAG_KNOWLEDGE_ROUTER: parsed.data.RAG_KNOWLEDGE_ROUTER === "true",
+  BOT_LOOP_DETECTION_ENABLED: parsed.data.BOT_LOOP_DETECTION_ENABLED === "true",
   AUTO_RECONNECT: parsed.data.AUTO_RECONNECT === "true"
 };

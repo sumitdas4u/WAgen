@@ -349,7 +349,7 @@ export default function Home() {
               </p>
               <div className="mt-7 grid gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4">
-                  <p className="font-semibold text-emerald-300">WagenAI offers:</p>
+                  <p className="font-semibold text-emerald-300">WAgen AI offers:</p>
                   <ul className="mt-2 space-y-2 text-sm text-emerald-50">
                     <li className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-emerald-300" />
@@ -463,7 +463,7 @@ export default function Home() {
 
       <footer className="border-t border-zinc-200 bg-white py-10">
         <div className="container mx-auto flex flex-col gap-4 px-4 md:px-6 md:flex-row md:items-center md:justify-between">
-          <p className="text-sm text-zinc-600">© 2026 WagenAI. WhatsApp AI Automation Platform for Startups, SMBs and Enterprises.</p>
+          <p className="text-sm text-zinc-600">© 2026 WAgen AI. WhatsApp AI Automation Platform for Startups, SMBs and Enterprises.</p>
           <div className="flex gap-5 text-sm text-zinc-600">
             <Link href="#features" className="hover:text-emerald-600">
               Features
