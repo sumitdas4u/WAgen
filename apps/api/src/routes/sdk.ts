@@ -36,21 +36,60 @@ const CHATBOT_BUNDLE_JS = `(function () {
     apiBase = apiBaseAttr || window.location.origin;
   }
 
+  function safeGet(key) {
+    try {
+      return localStorage.getItem(key) || "";
+    } catch {
+      var globalStore = window.__wagenaiVisitorStore || (window.__wagenaiVisitorStore = {});
+      return globalStore[key] || "";
+    }
+  }
+
+  function safeSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      var globalStore = window.__wagenaiVisitorStore || (window.__wagenaiVisitorStore = {});
+      globalStore[key] = value;
+    }
+  }
+
+  function normalizeName(value) {
+    return String(value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
+  }
+
+  function normalizePhone(value) {
+    var digits = String(value || "").replace(/\\D/g, "");
+    if (digits.length < 8 || digits.length > 15) return "";
+    return digits;
+  }
+
+  function normalizeEmail(value) {
+    var email = String(value || "").trim().toLowerCase();
+    if (!email) return "";
+    return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) ? email.slice(0, 160) : "";
+  }
+
   var visitorId = "";
   var visitorKey = "wagenai_vid_" + workspaceId;
-  try {
-    visitorId = localStorage.getItem(visitorKey) || "";
-    if (!visitorId) {
-      visitorId = "vid_" + Math.random().toString(36).slice(2, 12);
-      localStorage.setItem(visitorKey, visitorId);
-    }
-  } catch {
-    var globalStore = window.__wagenaiVisitorStore || (window.__wagenaiVisitorStore = {});
-    visitorId = globalStore[visitorKey] || "";
-    if (!visitorId) {
-      visitorId = "vid_" + Math.random().toString(36).slice(2, 12);
-      globalStore[visitorKey] = visitorId;
-    }
+  visitorId = safeGet(visitorKey);
+  if (!visitorId) {
+    visitorId = "vid_" + Math.random().toString(36).slice(2, 12);
+    safeSet(visitorKey, visitorId);
+  }
+
+  var profileKey = "wagenai_profile_" + workspaceId;
+  var leadProfile = { name: "", phone: "", email: "" };
+  var rawProfile = safeGet(profileKey);
+  if (rawProfile) {
+    try {
+      var parsedProfile = JSON.parse(rawProfile);
+      leadProfile = {
+        name: normalizeName(parsedProfile.name),
+        phone: normalizePhone(parsedProfile.phone),
+        email: normalizeEmail(parsedProfile.email)
+      };
+    } catch {}
   }
 
   var wsBase = apiBase.replace(/^http/i, "ws").replace(/\\/$/, "");
@@ -75,10 +114,18 @@ const CHATBOT_BUNDLE_JS = `(function () {
         ".wagenai-panel.open{display:block}" +
         ".wagenai-head{background:" + theme + ";color:#fff;padding:12px}" +
         ".wagenai-head strong{display:block;font-size:15px}" +
+        ".wagenai-profile{padding:12px;display:grid;gap:8px;border-bottom:1px solid #e5ebf5;background:#fff}" +
+        ".wagenai-profile.hidden{display:none}" +
+        ".wagenai-profile-note{font-size:12px;color:#42526b}" +
+        ".wagenai-profile-error{font-size:12px;color:#c1272d;min-height:14px}" +
+        ".wagenai-field{width:100%;border:1px solid #ccd4e2;border-radius:9px;padding:10px;font-size:14px;box-sizing:border-box}" +
+        ".wagenai-start{border:0;border-radius:9px;padding:10px 12px;background:" + theme + ";color:#fff;font-weight:700;cursor:pointer}" +
         ".wagenai-thread{padding:12px;background:#ece8e3;max-height:280px;overflow:auto;display:grid;gap:8px}" +
+        ".wagenai-thread.hidden{display:none}" +
         ".wagenai-msg{background:#fff;border-radius:10px;padding:10px;font-size:14px;line-height:1.35;max-width:88%}" +
         ".wagenai-msg.user{justify-self:end;background:#dcf8c6}" +
         ".wagenai-row{display:flex;gap:8px;padding:10px;border-top:1px solid #dfe6f1;background:#fff}" +
+        ".wagenai-row.hidden{display:none}" +
         ".wagenai-row input{flex:1;border:1px solid #ccd4e2;border-radius:9px;padding:10px;font-size:14px}" +
         ".wagenai-row button{border:0;border-radius:9px;padding:10px 12px;background:" + theme + ";color:#fff;font-weight:700;cursor:pointer}";
       document.head.appendChild(style);
@@ -89,19 +136,47 @@ const CHATBOT_BUNDLE_JS = `(function () {
     root.innerHTML =
       "<div class='wagenai-panel' id='wagenai-panel'>" +
       "<div class='wagenai-head'><strong>Chat</strong></div>" +
-      "<div class='wagenai-thread' id='wagenai-thread'><div class='wagenai-msg'>" + greeting + "</div></div>" +
-      "<div class='wagenai-row'><input id='wagenai-input' placeholder='Type your message'/><button id='wagenai-send'>Send</button></div>" +
+      "<div class='wagenai-profile' id='wagenai-profile'>" +
+      "<div class='wagenai-profile-note'>Please share your details before chat.</div>" +
+      "<input id='wagenai-name' class='wagenai-field' placeholder='Your name' />" +
+      "<input id='wagenai-phone' class='wagenai-field' placeholder='Phone number' />" +
+      "<input id='wagenai-email' class='wagenai-field' placeholder='Email address' />" +
+      "<div id='wagenai-profile-error' class='wagenai-profile-error'></div>" +
+      "<button id='wagenai-start' class='wagenai-start'>Start chat</button>" +
+      "</div>" +
+      "<div class='wagenai-thread hidden' id='wagenai-thread'><div class='wagenai-msg'>" + greeting + "</div></div>" +
+      "<div class='wagenai-row hidden' id='wagenai-row'><input id='wagenai-input' placeholder='Type your message'/><button id='wagenai-send'>Send</button></div>" +
       "</div>" +
       "<button id='wagenai-fab' class='wagenai-fab' aria-label='Open chat'>W</button>";
     document.body.appendChild(root);
 
     var socket = null;
     var pendingMessages = [];
+    var pendingLeadProfile = null;
+    var profileSubmitted = false;
     var panel = document.getElementById("wagenai-panel");
     var fab = document.getElementById("wagenai-fab");
+    var profileWrap = document.getElementById("wagenai-profile");
+    var profileError = document.getElementById("wagenai-profile-error");
+    var nameInput = document.getElementById("wagenai-name");
+    var phoneInput = document.getElementById("wagenai-phone");
+    var emailInput = document.getElementById("wagenai-email");
+    var startButton = document.getElementById("wagenai-start");
     var input = document.getElementById("wagenai-input");
     var send = document.getElementById("wagenai-send");
+    var inputRow = document.getElementById("wagenai-row");
     var thread = document.getElementById("wagenai-thread");
+
+    if (nameInput) nameInput.value = leadProfile.name;
+    if (phoneInput) phoneInput.value = leadProfile.phone;
+    if (emailInput) emailInput.value = leadProfile.email;
+
+    var applyProfileState = function () {
+      if (profileWrap) profileWrap.classList.toggle("hidden", profileSubmitted);
+      if (thread) thread.classList.toggle("hidden", !profileSubmitted);
+      if (inputRow) inputRow.classList.toggle("hidden", !profileSubmitted);
+    };
+    applyProfileState();
 
     var push = function (text, sender) {
       if (!thread || !text) return;
@@ -119,16 +194,33 @@ const CHATBOT_BUNDLE_JS = `(function () {
           type: "message",
           wid: workspaceId,
           visitorId: visitorId,
+          name: leadProfile.name,
+          phone: leadProfile.phone,
+          email: leadProfile.email,
           message: pendingMessages[j]
         }));
       }
       pendingMessages = [];
     };
 
+    var flushLeadProfile = function () {
+      if (!pendingLeadProfile || !socket || socket.readyState !== 1) return;
+      socket.send(JSON.stringify({
+        type: "lead_profile",
+        wid: workspaceId,
+        visitorId: visitorId,
+        name: pendingLeadProfile.name,
+        phone: pendingLeadProfile.phone,
+        email: pendingLeadProfile.email
+      }));
+      pendingLeadProfile = null;
+    };
+
     var connect = function () {
       if (socket && (socket.readyState === 0 || socket.readyState === 1)) return;
       socket = new WebSocket(wsUrl);
       socket.onopen = function () {
+        flushLeadProfile();
         flushPending();
       };
       socket.onmessage = function (event) {
@@ -145,6 +237,10 @@ const CHATBOT_BUNDLE_JS = `(function () {
     };
 
     var sendMessage = function () {
+      if (!profileSubmitted) {
+        if (profileError) profileError.textContent = "Please submit name, phone, and email first.";
+        return;
+      }
       var text = (input && input.value ? input.value.trim() : "");
       if (!text) return;
       push(text, "user");
@@ -162,14 +258,47 @@ const CHATBOT_BUNDLE_JS = `(function () {
       }));
     };
 
+    var startChat = function () {
+      var nextProfile = {
+        name: normalizeName(nameInput && nameInput.value),
+        phone: normalizePhone(phoneInput && phoneInput.value),
+        email: normalizeEmail(emailInput && emailInput.value)
+      };
+
+      if (!nextProfile.name || !nextProfile.phone || !nextProfile.email) {
+        if (profileError) profileError.textContent = "Enter valid name, phone (8-15 digits), and email.";
+        return;
+      }
+
+      if (profileError) profileError.textContent = "";
+      leadProfile = nextProfile;
+      safeSet(profileKey, JSON.stringify(leadProfile));
+      pendingLeadProfile = nextProfile;
+      profileSubmitted = true;
+      applyProfileState();
+      connect();
+      if (input) input.focus();
+      if (thread) thread.scrollTop = thread.scrollHeight;
+    };
+
     if (fab) {
       fab.addEventListener("click", function () {
         if (!panel) return;
         panel.classList.toggle("open");
         if (panel.classList.contains("open")) {
-          connect();
+          if (profileSubmitted) {
+            connect();
+          } else if (nameInput) {
+            nameInput.focus();
+          }
           if (thread) thread.scrollTop = thread.scrollHeight;
         }
+      });
+    }
+    if (startButton) startButton.addEventListener("click", startChat);
+    if (emailInput) {
+      emailInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") startChat();
       });
     }
     if (send) send.addEventListener("click", sendMessage);

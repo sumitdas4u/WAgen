@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
+import { pool } from "../db/pool.js";
+import { getOrCreateConversation } from "./conversation-service.js";
 import { processIncomingMessage } from "./message-router-service.js";
 import { getUserById } from "./user-service.js";
 
@@ -13,9 +15,13 @@ interface WidgetInboundPayload {
   message?: string;
   visitorId?: string;
   wid?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
 }
 
 const widgetConnections = new Map<string, Set<WebSocket>>();
+const widgetLeadProfiles = new Map<string, { name: string; phone: string; email: string }>();
 
 function safeJsonParse(raw: string): unknown {
   try {
@@ -35,6 +41,26 @@ function normalizeVisitorId(value: string | undefined): string {
     return "";
   }
   return raw.replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 128);
+}
+
+function normalizeLeadName(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+function normalizeLeadPhone(value: string | undefined): string {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) {
+    return "";
+  }
+  return digits;
+}
+
+function normalizeLeadEmail(value: string | undefined): string {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized.slice(0, 160) : "";
 }
 
 function sendEvent(socket: WebSocket, event: WidgetSocketEvent): void {
@@ -65,6 +91,50 @@ function removeWidgetConnection(userId: string, visitorId: string, socket: WebSo
   if (sockets.size === 0) {
     widgetConnections.delete(key);
   }
+}
+
+async function persistWidgetLeadProfile(input: {
+  userId: string;
+  visitorId: string;
+  profile: { name: string; phone: string; email: string };
+}): Promise<void> {
+  const conversation = await getOrCreateConversation(input.userId, `web:${input.visitorId}`, {
+    channelType: "web",
+    channelLinkedNumber: "web"
+  });
+
+  const leadMessage = `Lead details captured: Name=${input.profile.name}, Phone=${input.profile.phone}, Email=${input.profile.email}`;
+
+  const latest = await pool.query<{ message_text: string; sender_name: string | null }>(
+    `SELECT message_text, sender_name
+     FROM conversation_messages
+     WHERE conversation_id = $1
+       AND direction = 'inbound'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [conversation.id]
+  );
+
+  const latestRow = latest.rows[0];
+  if (latestRow?.message_text === leadMessage && latestRow?.sender_name === input.profile.name) {
+    return;
+  }
+
+  await pool.query(
+    `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text)
+     VALUES ($1, 'inbound', $2, $3)`,
+    [conversation.id, input.profile.name, leadMessage]
+  );
+
+  await pool.query(
+    `UPDATE conversations
+     SET channel_type = 'web',
+         channel_linked_number = 'web',
+         last_message = $2,
+         last_message_at = NOW()
+     WHERE id = $1`,
+    [conversation.id, leadMessage]
+  );
 }
 
 export async function sendWidgetConversationMessage(input: {
@@ -136,7 +206,50 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
 
       socket.on("message", async (raw: RawData) => {
         const parsed = safeJsonParse(raw.toString()) as WidgetInboundPayload | null;
-        if (!parsed || parsed.type !== "message") {
+        if (!parsed) {
+          return;
+        }
+
+        if (parsed.type === "lead_profile") {
+          const name = normalizeLeadName(parsed.name);
+          const phone = normalizeLeadPhone(parsed.phone);
+          const email = normalizeLeadEmail(parsed.email);
+          if (!name || !phone || !email) {
+            sendEvent(socket, {
+              event: "error",
+              data: { message: "Name, phone, and email are required before chat." }
+            });
+            return;
+          }
+
+          const key = connectionKey(wid, visitorId);
+          widgetLeadProfiles.set(key, { name, phone, email });
+
+          try {
+            await persistWidgetLeadProfile({
+              userId: wid,
+              visitorId,
+              profile: { name, phone, email }
+            });
+          } catch (error) {
+            sendEvent(socket, {
+              event: "error",
+              data: { message: (error as Error).message || "Could not save lead profile." }
+            });
+            return;
+          }
+
+          sendEvent(socket, {
+            event: "message",
+            data: {
+              sender: "system",
+              text: `Thanks ${name}. You can start chatting now.`
+            }
+          });
+          return;
+        }
+
+        if (parsed.type !== "message") {
           return;
         }
 
@@ -145,12 +258,15 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
           return;
         }
 
+        const rememberedProfile = widgetLeadProfiles.get(connectionKey(wid, visitorId));
+
         try {
           const result = await processIncomingMessage({
             userId: wid,
             channelType: "web",
             customerIdentifier: `web:${visitorId}`,
             messageText: inboundText,
+            senderName: rememberedProfile?.name,
             shouldAutoReply: true,
             sendReply: async ({ text }) => {
               sendEvent(socket, {
