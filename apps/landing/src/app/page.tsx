@@ -480,6 +480,9 @@ export default function Home() {
             <a href="/terms-of-service" className="hover:text-emerald-600">
               Terms of Service
             </a>
+            <a href="/data-deletion" className="hover:text-emerald-600">
+              Data Deletion
+            </a>
             <a href="/contact-us" className="hover:text-emerald-600">
               Contact Us
             </a>

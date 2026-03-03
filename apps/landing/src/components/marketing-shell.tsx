@@ -62,6 +62,9 @@ export function MarketingShell({ children }: MarketingShellProps) {
             <Link href="/terms-of-service" className="hover:text-emerald-600">
               Terms of Service
             </Link>
+            <Link href="/data-deletion" className="hover:text-emerald-600">
+              Data Deletion
+            </Link>
             <Link href="/contact-us" className="hover:text-emerald-600">
               Contact Us
             </Link>

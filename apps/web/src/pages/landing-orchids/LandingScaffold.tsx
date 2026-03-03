@@ -49,6 +49,7 @@ export function LandingScaffold({ children }: LandingScaffoldProps) {
             <a href="/#faq">FAQ</a>
             <Link to="/privacy-policy">Privacy Policy</Link>
             <Link to="/terms-of-service">Terms of Service</Link>
+            <Link to="/data-deletion">Data Deletion</Link>
             <Link to="/contact-us">Contact Us</Link>
             <a href="mailto:support@wagenai.com">support@wagenai.com</a>
           </article>

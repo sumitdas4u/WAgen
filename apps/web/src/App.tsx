@@ -10,6 +10,7 @@ import { PurchasePage } from "./pages/PurchasePage";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsOfServicePage } from "./pages/TermsOfServicePage";
 import { ContactUsPage } from "./pages/ContactUsPage";
+import { DataDeletionPage } from "./pages/DataDeletionPage";
 import { MetaCallbackPage } from "./pages/MetaCallbackPage";
 import { QrConnectPage } from "./pages/QrConnectPage";
 
@@ -57,6 +58,7 @@ export function App() {
       <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
       <Route path="/terms-of-service" element={<TermsOfServicePage />} />
       <Route path="/contact-us" element={<ContactUsPage />} />
+      <Route path="/data-deletion" element={<DataDeletionPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/super-admin">
         <Route path="login" element={<SuperAdminLoginPage />} />
