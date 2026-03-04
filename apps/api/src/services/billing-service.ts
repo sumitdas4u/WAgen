@@ -427,6 +427,18 @@ function parsePositiveInteger(value: unknown): number {
   return Math.max(0, Math.floor(parsed));
 }
 
+function parseTrialDaysFromMetadata(metadata: Record<string, unknown> | null | undefined): number | null {
+  if (!metadata || typeof metadata !== "object") {
+    return null;
+  }
+  const trialDaysValue = metadata.trialDays;
+  const parsed = Number(trialDaysValue);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
 function normalizePlanCode(value: unknown): BillingPlanCode | null {
   if (typeof value !== "string") {
     return null;
@@ -506,6 +518,31 @@ function inferStatusFromEvent(event: string): string | null {
 function isPreActivationStatus(status: string): boolean {
   const normalized = status.trim().toLowerCase();
   return normalized === "created" || normalized === "authenticated" || normalized === "pending";
+}
+
+function resolveWebhookSubscriptionStatus(
+  previousStatusInput: string | null | undefined,
+  incomingStatusInput: string
+): string {
+  const previousStatus = toNormalizedStatus(previousStatusInput);
+  const incomingStatus = toNormalizedStatus(incomingStatusInput);
+  if (!previousStatus) {
+    return incomingStatus;
+  }
+
+  const previousIsStableTerminalOrActive =
+    isActiveSubscriptionStatus(previousStatus) ||
+    previousStatus === "cancel_pending" ||
+    TERMINAL_SUBSCRIPTION_STATUSES.has(previousStatus) ||
+    previousStatus === "payment_failed" ||
+    previousStatus === "halted" ||
+    previousStatus === "paused";
+
+  if (previousIsStableTerminalOrActive && isPreActivationStatus(incomingStatus)) {
+    return previousStatus;
+  }
+
+  return incomingStatus;
 }
 
 function toSummary(row: RawSubscriptionRow): BillingSubscriptionSummary {
@@ -768,13 +805,19 @@ export async function createUserSubscription(
   const workspaceId = await getWorkspaceIdByUserId(input.userId);
   const planConfig = getPlanConfig(input.planCode);
   const planId = await resolveOrCreatePlanId(client, input.planCode);
+  const totalCount = input.totalCount ?? planConfig.totalCountDefault;
+  const trialDays = input.trialDays ?? planConfig.trialDaysDefault;
   const existing = await fetchSubscriptionRowByUserId(input.userId);
 
   if (existing && existing.razorpay_subscription_id && isOpenSubscriptionStatus(existing.status)) {
     const stillExists = await existsGatewaySubscription(client, existing.razorpay_subscription_id);
     if (stillExists) {
       const existingPlanCode = normalizePlanCode(existing.plan_code) ?? input.planCode;
-      if (existingPlanCode === input.planCode) {
+      const existingTrialDays = parseTrialDaysFromMetadata(existing.metadata_json);
+      const shouldReuseExisting =
+        existingPlanCode === input.planCode &&
+        (existingTrialDays === null || existingTrialDays === trialDays);
+      if (shouldReuseExisting) {
         const existingPlanConfig = getPlanConfig(existingPlanCode);
         return {
           keyId,
@@ -789,7 +832,11 @@ export async function createUserSubscription(
         };
       }
 
-      let replacementReason = `replaced_open_subscription:${existing.razorpay_subscription_id}:${existingPlanCode}->${input.planCode}`;
+      const replacementKind =
+        existingPlanCode !== input.planCode
+          ? "plan_change"
+          : "trial_days_change";
+      let replacementReason = `replaced_open_subscription:${replacementKind}:${existing.razorpay_subscription_id}:${existingPlanCode}->${input.planCode}`;
       try {
         await client.subscriptions.cancel(existing.razorpay_subscription_id, false);
       } catch (cancelError) {
@@ -811,8 +858,6 @@ export async function createUserSubscription(
     throw new Error("An active subscription already exists for this account");
   }
 
-  const totalCount = input.totalCount ?? planConfig.totalCountDefault;
-  const trialDays = input.trialDays ?? planConfig.trialDaysDefault;
   const startAt =
     trialDays > 0 ? Math.floor(Date.now() / 1000) + Math.floor(trialDays * 24 * 60 * 60) : undefined;
 
@@ -1141,7 +1186,8 @@ async function upsertSubscriptionFromWebhook(
     resolvePlanCodeFromPlanId(subscription.plan_id) ??
     existingPlanCode ??
     BILLING_PLANS.starter.code;
-  const status = subscription.status ?? inferStatusFromEvent(event) ?? "pending";
+  const incomingStatus = subscription.status ?? inferStatusFromEvent(event) ?? "pending";
+  const status = resolveWebhookSubscriptionStatus(previousStatus, incomingStatus);
   const currentStartAt = toIsoTimestampFromUnix(subscription.current_start);
   const currentEndAt = toIsoTimestampFromUnix(subscription.current_end);
   const endedAt = toIsoTimestampFromUnix(subscription.ended_at);
