@@ -2,9 +2,24 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import Razorpay from "razorpay";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
+import { getWorkspaceIdByUserId, syncWorkspaceSubscriptionFromBillingEvent } from "./workspace-billing-service.js";
+import {
+  createWorkspaceRechargeOrder,
+  issueSubscriptionInvoiceFromPayment,
+  markRechargeOrderFailedFromWebhook,
+  markRechargeOrderPaidFromWebhook
+} from "./workspace-billing-center-service.js";
 
 export const BILLING_PLAN_CODES = ["starter", "pro", "business"] as const;
 export type BillingPlanCode = (typeof BILLING_PLAN_CODES)[number];
+export type SubscriptionPlanCode = BillingPlanCode | "trial";
+
+export interface PlanEntitlements {
+  planCode: SubscriptionPlanCode;
+  maxApiNumbers: number;
+  maxAgentProfiles: number;
+  prioritySupport: boolean;
+}
 
 interface BillingPlanConfig {
   code: BillingPlanCode;
@@ -19,32 +34,56 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
   starter: {
     code: "starter",
     label: "Starter",
-    amountInr: 499,
+    amountInr: 799,
     totalCountDefault: 12,
     trialDaysDefault: 7,
     razorpayPlanId: env.RAZORPAY_PLAN_STARTER_ID
   },
   pro: {
     code: "pro",
-    label: "Pro",
-    amountInr: 999,
+    label: "Growth",
+    amountInr: 1499,
     totalCountDefault: 12,
     trialDaysDefault: 7,
     razorpayPlanId: env.RAZORPAY_PLAN_PRO_ID
   },
   business: {
     code: "business",
-    label: "Business",
-    amountInr: 1799,
+    label: "Pro",
+    amountInr: 2999,
     totalCountDefault: 12,
     trialDaysDefault: 7,
     razorpayPlanId: env.RAZORPAY_PLAN_BUSINESS_ID
   }
 };
 
+const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlements, "planCode">> = {
+  trial: {
+    maxApiNumbers: 1,
+    maxAgentProfiles: 3,
+    prioritySupport: false
+  },
+  starter: {
+    maxApiNumbers: 1,
+    maxAgentProfiles: 5,
+    prioritySupport: false
+  },
+  pro: {
+    maxApiNumbers: 1,
+    maxAgentProfiles: 10,
+    prioritySupport: false
+  },
+  business: {
+    maxApiNumbers: 3,
+    maxAgentProfiles: 30,
+    prioritySupport: true
+  }
+};
+
 const OPEN_SUBSCRIPTION_STATUSES = new Set(["pending", "created", "authenticated"]);
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "authenticated"]);
 const TERMINAL_SUBSCRIPTION_STATUSES = new Set(["cancelled", "completed", "expired"]);
+const ADDON_CREDIT_BLOCK_SIZE = 1000;
 
 let razorpayClient: Razorpay | null = null;
 
@@ -159,6 +198,7 @@ interface RazorpayPaymentEntity {
   created_at?: number;
   error_description?: string;
   subscription_id?: string;
+  order_id?: string;
   notes?: Record<string, unknown>;
 }
 
@@ -170,6 +210,15 @@ interface RazorpayWebhookPayload {
     subscription?: { entity?: RazorpaySubscriptionEntity };
     payment?: { entity?: RazorpayPaymentEntity };
   };
+}
+
+export interface CreateAddonCreditsOrderResult {
+  keyId: string;
+  orderId: string;
+  amountInr: number;
+  amountPaise: number;
+  currency: string;
+  credits: number;
 }
 
 function getRazorpayClient(): Razorpay {
@@ -203,6 +252,14 @@ function parseNumber(value: string | null): number {
   return Number(value ?? 0);
 }
 
+function parsePositiveInteger(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
 function normalizePlanCode(value: unknown): BillingPlanCode | null {
   if (typeof value !== "string") {
     return null;
@@ -212,6 +269,14 @@ function normalizePlanCode(value: unknown): BillingPlanCode | null {
     return normalized;
   }
   return null;
+}
+
+function normalizeSubscriptionPlanCode(value: unknown): SubscriptionPlanCode {
+  if (value === "trial") {
+    return "trial";
+  }
+  const paid = normalizePlanCode(value);
+  return paid ?? "trial";
 }
 
 function resolvePlanCodeFromPlanId(planId: unknown): BillingPlanCode | null {
@@ -236,6 +301,17 @@ function toIsoTimestampFromUnix(value: unknown): string | null {
     return null;
   }
   return new Date(value * 1000).toISOString();
+}
+
+function isAddonPurchasePayment(payment: RazorpayPaymentEntity): boolean {
+  const purchaseType = payment.notes?.purchaseType;
+  const type = payment.notes?.type;
+  return (
+    purchaseType === "addon_credits" ||
+    purchaseType === "workspace_recharge" ||
+    purchaseType === "credit_recharge" ||
+    type === "addon_credits"
+  );
 }
 
 function inferStatusFromEvent(event: string): string | null {
@@ -411,11 +487,93 @@ export function listBillingPlans(): BillingPlanConfig[] {
   return BILLING_PLAN_CODES.map((code) => BILLING_PLANS[code]);
 }
 
+export function getPlanEntitlements(planCode: unknown): PlanEntitlements {
+  const resolved = normalizeSubscriptionPlanCode(planCode);
+  return {
+    planCode: resolved,
+    ...PLAN_ENTITLEMENT_CONFIG[resolved]
+  };
+}
+
+export async function getUserPlanEntitlements(userId: string): Promise<PlanEntitlements> {
+  const workspacePlanResult = await pool.query<{
+    code: string;
+    agent_limit: number;
+    whatsapp_number_limit: number;
+    status: string;
+  }>(
+    `SELECT p.code, p.agent_limit, p.whatsapp_number_limit, p.status
+     FROM users u
+     JOIN workspaces w ON w.owner_id = u.id
+     JOIN plans p ON p.id = w.plan_id
+     WHERE u.id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  const workspacePlan = workspacePlanResult.rows[0];
+  if (workspacePlan) {
+    const normalizedPlanCode = normalizeSubscriptionPlanCode(workspacePlan.code);
+    return {
+      planCode: normalizedPlanCode,
+      maxApiNumbers: Math.max(0, Number(workspacePlan.whatsapp_number_limit ?? 0)),
+      maxAgentProfiles: Math.max(0, Number(workspacePlan.agent_limit ?? 0)),
+      prioritySupport: normalizedPlanCode === "business"
+    };
+  }
+
+  const result = await pool.query<{ subscription_plan: string | null }>(
+    `SELECT subscription_plan
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    throw new Error("User not found");
+  }
+
+  return getPlanEntitlements(result.rows[0]?.subscription_plan ?? "trial");
+}
+
 export function getRazorpayCheckoutKey(): string {
   if (!env.RAZORPAY_KEY_ID) {
     throw new Error("Razorpay key ID is not configured on server");
   }
   return env.RAZORPAY_KEY_ID;
+}
+
+export async function createAddonCreditsOrder(input: {
+  userId: string;
+  credits: number;
+}): Promise<CreateAddonCreditsOrderResult> {
+  const requestedCredits = parsePositiveInteger(input.credits);
+  if (requestedCredits <= 0) {
+    throw new Error("credits must be a positive integer");
+  }
+
+  const blocks = Math.max(1, Math.ceil(requestedCredits / ADDON_CREDIT_BLOCK_SIZE));
+  const credits = blocks * ADDON_CREDIT_BLOCK_SIZE;
+  const order = await createWorkspaceRechargeOrder({
+    userId: input.userId,
+    credits,
+    metadata: {
+      source: "legacy_workspace_addon"
+    },
+    orderNotes: {
+      purchaseType: "addon_credits"
+    }
+  });
+
+  return {
+    keyId: order.keyId,
+    orderId: order.razorpayOrderId,
+    amountInr: Number((order.amountTotalPaise / 100).toFixed(2)),
+    amountPaise: order.amountTotalPaise,
+    currency: order.currency,
+    credits
+  };
 }
 
 export async function getUserBillingSummary(userId: string): Promise<UserBillingSummary | null> {
@@ -428,6 +586,7 @@ export async function createUserSubscription(
 ): Promise<CreateUserSubscriptionResult> {
   const client = getRazorpayClient();
   const keyId = getRazorpayCheckoutKey();
+  const workspaceId = await getWorkspaceIdByUserId(input.userId);
   const planConfig = getPlanConfig(input.planCode);
   const planId = getPlanId(input.planCode);
   const existing = await fetchSubscriptionRowByUserId(input.userId);
@@ -464,7 +623,8 @@ export async function createUserSubscription(
     ...(startAt ? { start_at: startAt } : {}),
     notes: {
       userId: input.userId,
-      planCode: input.planCode
+      planCode: input.planCode,
+      workspaceId
     }
   })) as RazorpaySubscriptionEntity;
 
@@ -544,6 +704,14 @@ export async function createUserSubscription(
   );
 
   await syncUserPlan(input.userId, input.planCode, created.status ?? "created");
+  await syncWorkspaceSubscriptionFromBillingEvent({
+    userId: input.userId,
+    billingPlanCode: input.planCode,
+    billingStatus: created.status ?? "created",
+    paymentGatewayId: created.id,
+    nextBillingDate: toIsoTimestampFromUnix(created.charge_at),
+    source: "create_subscription"
+  });
 
   const summary = toUserBillingSummary(upsertResult.rows[0]);
 
@@ -616,6 +784,14 @@ export async function cancelUserSubscription(
   );
 
   await syncUserPlan(userId, existing.plan_code, nextStatus);
+  await syncWorkspaceSubscriptionFromBillingEvent({
+    userId,
+    billingPlanCode: normalizePlanCode(existing.plan_code) ?? "starter",
+    billingStatus: nextStatus,
+    paymentGatewayId: existing.razorpay_subscription_id,
+    nextBillingDate: toIsoTimestampFromUnix(cancelled.charge_at),
+    source: "cancel_subscription"
+  });
   const fresh = await fetchSubscriptionRowByUserId(userId);
   if (!fresh) {
     throw new Error("Failed to refresh subscription state");
@@ -787,6 +963,14 @@ async function upsertSubscriptionFromWebhook(
   );
 
   await syncUserPlan(userId, resolvedPlanCode, status);
+  await syncWorkspaceSubscriptionFromBillingEvent({
+    userId,
+    billingPlanCode: resolvedPlanCode,
+    billingStatus: status,
+    paymentGatewayId: subscription.id,
+    nextBillingDate: nextChargeAt,
+    source: "webhook_subscription"
+  });
 }
 
 async function upsertPaymentFromWebhook(
@@ -879,7 +1063,50 @@ async function upsertPaymentFromWebhook(
        WHERE razorpay_subscription_id = $1`,
       [subscriptionId]
     );
+
+    const existing = await fetchSubscriptionRowByRazorpayId(subscriptionId);
+    if (existing?.user_id) {
+      await syncWorkspaceSubscriptionFromBillingEvent({
+        userId: existing.user_id,
+        billingPlanCode: normalizePlanCode(existing.plan_code) ?? "starter",
+        billingStatus: "payment_failed",
+        paymentGatewayId: subscriptionId,
+        source: "webhook_payment_failed"
+      });
+    }
   }
+
+  if (status === "failed" && payment.order_id) {
+    await markRechargeOrderFailedFromWebhook({
+      razorpayOrderId: payment.order_id,
+      event,
+      errorMessage: payment.error_description ?? null,
+      rawPayload: payment as unknown as Record<string, unknown>
+    });
+  }
+
+  if (status === "captured" && payment.order_id && isAddonPurchasePayment(payment)) {
+    await markRechargeOrderPaidFromWebhook({
+      razorpayOrderId: payment.order_id,
+      razorpayPaymentId: payment.id,
+      paidAt: toIsoTimestampFromUnix(payment.created_at),
+      event,
+      amountPaise: Number(payment.amount ?? 0),
+      currency: payment.currency ?? "INR",
+      rawPayload: payment as unknown as Record<string, unknown>
+    });
+  }
+
+  if (status === "captured" && subscriptionId && userId && !isAddonPurchasePayment(payment)) {
+    await issueSubscriptionInvoiceFromPayment({
+      userId,
+      razorpayPaymentId: payment.id,
+      amountPaise: Number(payment.amount ?? 0),
+      currency: payment.currency ?? "INR",
+      paidAt: toIsoTimestampFromUnix(payment.created_at)
+    });
+  }
+
 }
 
 export async function handleRazorpayWebhookEvent(payload: unknown): Promise<void> {

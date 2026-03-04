@@ -5,9 +5,11 @@ import {
   cancelBillingSubscription,
   createBillingSubscription,
   fetchBillingPlans,
+  fetchMyPlanEntitlements,
   fetchMySubscription,
   type BillingPlan,
-  type BillingSubscriptionSummary
+  type BillingSubscriptionSummary,
+  type PlanEntitlements
 } from "../lib/api";
 import "./landing-orchids/orchids-landing.css";
 
@@ -21,10 +23,21 @@ declare global {
 }
 
 const PLAN_ORDER: BillingPlan["code"][] = ["starter", "pro", "business"];
+const PLAN_PITCHES: Record<BillingPlan["code"], string> = {
+  starter: "300 conversations/month - ₹799.",
+  pro: "600 conversations/month - ₹1,499.",
+  business: "1,200 conversations/month - ₹2,999."
+};
 const PLAN_FEATURES: Record<BillingPlan["code"], string[]> = {
   starter: ["1 WhatsApp Number", "Basic AI training", "24/7 auto-replies", "Email support"],
-  pro: ["1 WhatsApp Number", "Advanced AI training", "Unlimited replies", "Analytics dashboard", "Lead collection"],
-  business: ["Up to 3 Numbers", "Custom AI voice and tone", "Premium templates", "Priority support", "Optional API access"]
+  pro: ["Up to 2 WhatsApp Numbers", "Advanced AI training", "Analytics dashboard", "Lead collection", "Priority ticket support"],
+  business: [
+    "Up to 3 WhatsApp Numbers",
+    "Custom AI voice and tone",
+    "Premium templates",
+    "Priority support",
+    "Optional API access"
+  ]
 };
 
 function getQueryPlan(search: string): BillingPlan["code"] | null {
@@ -33,6 +46,9 @@ function getQueryPlan(search: string): BillingPlan["code"] | null {
     return null;
   }
   const normalized = value.trim().toLowerCase();
+  if (normalized === "growth") {
+    return "pro";
+  }
   if (normalized === "starter" || normalized === "pro" || normalized === "business") {
     return normalized;
   }
@@ -62,6 +78,10 @@ async function loadRazorpayScript(): Promise<boolean> {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function PurchasePage() {
   const { token, user } = useAuth();
   const location = useLocation();
@@ -69,6 +89,8 @@ export function PurchasePage() {
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<BillingPlan["code"]>("pro");
   const [subscription, setSubscription] = useState<BillingSubscriptionSummary | null>(null);
+  const [entitlements, setEntitlements] = useState<PlanEntitlements | null>(null);
+  const [keyIdAvailable, setKeyIdAvailable] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -82,17 +104,24 @@ export function PurchasePage() {
     if (!token) {
       return;
     }
-    const [plansResponse, subscriptionResponse] = await Promise.all([
+    const [plansResponse, entitlementResponse] = await Promise.all([
       fetchBillingPlans(),
-      fetchMySubscription(token)
+      fetchMyPlanEntitlements(token)
     ]);
     const availablePlans = plansResponse.plans.filter((plan) => plan.available);
+    setKeyIdAvailable(plansResponse.keyIdAvailable);
     setPlans(availablePlans);
-    setSubscription(subscriptionResponse.subscription);
+    setSubscription(entitlementResponse.subscription);
+    setEntitlements(entitlementResponse.entitlements);
+
+    if (availablePlans.length > 0 && !availablePlans.some((plan) => plan.code === selectedPlan)) {
+      setSelectedPlan(availablePlans[0].code);
+    }
   };
 
   useEffect(() => {
     if (!token) {
+      navigate("/signup");
       return;
     }
     const planFromQuery = getQueryPlan(location.search);
@@ -107,10 +136,18 @@ export function PurchasePage() {
         setError((loadError as Error).message);
       })
       .finally(() => setLoading(false));
-  }, [location.search, token]);
+  }, [location.search, navigate, token]);
 
   const handleSubscribe = async () => {
     if (!token) {
+      return;
+    }
+    if (!keyIdAvailable) {
+      setError("Razorpay checkout is not configured yet. Set billing keys in backend env first.");
+      return;
+    }
+    if (!plans.some((plan) => plan.code === selectedPlan)) {
+      setError("Selected plan is not available right now.");
       return;
     }
     setLoading(true);
@@ -131,7 +168,25 @@ export function PurchasePage() {
         subscription_id: response.checkout.subscriptionId,
         handler: () => {
           setInfo("Payment authorized. Waiting for webhook confirmation to activate subscription.");
-          void refreshBilling().catch(() => undefined);
+          void (async () => {
+            for (let attempt = 0; attempt < 12; attempt += 1) {
+              try {
+                const latest = await fetchMySubscription(token);
+                if (latest.subscription) {
+                  setSubscription(latest.subscription);
+                  const status = (latest.subscription.status || "").toLowerCase();
+                  if (status === "active" || status === "authenticated") {
+                    setInfo("Subscription activated successfully.");
+                    return;
+                  }
+                }
+              } catch {
+                // Keep polling for webhook completion.
+              }
+              await sleep(2500);
+            }
+            setInfo("Payment authorized. Subscription activation may take a few moments after webhook processing.");
+          })();
         },
         prefill: {
           name: user?.name ?? "",
@@ -189,7 +244,17 @@ export function PurchasePage() {
             <button className="orch-btn ghost" onClick={() => navigate("/dashboard")}>
               Dashboard
             </button>
-            <button className="orch-btn primary" onClick={() => void refreshBilling()} disabled={loading}>
+            <button
+              className="orch-btn primary"
+              onClick={() => {
+                setLoading(true);
+                setError(null);
+                void refreshBilling()
+                  .catch((refreshError) => setError((refreshError as Error).message))
+                  .finally(() => setLoading(false));
+              }}
+              disabled={loading}
+            >
               Refresh
             </button>
           </div>
@@ -200,7 +265,35 @@ export function PurchasePage() {
         <div className="orch-heading">
           <h2>Choose Your Subscription</h2>
           <p>UPI AutoPay, cards, and netbanking are supported through Razorpay recurring billing.</p>
+          <p>
+            Billing center is now available in Dashboard.{" "}
+            <button type="button" className="ghost-btn" onClick={() => navigate("/dashboard?tab=billing")}>
+              Open Dashboard Billing
+            </button>
+          </p>
         </div>
+
+        {entitlements ? (
+          <article className="orch-card purchase-status-card">
+            <h3>Current Plan Entitlements</h3>
+            <p>
+              Plan: <strong>{entitlements.planCode.toUpperCase()}</strong>
+            </p>
+            <p>
+              Official API numbers allowed: <strong>{entitlements.maxApiNumbers}</strong>
+            </p>
+            <p>
+              Agent profiles allowed: <strong>{entitlements.maxAgentProfiles}</strong>
+            </p>
+          </article>
+        ) : null}
+
+        {!keyIdAvailable ? (
+          <article className="orch-card purchase-status-card">
+            <h3>Billing Setup Pending</h3>
+            <p>Razorpay key is not configured on backend. Add billing env values, then refresh this page.</p>
+          </article>
+        ) : null}
 
         {subscription ? (
           <article className="orch-card purchase-status-card">
@@ -232,6 +325,13 @@ export function PurchasePage() {
           </article>
         ) : null}
 
+        {orderedPlans.length === 0 ? (
+          <article className="orch-card purchase-status-card">
+            <h3>No Plans Available</h3>
+            <p>Razorpay plan IDs are not configured yet. Add `RAZORPAY_PLAN_*` env values on backend.</p>
+          </article>
+        ) : null}
+
         <div className="orch-grid-3 purchase-grid">
           {orderedPlans.map((plan) => (
             <article
@@ -243,7 +343,7 @@ export function PurchasePage() {
               }
             >
               <h3>{plan.label}</h3>
-              <small>{plan.trialDaysDefault}-day free trial, recurring monthly billing</small>
+              <small>{PLAN_PITCHES[plan.code]}</small>
               <p className="orch-price">
                 INR {plan.amountInr.toLocaleString()} <span>/ month</span>
               </p>
@@ -265,7 +365,11 @@ export function PurchasePage() {
             Selected plan: <strong>{selectedPlan.toUpperCase()}</strong>. Approve UPI AutoPay mandate during checkout.
           </p>
           <div className="orch-hero-actions">
-            <button className="orch-btn light" onClick={handleSubscribe} disabled={loading}>
+            <button
+              className="orch-btn light"
+              onClick={handleSubscribe}
+              disabled={loading || !keyIdAvailable || orderedPlans.length === 0}
+            >
               {loading ? "Processing..." : "Pay with Razorpay"}
             </button>
             <button className="orch-btn dark" onClick={() => navigate("/dashboard")}>

@@ -35,6 +35,9 @@ function readPlanFromSearch(search: string): "starter" | "pro" | "business" | nu
     return null;
   }
   const normalized = value.trim().toLowerCase();
+  if (normalized === "growth") {
+    return "pro";
+  }
   if (normalized === "starter" || normalized === "pro" || normalized === "business") {
     return normalized;
   }
