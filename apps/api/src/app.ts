@@ -4,7 +4,9 @@ import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import fastifyRawBody from "fastify-raw-body";
+import { randomUUID } from "node:crypto";
 import { env } from "./config/env.js";
+import { registerMetrics } from "./observability/metrics.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
@@ -36,7 +38,19 @@ interface AuthTokenPayload {
 }
 
 export async function buildApp() {
-  const app = Fastify({ logger: true });
+  const app = Fastify({
+    logger: true,
+    requestIdHeader: "x-request-id",
+    genReqId: (request) => request.headers["x-request-id"]?.toString() ?? randomUUID()
+  });
+
+  registerMetrics(app, {
+    enabled: env.METRICS_ENABLED,
+    metricsEndpoint: env.METRICS_ENDPOINT,
+    vitalsEndpoint: "/api/observability/vitals",
+    prefix: "wagen_",
+    defaultLabels: { service: "wagen-api" }
+  });
 
   await app.register(cors, {
     origin: env.APP_BASE_URL,
@@ -57,18 +71,11 @@ export async function buildApp() {
   });
   await app.register(websocket);
 
-  app.addHook("onRequest", async (request) => {
-    (request as FastifyRequest & { timing?: { start: number } }).timing = {
-      start: Date.now()
-    };
-  });
-
   app.addHook("onResponse", async (request, reply) => {
-    const timed = (request as FastifyRequest & { timing?: { start: number } }).timing;
-    if (!timed) {
-      return;
-    }
-    const durationMs = Date.now() - timed.start;
+    reply.header("x-request-id", request.id);
+    const start = (request as FastifyRequest & { _startHr?: bigint })._startHr;
+    if (!start) return;
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
     const slow = durationMs >= 500;
     if (slow) {
       app.log.warn(
@@ -76,6 +83,7 @@ export async function buildApp() {
           method: request.method,
           url: request.url,
           statusCode: reply.statusCode,
+          requestId: request.id,
           durationMs
         },
         "Slow request"
@@ -86,6 +94,7 @@ export async function buildApp() {
           method: request.method,
           url: request.url,
           statusCode: reply.statusCode,
+          requestId: request.id,
           durationMs
         },
         "Request completed"
