@@ -94,6 +94,72 @@ const CHATBOT_BUNDLE_JS = `(function () {
 
   var wsBase = apiBase.replace(/^http/i, "ws").replace(/\\/$/, "");
   var wsUrl = wsBase + "/ws/widget?wid=" + encodeURIComponent(workspaceId) + "&visitorId=" + encodeURIComponent(visitorId);
+  var notificationTitle = (scriptTag.getAttribute("data-notification-title") || document.title || "New message").trim();
+  var webAudioContext = null;
+  var notificationPermissionRequested = false;
+
+  function requestNotificationPermission() {
+    if (notificationPermissionRequested) return;
+    notificationPermissionRequested = true;
+    if (!("Notification" in window)) return;
+    if (window.Notification.permission !== "default") return;
+    try {
+      window.Notification.requestPermission().catch(function () {});
+    } catch {}
+  }
+
+  function playIncomingMessageSound() {
+    var ContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!ContextCtor) return;
+    if (!webAudioContext) {
+      try {
+        webAudioContext = new ContextCtor();
+      } catch {
+        return;
+      }
+    }
+    if (!webAudioContext) return;
+
+    if (webAudioContext.state !== "running" && typeof webAudioContext.resume === "function") {
+      webAudioContext.resume().catch(function () {});
+    }
+    if (webAudioContext.state !== "running") return;
+
+    var now = webAudioContext.currentTime;
+    var oscillator = webAudioContext.createOscillator();
+    var gainNode = webAudioContext.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(920, now);
+    gainNode.gain.setValueAtTime(0.0001, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.16, now + 0.02);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    oscillator.connect(gainNode);
+    gainNode.connect(webAudioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.24);
+  }
+
+  function showIncomingBrowserNotification(text) {
+    if (!("Notification" in window)) return;
+    if (window.Notification.permission !== "granted") return;
+    try {
+      var body = String(text || "").slice(0, 180);
+      var popup = new window.Notification(notificationTitle || "New message", {
+        body: body,
+        tag: "wagenai-widget-" + workspaceId
+      });
+      setTimeout(function () {
+        try {
+          popup.close();
+        } catch {}
+      }, 6000);
+    } catch {}
+  }
+
+  function triggerIncomingAlert(text) {
+    playIncomingMessageSound();
+    showIncomingBrowserNotification(text);
+  }
 
   function boot() {
     if (booted) return;
@@ -227,7 +293,9 @@ const CHATBOT_BUNDLE_JS = `(function () {
         try {
           var payload = JSON.parse(event.data || "{}");
           if (payload && payload.event === "message" && payload.data && payload.data.text) {
-            push(String(payload.data.text), "ai");
+            var messageText = String(payload.data.text);
+            push(messageText, "ai");
+            triggerIncomingAlert(messageText);
           }
         } catch {}
       };
@@ -237,6 +305,7 @@ const CHATBOT_BUNDLE_JS = `(function () {
     };
 
     var sendMessage = function () {
+      requestNotificationPermission();
       if (!profileSubmitted) {
         if (profileError) profileError.textContent = "Please submit name, phone, and email first.";
         return;
@@ -259,6 +328,7 @@ const CHATBOT_BUNDLE_JS = `(function () {
     };
 
     var startChat = function () {
+      requestNotificationPermission();
       var nextProfile = {
         name: normalizeName(nameInput && nameInput.value),
         phone: normalizePhone(phoneInput && phoneInput.value),
@@ -286,6 +356,7 @@ const CHATBOT_BUNDLE_JS = `(function () {
         if (!panel) return;
         panel.classList.toggle("open");
         if (panel.classList.contains("open")) {
+          requestNotificationPermission();
           if (profileSubmitted) {
             connect();
           } else if (nameInput) {

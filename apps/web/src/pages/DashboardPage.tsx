@@ -236,6 +236,102 @@ function toWebSocketBase(url: string): string {
   return url;
 }
 
+type ConversationUpdateRealtimePayload = {
+  conversationId: string;
+  phoneNumber: string | null;
+  direction: "inbound" | "outbound";
+  message: string;
+};
+
+const MAX_ALERT_DEDUPE_KEYS = 250;
+let dashboardAudioContext: AudioContext | null = null;
+
+function parseConversationUpdateRealtimePayload(value: unknown): ConversationUpdateRealtimePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const payload = value as Record<string, unknown>;
+  const conversationId = typeof payload.conversationId === "string" ? payload.conversationId.trim() : "";
+  const directionRaw = typeof payload.direction === "string" ? payload.direction.trim().toLowerCase() : "";
+  const message = typeof payload.message === "string" ? payload.message.trim() : "";
+  const phoneNumberRaw = typeof payload.phoneNumber === "string" ? payload.phoneNumber.trim() : "";
+  if (!conversationId || !message || (directionRaw !== "inbound" && directionRaw !== "outbound")) {
+    return null;
+  }
+  return {
+    conversationId,
+    phoneNumber: phoneNumberRaw || null,
+    direction: directionRaw,
+    message
+  };
+}
+
+function requestNotificationPermissionIfSupported(): void {
+  if (typeof window === "undefined" || typeof Notification === "undefined") {
+    return;
+  }
+  if (Notification.permission !== "default") {
+    return;
+  }
+  void Notification.requestPermission().catch(() => undefined);
+}
+
+function playDashboardMessageAlertSound(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const ContextCtor =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!ContextCtor) {
+    return;
+  }
+  if (!dashboardAudioContext) {
+    dashboardAudioContext = new ContextCtor();
+  }
+  const context = dashboardAudioContext;
+  if (context.state !== "running") {
+    void context.resume().catch(() => undefined);
+  }
+  if (context.state !== "running") {
+    return;
+  }
+
+  const now = context.currentTime;
+  const oscillator = context.createOscillator();
+  const gainNode = context.createGain();
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(880, now);
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.gain.exponentialRampToValueAtTime(0.14, now + 0.02);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(context.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.24);
+}
+
+function showDashboardBrowserNotification(message: string, phoneNumber: string | null): void {
+  if (typeof window === "undefined" || typeof Notification === "undefined") {
+    return;
+  }
+  if (Notification.permission !== "granted") {
+    return;
+  }
+  const title = phoneNumber ? `New message from ${phoneNumber}` : "New incoming message";
+  try {
+    const notification = new Notification(title, {
+      body: message.slice(0, 180),
+      tag: `wagenai-inbox-${phoneNumber ?? "unknown"}`
+    });
+    window.setTimeout(() => notification.close(), 6000);
+  } catch {
+    // Browser blocked notification display.
+  }
+}
+
 function getNestedRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -699,6 +795,8 @@ export function DashboardPage() {
   const widgetTestVisitorIdRef = useRef<string>("");
   const chatAiMenuRef = useRef<HTMLDivElement | null>(null);
   const chatAiTimerProcessingRef = useRef<Set<string>>(new Set());
+  const notifiedInboundMessageKeysRef = useRef<string[]>([]);
+  const notificationPermissionBoundRef = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -729,6 +827,24 @@ export function DashboardPage() {
       }
     }
   }, [location.search]);
+
+  useEffect(() => {
+    if (notificationPermissionBoundRef.current) {
+      return;
+    }
+    notificationPermissionBoundRef.current = true;
+
+    const requestOnInteraction = () => {
+      requestNotificationPermissionIfSupported();
+    };
+
+    window.addEventListener("pointerdown", requestOnInteraction, { once: true });
+    window.addEventListener("keydown", requestOnInteraction, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", requestOnInteraction);
+      window.removeEventListener("keydown", requestOnInteraction);
+    };
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1100px)");
@@ -1585,6 +1701,22 @@ export function DashboardPage() {
     useCallback(
       (event) => {
         if (event.event === "conversation.updated") {
+          const conversationUpdate = parseConversationUpdateRealtimePayload(event.data);
+          if (conversationUpdate && conversationUpdate.direction === "inbound") {
+            const dedupeKey = `${conversationUpdate.conversationId}:${conversationUpdate.message}`;
+            if (!notifiedInboundMessageKeysRef.current.includes(dedupeKey)) {
+              playDashboardMessageAlertSound();
+              showDashboardBrowserNotification(conversationUpdate.message, conversationUpdate.phoneNumber);
+              notifiedInboundMessageKeysRef.current.push(dedupeKey);
+              if (notifiedInboundMessageKeysRef.current.length > MAX_ALERT_DEDUPE_KEYS) {
+                notifiedInboundMessageKeysRef.current.splice(
+                  0,
+                  notifiedInboundMessageKeysRef.current.length - MAX_ALERT_DEDUPE_KEYS
+                );
+              }
+            }
+          }
+
           void loadData();
           if (selectedConversationId && token) {
             void fetchConversationMessages(token, selectedConversationId)
