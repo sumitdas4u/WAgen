@@ -855,7 +855,25 @@ export async function createUserSubscription(
   }
 
   if (existing && isActiveSubscriptionStatus(existing.status)) {
-    throw new Error("An active subscription already exists for this account");
+    const existingPlanCode = normalizePlanCode(existing.plan_code) ?? input.planCode;
+    if (existingPlanCode === input.planCode) {
+      throw new Error("An active subscription already exists for this account");
+    }
+
+    if (existing.razorpay_subscription_id) {
+      try {
+        await client.subscriptions.cancel(existing.razorpay_subscription_id, false);
+      } catch (cancelError) {
+        if (!isRazorpayMissingIdError(cancelError) && !isRazorpayNoBillingCycleError(cancelError)) {
+          throw cancelError;
+        }
+      }
+    }
+
+    await archiveStaleOpenSubscription(
+      input.userId,
+      `replaced_active_subscription:${existing.razorpay_subscription_id ?? "none"}:${existingPlanCode}->${input.planCode}`
+    );
   }
 
   const startAt =

@@ -167,9 +167,9 @@ export function PurchasePage() {
         description: `${response.checkout.planLabel} monthly subscription`,
         subscription_id: response.checkout.subscriptionId,
         handler: () => {
-          setInfo("Payment authorized. Waiting for webhook confirmation to activate subscription.");
+          setInfo("Payment authorized. Activation is being confirmed.");
           void (async () => {
-            for (let attempt = 0; attempt < 12; attempt += 1) {
+            for (let attempt = 0; attempt < 48; attempt += 1) {
               try {
                 const latest = await fetchMySubscription(token);
                 if (latest.subscription) {
@@ -179,13 +179,16 @@ export function PurchasePage() {
                     setInfo("Subscription activated successfully.");
                     return;
                   }
+                  if (status === "authenticated" || status === "created" || status === "pending") {
+                    setInfo("Mandate authorized. Waiting for first charge confirmation from Razorpay.");
+                  }
                 }
               } catch {
                 // Keep polling for webhook completion.
               }
               await sleep(2500);
             }
-            setInfo("Payment authorized. Subscription activation may take a few moments after webhook processing.");
+            setInfo("Payment authorized. Activation is taking longer than expected. Click Refresh in a few seconds.");
           })();
         },
         prefill: {
