@@ -99,7 +99,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
   const [rechargeLoading, setRechargeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [rechargeCredits, setRechargeCredits] = useState<string>("1000");
+  const [rechargeCredits, setRechargeCredits] = useState<string>("100");
 
   const [profileDraft, setProfileDraft] = useState({
     legalName: "",
@@ -208,7 +208,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
 
   const rechargeBreakdown = useMemo(() => {
     const credits = Math.max(1, Math.floor(Number(rechargeCredits) || 0));
-    const unitPaise = 49.9;
+    const unitPaise = 500;
     const totalPaise = Math.max(100, Math.round(credits * unitPaise));
     const taxablePaise = Math.round(totalPaise / 1.18);
     const gstPaise = totalPaise - taxablePaise;
@@ -386,7 +386,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
         <div className="billing-recharge-header">
           <strong>Choose Recharge Amount</strong>
           <div className="billing-recharge-presets">
-            {[1000, 5000, 10000].map((credits) => (
+            {[100, 500, 1000].map((credits) => (
               <button key={credits} type="button" onClick={() => setRechargeCredits(String(credits))}>
                 {credits.toLocaleString()} credits
               </button>
@@ -399,6 +399,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
             <input
               type="number"
               min={1}
+              placeholder="100 / 500 / 1000"
               value={rechargeCredits}
               onChange={(event) => setRechargeCredits(event.target.value)}
             />

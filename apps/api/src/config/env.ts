@@ -33,7 +33,7 @@ const BaseEnvSchema = z.object({
   CREDIT_RENEWAL_CRON_INTERVAL_SECONDS: z.coerce.number().int().positive().default(86400),
   DASHBOARD_BILLING_CENTER: z.enum(["true", "false"]).default("true"),
   BILLING_GST_RATE_PERCENT: z.coerce.number().min(0).max(100).default(18),
-  RECHARGE_PRICE_PER_1000_CREDITS_INR: z.coerce.number().positive().default(499),
+  RECHARGE_PRICE_PER_1000_CREDITS_INR: z.coerce.number().positive().default(5000),
   AUTO_RECHARGE_CRON_ENABLED: z.enum(["true", "false"]).default("true"),
   AUTO_RECHARGE_CRON_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
   AUTO_RECHARGE_MAX_FAILURES: z.coerce.number().int().positive().default(3),

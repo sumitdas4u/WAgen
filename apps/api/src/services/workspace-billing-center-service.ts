@@ -347,10 +347,17 @@ function normalizeNullableText(value: string | null | undefined): string | null 
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function buildCompactRazorpayReceipt(prefix: string, workspaceId: string): string {
+  const safePrefix = prefix.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 4) || "ord";
+  const compactWorkspaceId = workspaceId.replace(/-/g, "").slice(0, 12);
+  const timestampSuffix = Date.now().toString().slice(-10);
+  return `${safePrefix}_${compactWorkspaceId}_${timestampSuffix}`;
+}
+
 function getPricePerCreditPaise(): number {
   const value = (Number(env.RECHARGE_PRICE_PER_1000_CREDITS_INR) * 100) / 1000;
   if (!Number.isFinite(value) || value <= 0) {
-    return 49.9;
+    return 500;
   }
   return value;
 }
@@ -1280,9 +1287,7 @@ export async function createWorkspaceRechargeOrder(input: {
   const price = computeRechargePriceForCredits(input.credits);
   const client = getRazorpayClient();
   const keyId = getRazorpayCheckoutKey();
-  // Razorpay receipt has a max length of 40 chars.
-  const compactWorkspaceId = workspaceId.replace(/-/g, "").slice(0, 12);
-  const receipt = `wr_${compactWorkspaceId}_${Date.now().toString().slice(-10)}`;
+  const receipt = buildCompactRazorpayReceipt("wr", workspaceId);
   const order = (await client.orders.create({
     amount: price.totalPaise,
     currency: "INR",
@@ -1921,7 +1926,7 @@ async function runAutoRechargeForWorkspace(workspaceId: string): Promise<{
     const createdOrder = (await razorpay.orders.create({
       amount: price.totalPaise,
       currency: "INR",
-      receipt: `auto_recharge_${workspaceId}_${Date.now()}`,
+      receipt: buildCompactRazorpayReceipt("ar", workspaceId),
       notes: {
         purchaseType: "workspace_recharge",
         mode: "auto_recharge",

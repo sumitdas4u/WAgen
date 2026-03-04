@@ -202,6 +202,21 @@ interface RazorpayPaymentEntity {
   notes?: Record<string, unknown>;
 }
 
+interface RazorpayPlanEntity {
+  id: string;
+  period?: string;
+  interval?: number;
+  item?: {
+    amount?: number;
+    currency?: string;
+  };
+  notes?: Record<string, unknown>;
+}
+
+interface RazorpayPlanListEntity {
+  items?: RazorpayPlanEntity[];
+}
+
 interface RazorpayWebhookPayload {
   event: string;
   created_at?: number;
@@ -246,6 +261,153 @@ function getPlanId(planCode: BillingPlanCode): string {
     throw new Error(`Razorpay plan ID not configured for ${planCode}`);
   }
   return planId;
+}
+
+function toRazorpayErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "";
+  }
+  const payload = error as {
+    message?: unknown;
+    description?: unknown;
+    error?: {
+      description?: unknown;
+    };
+  };
+  const fromNested = payload.error?.description;
+  if (typeof fromNested === "string" && fromNested.trim()) {
+    return fromNested.trim();
+  }
+  if (typeof payload.description === "string" && payload.description.trim()) {
+    return payload.description.trim();
+  }
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  return "";
+}
+
+function isRazorpayMissingIdError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const payload = error as { statusCode?: unknown };
+    if (Number(payload.statusCode) === 404) {
+      return true;
+    }
+  }
+  return toRazorpayErrorMessage(error).toLowerCase().includes("id provided does not exist");
+}
+
+function toNormalizedStatus(status: string | null | undefined): string {
+  return (status ?? "").trim().toLowerCase();
+}
+
+function isOpenSubscriptionStatus(status: string | null | undefined): boolean {
+  return OPEN_SUBSCRIPTION_STATUSES.has(toNormalizedStatus(status));
+}
+
+function isActiveSubscriptionStatus(status: string | null | undefined): boolean {
+  return ACTIVE_SUBSCRIPTION_STATUSES.has(toNormalizedStatus(status));
+}
+
+async function archiveStaleOpenSubscription(userId: string, reason: string): Promise<void> {
+  await pool.query(
+    `UPDATE user_subscriptions
+     SET status = 'expired',
+         ended_at = COALESCE(ended_at, NOW()),
+         metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $2::jsonb,
+         updated_at = NOW()
+     WHERE user_id = $1`,
+    [
+      userId,
+      JSON.stringify({
+        staleSubscriptionArchivedAt: new Date().toISOString(),
+        staleSubscriptionReason: reason
+      })
+    ]
+  );
+}
+
+async function existsGatewaySubscription(client: Razorpay, subscriptionId: string): Promise<boolean> {
+  try {
+    const subscriptionApi = client.subscriptions as unknown as {
+      fetch: (id: string) => Promise<unknown>;
+    };
+    await subscriptionApi.fetch(subscriptionId);
+    return true;
+  } catch (error) {
+    if (isRazorpayMissingIdError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function resolveOrCreatePlanId(client: Razorpay, planCode: BillingPlanCode): Promise<string> {
+  const configuredPlanId = BILLING_PLANS[planCode].razorpayPlanId?.trim() ?? "";
+  if (configuredPlanId) {
+    try {
+      const planApi = client.plans as unknown as {
+        fetch: (id: string) => Promise<unknown>;
+      };
+      await planApi.fetch(configuredPlanId);
+      return configuredPlanId;
+    } catch (error) {
+      if (!isRazorpayMissingIdError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const planConfig = getPlanConfig(planCode);
+  const targetAmountPaise = Math.max(1, Math.round(planConfig.amountInr * 100));
+  const planApi = client.plans as unknown as {
+    all: (params: { count: number; skip: number }) => Promise<RazorpayPlanListEntity>;
+    create: (payload: Record<string, unknown>) => Promise<RazorpayPlanEntity>;
+  };
+  let skip = 0;
+  const pageSize = 100;
+  while (skip < 500) {
+    const page = await planApi.all({ count: pageSize, skip });
+    const items = Array.isArray(page.items) ? page.items : [];
+    for (const item of items) {
+      const notesCode = typeof item.notes?.wagenPlanCode === "string" ? item.notes.wagenPlanCode.trim().toLowerCase() : "";
+      if (notesCode === planCode) {
+        return item.id;
+      }
+      const sameMonthlyPlan =
+        item.period === "monthly" &&
+        Number(item.interval ?? 1) === 1 &&
+        Number(item.item?.amount ?? 0) === targetAmountPaise &&
+        String(item.item?.currency ?? "INR").toUpperCase() === "INR";
+      if (sameMonthlyPlan) {
+        return item.id;
+      }
+    }
+    if (items.length < pageSize) {
+      break;
+    }
+    skip += items.length;
+  }
+
+  const created = await planApi.create({
+    period: "monthly",
+    interval: 1,
+    item: {
+      name: `${planConfig.label} Monthly`,
+      amount: targetAmountPaise,
+      currency: "INR",
+      description: `${planConfig.label} monthly subscription`
+    },
+    notes: {
+      wagenPlanCode: planCode,
+      source: "auto_plan_provision"
+    }
+  });
+
+  if (!created.id) {
+    throw new Error(`Failed to create Razorpay plan for ${planCode}`);
+  }
+  return created.id;
 }
 
 function parseNumber(value: string | null): number {
@@ -600,26 +762,33 @@ export async function createUserSubscription(
   const keyId = getRazorpayCheckoutKey();
   const workspaceId = await getWorkspaceIdByUserId(input.userId);
   const planConfig = getPlanConfig(input.planCode);
-  const planId = getPlanId(input.planCode);
+  const planId = await resolveOrCreatePlanId(client, input.planCode);
   const existing = await fetchSubscriptionRowByUserId(input.userId);
 
-  if (existing && existing.razorpay_subscription_id && OPEN_SUBSCRIPTION_STATUSES.has(existing.status)) {
-    const existingPlanCode = normalizePlanCode(existing.plan_code) ?? input.planCode;
-    const existingPlanConfig = getPlanConfig(existingPlanCode);
-    return {
-      keyId,
-      alreadyExists: true,
-      checkout: {
-        subscriptionId: existing.razorpay_subscription_id,
-        planCode: existingPlanCode,
-        planLabel: existingPlanConfig.label,
-        amountInr: existingPlanConfig.amountInr
-      },
-      subscription: toUserBillingSummary(existing)
-    };
+  if (existing && existing.razorpay_subscription_id && isOpenSubscriptionStatus(existing.status)) {
+    const stillExists = await existsGatewaySubscription(client, existing.razorpay_subscription_id);
+    if (stillExists) {
+      const existingPlanCode = normalizePlanCode(existing.plan_code) ?? input.planCode;
+      const existingPlanConfig = getPlanConfig(existingPlanCode);
+      return {
+        keyId,
+        alreadyExists: true,
+        checkout: {
+          subscriptionId: existing.razorpay_subscription_id,
+          planCode: existingPlanCode,
+          planLabel: existingPlanConfig.label,
+          amountInr: existingPlanConfig.amountInr
+        },
+        subscription: toUserBillingSummary(existing)
+      };
+    }
+    await archiveStaleOpenSubscription(
+      input.userId,
+      `gateway_subscription_missing:${existing.razorpay_subscription_id}`
+    );
   }
 
-  if (existing && ACTIVE_SUBSCRIPTION_STATUSES.has(existing.status)) {
+  if (existing && isActiveSubscriptionStatus(existing.status)) {
     throw new Error("An active subscription already exists for this account");
   }
 
@@ -740,16 +909,59 @@ export async function cancelUserSubscription(
     throw new Error("No subscription found for this account");
   }
 
-  if (TERMINAL_SUBSCRIPTION_STATUSES.has(existing.status)) {
+  if (TERMINAL_SUBSCRIPTION_STATUSES.has(toNormalizedStatus(existing.status))) {
     return toUserBillingSummary(existing);
   }
 
   const client = getRazorpayClient();
   const cancelAtCycleEnd = Boolean(options?.atCycleEnd);
-  const cancelled = (await client.subscriptions.cancel(
-    existing.razorpay_subscription_id,
-    cancelAtCycleEnd
-  )) as RazorpaySubscriptionEntity;
+  let cancelled: RazorpaySubscriptionEntity;
+  try {
+    cancelled = (await client.subscriptions.cancel(
+      existing.razorpay_subscription_id,
+      cancelAtCycleEnd
+    )) as RazorpaySubscriptionEntity;
+  } catch (error) {
+    if (!isRazorpayMissingIdError(error)) {
+      throw error;
+    }
+
+    const fallbackStatus = "cancelled";
+    const nowIso = new Date().toISOString();
+    await pool.query(
+      `UPDATE user_subscriptions
+       SET status = $1,
+           cancelled_at = COALESCE(cancelled_at, $2::timestamptz),
+           ended_at = COALESCE(ended_at, $2::timestamptz),
+           metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $3::jsonb,
+           updated_at = NOW()
+       WHERE user_id = $4`,
+      [
+        fallbackStatus,
+        nowIso,
+        JSON.stringify({
+          cancelFallbackReason: "gateway_subscription_missing",
+          cancelFallbackAt: nowIso,
+          originalGatewaySubscriptionId: existing.razorpay_subscription_id
+        }),
+        userId
+      ]
+    );
+
+    await syncUserPlan(userId, existing.plan_code, fallbackStatus);
+    await syncWorkspaceSubscriptionFromBillingEvent({
+      userId,
+      billingPlanCode: normalizePlanCode(existing.plan_code) ?? "starter",
+      billingStatus: fallbackStatus,
+      paymentGatewayId: existing.razorpay_subscription_id,
+      source: "cancel_subscription_fallback"
+    });
+    const freshFallback = await fetchSubscriptionRowByUserId(userId);
+    if (!freshFallback) {
+      throw new Error("Failed to refresh subscription state");
+    }
+    return toUserBillingSummary(freshFallback);
+  }
 
   const nextStatus = cancelled.status ?? (cancelAtCycleEnd ? "cancel_pending" : "cancelled");
   const nowIso = new Date().toISOString();
