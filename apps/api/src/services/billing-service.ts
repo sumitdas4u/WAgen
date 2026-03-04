@@ -36,7 +36,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Starter",
     amountInr: 799,
     totalCountDefault: 12,
-    trialDaysDefault: 7,
+    trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_STARTER_ID
   },
   pro: {
@@ -44,7 +44,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Growth",
     amountInr: 1499,
     totalCountDefault: 12,
-    trialDaysDefault: 7,
+    trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_PRO_ID
   },
   business: {
@@ -52,7 +52,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Pro",
     amountInr: 2999,
     totalCountDefault: 12,
-    trialDaysDefault: 7,
+    trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_BUSINESS_ID
   }
 };
