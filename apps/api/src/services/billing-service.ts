@@ -774,23 +774,37 @@ export async function createUserSubscription(
     const stillExists = await existsGatewaySubscription(client, existing.razorpay_subscription_id);
     if (stillExists) {
       const existingPlanCode = normalizePlanCode(existing.plan_code) ?? input.planCode;
-      const existingPlanConfig = getPlanConfig(existingPlanCode);
-      return {
-        keyId,
-        alreadyExists: true,
-        checkout: {
-          subscriptionId: existing.razorpay_subscription_id,
-          planCode: existingPlanCode,
-          planLabel: existingPlanConfig.label,
-          amountInr: existingPlanConfig.amountInr
-        },
-        subscription: toUserBillingSummary(existing)
-      };
+      if (existingPlanCode === input.planCode) {
+        const existingPlanConfig = getPlanConfig(existingPlanCode);
+        return {
+          keyId,
+          alreadyExists: true,
+          checkout: {
+            subscriptionId: existing.razorpay_subscription_id,
+            planCode: existingPlanCode,
+            planLabel: existingPlanConfig.label,
+            amountInr: existingPlanConfig.amountInr
+          },
+          subscription: toUserBillingSummary(existing)
+        };
+      }
+
+      let replacementReason = `replaced_open_subscription:${existing.razorpay_subscription_id}:${existingPlanCode}->${input.planCode}`;
+      try {
+        await client.subscriptions.cancel(existing.razorpay_subscription_id, false);
+      } catch (cancelError) {
+        const message = toRazorpayErrorMessage(cancelError);
+        if (message) {
+          replacementReason = `${replacementReason}:cancel_error:${message.slice(0, 120)}`;
+        }
+      }
+      await archiveStaleOpenSubscription(input.userId, replacementReason);
+    } else {
+      await archiveStaleOpenSubscription(
+        input.userId,
+        `gateway_subscription_missing:${existing.razorpay_subscription_id}`
+      );
     }
-    await archiveStaleOpenSubscription(
-      input.userId,
-      `gateway_subscription_missing:${existing.razorpay_subscription_id}`
-    );
   }
 
   if (existing && isActiveSubscriptionStatus(existing.status)) {
