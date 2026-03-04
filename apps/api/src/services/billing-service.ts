@@ -81,7 +81,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
 };
 
 const OPEN_SUBSCRIPTION_STATUSES = new Set(["pending", "created", "authenticated"]);
-const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "authenticated"]);
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active"]);
 const TERMINAL_SUBSCRIPTION_STATUSES = new Set(["cancelled", "completed", "expired"]);
 const ADDON_CREDIT_BLOCK_SIZE = 1000;
 
@@ -336,6 +336,11 @@ function inferStatusFromEvent(event: string): string | null {
   return null;
 }
 
+function isPreActivationStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === "created" || normalized === "authenticated" || normalized === "pending";
+}
+
 function toSummary(row: RawSubscriptionRow): BillingSubscriptionSummary {
   return {
     id: row.id,
@@ -377,7 +382,9 @@ function toUserBillingSummary(row: RawSubscriptionRow): UserBillingSummary {
 }
 
 async function syncUserPlan(userId: string, planCode: string, status: string): Promise<void> {
-  if (ACTIVE_SUBSCRIPTION_STATUSES.has(status)) {
+  const normalized = status.trim().toLowerCase();
+
+  if (ACTIVE_SUBSCRIPTION_STATUSES.has(normalized)) {
     await pool.query(
       `UPDATE users
        SET subscription_plan = $1
@@ -387,7 +394,12 @@ async function syncUserPlan(userId: string, planCode: string, status: string): P
     return;
   }
 
-  if (TERMINAL_SUBSCRIPTION_STATUSES.has(status)) {
+  if (
+    TERMINAL_SUBSCRIPTION_STATUSES.has(normalized) ||
+    normalized === "payment_failed" ||
+    normalized === "halted" ||
+    normalized === "paused"
+  ) {
     await pool.query(
       `UPDATE users
        SET subscription_plan = 'trial'
@@ -704,15 +716,6 @@ export async function createUserSubscription(
   );
 
   await syncUserPlan(input.userId, input.planCode, created.status ?? "created");
-  await syncWorkspaceSubscriptionFromBillingEvent({
-    userId: input.userId,
-    billingPlanCode: input.planCode,
-    billingStatus: created.status ?? "created",
-    paymentGatewayId: created.id,
-    nextBillingDate: toIsoTimestampFromUnix(created.charge_at),
-    source: "create_subscription"
-  });
-
   const summary = toUserBillingSummary(upsertResult.rows[0]);
 
   return {
@@ -894,6 +897,7 @@ async function upsertSubscriptionFromWebhook(
     return;
   }
 
+  const previousStatus = existing?.status?.trim().toLowerCase() ?? null;
   const existingPlanCode = normalizePlanCode(existing?.plan_code);
   const notePlanCode = normalizePlanCode(subscription.notes?.planCode);
   const resolvedPlanCode =
@@ -962,15 +966,20 @@ async function upsertSubscriptionFromWebhook(
     ]
   );
 
-  await syncUserPlan(userId, resolvedPlanCode, status);
-  await syncWorkspaceSubscriptionFromBillingEvent({
-    userId,
-    billingPlanCode: resolvedPlanCode,
-    billingStatus: status,
-    paymentGatewayId: subscription.id,
-    nextBillingDate: nextChargeAt,
-    source: "webhook_subscription"
-  });
+  const shouldApplyPlanSync = !(previousStatus && isPreActivationStatus(previousStatus) && status !== "active");
+  if (shouldApplyPlanSync) {
+    await syncUserPlan(userId, resolvedPlanCode, status);
+    if (!isPreActivationStatus(status)) {
+      await syncWorkspaceSubscriptionFromBillingEvent({
+        userId,
+        billingPlanCode: resolvedPlanCode,
+        billingStatus: status,
+        paymentGatewayId: subscription.id,
+        nextBillingDate: nextChargeAt,
+        source: "webhook_subscription"
+      });
+    }
+  }
 }
 
 async function upsertPaymentFromWebhook(
@@ -1056,6 +1065,7 @@ async function upsertPaymentFromWebhook(
   );
 
   if (status === "failed" && subscriptionId) {
+    const existingBeforeFailure = await fetchSubscriptionRowByRazorpayId(subscriptionId);
     await pool.query(
       `UPDATE user_subscriptions
        SET status = 'payment_failed',
@@ -1065,10 +1075,27 @@ async function upsertPaymentFromWebhook(
     );
 
     const existing = await fetchSubscriptionRowByRazorpayId(subscriptionId);
-    if (existing?.user_id) {
+    const wasActiveBeforeFailure = Boolean(
+      existingBeforeFailure?.status && ACTIVE_SUBSCRIPTION_STATUSES.has(existingBeforeFailure.status.trim().toLowerCase())
+    );
+    let linkedWorkspaceGateway = false;
+    if (!wasActiveBeforeFailure && existing?.user_id) {
+      const gatewayMatchResult = await pool.query<{ id: string }>(
+        `SELECT s.id
+         FROM subscriptions s
+         JOIN workspaces w ON w.id = s.workspace_id
+         WHERE w.owner_id = $1
+           AND s.payment_gateway_id = $2
+         LIMIT 1`,
+        [existing.user_id, subscriptionId]
+      );
+      linkedWorkspaceGateway = Boolean(gatewayMatchResult.rows[0]?.id);
+    }
+
+    if (existing?.user_id && (wasActiveBeforeFailure || linkedWorkspaceGateway)) {
       await syncWorkspaceSubscriptionFromBillingEvent({
         userId: existing.user_id,
-        billingPlanCode: normalizePlanCode(existing.plan_code) ?? "starter",
+        billingPlanCode: normalizePlanCode(existingBeforeFailure?.plan_code ?? existing.plan_code) ?? "starter",
         billingStatus: "payment_failed",
         paymentGatewayId: subscriptionId,
         source: "webhook_payment_failed"
@@ -1085,8 +1112,9 @@ async function upsertPaymentFromWebhook(
     });
   }
 
-  if (status === "captured" && payment.order_id && isAddonPurchasePayment(payment)) {
-    await markRechargeOrderPaidFromWebhook({
+  let rechargeOrderMatched = false;
+  if (status === "captured" && payment.order_id) {
+    const rechargeResult = await markRechargeOrderPaidFromWebhook({
       razorpayOrderId: payment.order_id,
       razorpayPaymentId: payment.id,
       paidAt: toIsoTimestampFromUnix(payment.created_at),
@@ -1095,9 +1123,32 @@ async function upsertPaymentFromWebhook(
       currency: payment.currency ?? "INR",
       rawPayload: payment as unknown as Record<string, unknown>
     });
+    rechargeOrderMatched = Boolean(rechargeResult.workspaceId);
   }
 
-  if (status === "captured" && subscriptionId && userId && !isAddonPurchasePayment(payment)) {
+  if (status === "captured" && subscriptionId && userId && !rechargeOrderMatched) {
+    await pool.query(
+      `UPDATE user_subscriptions
+       SET status = 'active',
+           updated_at = NOW()
+       WHERE razorpay_subscription_id = $1`,
+      [subscriptionId]
+    );
+
+    const existing = await fetchSubscriptionRowByRazorpayId(subscriptionId);
+    if (existing?.user_id) {
+      const planCode = normalizePlanCode(existing.plan_code) ?? "starter";
+      await syncUserPlan(existing.user_id, planCode, "active");
+      await syncWorkspaceSubscriptionFromBillingEvent({
+        userId: existing.user_id,
+        billingPlanCode: planCode,
+        billingStatus: "active",
+        paymentGatewayId: subscriptionId,
+        nextBillingDate: existing.next_charge_at ?? existing.current_end_at,
+        source: "webhook_payment_captured"
+      });
+    }
+
     await issueSubscriptionInvoiceFromPayment({
       userId,
       razorpayPaymentId: payment.id,

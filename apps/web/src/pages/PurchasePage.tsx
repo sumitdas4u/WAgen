@@ -24,9 +24,9 @@ declare global {
 
 const PLAN_ORDER: BillingPlan["code"][] = ["starter", "pro", "business"];
 const PLAN_PITCHES: Record<BillingPlan["code"], string> = {
-  starter: "300 conversations/month - ₹799.",
-  pro: "600 conversations/month - ₹1,499.",
-  business: "1,200 conversations/month - ₹2,999."
+  starter: "300 conversations/month - \u20b9799.",
+  pro: "600 conversations/month - \u20b91,499.",
+  business: "1,200 conversations/month - \u20b92,999."
 };
 const PLAN_FEATURES: Record<BillingPlan["code"], string[]> = {
   starter: ["1 WhatsApp Number", "Basic AI training", "24/7 auto-replies", "Email support"],
@@ -175,7 +175,7 @@ export function PurchasePage() {
                 if (latest.subscription) {
                   setSubscription(latest.subscription);
                   const status = (latest.subscription.status || "").toLowerCase();
-                  if (status === "active" || status === "authenticated") {
+                  if (status === "active") {
                     setInfo("Subscription activated successfully.");
                     return;
                   }
@@ -205,6 +205,9 @@ export function PurchasePage() {
       razorpay.on("payment.failed", (eventPayload) => {
         const payload = eventPayload as { error?: { description?: string } };
         setError(payload.error?.description || "Payment failed. Please try again.");
+        void refreshBilling().catch(() => {
+          // Best-effort refresh after failed checkout.
+        });
       });
       razorpay.open();
       setInfo("Checkout opened. Approve UPI AutoPay mandate to activate recurring billing.");

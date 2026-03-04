@@ -76,6 +76,10 @@ async function loadRazorpayScript(): Promise<boolean> {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBillingCenterProps) {
   const navigate = useNavigate();
   const [subTab, setSubTab] = useState<BillingSubTab>("usage");
@@ -218,6 +222,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
     setInfo(null);
     try {
       const orderResponse = await createWorkspaceBillingRechargeOrder(token, { credits: rechargeBreakdown.credits });
+      const baselineRemaining = overview?.credits.remaining ?? 0;
       const loaded = await loadRazorpayScript();
       if (!loaded || !window.Razorpay) {
         throw new Error("Unable to load Razorpay checkout");
@@ -230,15 +235,44 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
         description: `${orderResponse.order.credits} conversation credits recharge`,
         order_id: orderResponse.order.razorpayOrderId,
         handler: () => {
-          setInfo("Payment captured. Refreshing billing data...");
-          void loadAll();
-          void onCreditsRefresh?.();
+          setInfo("Payment captured. Waiting for recharge confirmation...");
+          void (async () => {
+            for (let attempt = 0; attempt < 12; attempt += 1) {
+              try {
+                const [latestOverview, latestRechargeFeed] = await Promise.all([
+                  fetchWorkspaceBillingOverview(token),
+                  fetchWorkspaceBillingTransactions(token, { type: "recharge_order", limit: 10 })
+                ]);
+                const rechargeSettled = latestRechargeFeed.items.some(
+                  (item) =>
+                    item.referenceId === orderResponse.order.razorpayOrderId &&
+                    (item.status ?? "").trim().toLowerCase() === "paid"
+                );
+                const balanceIncreased = latestOverview.overview.credits.remaining > baselineRemaining;
+                if (rechargeSettled || balanceIncreased) {
+                  await loadAll();
+                  await onCreditsRefresh?.();
+                  setInfo("Recharge successful. Credits updated.");
+                  return;
+                }
+              } catch {
+                // Keep polling for webhook completion.
+              }
+              await sleep(2500);
+            }
+            await loadAll();
+            await onCreditsRefresh?.();
+            setInfo("Payment captured. Credits will update once webhook processing finishes.");
+          })();
         },
         theme: { color: "#111827" }
       });
       razorpay.on("payment.failed", (eventPayload) => {
         const payload = eventPayload as { error?: { description?: string } };
         setError(payload.error?.description ?? "Payment failed");
+        void loadAll().catch(() => {
+          // Best-effort refresh after failed checkout.
+        });
       });
       razorpay.open();
     } catch (rechargeError) {

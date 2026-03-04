@@ -184,7 +184,7 @@ function buildLowCreditMessage(totalCredits: number, remainingCredits: number): 
 
 function mapBillingStatus(status: string): WorkspaceSubscriptionStatus {
   const normalized = status.trim().toLowerCase();
-  if (normalized === "active" || normalized === "authenticated") {
+  if (normalized === "active") {
     return "active";
   }
   if (normalized === "cancelled" || normalized === "completed" || normalized === "expired") {
