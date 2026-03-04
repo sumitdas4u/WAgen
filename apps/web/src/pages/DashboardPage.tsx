@@ -583,6 +583,7 @@ export function DashboardPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [connectionLoading, setConnectionLoading] = useState(true);
   const [testChatInput, setTestChatInput] = useState("");
   const [testChatSending, setTestChatSending] = useState(false);
   const [testWidgetStatus, setTestWidgetStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
@@ -1325,9 +1326,14 @@ export function DashboardPage() {
   }, [token]);
 
   useEffect(() => {
-    void loadData().catch((loadError) => {
-      setError((loadError as Error).message);
-    });
+    setConnectionLoading(true);
+    void loadData()
+      .catch((loadError) => {
+        setError((loadError as Error).message);
+      })
+      .finally(() => {
+        setConnectionLoading(false);
+      });
     void refreshKnowledge();
     void loadAgentProfiles().catch((loadError) => {
       setError((loadError as Error).message);
@@ -2616,22 +2622,26 @@ export function DashboardPage() {
   const qrChannelConnected = qrChannelStatus === "connected";
   const apiChannelConnected = metaBusinessStatus.connected;
   const isAnyChannelConnected = websiteChannelEnabled || qrChannelConnected || apiChannelConnected;
-  const connectionBadgeStatus = isAnyChannelConnected
-    ? "connected"
-    : qrChannelStatus === "waiting_scan" || qrChannelStatus === "connecting"
-      ? qrChannelStatus
-      : "not_connected";
-  const connectionBadgeLabel = qrChannelConnected
-    ? "QR connected"
-    : apiChannelConnected
-      ? "API connected"
-      : websiteChannelEnabled
-        ? "Web connected"
-        : qrChannelStatus === "waiting_scan"
-          ? "QR waiting scan"
-          : qrChannelStatus === "connecting"
-          ? "QR connecting"
-            : "disconnected";
+  const connectionBadgeStatus = connectionLoading
+    ? "checking"
+    : isAnyChannelConnected
+      ? "connected"
+      : qrChannelStatus === "waiting_scan" || qrChannelStatus === "connecting"
+        ? qrChannelStatus
+        : "not_connected";
+  const connectionBadgeLabel = connectionLoading
+    ? "Checking..."
+    : qrChannelConnected
+      ? "QR connected"
+      : apiChannelConnected
+        ? "API connected"
+        : websiteChannelEnabled
+          ? "Web connected"
+          : qrChannelStatus === "waiting_scan"
+            ? "QR waiting scan"
+            : qrChannelStatus === "connecting"
+              ? "QR connecting"
+              : "disconnected";
   const workspaceCreditsLabel = workspaceCredits
     ? `${workspaceCredits.remaining_credits} / ${workspaceCredits.total_credits}`
     : "-- / --";

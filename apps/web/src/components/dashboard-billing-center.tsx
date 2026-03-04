@@ -178,13 +178,12 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
         gatewayCustomerId: autoRes.settings.gatewayCustomerId ?? "",
         gatewayTokenId: autoRes.settings.gatewayTokenId ?? ""
       });
-      await loadTransactions(null, true);
     } catch (loadError) {
       setError((loadError as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [loadTransactions, token]);
+  }, [token]);
 
   useEffect(() => {
     void loadAll();
