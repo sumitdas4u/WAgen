@@ -297,6 +297,11 @@ function isRazorpayMissingIdError(error: unknown): boolean {
   return toRazorpayErrorMessage(error).toLowerCase().includes("id provided does not exist");
 }
 
+function isRazorpayNoBillingCycleError(error: unknown): boolean {
+  const message = toRazorpayErrorMessage(error).toLowerCase();
+  return message.includes("no billing cycle is going on");
+}
+
 function toNormalizedStatus(status: string | null | undefined): string {
   return (status ?? "").trim().toLowerCase();
 }
@@ -922,17 +927,19 @@ export async function cancelUserSubscription(
       cancelAtCycleEnd
     )) as RazorpaySubscriptionEntity;
   } catch (error) {
-    if (!isRazorpayMissingIdError(error)) {
+    const isMissingGatewaySubscription = isRazorpayMissingIdError(error);
+    const isNoBillingCycle = isRazorpayNoBillingCycleError(error);
+    if (!isMissingGatewaySubscription && !isNoBillingCycle) {
       throw error;
     }
 
-    const fallbackStatus = "cancelled";
+    const fallbackStatus = cancelAtCycleEnd && isActiveSubscriptionStatus(existing.status) ? "cancel_pending" : "cancelled";
     const nowIso = new Date().toISOString();
     await pool.query(
       `UPDATE user_subscriptions
        SET status = $1,
-           cancelled_at = COALESCE(cancelled_at, $2::timestamptz),
-           ended_at = COALESCE(ended_at, $2::timestamptz),
+           cancelled_at = CASE WHEN $5 THEN cancelled_at ELSE COALESCE(cancelled_at, $2::timestamptz) END,
+           ended_at = CASE WHEN $5 THEN ended_at ELSE COALESCE(ended_at, $2::timestamptz) END,
            metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $3::jsonb,
            updated_at = NOW()
        WHERE user_id = $4`,
@@ -940,11 +947,14 @@ export async function cancelUserSubscription(
         fallbackStatus,
         nowIso,
         JSON.stringify({
-          cancelFallbackReason: "gateway_subscription_missing",
+          cancelFallbackReason: isMissingGatewaySubscription
+            ? "gateway_subscription_missing"
+            : "gateway_no_active_billing_cycle",
           cancelFallbackAt: nowIso,
           originalGatewaySubscriptionId: existing.razorpay_subscription_id
         }),
-        userId
+        userId,
+        fallbackStatus === "cancel_pending"
       ]
     );
 
