@@ -1,3 +1,4 @@
+import "./observability/otel.js";
 import { buildApp } from "./app.js";
 import { env } from "./config/env.js";
 import { runMigrations } from "./scripts/migrate.js";

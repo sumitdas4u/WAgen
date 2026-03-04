@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { VisualEditsMessenger } from "orchids-visual-edits";
+import { WebVitalsReporter } from "../components/web-vitals-reporter";
 
 const shouldEnableVisualEdits =
   process.env.NEXT_PUBLIC_ENABLE_VISUAL_EDITS === "true";
@@ -59,6 +60,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <WebVitalsReporter />
         {shouldEnableVisualEdits ? <VisualEditsMessenger /> : null}
       </body>
     </html>

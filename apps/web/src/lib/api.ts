@@ -11,6 +11,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const hasJsonBody = rest.body !== undefined && rest.body !== null && !(rest.body instanceof FormData);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs ?? 60_000);
+  const requestId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now());
 
   let response: Response;
   try {
@@ -20,6 +21,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
+        "x-request-id": requestId,
         ...headers
       }
     });

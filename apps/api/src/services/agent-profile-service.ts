@@ -67,19 +67,15 @@ export function normalizeLinkedNumber(raw: string, channelType: AgentChannelType
 
 async function deactivateOtherProfiles(
   userId: string,
-  channelType: AgentChannelType,
-  linkedNumber: string,
   keepId?: string
 ): Promise<void> {
   await pool.query(
     `UPDATE agent_profiles
      SET is_active = FALSE
      WHERE user_id = $1
-       AND channel_type = $2
-       AND linked_number = $3
        AND is_active = TRUE
-       AND ($4::uuid IS NULL OR id <> $4::uuid)`,
-    [userId, channelType, linkedNumber, keepId ?? null]
+       AND ($2::uuid IS NULL OR id <> $2::uuid)`,
+    [userId, keepId ?? null]
   );
 }
 
@@ -100,7 +96,7 @@ export async function listAgentProfiles(userId: string): Promise<AgentProfileRec
             updated_at::text
      FROM agent_profiles
      WHERE user_id = $1
-     ORDER BY updated_at DESC`,
+     ORDER BY is_active DESC, updated_at DESC`,
     [userId]
   );
 
@@ -124,7 +120,7 @@ export async function createAgentProfile(
   const linkedNumber = normalizeLinkedNumber(payload.linkedNumber, payload.channelType);
   const isActive = payload.isActive ?? true;
   if (isActive) {
-    await deactivateOtherProfiles(userId, payload.channelType, linkedNumber);
+    await deactivateOtherProfiles(userId);
   }
 
   const result = await pool.query<AgentProfileRow>(
@@ -189,7 +185,7 @@ export async function updateAgentProfile(
   const linkedNumber = normalizeLinkedNumber(payload.linkedNumber, payload.channelType);
   const isActive = payload.isActive ?? true;
   if (isActive) {
-    await deactivateOtherProfiles(userId, payload.channelType, linkedNumber, profileId);
+    await deactivateOtherProfiles(userId, profileId);
   }
 
   const result = await pool.query<AgentProfileRow>(
@@ -255,15 +251,13 @@ export async function resolveAgentProfileForChannel(
   channelType: AgentChannelType,
   linkedNumber: string | null | undefined
 ): Promise<AgentProfileRecord | null> {
-  if (channelType !== "web" && !linkedNumber) {
-    return null;
-  }
-
-  let normalized: string;
+  let normalized: string | null = null;
   try {
-    normalized = normalizeLinkedNumber(linkedNumber ?? "web", channelType);
+    if (linkedNumber) {
+      normalized = normalizeLinkedNumber(linkedNumber, channelType);
+    }
   } catch {
-    return null;
+    normalized = null;
   }
 
   const result = await pool.query<AgentProfileRow>(
@@ -282,12 +276,15 @@ export async function resolveAgentProfileForChannel(
             updated_at::text
      FROM agent_profiles
      WHERE user_id = $1
-       AND channel_type = $2
-       AND linked_number = $3
        AND is_active = TRUE
-     ORDER BY updated_at DESC
+     ORDER BY CASE
+         WHEN channel_type = $2 AND linked_number = $3 THEN 0
+         WHEN channel_type = 'web' AND linked_number = 'web' THEN 1
+         ELSE 2
+       END,
+       updated_at DESC
      LIMIT 1`,
-    [userId, channelType, normalized]
+    [userId, channelType, normalized ?? ""]
   );
 
   if ((result.rowCount ?? 0) === 0) {

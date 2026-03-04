@@ -3,7 +3,10 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthProvider } from "./lib/auth-context";
+import { initWebVitalsReporting } from "./observability/web-vitals";
 import "./styles.css";
+
+initWebVitalsReporting();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

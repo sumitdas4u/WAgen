@@ -30,8 +30,8 @@ const BusinessSchema = z.object({
 
 const AgentPayloadSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  channelType: z.enum(["web", "qr", "api"]),
-  linkedNumber: z.string().trim().max(30).optional().default(""),
+  channelType: z.enum(["web", "qr", "api"]).optional().default("web"),
+  linkedNumber: z.string().trim().max(30).optional().default("web"),
   businessBasics: BusinessSchema,
   personality: z.enum(["friendly_warm", "professional", "hard_closer", "premium_consultant", "custom"]),
   customPrompt: z.string().optional(),
@@ -58,7 +58,7 @@ export async function agentRoutes(fastify: FastifyInstance): Promise<void> {
     { preHandler: [fastify.requireAuth] },
     async (request) => {
       const profiles = await listAgentProfiles(request.authUser.userId);
-      return { profiles };
+      return { profiles: profiles[0] ? [profiles[0]] : [] };
     }
   );
 
@@ -71,7 +71,19 @@ export async function agentRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Invalid agent profile payload" });
       }
 
-      const profile = await createAgentProfile(request.authUser.userId, parsed.data);
+      const payload = {
+        ...parsed.data,
+        channelType: "web" as const,
+        linkedNumber: "web",
+        isActive: true
+      };
+      const existingProfiles = await listAgentProfiles(request.authUser.userId);
+      const profile = existingProfiles[0]
+        ? await updateAgentProfile(request.authUser.userId, existingProfiles[0].id, payload)
+        : await createAgentProfile(request.authUser.userId, payload);
+      if (!profile) {
+        return reply.status(500).send({ error: "Failed to upsert agent profile" });
+      }
       return { ok: true, profile };
     }
   );
@@ -90,7 +102,13 @@ export async function agentRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Invalid agent profile payload" });
       }
 
-      const profile = await updateAgentProfile(request.authUser.userId, params.data.profileId, parsed.data);
+      const payload = {
+        ...parsed.data,
+        channelType: "web" as const,
+        linkedNumber: "web",
+        isActive: true
+      };
+      const profile = await updateAgentProfile(request.authUser.userId, params.data.profileId, payload);
       if (!profile) {
         return reply.status(404).send({ error: "Agent profile not found" });
       }

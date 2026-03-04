@@ -50,6 +50,9 @@ import {
   type WorkspaceCreditsResponse
 } from "../lib/api";
 import { useRealtime } from "../lib/use-realtime";
+import { AgentsTab } from "./dashboard/tabs/agents-tab";
+import { LeadsTab } from "./dashboard/tabs/leads-tab";
+import { SettingsTab } from "./dashboard/tabs/settings-tab";
 
 const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
 type PersonalityKey = "friendly_warm" | "professional" | "hard_closer" | "premium_consultant" | "custom";
@@ -3564,661 +3567,102 @@ export function DashboardPage() {
           </div>
         </section>
       )}
-      {activeTab === "settings" && (
-        <section className="clone-settings-view go-live-settings">
-          <div className="clone-settings-top go-live-top">
-            <h2>Go live</h2>
-          </div>
-
-          <div className="go-live-grid">
-            <article className="go-live-card">
-              <div className="go-live-card-body">
-                <div className="go-live-card-head">
-                  <span className="go-live-icon">
-                    <NavIcon name="knowledge" />
-                  </span>
-                  <button
-                    type="button"
-                    className={websiteChannelEnabled ? "go-live-switch on" : "go-live-switch"}
-                    disabled={busy}
-                    onClick={handlePauseAgent}
-                    aria-label={websiteChannelEnabled ? "Deactivate website channel" : "Activate website channel"}
-                    title={websiteChannelEnabled ? "Deactivate website channel" : "Activate website channel"}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <h3>Connect to Website</h3>
-                <p>Customize your chatbot appearance, get integration code and go live.</p>
-              </div>
-              <footer className="go-live-card-footer">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => {
-                    setSettingsSubmenu("setup_web");
-                    setWidgetSnippetCopied("idle");
-                  }}
-                >
-                  Setup
-                </button>
-              </footer>
-            </article>
-
-            <article className="go-live-card">
-              <div className="go-live-card-body">
-                <div className="go-live-card-head">
-                  <span className="go-live-icon">
-                    <NavIcon name="chats" />
-                  </span>
-                  <button
-                    type="button"
-                    className={qrChannelConnected ? "go-live-switch on" : "go-live-switch"}
-                    disabled={busy}
-                    onClick={() => void handleToggleQrChannel()}
-                    aria-label={qrChannelConnected ? "Deactivate QR channel" : "Activate QR channel"}
-                    title={qrChannelConnected ? "Deactivate QR channel" : "Activate QR channel"}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <h3>Connect to WhatsApp</h3>
-                <p>Configure your chatbot settings, get login QR code and go live.</p>
-              </div>
-              <footer className="go-live-card-footer">
-                <button type="button" className="ghost-btn" onClick={() => navigate("/onboarding/qr")}>
-                  Setup
-                </button>
-              </footer>
-            </article>
-
-            <article className="go-live-card">
-              <div className="go-live-card-body">
-                <div className="go-live-card-head">
-                  <span className="go-live-icon">
-                    <NavIcon name="settings" />
-                  </span>
-                  <button
-                    type="button"
-                    className={apiChannelConnected ? "go-live-switch on" : "go-live-switch"}
-                    disabled={busy}
-                    onClick={() => void handleToggleApiChannel()}
-                    aria-label={apiChannelConnected ? "Deactivate API channel" : "Activate API channel"}
-                    title={apiChannelConnected ? "Deactivate API channel" : "Activate API channel"}
-                  >
-                    <span />
-                  </button>
-                </div>
-                <h3>Connect to WACA</h3>
-                <p>Configure your chatbot settings, login facebook and go live.</p>
-              </div>
-              <footer className="go-live-card-footer">
-                <button type="button" className="ghost-btn" onClick={() => setSettingsSubmenu("setup_api")}>
-                  Setup
-                </button>
-              </footer>
-            </article>
-          </div>
-
-          {settingsSubmenu === "setup_web" && (
-            <article className="channel-setup-panel">
-              <header>
-                <h3>Customize your website chatbot</h3>
-                <p>
-                  Website test chat and website widget use the same channel. Every new message appears in inbox in real time.
-                </p>
-              </header>
-              <div className="web-widget-setup-layout">
-                <section className="web-widget-form-section">
-                  <div className="web-widget-row">
-                    <label>
-                      Chatbot logo
-                      <input
-                        value={widgetSetupDraft.chatbotLogoUrl}
-                        onChange={(event) =>
-                          setWidgetSetupDraft((current) => ({ ...current, chatbotLogoUrl: event.target.value }))
-                        }
-                        placeholder="Enter URL for chatbot icon"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="web-widget-row">
-                    <p className="web-widget-label">Chatbot size</p>
-                    <div className="web-widget-radio-row">
-                      {(
-                        [
-                          { key: "small", label: "Small" },
-                          { key: "medium", label: "Medium" },
-                          { key: "large", label: "Large" }
-                        ] as const
-                      ).map((item) => (
-                        <label key={item.key}>
-                          <input
-                            type="radio"
-                            checked={widgetSetupDraft.chatbotSize === item.key}
-                            onChange={() =>
-                              setWidgetSetupDraft((current) => ({ ...current, chatbotSize: item.key }))
-                            }
-                          />
-                          {item.label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="web-widget-row">
-                    <p className="web-widget-label">Device visibility</p>
-                    <div className="web-widget-radio-row">
-                      {(
-                        [
-                          { key: "both", label: "Both" },
-                          { key: "phone", label: "Phone" },
-                          { key: "desktop", label: "Desktop" }
-                        ] as const
-                      ).map((item) => (
-                        <label key={item.key}>
-                          <input
-                            type="radio"
-                            checked={widgetSetupDraft.deviceVisibility === item.key}
-                            onChange={() =>
-                              setWidgetSetupDraft((current) => ({ ...current, deviceVisibility: item.key }))
-                            }
-                          />
-                          {item.label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="web-widget-row">
-                    <p className="web-widget-label">Initial questions (up to 3)</p>
-                    <div className="web-widget-question-list">
-                      {[0, 1, 2].map((idx) => (
-                        <div key={idx} className="web-widget-question-item">
-                          <input
-                            value={widgetSetupDraft.initialQuestions[idx as 0 | 1 | 2]}
-                            onChange={(event) => handleWidgetQuestionChange(idx as 0 | 1 | 2, event.target.value)}
-                            placeholder="Enter question"
-                          />
-                          <button
-                            type="button"
-                            className="link-btn"
-                            onClick={() => handleWidgetQuestionChange(idx as 0 | 1 | 2, "")}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="web-widget-row">
-                    <label className="web-widget-toggle-row">
-                      <span className="web-widget-label">Initial greetings</span>
-                      <button
-                        type="button"
-                        className={widgetSetupDraft.initialGreetingEnabled ? "go-live-switch on" : "go-live-switch"}
-                        onClick={() =>
-                          setWidgetSetupDraft((current) => ({
-                            ...current,
-                            initialGreetingEnabled: !current.initialGreetingEnabled
-                          }))
-                      }
-                      >
-                        <span />
-                      </button>
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={widgetSetupDraft.initialGreeting}
-                      onChange={(event) =>
-                        setWidgetSetupDraft((current) => ({ ...current, initialGreeting: event.target.value }))
-                      }
-                      placeholder="Enter greeting"
-                    />
-                  </div>
-
-                  <div className="web-widget-row">
-                    <label>
-                      Disclaimer
-                      <textarea
-                        rows={2}
-                        value={widgetSetupDraft.disclaimer}
-                        onChange={(event) =>
-                          setWidgetSetupDraft((current) => ({ ...current, disclaimer: event.target.value }))
-                        }
-                        placeholder="Enter fallback disclaimer"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="web-widget-row">
-                    <label>
-                      Background colour
-                      <div className="web-widget-color-row">
-                        <input
-                          type="color"
-                          value={widgetThemeColor}
-                          onChange={(event) =>
-                            setWidgetSetupDraft((current) => ({ ...current, backgroundColor: event.target.value }))
-                          }
-                        />
-                        <input
-                          value={widgetSetupDraft.backgroundColor}
-                          onChange={(event) =>
-                            setWidgetSetupDraft((current) => ({ ...current, backgroundColor: event.target.value }))
-                          }
-                        />
-                      </div>
-                    </label>
-                  </div>
-
-                  <div className="web-widget-row">
-                    <div className="web-widget-code-head">
-                      <p className="web-widget-label">Integration code</p>
-                      <button type="button" className="ghost-btn" onClick={() => void handleCopyWidgetSnippet()}>
-                        Copy
-                      </button>
-                    </div>
-                    <pre className="widget-inline-code">
-                      <code>{widgetScriptSnippet}</code>
-                    </pre>
-                    {widgetSnippetCopied === "copied" && <p className="tiny-note">Integration code copied.</p>}
-                    {widgetSnippetCopied === "error" && <p className="tiny-note">Copy failed. Copy from code block manually.</p>}
-                  </div>
-
-                  <div className="clone-hero-actions">
-                    <button type="button" className="primary-btn" onClick={handleSaveWidgetSetup}>
-                      Save
-                    </button>
-                  </div>
-                </section>
-
-                <aside className="web-widget-preview-section">
-                  <div className="web-widget-preview-top">
-                    <label>
-                      Preview Widget
-                      <select
-                        value={widgetSetupDraft.previewOpen ? "open" : "closed"}
-                        onChange={(event) =>
-                          setWidgetSetupDraft((current) => ({
-                            ...current,
-                            previewOpen: event.target.value === "open"
-                          }))
-                        }
-                      >
-                        <option value="open">Open</option>
-                        <option value="closed">Closed</option>
-                      </select>
-                    </label>
-                    <button type="button" className="ghost-btn" onClick={openTestChatOverlay}>
-                      Test
-                    </button>
-                  </div>
-
-                  <div className={`web-widget-preview-phone ${widgetPreviewSizeClass}`}>
-                    <header style={{ background: widgetThemeColor }}>
-                      <strong>{companyLabel}</strong>
-                    </header>
-                    {widgetSetupDraft.previewOpen && (
-                      <>
-                        <div ref={widgetPreviewScrollRef} className="web-widget-preview-thread">
-                          {widgetSetupDraft.initialGreetingEnabled && widgetSetupDraft.initialGreeting.trim() && (
-                            <p>{widgetSetupDraft.initialGreeting.trim()}</p>
-                          )}
-                          {widgetSetupDraft.disclaimer.trim() && (
-                            <small>{widgetSetupDraft.disclaimer.trim()}</small>
-                          )}
-                        </div>
-                        <footer>
-                          <input placeholder="Type here..." readOnly />
-                          <button type="button">Send</button>
-                        </footer>
-                      </>
-                    )}
-                  </div>
-                  <button type="button" className="web-widget-preview-fab" style={{ background: widgetThemeColor }}>
-                    W
-                  </button>
-                </aside>
-              </div>
-            </article>
-          )}
-
-          {settingsSubmenu === "setup_qr" && (
-            <article className="channel-setup-panel">
-              <header>
-                <h3>Instant QR Mode Setup</h3>
-                <p>Connect WhatsApp quickly for starter usage. Best for testing and small-scale automation.</p>
-              </header>
-              <div className="clone-channel-meta">
-                <div>
-                  <h3>Status</h3>
-                  <p>{overview?.whatsapp.status ?? "disconnected"}</p>
-                </div>
-                <div>
-                  <h3>Linked Number</h3>
-                  <p>{overview?.whatsapp.phoneNumber ? formatPhone(overview.whatsapp.phoneNumber) : "Not linked"}</p>
-                </div>
-                <div>
-                  <h3>Session</h3>
-                  <p>{overview?.whatsapp.hasQr ? "QR generated" : "Not generated"}</p>
-                </div>
-              </div>
-              <div className="clone-hero-actions">
-                <button type="button" className="primary-btn" onClick={() => navigate("/onboarding/qr")}>
-                  Setup QR
-                </button>
-                <button type="button" className="ghost-btn" disabled={busy} onClick={() => void handleReconnectWhatsApp()}>
-                  Reconnect
-                </button>
-              </div>
-              <p className="tiny-note">
-                QR mode is ideal for testing and early-stage businesses. For long-term growth, use Official API mode.
-              </p>
-            </article>
-          )}
-
-          {settingsSubmenu === "setup_api" && (
-            <article className="channel-setup-panel">
-              <header>
-                <h3>Official WhatsApp API Setup</h3>
-                <p>Connect Meta Embedded Signup for stable production messaging at scale, then configure business profile.</p>
-              </header>
-              <div className="api-setup-alert">
-                <strong>
-                  Facebook Business Verification -{" "}
-                  {formatMetaStatusLabel(apiBusinessVerificationStatus, "Pending")}
-                </strong>
-                <p>
-                  {apiBusinessVerificationPending
-                    ? "Please complete Meta business verification to unlock higher messaging limits and stable deliverability."
-                    : "Business verification is in a healthy state. Keep profile and compliance details updated in Meta."}
-                </p>
-              </div>
-              <div className="clone-channel-meta">
-                <div>
-                  <h3>Status</h3>
-                  <p>{metaBusinessStatus.connection?.status ?? "disconnected"}</p>
-                </div>
-                <div>
-                  <h3>Linked Number</h3>
-                  <p>
-                    {metaBusinessStatus.connection?.linkedNumber
-                      ? formatPhone(metaBusinessStatus.connection.linkedNumber)
-                      : (metaBusinessStatus.connection?.displayPhoneNumber ?? "Not linked")}
-                  </p>
-                </div>
-                <div>
-                  <h3>WABA ID</h3>
-                  <p>{metaBusinessStatus.connection?.wabaId ?? "Not connected"}</p>
-                </div>
-              </div>
-              <div className="clone-channel-meta">
-                <div>
-                  <h3>Quality Rating</h3>
-                  <p>{formatMetaStatusLabel(apiQualityRating)}</p>
-                </div>
-                <div>
-                  <h3>Message Limit</h3>
-                  <p>{formatMetaStatusLabel(apiMessagingLimitTier)}</p>
-                </div>
-                <div>
-                  <h3>Code Verification</h3>
-                  <p>{formatMetaStatusLabel(apiCodeVerificationStatus)}</p>
-                </div>
-              </div>
-              <div className="clone-channel-meta">
-                <div>
-                  <h3>Name Status</h3>
-                  <p>{formatMetaStatusLabel(apiNameStatus)}</p>
-                </div>
-                <div>
-                  <h3>Account Review</h3>
-                  <p>{formatMetaStatusLabel(apiWabaReviewStatus)}</p>
-                </div>
-                <div>
-                  <h3>Last Meta Sync</h3>
-                  <p>{apiLastMetaSyncLabel ?? "Not synced"}</p>
-                </div>
-              </div>
-              <div className="api-profile-tabs">
-                {["Profile", "Compliance Info", "Assignments", "Configuration", "Channel Logs"].map((tab) => (
-                  <button key={tab} type="button" className={tab === "Profile" ? "active" : ""}>
-                    {tab}
-                  </button>
-                ))}
-              </div>
-
-              <form
-                className="api-profile-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleSaveWhatsAppBusinessProfile();
-                }}
-              >
-                <label>
-                  WhatsApp Display Picture URL
-                  <input
-                    value={whatsAppBusinessDraft.displayPictureUrl}
-                    onChange={(event) =>
-                      setWhatsAppBusinessDraft((current) => ({ ...current, displayPictureUrl: event.target.value }))
-                    }
-                    placeholder="https://..."
-                  />
-                </label>
-                <label>
-                  Address
-                  <textarea
-                    rows={2}
-                    maxLength={256}
-                    value={whatsAppBusinessDraft.address}
-                    onChange={(event) =>
-                      setWhatsAppBusinessDraft((current) => ({ ...current, address: event.target.value }))
-                    }
-                    placeholder="Enter address"
-                  />
-                </label>
-                <label>
-                  Business Description
-                  <textarea
-                    rows={3}
-                    maxLength={256}
-                    value={whatsAppBusinessDraft.businessDescription}
-                    onChange={(event) =>
-                      setWhatsAppBusinessDraft((current) => ({ ...current, businessDescription: event.target.value }))
-                    }
-                    placeholder="Message not available now, leave a message"
-                  />
-                </label>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    maxLength={128}
-                    value={whatsAppBusinessDraft.email}
-                    onChange={(event) =>
-                      setWhatsAppBusinessDraft((current) => ({ ...current, email: event.target.value }))
-                    }
-                    placeholder="Enter email"
-                  />
-                </label>
-                <label>
-                  Vertical
-                  <select
-                    value={whatsAppBusinessDraft.vertical}
-                    onChange={(event) =>
-                      setWhatsAppBusinessDraft((current) => ({ ...current, vertical: event.target.value }))
-                    }
-                  >
-                    <option value="Restaurant">Restaurant</option>
-                    <option value="Retail">Retail</option>
-                    <option value="Education">Education</option>
-                    <option value="Healthcare">Healthcare</option>
-                    <option value="Services">Services</option>
-                  </select>
-                </label>
-                <label>
-                  Website URL
-                  <input
-                    value={whatsAppBusinessDraft.websiteUrl}
-                    onChange={(event) =>
-                      setWhatsAppBusinessDraft((current) => ({ ...current, websiteUrl: event.target.value }))
-                    }
-                    placeholder="https://your-website.com"
-                  />
-                </label>
-                <label>
-                  About
-                  <input
-                    maxLength={139}
-                    value={whatsAppBusinessDraft.about}
-                    onChange={(event) =>
-                      setWhatsAppBusinessDraft((current) => ({ ...current, about: event.target.value }))
-                    }
-                    placeholder="Official WhatsApp Business Account"
-                  />
-                </label>
-
-                <div className="clone-hero-actions">
-                  <button type="submit" className="primary-btn">
-                    Apply
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-btn"
-                    onClick={() => setWhatsAppBusinessDraft(DEFAULT_WHATSAPP_BUSINESS_PROFILE_DRAFT)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-              <div className="clone-hero-actions">
-                <button type="button" className="primary-btn" disabled={busy} onClick={() => void handleOpenBusinessApiSetup()}>
-                  {metaBusinessStatus.connection ? "Reconnect API" : "Connect API"}
-                </button>
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  disabled={busy || !metaBusinessStatus.connection}
-                  onClick={() => void handleRefreshMetaApiStatus()}
-                >
-                  Refresh status
-                </button>
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  disabled={busy || !metaBusinessStatus.connection}
-                  onClick={() => void handleToggleApiChannel()}
-                >
-                  Disconnect
-                </button>
-              </div>
-              <p className="tiny-note">
-                Official API channel is recommended for long-term growth and higher reliability.
-              </p>
-            </article>
-          )}
-
-          <article className="channel-setup-panel account-danger-panel">
-            <header>
-              <h3>Account Settings</h3>
-              <p>
-                Delete your account permanently. This revokes connected WhatsApp tokens, removes webhook subscriptions,
-                and deletes associated business data from active systems.
-              </p>
-            </header>
-            <div className="web-widget-row">
-              <label>
-                Type <strong>DELETE</strong> to confirm
-                <input
-                  value={deleteAccountConfirmText}
-                  onChange={(event) => setDeleteAccountConfirmText(event.target.value)}
-                  placeholder="DELETE"
-                />
-              </label>
-            </div>
-            <div className="clone-hero-actions">
-              <button
-                type="button"
-                className="account-danger-btn"
-                disabled={busy || deletingAccount || deleteAccountConfirmText.trim() !== "DELETE"}
-                onClick={() => void handleDeleteAccount()}
-              >
-                {deletingAccount ? "Deleting..." : "Delete Account"}
-              </button>
-            </div>
-            <p className="tiny-note">This action is irreversible.</p>
-          </article>
-        </section>
+            {activeTab === "settings" && (
+        <SettingsTab
+          websiteChannelEnabled={websiteChannelEnabled}
+          qrChannelConnected={qrChannelConnected}
+          apiChannelConnected={apiChannelConnected}
+          busy={busy}
+          settingsSubmenu={settingsSubmenu}
+          widgetSetupDraft={widgetSetupDraft}
+          widgetThemeColor={widgetThemeColor}
+          widgetScriptSnippet={widgetScriptSnippet}
+          widgetSnippetCopied={widgetSnippetCopied}
+          widgetPreviewSizeClass={widgetPreviewSizeClass}
+          companyLabel={companyLabel}
+          widgetPreviewScrollRef={widgetPreviewScrollRef}
+          qrStatus={overview?.whatsapp.status ?? "disconnected"}
+          qrPhoneNumber={overview?.whatsapp.phoneNumber ?? null}
+          qrHasQr={Boolean(overview?.whatsapp.hasQr)}
+          formatPhone={formatPhone}
+          formatMetaStatusLabel={formatMetaStatusLabel}
+          apiBusinessVerificationStatus={apiBusinessVerificationStatus}
+          apiBusinessVerificationPending={apiBusinessVerificationPending}
+          apiConnectionStatus={metaBusinessStatus.connection?.status ?? "disconnected"}
+          apiLinkedNumber={metaBusinessStatus.connection?.linkedNumber ?? null}
+          apiDisplayPhoneNumber={metaBusinessStatus.connection?.displayPhoneNumber ?? null}
+          apiWabaId={metaBusinessStatus.connection?.wabaId ?? null}
+          apiQualityRating={apiQualityRating}
+          apiMessagingLimitTier={apiMessagingLimitTier}
+          apiCodeVerificationStatus={apiCodeVerificationStatus}
+          apiNameStatus={apiNameStatus}
+          apiWabaReviewStatus={apiWabaReviewStatus}
+          apiLastMetaSyncLabel={apiLastMetaSyncLabel}
+          hasMetaConnection={Boolean(metaBusinessStatus.connection)}
+          whatsAppBusinessDraft={whatsAppBusinessDraft}
+          deleteAccountConfirmText={deleteAccountConfirmText}
+          deletingAccount={deletingAccount}
+          onPauseAgent={handlePauseAgent}
+          onToggleQrChannel={() => {
+            void handleToggleQrChannel();
+          }}
+          onToggleApiChannel={() => {
+            void handleToggleApiChannel();
+          }}
+          onSelectSetupWeb={() => {
+            setSettingsSubmenu("setup_web");
+            setWidgetSnippetCopied("idle");
+          }}
+          onSelectSetupApi={() => {
+            setSettingsSubmenu("setup_api");
+          }}
+          onNavigateToQrSetup={() => {
+            navigate("/onboarding/qr");
+          }}
+          onUpdateWidgetSetupDraft={setWidgetSetupDraft}
+          onWidgetQuestionChange={handleWidgetQuestionChange}
+          onCopyWidgetSnippet={() => {
+            void handleCopyWidgetSnippet();
+          }}
+          onSaveWidgetSetup={handleSaveWidgetSetup}
+          onOpenTestChatOverlay={openTestChatOverlay}
+          onReconnectWhatsApp={() => {
+            void handleReconnectWhatsApp();
+          }}
+          onSaveWhatsAppBusinessProfile={handleSaveWhatsAppBusinessProfile}
+          onUpdateWhatsAppBusinessDraft={setWhatsAppBusinessDraft}
+          onResetWhatsAppBusinessDraft={() => {
+            setWhatsAppBusinessDraft(DEFAULT_WHATSAPP_BUSINESS_PROFILE_DRAFT);
+          }}
+          onOpenBusinessApiSetup={() => {
+            void handleOpenBusinessApiSetup();
+          }}
+          onRefreshMetaApiStatus={() => {
+            void handleRefreshMetaApiStatus();
+          }}
+          onDeleteAccountConfirmTextChange={setDeleteAccountConfirmText}
+          onDeleteAccount={() => {
+            void handleDeleteAccount();
+          }}
+          renderNavIcon={(name) => <NavIcon name={name} />}
+        />
       )}
-
       {activeTab === "bot_agents" && renderStudioLayout(
-        <section className="clone-settings-view agent-manager-shell">
-          <div className="agent-manager-head">
-            <div className="agent-manager-title">
-              <h3>Agent Workflow</h3>
-              <p>One shared AI workflow runs across Web chat, WhatsApp QR, and WhatsApp API channels.</p>
-            </div>
-            <span className={selectedAgentProfile?.isActive ? "agent-status-pill live" : "agent-status-pill disabled"}>
-              {selectedAgentProfile?.isActive ? "LIVE" : "NOT CONFIGURED"}
-            </span>
-          </div>
-
-          <form
-            className="stack-form clone-settings-form agent-workflow-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              handleCreateOrUpdateAgentProfile();
-            }}
-          >
-            <h3>{selectedAgentProfile ? "Update Workflow" : "Create Workflow"}</h3>
-            <div className="train-grid two-col simple-agent-grid">
-              <label>
-                Name of the AI agent
-                <input required value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-              </label>
-              <label>
-                Agent Nature
-                <select
-                  value={agentObjectiveType}
-                  onChange={(event) => setAgentObjectiveType(event.target.value as "lead" | "feedback" | "complaint" | "hybrid")}
-                >
-                  <option value="lead">Lead Capture Agent</option>
-                  <option value="feedback">Feedback Agent</option>
-                  <option value="complaint">Complaint Agent</option>
-                  <option value="hybrid">Hybrid Agent</option>
-                </select>
-              </label>
-              <label className="agent-task-field">
-                Define the task you want to achieve using this agent.
-                <textarea
-                  required
-                  value={agentTaskDescription}
-                  onChange={(event) => setAgentTaskDescription(event.target.value)}
-                  placeholder="Ex - Capture qualified leads and ask one clear next-step question. Or handle complaints and collect order ID before escalation."
-                />
-              </label>
-            </div>
-            <p className="tiny-note">
-              This single workflow is applied across all channels. No separate per-channel agent setup is required.
-            </p>
-            {selectedAgentProfile && (
-              <p className="tiny-note">
-                Last updated: {new Date(selectedAgentProfile.updatedAt).toLocaleString()}
-              </p>
-            )}
-            <div className="clone-hero-actions">
-              <button className="primary-btn" type="submit" disabled={busy}>
-                {selectedAgentProfile ? "Save Workflow" : "Create Workflow"}
-              </button>
-            </div>
-          </form>
-        </section>
+        <AgentsTab
+          busy={busy}
+          selectedAgentProfile={selectedAgentProfile}
+          agentName={agentName}
+          agentObjectiveType={agentObjectiveType}
+          agentTaskDescription={agentTaskDescription}
+          onAgentNameChange={setAgentName}
+          onAgentObjectiveTypeChange={setAgentObjectiveType}
+          onAgentTaskDescriptionChange={setAgentTaskDescription}
+          onSubmit={() => {
+            void handleCreateOrUpdateAgentProfile();
+          }}
+        />
       )}
-
-      {isTestChatOverlayOpen && (
+{isTestChatOverlayOpen && (
         <div className="test-chat-overlay-backdrop" onClick={closeTestChatOverlay}>
           <aside
             className="test-chat-overlay-panel"
@@ -4284,237 +3728,53 @@ export function DashboardPage() {
         </div>
       )}
 
-      {activeTab === "leads" && (
-        <section className="finance-shell">
-          <article className="finance-panel">
-            <div className="kb-toolbar">
-              <h2>All Leads</h2>
-              <div className="header-actions">
-                <button
-                  className="primary-btn"
-                  type="button"
-                  onClick={() => void handleSummarizeLeads()}
-                  disabled={summarizingLeads || leadsLoading}
-                >
-                  {summarizingLeads ? "Summarizing..." : "Summarize All"}
-                </button>
-                <button className="ghost-btn" type="button" onClick={() => void loadLeads()} disabled={leadsLoading}>
-                  {leadsLoading ? "Refreshing..." : "Refresh"}
-                </button>
-                <button className="ghost-btn" type="button" onClick={handleExportLeads}>
-                  Export Excel
-                </button>
-                <select value={leadStageFilter} onChange={(event) => setLeadStageFilter(event.target.value as "all" | "hot" | "warm" | "cold")}>
-                  <option value="all">All stages</option>
-                  <option value="hot">Hot</option>
-                  <option value="warm">Warm</option>
-                  <option value="cold">Cold</option>
-                </select>
-                <select value={leadKindFilter} onChange={(event) => setLeadKindFilter(event.target.value as LeadKindFilter)}>
-                  <option value="all">All types</option>
-                  <option value="lead">Lead</option>
-                  <option value="feedback">Feedback</option>
-                  <option value="complaint">Complaint</option>
-                  <option value="other">Other</option>
-                </select>
-                <select
-                  value={leadChannelFilter}
-                  onChange={(event) => setLeadChannelFilter(event.target.value as LeadChannelFilter)}
-                >
-                  <option value="all">All channels</option>
-                  <option value="web">Web</option>
-                  <option value="qr">WhatsApp QR</option>
-                  <option value="api">WhatsApp API</option>
-                </select>
-                <label className="lead-toggle-filter">
-                  <input
-                    type="checkbox"
-                    checked={leadTodayOnly}
-                    onChange={(event) => setLeadTodayOnly(event.target.checked)}
-                  />
-                  Today only
-                </label>
-                <label className="lead-toggle-filter">
-                  <input
-                    type="checkbox"
-                    checked={leadRequiresReplyOnly}
-                    onChange={(event) => setLeadRequiresReplyOnly(event.target.checked)}
-                  />
-                  Must reply
-                </label>
-              </div>
-            </div>
-            <div className="lead-highlight-grid">
-              <button
-                type="button"
-                className={leadQuickFilter === "today_hot" ? "lead-highlight-card active" : "lead-highlight-card"}
-                onClick={() => setLeadQuickFilter((current) => (current === "today_hot" ? "all" : "today_hot"))}
-              >
-                <strong>{leadHighlights.todayHot}</strong>
-                <span>Today's Hot Leads</span>
-              </button>
-              <button
-                type="button"
-                className={leadQuickFilter === "today_warm" ? "lead-highlight-card active" : "lead-highlight-card"}
-                onClick={() => setLeadQuickFilter((current) => (current === "today_warm" ? "all" : "today_warm"))}
-              >
-                <strong>{leadHighlights.todayWarm}</strong>
-                <span>Today's Warm Leads</span>
-              </button>
-              <button
-                type="button"
-                className={leadQuickFilter === "today_complaint" ? "lead-highlight-card active" : "lead-highlight-card"}
-                onClick={() => setLeadQuickFilter((current) => (current === "today_complaint" ? "all" : "today_complaint"))}
-              >
-                <strong>{leadHighlights.todayComplaints}</strong>
-                <span>Today's Complaints</span>
-              </button>
-              <button
-                type="button"
-                className={leadQuickFilter === "needs_reply" ? "lead-highlight-card active" : "lead-highlight-card"}
-                onClick={() => setLeadQuickFilter((current) => (current === "needs_reply" ? "all" : "needs_reply"))}
-              >
-                <strong>{leadHighlights.mustReply}</strong>
-                <span>Must Reply</span>
-              </button>
-            </div>
-            <div className="lead-quick-filter-row">
-              {LEAD_QUICK_FILTER_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={leadQuickFilter === option.value ? "active" : ""}
-                  onClick={() => setLeadQuickFilter(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            {leadsLoading && <p className="tiny-note">Refreshing leads...</p>}
-            {summarizingLeads && (
-              <p className="tiny-note">Generating summaries for all missing or outdated leads.</p>
-            )}
-            {leads.length === 0 ? (
-              <p className="empty-note">No leads found for the selected filter.</p>
-            ) : (
-              <div className="finance-table-wrap leads-table-wrap">
-                <table className="finance-table leads-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Phone</th>
-                      <th>Type</th>
-                      <th>Stage</th>
-                      <th>Score</th>
-                      <th>Channel</th>
-                      <th>Assigned Agent</th>
-                      <th>Reply</th>
-                      <th>AI Summary</th>
-                      <th>Last Message</th>
-                      <th>Last Activity</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leads.map((lead) => {
-                      const leadStageClass =
-                        lead.stage === "hot" || lead.stage === "warm" || lead.stage === "cold" ? lead.stage : "cold";
-                      const summaryText =
-                        lead.ai_summary ||
-                        (lead.summary_status === "missing"
-                          ? "No summary yet. Click Summarize All."
-                          : "Summary is outdated. Click Summarize All.");
-                      const lastMessageText = lead.last_message || "-";
-                      const summaryExpanded = Boolean(expandedLeadSummaries[lead.id]);
-                      const messageExpanded = Boolean(expandedLeadMessages[lead.id]);
-                      const showSummaryToggle = summaryText.length > 140;
-                      const showMessageToggle = lead.last_message ? lead.last_message.length > 90 : false;
-
-                      return (
-                        <tr key={lead.id}>
-                          <td className="lead-name">{lead.contact_name || "Unknown"}</td>
-                          <td className="lead-phone">{formatPhone(lead.contact_phone || lead.phone_number)}</td>
-                          <td>
-                            <span className={`lead-kind ${lead.lead_kind}`}>{getLeadKindLabel(lead.lead_kind)}</span>
-                          </td>
-                          <td>
-                            <span className={`lead-stage ${leadStageClass}`}>{lead.stage}</span>
-                          </td>
-                          <td className="lead-score">{lead.score}</td>
-                          <td>{getChannelLabel(lead.channel_type)}</td>
-                          <td>{lead.assigned_agent_name || "Auto"}</td>
-                          <td>
-                            <span className={lead.requires_reply ? "lead-reply-pill yes" : "lead-reply-pill no"}>
-                              {lead.requires_reply ? "You must reply" : "Normal"}
-                            </span>
-                          </td>
-                          <td className="lead-summary-cell">
-                            <span className={`summary-status ${lead.summary_status}`}>
-                              {getSummaryStatusLabel(lead.summary_status)}
-                            </span>
-                            <p
-                              className={summaryExpanded ? "lead-summary-text expanded" : "lead-summary-text"}
-                              title={summaryText}
-                            >
-                              {summaryText}
-                            </p>
-                            {showSummaryToggle && (
-                              <button
-                                type="button"
-                                className="lead-expand-btn"
-                                onClick={() => toggleLeadSummary(lead.id)}
-                              >
-                                {summaryExpanded ? "Less" : "More"}
-                              </button>
-                            )}
-                            <small className="lead-summary-time">
-                              Updated: {formatDateTime(lead.summary_updated_at)}
-                            </small>
-                          </td>
-                          <td className="lead-last-message">
-                            <p
-                              className={messageExpanded ? "lead-last-message-text expanded" : "lead-last-message-text"}
-                              title={lastMessageText}
-                            >
-                              {lastMessageText}
-                            </p>
-                            {showMessageToggle && (
-                              <button
-                                type="button"
-                                className="lead-expand-btn"
-                                onClick={() => toggleLeadMessage(lead.id)}
-                              >
-                                {messageExpanded ? "Less" : "More"}
-                              </button>
-                            )}
-                          </td>
-                          <td>{formatDateTime(lead.last_message_at)}</td>
-                          <td>
-                            <button
-                              className="ghost-btn"
-                              type="button"
-                              onClick={() => {
-                                setSelectedConversationId(lead.id);
-                                setActiveTab("conversations");
-                                if (isMobileViewport) {
-                                  setIsMobileConversationOpen(true);
-                                }
-                              }}
-                            >
-                              Open Chat
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </article>
-        </section>
-      )}
-      {activeTab === "conversations" && (
+            {activeTab === "leads" && (
+        <LeadsTab
+          summarizingLeads={summarizingLeads}
+          leadsLoading={leadsLoading}
+          leads={leads}
+          leadStageFilter={leadStageFilter}
+          leadKindFilter={leadKindFilter}
+          leadChannelFilter={leadChannelFilter}
+          leadTodayOnly={leadTodayOnly}
+          leadRequiresReplyOnly={leadRequiresReplyOnly}
+          leadQuickFilter={leadQuickFilter}
+          leadHighlights={leadHighlights}
+          quickFilterOptions={LEAD_QUICK_FILTER_OPTIONS}
+          expandedLeadSummaries={expandedLeadSummaries}
+          expandedLeadMessages={expandedLeadMessages}
+          formatPhone={formatPhone}
+          getLeadKindLabel={getLeadKindLabel}
+          getChannelLabel={getChannelLabel}
+          getSummaryStatusLabel={getSummaryStatusLabel}
+          formatDateTime={formatDateTime}
+          onSummarizeLeads={() => {
+            void handleSummarizeLeads();
+          }}
+          onRefreshLeads={() => {
+            void loadLeads();
+          }}
+          onExportLeads={handleExportLeads}
+          onLeadStageFilterChange={setLeadStageFilter}
+          onLeadKindFilterChange={setLeadKindFilter}
+          onLeadChannelFilterChange={setLeadChannelFilter}
+          onLeadTodayOnlyChange={setLeadTodayOnly}
+          onLeadRequiresReplyOnlyChange={setLeadRequiresReplyOnly}
+          onLeadQuickFilterToggle={(value) => {
+            setLeadQuickFilter((current) => (current === value ? "all" : value));
+          }}
+          onLeadQuickFilterSelect={setLeadQuickFilter}
+          onToggleLeadSummary={toggleLeadSummary}
+          onToggleLeadMessage={toggleLeadMessage}
+          onOpenLeadChat={(leadId) => {
+            setSelectedConversationId(leadId);
+            setActiveTab("conversations");
+            if (isMobileViewport) {
+              setIsMobileConversationOpen(true);
+            }
+          }}
+        />
+      )}{activeTab === "conversations" && (
         <section className="clone-chat-wrap">
           {!isAnyChannelConnected ? (
             <section className="clone-chat-setup">
@@ -4832,3 +4092,4 @@ export function DashboardPage() {
     </main>
   );
 }
+
