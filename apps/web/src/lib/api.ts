@@ -142,6 +142,13 @@ export interface BillingPlan {
   available: boolean;
 }
 
+export interface PlanEntitlements {
+  planCode: "trial" | "starter" | "pro" | "business";
+  maxApiNumbers: number;
+  maxAgentProfiles: number;
+  prioritySupport: boolean;
+}
+
 export interface BillingPaymentSummary {
   razorpayPaymentId: string;
   status: string;
@@ -199,6 +206,43 @@ export interface AdminSubscriptionSummary {
   lastPayment: BillingPaymentSummary | null;
 }
 
+export interface WorkspacePlanSummary {
+  id: string;
+  code: "starter" | "pro" | "business";
+  name: string;
+  priceMonthly: number;
+  monthlyCredits: number;
+  agentLimit: number;
+  whatsappNumberLimit: number;
+  status: "active" | "inactive";
+}
+
+export interface WorkspaceCreditsResponse {
+  total_credits: number;
+  used_credits: number;
+  remaining_credits: number;
+  low_credit: boolean;
+  low_credit_threshold_percent: number;
+  low_credit_message: string | null;
+}
+
+export interface AdminWorkspaceSummary {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceStatus: "active" | "suspended" | "deleted";
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string;
+  planCode: "starter" | "pro" | "business" | null;
+  planName: string | null;
+  subscriptionStatus: "active" | "trial" | "past_due" | "cancelled" | null;
+  nextBillingDate: string | null;
+  totalCredits: number;
+  usedCredits: number;
+  remainingCredits: number;
+  updatedAt: string | null;
+}
+
 export function fetchAdminOverview(token: string) {
   return apiRequest<{ overview: AdminOverview }>("/api/admin/overview", { token });
 }
@@ -246,6 +290,104 @@ export function fetchAdminSubscriptions(
   return apiRequest<{ subscriptions: AdminSubscriptionSummary[] }>(path, { token });
 }
 
+export function fetchAdminPlans(token: string, options?: { includeInactive?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.includeInactive) {
+    params.set("includeInactive", "true");
+  }
+  const query = params.toString();
+  const path = query ? `/api/admin/plans?${query}` : "/api/admin/plans";
+  return apiRequest<{ plans: WorkspacePlanSummary[] }>(path, { token });
+}
+
+export function createAdminPlan(
+  token: string,
+  payload: {
+    code: "starter" | "pro" | "business";
+    name: string;
+    priceMonthly: number;
+    monthlyCredits: number;
+    agentLimit: number;
+    whatsappNumberLimit: number;
+    status?: "active" | "inactive";
+  }
+) {
+  return apiRequest<{ plan: WorkspacePlanSummary }>("/api/admin/plans", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateAdminPlan(
+  token: string,
+  planId: string,
+  payload: Partial<{
+    name: string;
+    priceMonthly: number;
+    monthlyCredits: number;
+    agentLimit: number;
+    whatsappNumberLimit: number;
+    status: "active" | "inactive";
+  }>
+) {
+  return apiRequest<{ plan: WorkspacePlanSummary }>(`/api/admin/plans/${planId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchAdminWorkspaces(
+  token: string,
+  options?: { status?: "active" | "suspended" | "deleted"; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/admin/workspaces?${query}` : "/api/admin/workspaces";
+  return apiRequest<{ workspaces: AdminWorkspaceSummary[] }>(path, { token });
+}
+
+export function updateAdminWorkspaceStatus(
+  token: string,
+  workspaceId: string,
+  payload: { status: "active" | "suspended" | "deleted"; reason?: string }
+) {
+  return apiRequest<{ workspace: AdminWorkspaceSummary }>(`/api/admin/workspaces/${workspaceId}/status`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function adjustAdminWorkspaceCredits(
+  token: string,
+  payload: { workspaceId: string; deltaCredits: number; reason?: string }
+) {
+  return apiRequest<{ wallet: WorkspaceCreditsResponse }>("/api/admin/credits/adjust", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function resetAdminWorkspaceWallet(
+  token: string,
+  payload: { workspaceId: string; reason?: string }
+) {
+  return apiRequest<{ wallet: WorkspaceCreditsResponse }>("/api/admin/credits/reset", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
 export function fetchAdminModel(token: string) {
   return apiRequest<{
     currentModel: string;
@@ -267,6 +409,14 @@ export function fetchMe(token: string) {
   return apiRequest<{ user: User }>("/api/auth/me", { token });
 }
 
+export function deleteMyAccount(token: string, payload: { confirmText: string }) {
+  return apiRequest<{ ok: boolean }>("/api/auth/account/delete", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
 export function fetchBillingPlans(options?: { includeUnconfigured?: boolean }) {
   const params = new URLSearchParams();
   if (options?.includeUnconfigured) {
@@ -277,10 +427,31 @@ export function fetchBillingPlans(options?: { includeUnconfigured?: boolean }) {
   return apiRequest<{ keyIdAvailable: boolean; plans: BillingPlan[] }>(path);
 }
 
+export function fetchWorkspacePlans(options?: { includeInactive?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.includeInactive) {
+    params.set("includeInactive", "true");
+  }
+  const query = params.toString();
+  const path = query ? `/api/plans?${query}` : "/api/plans";
+  return apiRequest<{ plans: WorkspacePlanSummary[] }>(path);
+}
+
+export function fetchWorkspaceCredits(token: string) {
+  return apiRequest<WorkspaceCreditsResponse>("/api/workspace/credits", { token });
+}
+
 export function fetchMySubscription(token: string) {
   return apiRequest<{ subscription: BillingSubscriptionSummary | null }>("/api/billing/subscription", {
     token
   });
+}
+
+export function fetchMyPlanEntitlements(token: string) {
+  return apiRequest<{ entitlements: PlanEntitlements; subscription: BillingSubscriptionSummary | null }>(
+    "/api/billing/entitlements",
+    { token }
+  );
 }
 
 export function createBillingSubscription(
@@ -314,6 +485,321 @@ export function cancelBillingSubscription(token: string, payload?: { atCycleEnd?
     token,
     body: JSON.stringify(payload ?? {})
   });
+}
+
+export function upgradeWorkspacePlan(
+  token: string,
+  payload: {
+    planCode: BillingPlan["code"];
+    trialDays?: number;
+    totalCount?: number;
+  }
+) {
+  return apiRequest<{
+    keyId: string;
+    alreadyExists: boolean;
+    checkout: {
+      subscriptionId: string;
+      planCode: BillingPlan["code"];
+      planLabel: string;
+      amountInr: number;
+    };
+    subscription: BillingSubscriptionSummary;
+  }>("/api/workspace/upgrade", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function createAddonCreditsOrder(token: string, payload: { credits: number }) {
+  return apiRequest<{
+    keyId: string;
+    orderId: string;
+    amountInr: number;
+    amountPaise: number;
+    currency: string;
+    credits: number;
+  }>("/api/workspace/addon", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export interface WorkspaceBillingOverview {
+  workspaceId: string;
+  workspaceName: string;
+  plan: {
+    code: string | null;
+    name: string | null;
+    priceMonthly: number;
+    monthlyCredits: number;
+  };
+  subscription: {
+    status: string | null;
+    nextBillingDate: string | null;
+  };
+  credits: {
+    total: number;
+    used: number;
+    remaining: number;
+  };
+  autoRecharge: {
+    enabled: boolean;
+    thresholdCredits: number;
+    rechargeCredits: number;
+    maxRechargesPerDay: number;
+    lastTriggeredAt: string | null;
+    lastStatus: string | null;
+    failureCount: number;
+  };
+}
+
+export interface WorkspaceBillingUsagePoint {
+  month: string;
+  spentCredits: number;
+  channelBreakdown: {
+    web: number;
+    qr: number;
+    api: number;
+    unknown: number;
+  };
+}
+
+export interface WorkspaceBillingUsageSeries {
+  months: number;
+  points: WorkspaceBillingUsagePoint[];
+  totals: {
+    spentCredits: number;
+    web: number;
+    qr: number;
+    api: number;
+    unknown: number;
+  };
+}
+
+export interface WorkspaceBillingTransaction {
+  createdAt: string;
+  source: "credit_transaction" | "recharge_order" | "invoice";
+  itemId: string;
+  type: string;
+  credits: number;
+  amountPaise: number | null;
+  currency: string | null;
+  status: string | null;
+  referenceId: string | null;
+  reason: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorkspaceRenewalHistoryItem {
+  renewalId: string;
+  renewedAt: string;
+  creditsReset: number;
+  planCode: string | null;
+  planName: string | null;
+  payment: {
+    razorpayPaymentId: string | null;
+    amountPaise: number | null;
+    currency: string | null;
+    status: string | null;
+    paidAt: string | null;
+  };
+}
+
+export interface WorkspaceBillingProfile {
+  workspaceId: string;
+  legalName: string | null;
+  gstin: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  country: string;
+  billingEmail: string | null;
+  billingPhone: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceRechargeOrder {
+  rechargeOrderId: string;
+  keyId: string;
+  razorpayOrderId: string;
+  currency: string;
+  credits: number;
+  amountTotalPaise: number;
+  amountTaxablePaise: number;
+  gstAmountPaise: number;
+  gstRatePercent: number;
+}
+
+export interface WorkspaceAutoRechargeSettings {
+  workspaceId: string;
+  enabled: boolean;
+  thresholdCredits: number;
+  rechargeCredits: number;
+  maxRechargesPerDay: number;
+  gatewayCustomerId: string | null;
+  gatewayTokenId: string | null;
+  lastTriggeredAt: string | null;
+  lastStatus: string | null;
+  failureCount: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceBillingInvoice {
+  id: string;
+  invoiceNumber: string;
+  invoiceType: "subscription" | "recharge";
+  sourceType: "subscription_payment" | "recharge_order";
+  sourceId: string;
+  currency: string;
+  totalPaise: number;
+  taxablePaise: number;
+  gstPaise: number;
+  status: "issued" | "void";
+  createdAt: string;
+}
+
+export function fetchWorkspaceBillingOverview(token: string) {
+  return apiRequest<{ overview: WorkspaceBillingOverview }>("/api/workspace/billing/overview", { token });
+}
+
+export function fetchWorkspaceBillingUsage(token: string, options?: { months?: number }) {
+  const params = new URLSearchParams();
+  if (typeof options?.months === "number") {
+    params.set("months", String(options.months));
+  }
+  const query = params.toString();
+  const path = query ? `/api/workspace/billing/usage?${query}` : "/api/workspace/billing/usage";
+  return apiRequest<{ usage: WorkspaceBillingUsageSeries }>(path, { token });
+}
+
+export function fetchWorkspaceBillingTransactions(
+  token: string,
+  options?: { cursor?: string | null; limit?: number; type?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (options?.cursor) {
+    params.set("cursor", options.cursor);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (options?.type) {
+    params.set("type", options.type);
+  }
+  const query = params.toString();
+  const path = query ? `/api/workspace/billing/transactions?${query}` : "/api/workspace/billing/transactions";
+  return apiRequest<{ items: WorkspaceBillingTransaction[]; nextCursor: string | null }>(path, { token });
+}
+
+export function fetchWorkspaceBillingRenewals(token: string, options?: { limit?: number }) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/workspace/billing/renewals?${query}` : "/api/workspace/billing/renewals";
+  return apiRequest<{ renewals: WorkspaceRenewalHistoryItem[] }>(path, { token });
+}
+
+export function fetchWorkspaceBillingProfile(token: string) {
+  return apiRequest<{ profile: WorkspaceBillingProfile }>("/api/workspace/billing/profile", { token });
+}
+
+export function updateWorkspaceBillingProfile(
+  token: string,
+  payload: Partial<{
+    legalName: string | null;
+    gstin: string | null;
+    addressLine1: string | null;
+    addressLine2: string | null;
+    city: string | null;
+    state: string | null;
+    pincode: string | null;
+    country: string | null;
+    billingEmail: string | null;
+    billingPhone: string | null;
+    metadata: Record<string, unknown>;
+  }>
+) {
+  return apiRequest<{ profile: WorkspaceBillingProfile }>("/api/workspace/billing/profile", {
+    method: "PUT",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function createWorkspaceBillingRechargeOrder(token: string, payload: { credits: number }) {
+  return apiRequest<{ order: WorkspaceRechargeOrder }>("/api/workspace/billing/recharge/order", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchWorkspaceAutoRechargeSettings(token: string) {
+  return apiRequest<{ settings: WorkspaceAutoRechargeSettings }>("/api/workspace/billing/recharge/auto", { token });
+}
+
+export function upsertWorkspaceAutoRechargeSettings(
+  token: string,
+  payload: {
+    enabled: boolean;
+    thresholdCredits: number;
+    rechargeCredits: number;
+    maxRechargesPerDay: number;
+    gatewayCustomerId?: string | null;
+    gatewayTokenId?: string | null;
+  }
+) {
+  return apiRequest<{ settings: WorkspaceAutoRechargeSettings }>("/api/workspace/billing/recharge/auto", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function disableWorkspaceAutoRecharge(token: string) {
+  return apiRequest<{ settings: WorkspaceAutoRechargeSettings }>("/api/workspace/billing/recharge/auto/disable", {
+    method: "POST",
+    token
+  });
+}
+
+export function fetchWorkspaceBillingInvoices(token: string, options?: { limit?: number }) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/workspace/billing/invoices?${query}` : "/api/workspace/billing/invoices";
+  return apiRequest<{ invoices: WorkspaceBillingInvoice[] }>(path, { token });
+}
+
+export async function downloadWorkspaceBillingInvoice(token: string, invoiceId: string): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`${API_URL}/api/workspace/billing/invoices/${invoiceId}/download`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || `Request failed: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("content-disposition") ?? "";
+  const match = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+  const filename = match?.[1] ?? "invoice.pdf";
+  return { blob, filename };
 }
 
 export function connectWhatsApp(token: string, options?: { resetAuth?: boolean }) {

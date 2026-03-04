@@ -182,6 +182,34 @@
   padding: 0.46rem 0.72rem;
 }
 
+.credits-chip {
+  border: 1px solid #c8d9ce;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #213127;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0.36rem 0.68rem;
+  white-space: nowrap;
+}
+
+.credits-chip-low {
+  border-color: #f0c178;
+  background: #fff8ec;
+  color: #8f4f00;
+}
+
+.credits-warning-banner {
+  border-bottom: 1px solid #f1d5a4;
+  background: #fff7eb;
+  color: #8f4f00;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 0.46rem 1.2rem;
+}
+
 .clone-main > section {
   min-height: 0;
 }
@@ -837,6 +865,30 @@
   margin-top: 0.35rem;
   color: #546a86;
   line-height: 1.35;
+}
+
+.account-danger-panel {
+  border-color: #f1c8c8;
+  background: #fff7f7;
+}
+
+.account-danger-btn {
+  border: 1px solid #c91f1f;
+  background: #c91f1f;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 0.45rem 0.82rem;
+  font-weight: 700;
+}
+
+.account-danger-btn:hover {
+  background: #ab1a1a;
+  border-color: #ab1a1a;
+}
+
+.account-danger-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .widget-inline-code {
@@ -6038,6 +6090,29 @@ select:focus {
   line-height: 1.2 !important;
 }
 
+.dashboard-flat-shell .credits-chip {
+  border: 1px solid #d2e2d8 !important;
+  border-radius: 999px !important;
+  background: #ffffff !important;
+  color: #213127 !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  padding: 0.34rem 0.64rem !important;
+}
+
+.dashboard-flat-shell .credits-chip-low {
+  border-color: #f0c178 !important;
+  background: #fff8ec !important;
+  color: #8f4f00 !important;
+}
+
+.dashboard-flat-shell .credits-warning-banner {
+  border-bottom: 1px solid #f1d5a4 !important;
+  background: #fff7eb !important;
+  color: #8f4f00 !important;
+}
+
 .dashboard-flat-studio {
   grid-template-columns: 244px minmax(0, 1fr) !important;
 }
@@ -6574,6 +6649,212 @@ select:focus {
     z-index: 7;
     padding: 0.55rem 0.62rem calc(0.55rem + env(safe-area-inset-bottom));
     background: #f8fbff;
+  }
+}
+
+.credits-chip {
+  appearance: none;
+  cursor: pointer;
+}
+
+.credits-chip:hover {
+  border-color: #93b69e;
+}
+
+.billing-center-shell {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.85rem;
+}
+
+.billing-center-summary,
+.billing-recharge-card {
+  border: 1px solid #d7e3d9;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 0.85rem;
+}
+
+.billing-center-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.billing-kicker {
+  margin: 0;
+  color: #5a6b5e;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.billing-center-summary h2 {
+  margin: 0.2rem 0;
+}
+
+.billing-recharge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.billing-recharge-presets {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.billing-recharge-presets button {
+  border: 1px solid #d5e1d7;
+  background: #f6faf7;
+  color: #18261d;
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.billing-recharge-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-top: 0.7rem;
+}
+
+.billing-recharge-row label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #31413a;
+}
+
+.billing-recharge-row input {
+  min-width: 180px;
+  border: 1px solid #cfdcd2;
+  border-radius: 8px;
+  padding: 0.45rem 0.52rem;
+}
+
+.billing-recharge-meta {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.billing-subtabs {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.billing-subtabs button {
+  border: 1px solid #d2dfd4;
+  background: #ffffff;
+  color: #31443a;
+  border-radius: 10px;
+  padding: 0.42rem 0.7rem;
+  font-weight: 700;
+}
+
+.billing-subtabs button.active {
+  border-color: #0f172a;
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.billing-usage-bars {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.billing-usage-bar-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 56px;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.billing-usage-bar-row span,
+.billing-usage-bar-row strong {
+  font-size: 0.8rem;
+}
+
+.billing-usage-bar-track {
+  height: 9px;
+  border-radius: 999px;
+  background: #e8efe9;
+  overflow: hidden;
+}
+
+.billing-usage-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #facc15);
+}
+
+.billing-transactions-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.billing-transactions-head select {
+  border: 1px solid #cfddd1;
+  border-radius: 8px;
+  padding: 0.35rem 0.48rem;
+}
+
+.billing-columns {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.billing-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
+}
+
+.billing-form-grid label {
+  display: grid;
+  gap: 0.27rem;
+  font-size: 0.78rem;
+  color: #334339;
+  font-weight: 600;
+}
+
+.billing-form-grid label input[type="checkbox"] {
+  margin-right: 0.35rem;
+}
+
+.billing-form-grid input {
+  border: 1px solid #cfdbd1;
+  border-radius: 8px;
+  padding: 0.42rem 0.52rem;
+  font-size: 0.84rem;
+}
+
+.billing-auto-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 900px) {
+  .billing-center-summary,
+  .billing-recharge-row {
+    grid-template-columns: 1fr;
+    display: grid;
+    align-items: start;
+  }
+
+  .billing-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 

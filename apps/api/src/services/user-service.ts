@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { pool } from "../db/pool.js";
 import type { PersonalityOption, User } from "../types/models.js";
+import { ensureWorkspaceForUser } from "./workspace-billing-service.js";
 
 interface UserRow extends User {
   password_hash: string | null;
@@ -45,7 +46,11 @@ export async function createUser(input: {
     [input.name.trim(), normalizedEmail, passwordHash, input.businessType ?? null]
   );
 
-  return result.rows[0];
+  const user = result.rows[0];
+  if (user) {
+    await ensureWorkspaceForUser(user.id);
+  }
+  return user;
 }
 
 export async function createUserFromFirebase(input: {
@@ -62,7 +67,11 @@ export async function createUserFromFirebase(input: {
     [input.name.trim(), normalizedEmail, input.firebaseUid, input.businessType ?? null]
   );
 
-  return result.rows[0];
+  const user = result.rows[0];
+  if (user) {
+    await ensureWorkspaceForUser(user.id);
+  }
+  return user;
 }
 
 export async function authenticateUser(email: string, password: string): Promise<User | null> {
@@ -111,6 +120,18 @@ export async function getUserAuthIdentityByEmail(email: string): Promise<UserAut
      WHERE email = $1
      LIMIT 1`,
     [normalizedEmail]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function getUserAuthIdentityById(userId: string): Promise<UserAuthIdentity | null> {
+  const result = await pool.query<UserAuthIdentity>(
+    `SELECT id, name, email, password_hash, firebase_uid
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [userId]
   );
 
   return result.rows[0] ?? null;
@@ -211,4 +232,14 @@ export async function setAgentActive(userId: string, active: boolean): Promise<v
      WHERE id = $2`,
     [active, userId]
   );
+}
+
+export async function deleteUserById(userId: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM users
+     WHERE id = $1`,
+    [userId]
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }

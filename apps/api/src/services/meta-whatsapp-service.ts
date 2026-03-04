@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
 import { processIncomingMessage } from "./message-router-service.js";
+import { getUserPlanEntitlements } from "./billing-service.js";
 
 interface MetaConnectionRow {
   id: string;
@@ -254,6 +255,20 @@ async function graphPost<T>(
       "Content-Type": "application/json"
     },
     body: JSON.stringify(body)
+  });
+  return parseGraphResponse<T>(response);
+}
+
+async function graphDelete<T>(
+  path: string,
+  accessToken: string,
+  query?: Record<string, string | number | undefined>
+): Promise<T> {
+  const response = await fetch(buildGraphUrl(path, query), {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
   });
   return parseGraphResponse<T>(response);
 }
@@ -543,6 +558,37 @@ async function discoverMetaAssets(
     phoneNumberId,
     displayPhoneNumber
   };
+}
+
+async function ensureMetaConnectionWithinPlanLimit(userId: string, phoneNumberId: string): Promise<void> {
+  const existing = await pool.query<{ id: string }>(
+    `SELECT id
+     FROM whatsapp_business_connections
+     WHERE user_id = $1
+       AND phone_number_id = $2
+     LIMIT 1`,
+    [userId, phoneNumberId]
+  );
+  if ((existing.rowCount ?? 0) > 0) {
+    return;
+  }
+
+  const entitlements = await getUserPlanEntitlements(userId);
+  const activeCountResult = await pool.query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total
+     FROM whatsapp_business_connections
+     WHERE user_id = $1
+       AND status <> 'disconnected'`,
+    [userId]
+  );
+  const activeConnections = Number(activeCountResult.rows[0]?.total ?? 0);
+  if (activeConnections < entitlements.maxApiNumbers) {
+    return;
+  }
+
+  throw new Error(
+    `Plan limit reached. Your ${entitlements.planCode} plan allows up to ${entitlements.maxApiNumbers} active API number(s).`
+  );
 }
 
 async function upsertConnection(args: {
@@ -1023,6 +1069,8 @@ export async function completeMetaEmbeddedSignup(
     );
   }
 
+  await ensureMetaConnectionWithinPlanLimit(userId, discovered.phoneNumberId);
+
   const registration = await registerPhoneNumberIfConfigured(resolvedToken, discovered.phoneNumberId);
   const connection = await upsertConnection({
     userId,
@@ -1067,18 +1115,147 @@ export async function completeMetaEmbeddedSignup(
   }
 }
 
-export async function disconnectMetaBusinessConnection(userId: string, connectionId?: string): Promise<boolean> {
-  const result = await pool.query(
-    `UPDATE whatsapp_business_connections
-     SET status = 'disconnected',
-         subscription_status = 'inactive'
+async function listDisconnectTargetConnections(userId: string, connectionId?: string): Promise<MetaConnectionRow[]> {
+  const result = await pool.query<MetaConnectionRow>(
+    `SELECT id,
+            user_id,
+            meta_business_id,
+            waba_id,
+            phone_number_id,
+            display_phone_number,
+            linked_number,
+            access_token_encrypted,
+            token_expires_at::text,
+            subscription_status,
+            status,
+            metadata_json,
+            created_at::text,
+            updated_at::text
+     FROM whatsapp_business_connections
      WHERE user_id = $1
-       AND ($2::uuid IS NULL OR id = $2::uuid)
-       AND status = 'connected'`,
+       AND ($2::uuid IS NULL OR id = $2::uuid)`,
     [userId, connectionId ?? null]
   );
+  return result.rows;
+}
 
-  return (result.rowCount ?? 0) > 0;
+async function unsubscribeWebhookSubscription(row: MetaConnectionRow): Promise<void> {
+  const accessToken = decryptToken(row.access_token_encrypted);
+  await graphDelete<{ success?: boolean }>(`/${row.waba_id}/subscribed_apps`, accessToken);
+}
+
+async function revokeMetaAccess(row: MetaConnectionRow): Promise<void> {
+  const accessToken = decryptToken(row.access_token_encrypted);
+  await graphDelete<{ success?: boolean }>("/me/permissions", accessToken);
+}
+
+export async function disconnectMetaBusinessConnection(
+  userId: string,
+  connectionId?: string,
+  options?: { purgeConnectionData?: boolean }
+): Promise<boolean> {
+  const rows = await listDisconnectTargetConnections(userId, connectionId);
+  if (rows.length === 0) {
+    return false;
+  }
+
+  // Best-effort remote cleanup before local deletion.
+  for (const row of rows) {
+    try {
+      await unsubscribeWebhookSubscription(row);
+    } catch (error) {
+      console.warn(
+        `[MetaDisconnect] webhook unsubscribe failed user=${userId} wabaId=${row.waba_id}: ${(error as Error).message}`
+      );
+    }
+    try {
+      await revokeMetaAccess(row);
+    } catch (error) {
+      console.warn(
+        `[MetaDisconnect] token revoke failed user=${userId} phoneNumberId=${row.phone_number_id}: ${(error as Error).message}`
+      );
+    }
+  }
+
+  const shouldPurgeConnectionData = options?.purgeConnectionData ?? true;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    if (shouldPurgeConnectionData) {
+      if (connectionId) {
+        const linkedNumbers = Array.from(
+          new Set(
+            rows
+              .flatMap((row) => [row.linked_number, normalizePhoneDigits(row.display_phone_number)])
+              .filter((value): value is string => Boolean(value))
+          )
+        );
+
+        if (linkedNumbers.length > 0) {
+          await client.query(
+            `DELETE FROM agent_profiles
+             WHERE user_id = $1
+               AND channel_type = 'api'
+               AND linked_number = ANY($2::text[])`,
+            [userId, linkedNumbers]
+          );
+
+          await client.query(
+            `DELETE FROM conversations
+             WHERE user_id = $1
+               AND channel_type = 'api'
+               AND channel_linked_number = ANY($2::text[])`,
+            [userId, linkedNumbers]
+          );
+        } else {
+          await client.query(
+            `DELETE FROM agent_profiles
+             WHERE user_id = $1
+               AND channel_type = 'api'`,
+            [userId]
+          );
+
+          await client.query(
+            `DELETE FROM conversations
+             WHERE user_id = $1
+               AND channel_type = 'api'`,
+            [userId]
+          );
+        }
+      } else {
+        await client.query(
+          `DELETE FROM agent_profiles
+           WHERE user_id = $1
+             AND channel_type = 'api'`,
+          [userId]
+        );
+
+        await client.query(
+          `DELETE FROM conversations
+           WHERE user_id = $1
+             AND channel_type = 'api'`,
+          [userId]
+        );
+      }
+    }
+
+    await client.query(
+      `DELETE FROM whatsapp_business_connections
+       WHERE user_id = $1
+         AND ($2::uuid IS NULL OR id = $2::uuid)`,
+      [userId, connectionId ?? null]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return true;
 }
 
 export async function sendMetaTextMessage(input: {

@@ -122,3 +122,19 @@ export async function updateFirebaseEmailUser(
     emailVerified: input.emailVerified
   });
 }
+
+export async function deleteFirebaseUserByUid(uid: string): Promise<void> {
+  if (!uid.trim()) {
+    return;
+  }
+
+  try {
+    await firebaseAuth().deleteUser(uid);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "auth/user-not-found") {
+      return;
+    }
+    throw error;
+  }
+}

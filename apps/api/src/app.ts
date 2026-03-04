@@ -17,6 +17,8 @@ import { agentRoutes } from "./routes/agents.js";
 import { metaRoutes } from "./routes/meta.js";
 import { aiReviewRoutes } from "./routes/ai-review.js";
 import { sdkRoutes } from "./routes/sdk.js";
+import { workspaceRoutes } from "./routes/workspace.js";
+import { workspaceBillingRoutes } from "./routes/workspace-billing.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
 
@@ -92,6 +94,8 @@ export async function buildApp() {
   await whatsappRoutes(app);
   await dashboardRoutes(app);
   await billingRoutes(app);
+  await workspaceRoutes(app);
+  await workspaceBillingRoutes(app);
   await metaRoutes(app);
   await agentRoutes(app);
   await aiReviewRoutes(app);

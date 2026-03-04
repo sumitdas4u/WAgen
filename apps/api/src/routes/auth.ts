@@ -17,6 +17,7 @@ import {
   updateFirebaseEmailUser,
   verifyFirebaseIdToken
 } from "../services/firebase-admin.js";
+import { deleteAccountWithAssociatedData } from "../services/account-deletion-service.js";
 
 const SignupSchema = z.object({
   name: z.string().min(2),
@@ -39,6 +40,10 @@ const FirebaseSessionSchema = z.object({
 const LegacyMigrateSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
+});
+
+const DeleteAccountSchema = z.object({
+  confirmText: z.string().trim()
 });
 
 export async function authRoutes(fastify: FastifyInstance): Promise<void> {
@@ -204,5 +209,23 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     return reply.send({ user });
+  });
+
+  fastify.post("/api/auth/account/delete", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+    const parsed = DeleteAccountSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid account deletion payload" });
+    }
+
+    if (parsed.data.confirmText !== "DELETE") {
+      return reply.status(400).send({ error: "Type DELETE to confirm account removal." });
+    }
+
+    const deleted = await deleteAccountWithAssociatedData(request.authUser.userId);
+    if (!deleted) {
+      return reply.status(404).send({ error: "User not found" });
+    }
+
+    return reply.send({ ok: true });
   });
 }

@@ -1,11 +1,13 @@
 import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
+import { DashboardBillingCenter } from "../components/dashboard-billing-center";
 import {
   API_URL,
   completeMetaBusinessSignup,
   createAgentProfile,
   connectWhatsApp,
+  deleteMyAccount,
   disconnectWhatsApp,
   disconnectMetaBusiness,
   deleteAgentProfile,
@@ -16,6 +18,7 @@ import {
   fetchConversationMessages,
   fetchConversations,
   fetchDashboardOverview,
+  fetchWorkspaceCredits,
   fetchMetaBusinessConfig,
   fetchMetaBusinessStatus,
   fetchIngestionJobs,
@@ -44,7 +47,8 @@ import {
   type KnowledgeChunkPreview,
   type KnowledgeSource,
   type MetaBusinessConfig,
-  type MetaBusinessStatus
+  type MetaBusinessStatus,
+  type WorkspaceCreditsResponse
 } from "../lib/api";
 import { useRealtime } from "../lib/use-realtime";
 
@@ -54,6 +58,7 @@ type NavIconName =
   | "brand"
   | "chats"
   | "leads"
+  | "billing"
   | "knowledge"
   | "test"
   | "agents"
@@ -64,6 +69,7 @@ type NavIconName =
 const DASHBOARD_TAB_OPTIONS = [
   { value: "conversations", label: "Chats", subtitle: "Live Inbox", icon: "chats" },
   { value: "leads", label: "Leads", subtitle: "Priority Queue", icon: "leads" },
+  { value: "billing", label: "Billing", subtitle: "Credits & Invoices", icon: "billing" },
   { value: "knowledge", label: "Chat Bot", subtitle: "AI Studio", icon: "knowledge" },
   { value: "settings", label: "Settings", subtitle: "WhatsApp connection setup", icon: "settings" }
 ] as const;
@@ -297,6 +303,13 @@ function NavIcon({ name }: { name: NavIconName }) {
       return (
         <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
           <path d="M4 14.5V9.8m4 4.7V6.8m4 7.7v-3.7m4 3.7V5.5" />
+        </svg>
+      );
+    case "billing":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
+          <rect x="3.5" y="5" width="13" height="10" rx="2" />
+          <path d="M3.5 8h13M7 12h2.5" />
         </svg>
       );
     case "knowledge":
@@ -566,6 +579,7 @@ export function DashboardPage() {
   const location = useLocation();
 
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
+  const [workspaceCredits, setWorkspaceCredits] = useState<WorkspaceCreditsResponse | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -671,6 +685,8 @@ export function DashboardPage() {
     }>
   >([]);
   const [busy, setBusy] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountConfirmText, setDeleteAccountConfirmText] = useState("");
   const [sendingAgentMessage, setSendingAgentMessage] = useState(false);
   const [agentReplyText, setAgentReplyText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -698,6 +714,7 @@ export function DashboardPage() {
     const allowed = new Set<DashboardTab>([
       "conversations",
       "leads",
+      "billing",
       "knowledge",
       "chatbot_personality",
       "unanswered_questions",
@@ -1219,21 +1236,35 @@ export function DashboardPage() {
     [token]
   );
 
+  const refreshWorkspaceCreditSummary = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+    try {
+      const response = await fetchWorkspaceCredits(token);
+      setWorkspaceCredits(response);
+    } catch {
+      setWorkspaceCredits(null);
+    }
+  }, [token]);
+
   const loadData = useCallback(async (options?: { forceMetaRefresh?: boolean }) => {
     if (!token) {
       return;
     }
 
     setError(null);
-    const [overviewResponse, conversationsResponse, metaConfigResponse, metaStatusResponse] = await Promise.all([
+    const [overviewResponse, conversationsResponse, metaConfigResponse, metaStatusResponse, creditsResponse] = await Promise.all([
       fetchDashboardOverview(token),
       fetchConversations(token),
       fetchMetaBusinessConfig(token),
-      fetchMetaBusinessStatus(token, { forceRefresh: Boolean(options?.forceMetaRefresh) })
+      fetchMetaBusinessStatus(token, { forceRefresh: Boolean(options?.forceMetaRefresh) }),
+      fetchWorkspaceCredits(token)
     ]);
 
     const sortedConversations = sortConversationsByRecent(conversationsResponse.conversations);
     setOverview(overviewResponse);
+    setWorkspaceCredits(creditsResponse);
     setMetaBusinessConfig(metaConfigResponse);
     setMetaBusinessStatus(metaStatusResponse);
     setConversations(sortedConversations);
@@ -1302,6 +1333,18 @@ export function DashboardPage() {
       setError((loadError as Error).message);
     });
   }, [loadData, refreshKnowledge, loadAgentProfiles]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshWorkspaceCreditSummary();
+    }, 30_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [token, refreshWorkspaceCreditSummary]);
 
   useEffect(() => {
     if (activeTab !== "settings" || settingsSubmenu !== "setup_api" || !metaBusinessStatus.connection) {
@@ -1873,6 +1916,40 @@ export function DashboardPage() {
     } catch (disconnectError) {
       setError((disconnectError as Error).message);
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!token || deletingAccount) {
+      return;
+    }
+
+    if (deleteAccountConfirmText.trim() !== "DELETE") {
+      setError('Type "DELETE" to confirm account deletion.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "This will permanently delete your account, revoke connected WhatsApp tokens, and remove associated business data. Continue?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingAccount(true);
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+
+    try {
+      await deleteMyAccount(token, { confirmText: "DELETE" });
+      await logout();
+      navigate("/signup", { replace: true });
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
+    } finally {
+      setDeletingAccount(false);
       setBusy(false);
     }
   };
@@ -2553,8 +2630,12 @@ export function DashboardPage() {
         : qrChannelStatus === "waiting_scan"
           ? "QR waiting scan"
           : qrChannelStatus === "connecting"
-            ? "QR connecting"
+          ? "QR connecting"
             : "disconnected";
+  const workspaceCreditsLabel = workspaceCredits
+    ? `${workspaceCredits.remaining_credits} / ${workspaceCredits.total_credits}`
+    : "-- / --";
+  const workspaceLowCreditMessage = workspaceCredits?.low_credit_message ?? null;
   const selectedConversationLabel = selectedConversation
     ? selectedConversation.contact_name || formatPhone(selectedConversation.contact_phone || selectedConversation.phone_number)
     : "Select a conversation";
@@ -2610,6 +2691,7 @@ export function DashboardPage() {
   const studioMeta: Record<DashboardTab, { label: string; subtitle: string }> = {
     conversations: { label: "Chats", subtitle: "Live Inbox" },
     leads: { label: "Leads", subtitle: "Priority Queue" },
+    billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
     knowledge: { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
     chatbot_personality: { label: "Chatbot Personality", subtitle: "Tune voice, identity, and behavior" },
     unanswered_questions: { label: "AI Review Center", subtitle: "Review low-confidence replies and teach better answers" },
@@ -2772,10 +2854,18 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="clone-main-actions">
+              <button
+                type="button"
+                className={workspaceCredits?.low_credit ? "credits-chip credits-chip-low" : "credits-chip"}
+                onClick={() => setActiveTab("billing")}
+                title="Open Billing"
+              >
+                Credits: {workspaceCreditsLabel}
+              </button>
               <span className={`status-badge status-${connectionBadgeStatus}`}>
                 {connectionBadgeLabel}
               </span>
-              <button className="ghost-btn" type="button" onClick={() => navigate("/purchase")}>
+              <button className="ghost-btn" type="button" onClick={() => setActiveTab("billing")}>
                 Billing
               </button>
               <button className="ghost-btn" type="button" disabled={busy} onClick={handlePauseAgent}>
@@ -2791,6 +2881,15 @@ export function DashboardPage() {
               )}
             </div>
           </header>
+          {workspaceLowCreditMessage ? (
+            <div className="credits-warning-banner" role="status">
+              {workspaceLowCreditMessage}
+            </div>
+          ) : null}
+
+      {activeTab === "billing" && token ? (
+        <DashboardBillingCenter token={token} onCreditsRefresh={refreshWorkspaceCreditSummary} />
+      ) : null}
 
       {activeTab === "knowledge" && renderStudioLayout(
         <section className="finance-shell">
@@ -3973,6 +4072,37 @@ export function DashboardPage() {
               </p>
             </article>
           )}
+
+          <article className="channel-setup-panel account-danger-panel">
+            <header>
+              <h3>Account Settings</h3>
+              <p>
+                Delete your account permanently. This revokes connected WhatsApp tokens, removes webhook subscriptions,
+                and deletes associated business data from active systems.
+              </p>
+            </header>
+            <div className="web-widget-row">
+              <label>
+                Type <strong>DELETE</strong> to confirm
+                <input
+                  value={deleteAccountConfirmText}
+                  onChange={(event) => setDeleteAccountConfirmText(event.target.value)}
+                  placeholder="DELETE"
+                />
+              </label>
+            </div>
+            <div className="clone-hero-actions">
+              <button
+                type="button"
+                className="account-danger-btn"
+                disabled={busy || deletingAccount || deleteAccountConfirmText.trim() !== "DELETE"}
+                onClick={() => void handleDeleteAccount()}
+              >
+                {deletingAccount ? "Deleting..." : "Delete Account"}
+              </button>
+            </div>
+            <p className="tiny-note">This action is irreversible.</p>
+          </article>
         </section>
       )}
 

@@ -14,6 +14,7 @@ import {
 import { detectExternalBotLoop } from "./external-bot-detector-service.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
+import { evaluateConversationCredit } from "./workspace-billing-service.js";
 
 type UnifiedChannelType = "web" | "qr" | "api";
 
@@ -43,7 +44,8 @@ export interface ProcessIncomingMessageResult {
     | "sender_is_agent_number"
     | "external_bot_detected"
     | "cooldown"
-    | "missing_channel_adapter";
+    | "missing_channel_adapter"
+    | "insufficient_credits";
 }
 
 function normalizePhoneCandidate(value: string): string | null {
@@ -203,6 +205,34 @@ export async function processIncomingMessage(
       score: conversation.score,
       autoReplySent: false,
       reason: "missing_channel_adapter"
+    };
+  }
+
+  const creditDecision = await evaluateConversationCredit({
+    userId: input.userId,
+    customerIdentifier: input.customerIdentifier,
+    channelType: input.channelType
+  });
+  if (!creditDecision.allowed) {
+    const pausedMessage = creditDecision.blockMessage ?? "AI paused. Please upgrade plan.";
+    await input.sendReply({ text: pausedMessage });
+    await trackOutboundMessage(conversation.id, pausedMessage);
+
+    realtimeHub.broadcast(input.userId, "conversation.updated", {
+      conversationId: conversation.id,
+      phoneNumber: input.customerIdentifier,
+      direction: "outbound",
+      message: pausedMessage,
+      score: conversation.score,
+      stage: conversation.stage
+    });
+
+    return {
+      conversationId: conversation.id,
+      stage: conversation.stage,
+      score: conversation.score,
+      autoReplySent: true,
+      reason: "insufficient_credits"
     };
   }
 

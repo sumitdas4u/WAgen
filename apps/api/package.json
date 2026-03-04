@@ -8,6 +8,9 @@
     "start": "node dist/server.js",
     "lint": "tsc --noEmit",
     "db:migrate": "tsx src/scripts/migrate.ts",
+    "billing:renew-credits": "tsx src/scripts/credit-renewal.ts",
+    "billing:smoke": "tsx src/scripts/smoke-workspace-billing.ts",
+    "billing:dashboard:smoke": "tsx src/scripts/smoke-dashboard-billing-center.ts",
     "auth:migrate:firebase": "tsx src/scripts/migrate-users-to-firebase.ts",
     "db:migrate:status": "tsx src/scripts/migrate-status.ts",
     "db:reset:dev": "tsx src/scripts/reset-db-dev.ts"

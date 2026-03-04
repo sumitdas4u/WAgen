@@ -5,6 +5,7 @@ import {
   cancelUserSubscription,
   createUserSubscription,
   getRazorpayCheckoutKey,
+  getUserPlanEntitlements,
   getUserBillingSummary,
   handleRazorpayWebhookEvent,
   listBillingPlans,
@@ -59,6 +60,12 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get("/api/billing/subscription", { preHandler: [fastify.requireAuth] }, async (request) => {
     const subscription = await getUserBillingSummary(request.authUser.userId);
     return { subscription };
+  });
+
+  fastify.get("/api/billing/entitlements", { preHandler: [fastify.requireAuth] }, async (request) => {
+    const entitlements = await getUserPlanEntitlements(request.authUser.userId);
+    const subscription = await getUserBillingSummary(request.authUser.userId);
+    return { entitlements, subscription };
   });
 
   fastify.post("/api/billing/subscription", { preHandler: [fastify.requireAuth] }, async (request, reply) => {

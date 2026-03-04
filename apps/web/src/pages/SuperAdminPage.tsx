@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  adjustAdminWorkspaceCredits,
   fetchAdminUserUsage,
+  fetchAdminPlans,
   fetchAdminModel,
   fetchAdminOverview,
   fetchAdminSubscriptions,
   fetchAdminUsers,
+  fetchAdminWorkspaces,
+  resetAdminWorkspaceWallet,
+  updateAdminPlan,
+  updateAdminWorkspaceStatus,
   updateAdminModel,
   type AdminSubscriptionSummary,
   type AdminOverview,
   type AdminUserUsage,
+  type AdminWorkspaceSummary,
+  type WorkspacePlanSummary,
   type UsageAnalyticsResponse
 } from "../lib/api";
 
@@ -21,6 +29,8 @@ export function SuperAdminPage() {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUserUsage[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscriptionSummary[]>([]);
+  const [plans, setPlans] = useState<WorkspacePlanSummary[]>([]);
+  const [workspaces, setWorkspaces] = useState<AdminWorkspaceSummary[]>([]);
   const [currentModel, setCurrentModel] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -30,6 +40,7 @@ export function SuperAdminPage() {
   const [usageUser, setUsageUser] = useState<AdminUserUsage | null>(null);
   const [usage, setUsage] = useState<UsageAnalyticsResponse["usage"] | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  const [planCreditDrafts, setPlanCreditDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const stored = localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -47,18 +58,28 @@ export function SuperAdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [overviewResponse, usersResponse, modelResponse, subscriptionsResponse] = await Promise.all([
+      const [overviewResponse, usersResponse, modelResponse, subscriptionsResponse, plansResponse, workspacesResponse] = await Promise.all([
         fetchAdminOverview(token),
         fetchAdminUsers(token, { limit: 300 }),
         fetchAdminModel(token),
-        fetchAdminSubscriptions(token, { limit: 300 })
+        fetchAdminSubscriptions(token, { limit: 300 }),
+        fetchAdminPlans(token, { includeInactive: true }),
+        fetchAdminWorkspaces(token, { limit: 500 })
       ]);
       setOverview(overviewResponse.overview);
       setUsers(usersResponse.users);
       setSubscriptions(subscriptionsResponse.subscriptions);
+      setPlans(plansResponse.plans);
+      setWorkspaces(workspacesResponse.workspaces);
       setCurrentModel(modelResponse.currentModel);
       setSelectedModel(modelResponse.currentModel);
       setAvailableModels(modelResponse.availableModels);
+      setPlanCreditDrafts(
+        plansResponse.plans.reduce<Record<string, string>>((acc, plan) => {
+          acc[plan.id] = String(plan.monthlyCredits);
+          return acc;
+        }, {})
+      );
     } catch (loadError) {
       setError((loadError as Error).message);
       localStorage.removeItem(ADMIN_TOKEN_KEY);
@@ -87,6 +108,93 @@ export function SuperAdminPage() {
       setInfo(`Global model updated to ${selectedModel}`);
     } catch (saveError) {
       setError((saveError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSavePlanCredits = async (plan: WorkspacePlanSummary) => {
+    if (!token) {
+      return;
+    }
+    const nextCredits = Number(planCreditDrafts[plan.id] ?? plan.monthlyCredits);
+    if (!Number.isFinite(nextCredits) || nextCredits < 0) {
+      setError("Monthly credits must be a valid number.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await updateAdminPlan(token, plan.id, { monthlyCredits: Math.floor(nextCredits) });
+      setInfo(`Updated ${plan.name} monthly credits to ${Math.floor(nextCredits)}.`);
+      await load();
+    } catch (updateError) {
+      setError((updateError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleWorkspaceStatus = async (
+    workspace: AdminWorkspaceSummary,
+    status: "active" | "suspended" | "deleted"
+  ) => {
+    if (!token) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await updateAdminWorkspaceStatus(token, workspace.workspaceId, { status });
+      setInfo(`Workspace ${workspace.workspaceName} is now ${status}.`);
+      await load();
+    } catch (statusError) {
+      setError((statusError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleWorkspaceCreditAdjust = async (workspace: AdminWorkspaceSummary, deltaCredits: number) => {
+    if (!token) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await adjustAdminWorkspaceCredits(token, {
+        workspaceId: workspace.workspaceId,
+        deltaCredits,
+        reason: "Super admin adjustment"
+      });
+      setInfo(`Adjusted ${workspace.workspaceName} credits by ${deltaCredits}.`);
+      await load();
+    } catch (adjustError) {
+      setError((adjustError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleWorkspaceWalletReset = async (workspace: AdminWorkspaceSummary) => {
+    if (!token) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await resetAdminWorkspaceWallet(token, {
+        workspaceId: workspace.workspaceId,
+        reason: "Super admin reset"
+      });
+      setInfo(`Reset ${workspace.workspaceName} wallet to plan credits.`);
+      await load();
+    } catch (resetError) {
+      setError((resetError as Error).message);
     } finally {
       setLoading(false);
     }
@@ -158,6 +266,51 @@ export function SuperAdminPage() {
       </section>
 
       <section className="finance-panel">
+        <h2>Plan Credits Management</h2>
+        <div className="finance-table-wrap">
+          <table className="finance-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Price / Month</th>
+                <th>Monthly Credits</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plans.map((plan) => (
+                <tr key={plan.id}>
+                  <td>{plan.code}</td>
+                  <td>{plan.name}</td>
+                  <td>{plan.priceMonthly}</td>
+                  <td>
+                    <input
+                      value={planCreditDrafts[plan.id] ?? String(plan.monthlyCredits)}
+                      onChange={(event) =>
+                        setPlanCreditDrafts((current) => ({
+                          ...current,
+                          [plan.id]: event.target.value
+                        }))
+                      }
+                      style={{ width: 120 }}
+                    />
+                  </td>
+                  <td>{plan.status}</td>
+                  <td>
+                    <button className="ghost-btn" onClick={() => void handleSavePlanCredits(plan)} disabled={loading}>
+                      Save
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="finance-panel">
         <h2>All Users Analytics</h2>
         <div className="finance-table-wrap">
           <table className="finance-table">
@@ -193,6 +346,85 @@ export function SuperAdminPage() {
                     <button className="ghost-btn" type="button" onClick={() => void handleOpenUsage(user)}>
                       View Usage
                     </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="finance-panel">
+        <h2>Workspace Credit Control</h2>
+        <div className="finance-table-wrap">
+          <table className="finance-table">
+            <thead>
+              <tr>
+                <th>Workspace</th>
+                <th>Owner</th>
+                <th>Status</th>
+                <th>Plan</th>
+                <th>Credits</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workspaces.map((workspace) => (
+                <tr key={workspace.workspaceId}>
+                  <td>{workspace.workspaceName}</td>
+                  <td>
+                    {workspace.ownerName}
+                    <br />
+                    <small>{workspace.ownerEmail}</small>
+                  </td>
+                  <td>{workspace.workspaceStatus}</td>
+                  <td>{workspace.planName ?? workspace.planCode ?? "-"}</td>
+                  <td>
+                    {workspace.remainingCredits} / {workspace.totalCredits}
+                  </td>
+                  <td>
+                    <div className="header-actions">
+                      <button
+                        className="ghost-btn"
+                        onClick={() =>
+                          void handleWorkspaceStatus(
+                            workspace,
+                            workspace.workspaceStatus === "active" ? "suspended" : "active"
+                          )
+                        }
+                        disabled={loading}
+                      >
+                        {workspace.workspaceStatus === "active" ? "Suspend" : "Activate"}
+                      </button>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => void handleWorkspaceCreditAdjust(workspace, 100)}
+                        disabled={loading}
+                      >
+                        +100
+                      </button>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => void handleWorkspaceCreditAdjust(workspace, -100)}
+                        disabled={loading}
+                      >
+                        -100
+                      </button>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => void handleWorkspaceWalletReset(workspace)}
+                        disabled={loading}
+                      >
+                        Reset Wallet
+                      </button>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => void handleWorkspaceStatus(workspace, "deleted")}
+                        disabled={loading || workspace.workspaceStatus === "deleted"}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
