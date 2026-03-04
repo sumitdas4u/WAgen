@@ -1280,10 +1280,13 @@ export async function createWorkspaceRechargeOrder(input: {
   const price = computeRechargePriceForCredits(input.credits);
   const client = getRazorpayClient();
   const keyId = getRazorpayCheckoutKey();
+  // Razorpay receipt has a max length of 40 chars.
+  const compactWorkspaceId = workspaceId.replace(/-/g, "").slice(0, 12);
+  const receipt = `wr_${compactWorkspaceId}_${Date.now().toString().slice(-10)}`;
   const order = (await client.orders.create({
     amount: price.totalPaise,
     currency: "INR",
-    receipt: `workspace_recharge_${workspaceId}_${Date.now()}`,
+    receipt,
     notes: {
       purchaseType: "workspace_recharge",
       workspaceId,
