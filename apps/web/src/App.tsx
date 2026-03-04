@@ -1,18 +1,22 @@
+import { Suspense, lazy } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./lib/auth-context";
 import type { User } from "./lib/api";
-import { SignupPage } from "./pages/SignupPage";
-import { OnboardingPage } from "./pages/OnboardingPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { SuperAdminLoginPage } from "./pages/SuperAdminLoginPage";
-import { SuperAdminPage } from "./pages/SuperAdminPage";
-import { PurchasePage } from "./pages/PurchasePage";
-import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
-import { TermsOfServicePage } from "./pages/TermsOfServicePage";
-import { ContactUsPage } from "./pages/ContactUsPage";
-import { DataDeletionPage } from "./pages/DataDeletionPage";
-import { MetaCallbackPage } from "./pages/MetaCallbackPage";
-import { QrConnectPage } from "./pages/QrConnectPage";
+
+const SignupPage = lazy(() => import("./pages/SignupPage").then((m) => ({ default: m.SignupPage })));
+const OnboardingPage = lazy(() => import("./pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
+const QrConnectPage = lazy(() => import("./pages/QrConnectPage").then((m) => ({ default: m.QrConnectPage })));
+const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
+const PurchasePage = lazy(() => import("./pages/PurchasePage").then((m) => ({ default: m.PurchasePage })));
+const MetaCallbackPage = lazy(() => import("./pages/MetaCallbackPage").then((m) => ({ default: m.MetaCallbackPage })));
+const SuperAdminLoginPage = lazy(() =>
+  import("./pages/SuperAdminLoginPage").then((m) => ({ default: m.SuperAdminLoginPage }))
+);
+const SuperAdminPage = lazy(() => import("./pages/SuperAdminPage").then((m) => ({ default: m.SuperAdminPage })));
+const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage").then((m) => ({ default: m.PrivacyPolicyPage })));
+const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage").then((m) => ({ default: m.TermsOfServicePage })));
+const ContactUsPage = lazy(() => import("./pages/ContactUsPage").then((m) => ({ default: m.ContactUsPage })));
+const DataDeletionPage = lazy(() => import("./pages/DataDeletionPage").then((m) => ({ default: m.DataDeletionPage })));
 
 function isOnboardingComplete(user: User | null): boolean {
   if (!user) {
@@ -53,27 +57,29 @@ function ProtectedLayout() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/signup" replace />} />
-      <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-      <Route path="/terms-of-service" element={<TermsOfServicePage />} />
-      <Route path="/contact-us" element={<ContactUsPage />} />
-      <Route path="/data-deletion" element={<DataDeletionPage />} />
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/super-admin">
-        <Route path="login" element={<SuperAdminLoginPage />} />
-        <Route index element={<SuperAdminPage />} />
-        <Route path="*" element={<Navigate to="/super-admin/login" replace />} />
-      </Route>
-      <Route element={<ProtectedLayout />}>
-        <Route path="/onboarding" element={<OnboardingPage />} />
-        <Route path="/onboarding/qr" element={<QrConnectPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/meta-callback" element={<MetaCallbackPage />} />
-        <Route path="/purchase" element={<PurchasePage />} />
-        <Route path="/widget" element={<Navigate to="/dashboard?tab=settings&submenu=setup_web" replace />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/signup" replace />} />
-    </Routes>
+    <Suspense fallback={<div className="loading-screen">Loading...</div>}>
+      <Routes>
+        <Route path="/" element={<Navigate to="/signup" replace />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+        <Route path="/contact-us" element={<ContactUsPage />} />
+        <Route path="/data-deletion" element={<DataDeletionPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/super-admin">
+          <Route path="login" element={<SuperAdminLoginPage />} />
+          <Route index element={<SuperAdminPage />} />
+          <Route path="*" element={<Navigate to="/super-admin/login" replace />} />
+        </Route>
+        <Route element={<ProtectedLayout />}>
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/onboarding/qr" element={<QrConnectPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/meta-callback" element={<MetaCallbackPage />} />
+          <Route path="/purchase" element={<PurchasePage />} />
+          <Route path="/widget" element={<Navigate to="/dashboard?tab=settings&submenu=setup_web" replace />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/signup" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

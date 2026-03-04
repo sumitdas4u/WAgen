@@ -785,9 +785,39 @@ function getLeadSummaryStatus(row: LeadSummaryRow): "ready" | "missing" | "stale
   return "ready";
 }
 
-async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadSummaryRow[]> {
-  return pool.query<LeadSummaryRow>(
-    `SELECT
+async function listLeadSummaryRows(
+  userId: string,
+  limit: number,
+  filters?: {
+    stage?: "hot" | "warm" | "cold";
+    kind?: ConversationKind;
+    channelType?: AgentChannelType;
+    todayOnly?: boolean;
+  }
+): Promise<LeadSummaryRow[]> {
+  const where: string[] = ["c.user_id = $1"];
+  const values: Array<string | number | boolean> = [userId];
+
+  if (filters?.stage) {
+    values.push(filters.stage);
+    where.push(`c.stage = $${values.length}`);
+  }
+  if (filters?.kind) {
+    values.push(filters.kind);
+    where.push(`c.lead_kind = $${values.length}`);
+  }
+  if (filters?.channelType) {
+    values.push(filters.channelType);
+    where.push(`c.channel_type = $${values.length}`);
+  }
+  if (filters?.todayOnly) {
+    where.push(`c.last_message_at::date = CURRENT_DATE`);
+  }
+
+  values.push(limit);
+  const limitParam = `$${values.length}`;
+
+  const sql = `SELECT
        c.*,
        ap.name AS assigned_agent_name,
        COALESCE(
@@ -834,11 +864,11 @@ async function listLeadSummaryRows(userId: string, limit: number): Promise<LeadS
      FROM conversations c
      LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
      LEFT JOIN lead_summaries ls ON ls.conversation_id = c.id
-     WHERE c.user_id = $1
+     WHERE ${where.join(" AND ")}
      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-     LIMIT $2`,
-    [userId, limit]
-  ).then((result) => result.rows);
+     LIMIT ${limitParam}`;
+
+  return pool.query<LeadSummaryRow>(sql, values).then((result) => result.rows);
 }
 
 export async function listLeadsWithSummary(
@@ -853,7 +883,12 @@ export async function listLeadsWithSummary(
   }
 ): Promise<LeadConversation[]> {
   const clampedLimit = Math.max(1, Math.min(500, limit));
-  const rows = await listLeadSummaryRows(userId, clampedLimit);
+  const rows = await listLeadSummaryRows(userId, clampedLimit, {
+    stage: filters?.stage,
+    kind: filters?.kind,
+    channelType: filters?.channelType,
+    todayOnly: filters?.todayOnly
+  });
   const mapped = rows.map((row) => ({
     ...row,
     contact_name: row.contact_name,
@@ -867,25 +902,6 @@ export async function listLeadsWithSummary(
   }));
 
   return mapped.filter((row) => {
-    if (filters?.stage && row.stage !== filters.stage) {
-      return false;
-    }
-    if (filters?.kind && row.lead_kind !== filters.kind) {
-      return false;
-    }
-    if (filters?.channelType && row.channel_type !== filters.channelType) {
-      return false;
-    }
-    if (filters?.todayOnly) {
-      if (!row.last_message_at) {
-        return false;
-      }
-      const rowDate = new Date(row.last_message_at);
-      const now = new Date();
-      if (rowDate.toDateString() !== now.toDateString()) {
-        return false;
-      }
-    }
     if (filters?.requiresReply && !row.requires_reply) {
       return false;
     }

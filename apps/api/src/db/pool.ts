@@ -2,7 +2,13 @@ import { Pool } from "pg";
 import { env } from "../config/env.js";
 
 export const pool = new Pool({
-  connectionString: env.DATABASE_URL
+  connectionString: env.DATABASE_URL,
+  max: env.PG_POOL_MAX,
+  idleTimeoutMillis: env.PG_POOL_IDLE_TIMEOUT_MS,
+  connectionTimeoutMillis: env.PG_POOL_CONNECTION_TIMEOUT_MS,
+  ...(env.PG_STATEMENT_TIMEOUT_MS > 0
+    ? { options: `-c statement_timeout=${env.PG_STATEMENT_TIMEOUT_MS}` }
+    : {})
 });
 
 pool.on("error", (error: Error) => {

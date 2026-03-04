@@ -10,7 +10,6 @@ import {
   deleteMyAccount,
   disconnectWhatsApp,
   disconnectMetaBusiness,
-  deleteAgentProfile,
   deleteKnowledgeSource,
   fetchAiReviewQueue,
   fetchAgentProfiles,
@@ -753,11 +752,8 @@ export function DashboardPage() {
   const [agentProfiles, setAgentProfiles] = useState<AgentProfile[]>([]);
   const [selectedAgentProfileId, setSelectedAgentProfileId] = useState<string>("");
   const [agentName, setAgentName] = useState("");
-  const [agentLinkedNumber, setAgentLinkedNumber] = useState("");
-  const [agentChannelType, setAgentChannelType] = useState<"web" | "qr" | "api">("qr");
   const [agentObjectiveType, setAgentObjectiveType] = useState<"lead" | "feedback" | "complaint" | "hybrid">("lead");
   const [agentTaskDescription, setAgentTaskDescription] = useState("");
-  const [showAgentWorkflowForm, setShowAgentWorkflowForm] = useState(false);
   const [editingSource, setEditingSource] = useState<{ sourceType: KnowledgeSource["source_type"]; sourceName: string } | null>(null);
   const [modalSourceName, setModalSourceName] = useState("");
   const [modalWebsiteUrl, setModalWebsiteUrl] = useState("");
@@ -1438,7 +1434,29 @@ export function DashboardPage() {
       return;
     }
     const response = await fetchAgentProfiles(token);
-    setAgentProfiles(response.profiles);
+    const sorted = [...response.profiles].sort((a, b) => {
+      if (a.isActive !== b.isActive) {
+        return Number(b.isActive) - Number(a.isActive);
+      }
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+    const primary = sorted[0] ?? null;
+    if (!primary) {
+      setAgentProfiles([]);
+      setSelectedAgentProfileId("");
+      setAgentName("");
+      setAgentObjectiveType("lead");
+      setAgentTaskDescription("");
+      return;
+    }
+    setAgentProfiles([primary]);
+    setSelectedAgentProfileId(primary.id);
+    setAgentName(primary.name);
+    setAgentObjectiveType(primary.objectiveType);
+    setAgentTaskDescription(primary.taskDescription ?? "");
+    setBusinessBasics(primary.businessBasics);
+    setPersonality(primary.personality);
+    setCustomPrompt(primary.customPrompt ?? "");
   }, [token]);
 
   useEffect(() => {
@@ -1651,13 +1669,6 @@ export function DashboardPage() {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [chatAiTimers, loadData, selectedConversationId, token]);
-
-  useEffect(() => {
-    const preferredNumber = overview?.whatsapp.phoneNumber || metaBusinessStatus.connection?.linkedNumber || "";
-    if (preferredNumber) {
-      setAgentLinkedNumber((current) => current || preferredNumber);
-    }
-  }, [overview?.whatsapp.phoneNumber, metaBusinessStatus.connection?.linkedNumber]);
 
   useEffect(() => {
     if (!token) {
@@ -2325,29 +2336,14 @@ export function DashboardPage() {
     }
   };
 
-  const handleStartNewAgent = () => {
-    setSelectedAgentProfileId("");
-    setAgentName("");
-    setAgentChannelType("qr");
-    setAgentLinkedNumber(overview?.whatsapp.phoneNumber || metaBusinessStatus.connection?.linkedNumber || "");
-    setAgentObjectiveType("lead");
-    setAgentTaskDescription("");
-    setShowAgentWorkflowForm(true);
-  };
-
   const handleCreateOrUpdateAgentProfile = async () => {
     if (!token) {
       return;
     }
     const cleanName = agentName.trim();
-    const cleanNumber = agentChannelType === "web" ? "web" : agentLinkedNumber.trim();
     const cleanTaskDescription = agentTaskDescription.trim();
     if (!cleanName) {
       setError("Agent name is required.");
-      return;
-    }
-    if (agentChannelType !== "web" && !cleanNumber) {
-      setError("Linked number is required for WhatsApp channels.");
       return;
     }
     if (!cleanTaskDescription) {
@@ -2361,16 +2357,14 @@ export function DashboardPage() {
     try {
       const payload = {
         name: cleanName,
-        linkedNumber: cleanNumber,
-        channelType: agentChannelType,
+        linkedNumber: "web",
+        channelType: "web" as const,
         businessBasics: { ...businessBasics },
         personality,
         customPrompt,
         objectiveType: agentObjectiveType,
         taskDescription: cleanTaskDescription,
-        isActive: selectedAgentProfileId
-          ? (agentProfiles.find((item) => item.id === selectedAgentProfileId)?.isActive ?? false)
-          : false
+        isActive: true
       };
 
       const response = selectedAgentProfileId
@@ -2378,19 +2372,8 @@ export function DashboardPage() {
         : await createAgentProfile(token, payload);
 
       setSelectedAgentProfileId(response.profile.id);
-      setAgentProfiles((current) => {
-        const exists = current.some((item) => item.id === response.profile.id);
-        if (exists) {
-          return current.map((item) => (item.id === response.profile.id ? response.profile : item));
-        }
-        return [response.profile, ...current];
-      });
-      setShowAgentWorkflowForm(false);
-      setInfo(
-        selectedAgentProfileId
-          ? `Agent profile "${cleanName}" updated.`
-          : `Agent profile "${cleanName}" saved as disabled. Use Go Live to activate.`
-      );
+      setAgentProfiles([response.profile]);
+      setInfo(`Agent workflow "${cleanName}" is now active across all channels.`);
     } catch (saveError) {
       setError((saveError as Error).message);
     } finally {
@@ -2444,83 +2427,6 @@ export function DashboardPage() {
         }
       ]);
       setTestChatSending(false);
-    }
-  };
-
-  const handleLoadAgentProfile = (profile: AgentProfile) => {
-    setSelectedAgentProfileId(profile.id);
-    setAgentName(profile.name);
-    setAgentLinkedNumber(profile.linkedNumber);
-    setAgentChannelType(profile.channelType);
-    setAgentObjectiveType(profile.objectiveType);
-    setAgentTaskDescription(profile.taskDescription ?? "");
-    setBusinessBasics(profile.businessBasics);
-    setPersonality(profile.personality);
-    setCustomPrompt(profile.customPrompt ?? "");
-    setShowAgentWorkflowForm(true);
-    setInfo(`Loaded profile "${profile.name}" in editor.`);
-    setError(null);
-  };
-
-  const handleDeleteAgentProfile = async (profileId: string) => {
-    if (!token) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setInfo(null);
-    try {
-      await deleteAgentProfile(token, profileId);
-      setAgentProfiles((current) => current.filter((profile) => profile.id !== profileId));
-      if (selectedAgentProfileId === profileId) {
-        setSelectedAgentProfileId("");
-        setAgentName("");
-        setAgentTaskDescription("");
-        setAgentObjectiveType("lead");
-        setShowAgentWorkflowForm(false);
-      }
-      setInfo("Agent profile removed.");
-    } catch (deleteError) {
-      setError((deleteError as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSetAgentLive = async (profileId: string, live: boolean) => {
-    if (!token) {
-      return;
-    }
-    const profile = agentProfiles.find((item) => item.id === profileId);
-    if (!profile) {
-      setError("Select an agent profile first.");
-      return;
-    }
-
-    setSelectedAgentProfileId(profile.id);
-    setBusy(true);
-    setError(null);
-    setInfo(null);
-    try {
-      await updateAgentProfile(token, profile.id, {
-        name: profile.name,
-        linkedNumber: profile.linkedNumber,
-        channelType: profile.channelType,
-        businessBasics: profile.businessBasics,
-        personality: profile.personality,
-        customPrompt: profile.customPrompt ?? "",
-        objectiveType: profile.objectiveType,
-        taskDescription: profile.taskDescription ?? "",
-        isActive: live
-      });
-      await loadAgentProfiles();
-      setInfo(live
-        ? `Agent "${profile.name}" is now live for ${profile.channelType === "web" ? "web channel" : profile.linkedNumber} (${profile.channelType.toUpperCase()}).`
-        : `Agent "${profile.name}" disabled.`);
-    } catch (applyError) {
-      setError((applyError as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -2838,7 +2744,7 @@ export function DashboardPage() {
     chatbot_personality: { label: "Chatbot Personality", subtitle: "Tune voice, identity, and behavior" },
     unanswered_questions: { label: "AI Review Center", subtitle: "Review low-confidence replies and teach better answers" },
     settings: { label: "Settings", subtitle: "Configure QR and Business API channels" },
-    bot_agents: { label: "AI Agents", subtitle: "Manage channel-linked agents" }
+    bot_agents: { label: "AI Agents", subtitle: "Single workflow shared across all channels" }
   };
   const currentSection = studioMeta[activeTab];
   const isStudioTab = STUDIO_TABS.has(activeTab);
@@ -4252,165 +4158,63 @@ export function DashboardPage() {
         <section className="clone-settings-view agent-manager-shell">
           <div className="agent-manager-head">
             <div className="agent-manager-title">
-              <h3>Agents</h3>
-              <p>One live agent per channel chat. Keep others disabled as drafts.</p>
+              <h3>Agent Workflow</h3>
+              <p>One shared AI workflow runs across Web chat, WhatsApp QR, and WhatsApp API channels.</p>
             </div>
-            <button type="button" className="primary-btn agent-manager-add-btn" onClick={handleStartNewAgent}>
-              + Add
-            </button>
+            <span className={selectedAgentProfile?.isActive ? "agent-status-pill live" : "agent-status-pill disabled"}>
+              {selectedAgentProfile?.isActive ? "LIVE" : "NOT CONFIGURED"}
+            </span>
           </div>
 
-          {agentProfiles.length === 0 && !showAgentWorkflowForm ? (
-            <div className="agent-manager-empty">
-              <h3>No agents found</h3>
-              <button type="button" className="primary-btn" onClick={handleStartNewAgent}>
-                + Add
+          <form
+            className="stack-form clone-settings-form agent-workflow-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleCreateOrUpdateAgentProfile();
+            }}
+          >
+            <h3>{selectedAgentProfile ? "Update Workflow" : "Create Workflow"}</h3>
+            <div className="train-grid two-col simple-agent-grid">
+              <label>
+                Name of the AI agent
+                <input required value={agentName} onChange={(event) => setAgentName(event.target.value)} />
+              </label>
+              <label>
+                Agent Nature
+                <select
+                  value={agentObjectiveType}
+                  onChange={(event) => setAgentObjectiveType(event.target.value as "lead" | "feedback" | "complaint" | "hybrid")}
+                >
+                  <option value="lead">Lead Capture Agent</option>
+                  <option value="feedback">Feedback Agent</option>
+                  <option value="complaint">Complaint Agent</option>
+                  <option value="hybrid">Hybrid Agent</option>
+                </select>
+              </label>
+              <label className="agent-task-field">
+                Define the task you want to achieve using this agent.
+                <textarea
+                  required
+                  value={agentTaskDescription}
+                  onChange={(event) => setAgentTaskDescription(event.target.value)}
+                  placeholder="Ex - Capture qualified leads and ask one clear next-step question. Or handle complaints and collect order ID before escalation."
+                />
+              </label>
+            </div>
+            <p className="tiny-note">
+              This single workflow is applied across all channels. No separate per-channel agent setup is required.
+            </p>
+            {selectedAgentProfile && (
+              <p className="tiny-note">
+                Last updated: {new Date(selectedAgentProfile.updatedAt).toLocaleString()}
+              </p>
+            )}
+            <div className="clone-hero-actions">
+              <button className="primary-btn" type="submit" disabled={busy}>
+                {selectedAgentProfile ? "Save Workflow" : "Create Workflow"}
               </button>
             </div>
-          ) : (
-            <>
-              {agentProfiles.length > 0 && (
-                <div className="agent-manager-cards">
-                  {agentProfiles.map((profile) => (
-                    <article
-                      key={profile.id}
-                      className={selectedAgentProfileId === profile.id ? "agent-profile-card active" : "agent-profile-card"}
-                    >
-                      <header>
-                        <strong>{profile.name}</strong>
-                        <div className="agent-card-badges">
-                          <span>
-                            {profile.channelType === "api"
-                              ? "WHATSAPP API"
-                              : profile.channelType === "qr"
-                                ? "WHATSAPP QR"
-                                : "WEB"}
-                          </span>
-                          <span className={profile.isActive ? "agent-status-pill live" : "agent-status-pill disabled"}>
-                            {profile.isActive ? "LIVE" : "DISABLED"}
-                          </span>
-                        </div>
-                      </header>
-                      <p>
-                        {profile.objectiveType.toUpperCase()} AGENT
-                        {profile.channelType !== "web" ? ` | ${profile.linkedNumber}` : ""}
-                      </p>
-                      <small>{new Date(profile.createdAt).toLocaleString()}</small>
-                      <div className="agent-profile-actions">
-                        <button type="button" className="ghost-btn" onClick={() => handleLoadAgentProfile(profile)}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-btn"
-                          disabled={busy || profile.isActive}
-                          onClick={() => void handleSetAgentLive(profile.id, true)}
-                        >
-                          Go Live
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-btn"
-                          disabled={busy || !profile.isActive}
-                          onClick={() => void handleSetAgentLive(profile.id, false)}
-                        >
-                          Disable
-                        </button>
-                        <button type="button" className="ghost-btn" onClick={() => handleDeleteAgentProfile(profile.id)}>
-                          Delete
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-
-              {showAgentWorkflowForm && (
-                <form
-                  className="stack-form clone-settings-form agent-workflow-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleCreateOrUpdateAgentProfile();
-                  }}
-                >
-                  <h3>{selectedAgentProfile ? "Update Workflow" : "Add Workflow"}</h3>
-                  <div className="train-grid two-col simple-agent-grid">
-                    <label>
-                      Name of the AI agent
-                      <input required value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-                    </label>
-                    <label>
-                      Agent Nature
-                      <select
-                        value={agentObjectiveType}
-                        onChange={(event) => setAgentObjectiveType(event.target.value as "lead" | "feedback" | "complaint" | "hybrid")}
-                      >
-                        <option value="lead">Lead Capture Agent</option>
-                        <option value="feedback">Feedback Agent</option>
-                        <option value="complaint">Complaint Agent</option>
-                        <option value="hybrid">Hybrid Agent</option>
-                      </select>
-                    </label>
-                    <label>
-                      Channel Mode
-                      <select
-                        value={agentChannelType}
-                        onChange={(event) => setAgentChannelType(event.target.value as "web" | "qr" | "api")}
-                      >
-                        <option value="web">Web Chat</option>
-                        <option value="qr">QR Mode</option>
-                        <option value="api">Official API Mode</option>
-                      </select>
-                    </label>
-                    {agentChannelType !== "web" && (
-                      <label>
-                        Linked Number
-                        <input
-                          required
-                          value={agentLinkedNumber}
-                          onChange={(event) => setAgentLinkedNumber(event.target.value)}
-                        />
-                      </label>
-                    )}
-                    <label className="agent-task-field">
-                      Define the task which you want to achieve using this agent.
-                      <textarea
-                        required
-                        value={agentTaskDescription}
-                        onChange={(event) => setAgentTaskDescription(event.target.value)}
-                        placeholder="Ex - Capture qualified leads and ask one clear next-step question. Or handle complaints and collect order ID before escalation."
-                      />
-                    </label>
-                  </div>
-                  <p className="tiny-note">
-                    Save creates/updates a disabled draft. Use Go Live on a card to activate. Only one live agent is allowed per channel chat.
-                  </p>
-
-                  <div className="clone-hero-actions">
-                    <button className="primary-btn" type="submit" disabled={busy}>
-                      {selectedAgentProfile ? "Update Agent Profile" : "Save Agent Profile"}
-                    </button>
-                    <button
-                      className="ghost-btn"
-                      type="button"
-                      onClick={() => setShowAgentWorkflowForm(false)}
-                      disabled={busy}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="ghost-btn"
-                      type="button"
-                      disabled={busy || !selectedAgentProfileId}
-                      onClick={() => selectedAgentProfileId && void handleDeleteAgentProfile(selectedAgentProfileId)}
-                    >
-                      Delete selected
-                    </button>
-                  </div>
-                </form>
-              )}
-            </>
-          )}
+          </form>
         </section>
       )}
 

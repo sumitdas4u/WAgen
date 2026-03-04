@@ -9,6 +9,12 @@ const BaseEnvSchema = z.object({
   APP_BASE_URL: z.string().default("http://localhost:5173"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL must be set"),
+  METRICS_ENABLED: z.enum(["true", "false"]).default("false"),
+  METRICS_ENDPOINT: z.string().default("/metrics"),
+  PG_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+  PG_POOL_IDLE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30_000),
+  PG_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(5_000),
+  PG_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).max(300000).default(0),
   FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional(),
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
@@ -129,5 +135,6 @@ export const env = {
   AUTO_RECONNECT: parsed.data.AUTO_RECONNECT === "true",
   CREDIT_RENEWAL_CRON_ENABLED: parsed.data.CREDIT_RENEWAL_CRON_ENABLED === "true",
   DASHBOARD_BILLING_CENTER: parsed.data.DASHBOARD_BILLING_CENTER === "true",
-  AUTO_RECHARGE_CRON_ENABLED: parsed.data.AUTO_RECHARGE_CRON_ENABLED === "true"
+  AUTO_RECHARGE_CRON_ENABLED: parsed.data.AUTO_RECHARGE_CRON_ENABLED === "true",
+  METRICS_ENABLED: parsed.data.METRICS_ENABLED === "true"
 };
