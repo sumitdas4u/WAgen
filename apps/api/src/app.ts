@@ -57,6 +57,42 @@ export async function buildApp() {
   });
   await app.register(websocket);
 
+  app.addHook("onRequest", async (request) => {
+    (request as FastifyRequest & { timing?: { start: number } }).timing = {
+      start: Date.now()
+    };
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const timed = (request as FastifyRequest & { timing?: { start: number } }).timing;
+    if (!timed) {
+      return;
+    }
+    const durationMs = Date.now() - timed.start;
+    const slow = durationMs >= 500;
+    if (slow) {
+      app.log.warn(
+        {
+          method: request.method,
+          url: request.url,
+          statusCode: reply.statusCode,
+          durationMs
+        },
+        "Slow request"
+      );
+    } else {
+      app.log.info(
+        {
+          method: request.method,
+          url: request.url,
+          statusCode: reply.statusCode,
+          durationMs
+        },
+        "Request completed"
+      );
+    }
+  });
+
   app.decorate("requireAuth", async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const payload = await request.jwtVerify<AuthTokenPayload>();

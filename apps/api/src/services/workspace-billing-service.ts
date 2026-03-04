@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { env } from "../config/env.js";
 import { pool, withTransaction } from "../db/pool.js";
+import { InMemoryCache } from "../utils/cache.js";
 
 const WORKSPACE_PLAN_CODES = ["starter", "pro", "business"] as const;
 type WorkspacePlanCode = (typeof WORKSPACE_PLAN_CODES)[number];
@@ -507,11 +508,22 @@ export async function ensureWorkspaceForUser(userId: string): Promise<WorkspaceS
   });
 }
 
+const workspaceCreditsCache = new InMemoryCache<WorkspaceCreditSummary>(10_000);
+
 export async function getWorkspaceCreditsByUserId(userId: string): Promise<WorkspaceCreditSummary> {
-  return withTransaction(async (client) => {
+  const cacheKey = `credits:user:${userId}`;
+  const cached = workspaceCreditsCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const summary = await withTransaction(async (client) => {
     const context = await ensureWorkspaceContext(client, userId);
     return toCreditSummary(context.workspace.id, context.wallet);
   });
+
+  workspaceCreditsCache.set(cacheKey, summary);
+  return summary;
 }
 
 export async function listPlans(options?: { includeInactive?: boolean }): Promise<WorkspacePlan[]> {

@@ -1016,12 +1016,27 @@ export async function setConversationManualAndPaused(userId: string, conversatio
   );
 }
 
+import { InMemoryCache } from "../utils/cache.js";
+
+const dashboardOverviewCache = new InMemoryCache<{
+  leadsToday: number;
+  hotLeads: number;
+  warmLeads: number;
+  closedDeals: number;
+}>(15_000);
+
 export async function getDashboardOverview(userId: string): Promise<{
   leadsToday: number;
   hotLeads: number;
   warmLeads: number;
   closedDeals: number;
 }> {
+  const cacheKey = `dashboard:${userId}`;
+  const cached = dashboardOverviewCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const result = await pool.query<{
     leads_today: string;
     hot_leads: string;
@@ -1040,12 +1055,15 @@ export async function getDashboardOverview(userId: string): Promise<{
 
   const row = result.rows[0];
 
-  return {
+  const overview = {
     leadsToday: Number(row?.leads_today ?? 0),
     hotLeads: Number(row?.hot_leads ?? 0),
     warmLeads: Number(row?.warm_leads ?? 0),
     closedDeals: Number(row?.closed_deals ?? 0)
   };
+
+  dashboardOverviewCache.set(cacheKey, overview);
+  return overview;
 }
 
 export async function getConversationHistoryForPrompt(
