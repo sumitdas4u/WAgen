@@ -59,20 +59,86 @@ h1{font-size:clamp(2rem,4.2vw,3.3rem);font-weight:800;line-height:1.1;letter-spa
 .hero-checks li::before{content:"✓";width:20px;height:20px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;}
 
 /* ── PHONE ── */
-.phone-wrap{position:relative;max-width:300px;margin:0 auto;}
-.phone{background:var(--black);border-radius:30px;padding:8px;box-shadow:0 28px 70px rgba(0,0,0,.2);}
-.p-screen{background:var(--wa-bg);border-radius:24px;overflow:hidden;}
-.p-bar{background:var(--green);padding:11px 14px;display:flex;align-items:center;gap:9px;}
-.p-av{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;}
-.p-bar b{color:#fff;font-size:.84rem;display:block;}
-.p-bar span{color:rgba(255,255,255,.7);font-size:.7rem;}
-.p-msgs{background:var(--wa-bg);padding:12px 10px;min-height:256px;display:flex;flex-direction:column;gap:8px;}
-.bbl{max-width:84%;padding:8px 11px;border-radius:10px;font-size:.78rem;line-height:1.5;}
+.phone-wrap{position:relative;max-width:340px;margin:0 auto;}
+.ww-preview{
+  position:relative;
+  width:340px;
+  min-height:356px;
+  border:1.5px solid var(--border);
+  border-radius:18px;
+  padding:18px;
+  background:var(--bg2);
+}
+.ww-site{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:14px;
+  min-height:210px;
+}
+.ww-s-line{height:8px;background:var(--border);border-radius:4px;}
+.ww-s-line.w1{width:58%;margin-bottom:10px;}
+.ww-s-row{display:flex;gap:8px;margin-top:7px;}
+.ww-s-row .ww-s-line{flex:1;}
+.ww-s-row .ww-s-line.sm{flex:0 0 38%;}
+.ww-s-row .ww-s-line.md{flex:0 0 52%;}
+.ww-widget{
+  position:absolute;
+  left:18px;
+  right:18px;
+  bottom:72px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:14px 14px 0 14px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+  padding:12px;
+}
+.ww-head{
+  background:var(--green);
+  border-radius:9px;
+  padding:9px 12px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:10px;
+}
+.ww-av{
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  background:rgba(255,255,255,.25);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#fff;
+  font-size:.72rem;
+  font-weight:700;
+  flex-shrink:0;
+}
+.ww-head b{color:#fff;font-size:.8rem;display:block;line-height:1.2;}
+.ww-head span{color:rgba(255,255,255,.75);font-size:.68rem;line-height:1.2;}
+.ww-chat{display:flex;flex-direction:column;gap:7px;}
+.bbl{max-width:84%;padding:8px 11px;border-radius:10px;font-size:.76rem;line-height:1.48;}
 .bbl.r{background:#fff;border-radius:0 10px 10px 10px;align-self:flex-start;box-shadow:0 1px 3px rgba(0,0,0,.07);}
 .bbl.s{background:var(--wa-bubble);border-radius:10px 10px 0 10px;align-self:flex-end;}
 .bbl b{color:var(--green-deep);}
-.p-input{background:#f0f0f0;border-radius:0 0 24px 24px;padding:8px 12px;font-size:.74rem;color:#aaa;}
-.fbadge{position:absolute;background:#fff;border:1.5px solid var(--border-green);border-radius:10px;padding:8px 13px;font-size:.74rem;font-weight:700;color:var(--green-deep);box-shadow:0 5px 18px rgba(0,0,0,.1);white-space:nowrap;}
+.ww-launch{
+  position:absolute;
+  right:18px;
+  bottom:18px;
+  width:50px;
+  height:50px;
+  border-radius:50%;
+  border:none;
+  background:var(--green);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow:0 5px 16px rgba(29,185,84,.42);
+  pointer-events:none;
+}
+.fbadge{position:absolute;background:#fff;border:1.5px solid var(--border-green);border-radius:10px;padding:8px 13px;font-size:.74rem;font-weight:700;color:var(--green-deep);box-shadow:0 5px 18px rgba(0,0,0,.1);white-space:nowrap;z-index:2;}
 .fbadge.t{top:-12px;right:-20px;animation:flt 3s ease-in-out infinite;}
 .fbadge.b{bottom:-12px;left:-20px;animation:flt 3.5s 1s ease-in-out infinite;}
 @keyframes flt{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
@@ -316,30 +382,39 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 
         <li>Captures leads 24/7 into your dashboard</li>
       </ul>
     </div>
-    <div class="phone-wrap" style="max-width:340px;">
-      <div style="background:var(--bg2);border:1.5px solid var(--border);border-radius:18px;padding:20px;position:relative;min-height:300px;">
-        <div style="background:#fff;border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--border);">
-          <div style="height:9px;background:var(--border);border-radius:5px;width:55%;margin-bottom:8px;"></div>
-          <div style="display:flex;gap:8px;"><div style="flex:1;height:7px;background:var(--border);border-radius:4px;"></div><div style="width:38%;height:7px;background:var(--border);border-radius:4px;"></div></div>
-          <div style="display:flex;gap:8px;margin-top:6px;"><div style="flex:1;height:7px;background:var(--border);border-radius:4px;"></div><div style="width:52%;height:7px;background:var(--border);border-radius:4px;"></div></div>
+    <div class="phone-wrap">
+      <div class="ww-preview">
+        <div class="ww-site">
+          <div class="ww-s-line w1"></div>
+          <div class="ww-s-row">
+            <div class="ww-s-line"></div>
+            <div class="ww-s-line sm"></div>
+          </div>
+          <div class="ww-s-row">
+            <div class="ww-s-line"></div>
+            <div class="ww-s-line md"></div>
+          </div>
         </div>
-        <div style="position:absolute;bottom:16px;right:16px;left:16px;">
-          <div style="background:#fff;border:1px solid var(--border);border-radius:14px 14px 0 14px;padding:14px;box-shadow:0 6px 20px rgba(0,0,0,.1);margin-bottom:10px;">
-            <div style="background:var(--green);border-radius:9px;padding:9px 12px;display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-              <div style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:.85rem;">🤖</div>
-              <div><b style="color:#fff;font-size:.8rem;display:block;">WagenAI</b><span style="color:rgba(255,255,255,.7);font-size:.68rem;">● Online · Instant replies</span></div>
+        <div class="ww-widget">
+          <div class="ww-head">
+            <div class="ww-av">AI</div>
+            <div>
+              <b>WagenAI</b>
+              <span>Online - instant replies</span>
             </div>
-            <div id="ww1" class="bbl s show" style="font-size:.76rem;padding:8px 11px;border-radius:10px;margin-bottom:7px;">Hi! 👋 How can I help you today?</div>
-            <div id="ww2" class="bbl r" style="font-size:.76rem;padding:8px 11px;border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:7px;">What are your pricing plans?</div>
-            <div id="ww3" class="bbl s" style="font-size:.76rem;padding:8px 11px;border-radius:10px;">We have plans from <b>₹799/month</b>. Want me to send the full comparison? 📊</div>
           </div>
-          <div style="width:48px;height:48px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;margin-left:auto;box-shadow:0 4px 14px rgba(29,185,84,.4);">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+          <div class="ww-chat">
+            <div id="ww1" class="bbl s">Hi! How can I help you today?</div>
+            <div id="ww2" class="bbl r">What are your pricing plans?</div>
+            <div id="ww3" class="bbl s">Plans start from <b>INR 799/month</b>. Want the full comparison?</div>
           </div>
         </div>
+        <button class="ww-launch" aria-hidden="true" tabindex="-1">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+        </button>
       </div>
-      <div class="fbadge t">💬 Visitor captured · Lead saved</div>
-      <div class="fbadge b">⚡ One line of code · Any website</div>
+      <div class="fbadge t">Visitor captured - Lead saved</div>
+      <div class="fbadge b">One line of code - Any website</div>
     </div>
   </div>
   <div class="trust-bar">
@@ -488,12 +563,17 @@ document.querySelectorAll('.reveal').forEach((el,i) => {
   obs.observe(el);
 });
 function runChat() {
-  document.querySelectorAll('#chatWA .bbl').forEach(e => e.classList.remove('show'));
-  setTimeout(()=>{const e=document.getElementById('ww2');if(e)e.classList.add('show');},1200);
-  setTimeout(()=>{const e=document.getElementById('ww3');if(e)e.classList.add('show');},2200);
-  setTimeout(runChat, 3600);
+  const w1 = document.getElementById('ww1');
+  const w2 = document.getElementById('ww2');
+  const w3 = document.getElementById('ww3');
+  if (!w1 || !w2 || !w3) return;
+  [w1, w2, w3].forEach((bubble) => bubble.classList.remove('show'));
+  setTimeout(() => { w1.classList.add('show'); }, 200);
+  setTimeout(() => { w2.classList.add('show'); }, 1050);
+  setTimeout(() => { w3.classList.add('show'); }, 1900);
 }
 runChat();
+setInterval(runChat, 4200);
 </script>
 </body>
 </html>
