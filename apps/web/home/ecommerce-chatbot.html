@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>E-commerce AI Chatbot — WagenAI | Boost Sales & Recover Abandoned Carts</title>
+<meta name="description" content="WagenAI e-commerce chatbot helps Indian online stores recover abandoned carts, answer product queries 24/7, and boost conversions on WhatsApp and website."/>
+<meta name="keywords" content="ecommerce chatbot india, whatsapp bot for online store, cart abandonment chatbot india, d2c whatsapp chatbot, ai chatbot ecommerce"/>
+<link rel="canonical" href="https://wagenai.com/ecommerce-chatbot"/>
+<meta name="robots" content="index, follow"/>
+<meta property="og:title" content="E-commerce AI Chatbot — WagenAI | Boost Sales & Recover Abandoned Carts"/><meta property="og:description" content="WagenAI e-commerce chatbot helps Indian online stores recover abandoned carts, answer product queries 24/7, and boost conversions on WhatsApp and website."/><meta property="og:type" content="website"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is an e-commerce chatbot?","acceptedAnswer":{"@type":"Answer","text":"An e-commerce chatbot is an AI assistant that helps online stores answer product queries, recover carts, and send order updates 24/7."}}]}</script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--green:#1DB954;--green-dark:#17a349;--green-deep:#0d6b31;--black:#0F0F0F;--text:#1A1A1A;--muted:#6B7280;--muted-lt:#9CA3AF;--bg:#fff;--bg2:#F8FAF8;--bg3:#F0F7F0;--border:#E5E7EB;--border-green:rgba(29,185,84,.2);--wa-bubble:#DCF8C6;--wa-bg:#ECE5DD;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;line-height:1.6;}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:200;display:flex;align-items:center;justify-content:space-between;padding:0 5%;height:64px;background:rgba(255,255,255,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);}
+.logo{font-weight:800;font-size:1.3rem;color:var(--black);text-decoration:none;letter-spacing:-.02em;}
+.logo span{color:var(--green);}
+.nav-links{display:flex;gap:26px;list-style:none;}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:.88rem;font-weight:500;transition:color .2s;}
+.nav-links a:hover{color:var(--black);}
+.nav-right{display:flex;gap:10px;}
+.btn-nav-ghost{background:transparent;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-nav-ghost:hover{border-color:var(--green);color:var(--green);}
+.btn-nav-cta{background:var(--green);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 2px 10px rgba(29,185,84,.3);}
+.btn-nav-cta:hover{background:var(--green-dark);transform:translateY(-1px);}
+
+/* HERO */
+.ind-hero{padding:100px 5% 70px;background:var(--bg);}
+.hero-wrap{display:grid;grid-template-columns:1fr 420px;gap:60px;align-items:center;max-width:1160px;margin:0 auto;}
+.ind-badge{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border-green);border-radius:100px;padding:5px 14px;font-size:.76rem;font-weight:700;color:var(--green-deep);margin-bottom:16px;}
+h1{font-size:clamp(2.1rem,4.5vw,3.4rem);font-weight:800;line-height:1.1;letter-spacing:-.03em;margin-bottom:16px;}
+.g{color:var(--green);}
+.hero-sub{font-size:1rem;color:var(--muted);max-width:500px;line-height:1.75;margin-bottom:18px;}
+.hero-checks{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:28px;}
+.hero-checks li{font-size:.9rem;font-weight:500;}
+.hero-btns{display:flex;gap:12px;flex-wrap:wrap;}
+.btn-primary{background:var(--green);color:#fff;border:none;border-radius:9px;padding:13px 26px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 4px 16px rgba(29,185,84,.3);}
+.btn-primary:hover{background:var(--green-dark);transform:translateY(-2px);}
+.btn-outline{background:#fff;color:var(--text);border:2px solid var(--border);border-radius:9px;padding:13px 24px;font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-outline:hover{border-color:var(--green);color:var(--green);}
+
+/* PHONE CHAT */
+.chat-phone{background:var(--black);border-radius:28px;padding:8px;box-shadow:0 24px 60px rgba(0,0,0,.2);max-width:300px;margin:0 auto;position:relative;}
+.cp-bar{background:var(--green);border-radius:22px 22px 0 0;padding:10px 14px;display:flex;align-items:center;gap:9px;}
+.cp-bar .cp-av{font-size:1.2rem;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;}
+.cp-bar b{color:#fff;font-size:.84rem;display:block;}
+.cp-bar span{color:rgba(255,255,255,.7);font-size:.7rem;}
+.cp-msgs{background:var(--wa-bg);padding:12px 10px;min-height:260px;display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+.cm{max-width:82%;padding:8px 11px;border-radius:10px;font-size:.78rem;line-height:1.5;}
+.cm.r{background:#fff;border-radius:0 10px 10px 10px;align-self:flex-start;}
+.cm.s{background:var(--wa-bubble);border-radius:10px 10px 0 10px;align-self:flex-end;}
+.cm.s b,.cm.r b{color:var(--green-deep);}
+.cp-input{background:#f0f0f0;border-radius:0 0 22px 22px;padding:8px 12px;font-size:.75rem;color:#aaa;}
+.hero-visual{position:relative;}
+.float-badge{position:absolute;background:#fff;border:1.5px solid var(--border-green);border-radius:10px;padding:8px 13px;font-size:.75rem;font-weight:700;color:var(--green-deep);box-shadow:0 6px 20px rgba(0,0,0,.1);white-space:nowrap;}
+.float-badge.top{top:-14px;right:-10px;animation:float 3s ease-in-out infinite;}
+.float-badge.bot{bottom:-14px;left:-10px;animation:float 3.5s 1s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+
+/* TRUST BAR */
+.trust-bar{max-width:1160px;margin:48px auto 0;display:flex;align-items:center;gap:24px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:28px;}
+.trust-bar span{font-size:.85rem;color:var(--muted);}
+.trust-logos{display:flex;gap:18px;flex-wrap:wrap;}
+.trust-logos span{font-size:.82rem;font-weight:600;color:var(--text);background:var(--bg2);border:1px solid var(--border);border-radius:100px;padding:4px 12px;}
+
+/* WHAT SECTION */
+.what-section{background:var(--bg2);padding:80px 5%;}
+.sec-wrap{max-width:1160px;margin:0 auto;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;}
+.sec-label{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:10px;}
+h2{font-size:clamp(1.7rem,3.2vw,2.5rem);font-weight:800;line-height:1.2;letter-spacing:-.02em;margin-bottom:16px;}
+.check-list{list-style:none;display:flex;flex-direction:column;gap:10px;margin:16px 0 20px;}
+.check-list li{display:flex;align-items:flex-start;gap:10px;font-size:.92rem;color:var(--muted);padding-left:0;}
+.check-list li::before{content:"✓";color:var(--green);font-weight:800;flex-shrink:0;}
+.highlight-box{background:#fff;border:1.5px solid var(--border-green);border-radius:12px;padding:18px 20px;font-size:.88rem;line-height:1.7;color:var(--muted);}
+.highlight-box b{color:var(--text);}
+.what-stats{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.stat-card{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:22px 18px;text-align:center;transition:border-color .2s;}
+.stat-card:hover{border-color:var(--border-green);}
+.sc-val{font-size:2.2rem;font-weight:800;color:var(--green);letter-spacing:-.02em;}
+.sc-lbl{font-size:.8rem;color:var(--muted);margin-top:5px;line-height:1.4;}
+
+/* FEATURES ALTERNATING */
+.features-section{padding:80px 5%;}
+.sec-center{text-align:center;margin-bottom:60px;}
+.feat-alt{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-bottom:72px;}
+.feat-alt.reverse{direction:rtl;}
+.feat-alt.reverse>*{direction:ltr;}
+.fa-num{font-size:3rem;font-weight:800;color:rgba(29,185,84,.15);line-height:1;margin-bottom:8px;}
+.fa-text h3{font-size:1.4rem;font-weight:800;margin-bottom:12px;}
+.fa-text p{color:var(--muted);font-size:.93rem;line-height:1.75;margin-bottom:20px;}
+.btn-outline-sm{background:#fff;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:9px 20px;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-outline-sm:hover{border-color:var(--green);color:var(--green);}
+.feat-mockup{background:var(--bg2);border:1.5px solid var(--border);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px;}
+.fm-q{background:#fff;border-radius:0 12px 12px 12px;padding:10px 13px;font-size:.84rem;align-self:flex-start;max-width:90%;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+.fm-a{background:var(--wa-bubble);border-radius:12px 12px 0 12px;padding:10px 13px;font-size:.84rem;align-self:flex-end;max-width:90%;color:var(--text);}
+.fm-a b{color:var(--green-deep);}
+.fm-sys{text-align:center;font-size:.74rem;color:var(--muted);background:rgba(0,0,0,.05);border-radius:8px;padding:5px 12px;}
+.fm-tag{font-size:.74rem;font-weight:700;color:var(--green-deep);background:rgba(29,185,84,.1);border-radius:7px;padding:5px 12px;align-self:center;}
+
+/* PLATFORM FEATURES */
+.platform-section{background:var(--bg2);padding:80px 5%;}
+.pf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:44px;}
+.pf-card{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:26px;transition:all .22s;}
+.pf-card:hover{border-color:var(--border-green);transform:translateY(-4px);box-shadow:0 8px 24px rgba(29,185,84,.1);}
+.pf-icon{font-size:1.8rem;margin-bottom:12px;}
+.pf-card h4{font-weight:700;font-size:.95rem;margin-bottom:7px;}
+.pf-card p{color:var(--muted);font-size:.85rem;line-height:1.6;}
+
+/* BEST FOR */
+.bestfor-section{padding:80px 5%;}
+.bf-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:44px;}
+.bf-card{background:var(--bg2);border:1.5px solid var(--border);border-radius:14px;padding:26px 20px;transition:all .22s;position:relative;}
+.bf-card:hover{border-color:var(--green);transform:translateY(-4px);}
+.bf-num{font-size:2.4rem;font-weight:800;color:rgba(29,185,84,.12);line-height:1;margin-bottom:6px;}
+.bf-icon{font-size:1.5rem;margin-bottom:10px;}
+.bf-card h4{font-weight:700;font-size:.95rem;margin-bottom:7px;}
+.bf-card p{color:var(--muted);font-size:.83rem;line-height:1.6;}
+
+/* SETUP STEPS */
+.setup-section{background:var(--bg2);padding:80px 5%;}
+.steps-row{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:50px;position:relative;}
+.steps-row::before{content:'';position:absolute;top:34px;left:16%;right:16%;height:2px;background:repeating-linear-gradient(90deg,var(--green) 0,var(--green) 8px,transparent 8px,transparent 18px);}
+.step-item{text-align:center;padding:0 20px;}
+.step-circle{width:68px;height:68px;border-radius:50%;background:#fff;border:2px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:1.2rem;font-weight:800;color:var(--green);box-shadow:0 0 0 8px rgba(29,185,84,.07);}
+.step-item h4{font-weight:700;font-size:1rem;margin-bottom:8px;}
+.step-item p{color:var(--muted);font-size:.86rem;line-height:1.6;}
+
+/* WHY CHOOSE */
+.why-section{padding:80px 5%;}
+.why-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:44px;}
+.why-card{background:var(--bg2);border:1.5px solid var(--border);border-radius:12px;padding:22px;transition:border-color .2s;}
+.why-card:hover{border-color:var(--border-green);}
+.wc-icon{font-size:1.5rem;margin-bottom:10px;}
+.why-card h4{font-weight:700;font-size:.93rem;margin-bottom:6px;}
+.why-card p{color:var(--muted);font-size:.83rem;line-height:1.55;}
+
+/* FAQ */
+.faq-section{background:var(--bg2);padding:80px 5%;}
+.faq-wrap{max-width:780px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px;}
+details{background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s;}
+details:hover,details[open]{border-color:var(--border-green);}
+summary{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;cursor:pointer;list-style:none;font-weight:700;font-size:.93rem;gap:12px;}
+summary::-webkit-details-marker{display:none;}
+.fi-icon{color:var(--green);font-size:1.3rem;flex-shrink:0;transition:transform .25s;}
+details[open] .fi-icon{transform:rotate(45deg);}
+.fa{padding:0 22px 18px;color:var(--muted);font-size:.88rem;line-height:1.75;}
+.fa b{color:var(--text);}
+
+/* CTA */
+.cta-section{background:var(--black);padding:90px 5%;text-align:center;position:relative;overflow:hidden;}
+.cta-section::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(29,185,84,.2),transparent 60%);}
+.cta-inner{position:relative;z-index:1;}
+.cta-section h2{color:#fff;max-width:680px;margin:0 auto;}
+.cta-section h2 .g{color:var(--green);}
+.cta-section p{color:rgba(255,255,255,.6);max-width:480px;margin:14px auto 0;font-size:.96rem;}
+.cta-btns{display:flex;gap:12px;justify-content:center;margin-top:32px;flex-wrap:wrap;}
+.btn-wa{display:flex;align-items:center;gap:8px;background:#25D366;color:#fff;border:none;border-radius:9px;padding:13px 24px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-wa:hover{background:#1ebe5c;transform:translateY(-2px);}
+
+/* FOOTER */
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 28px;}
+.ft-top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:32px;max-width:1160px;margin:0 auto;}
+.ft-brand p{color:var(--muted);font-size:.83rem;margin-top:8px;max-width:240px;line-height:1.7;}
+.ft-links{display:flex;gap:44px;flex-wrap:wrap;}
+.ft-col h5{font-weight:700;font-size:.84rem;margin-bottom:12px;}
+.ft-col a{display:block;color:var(--muted);text-decoration:none;font-size:.82rem;margin-bottom:7px;transition:color .2s;}
+.ft-col a:hover{color:var(--green);}
+.ft-bot{max-width:1160px;margin:32px auto 0;padding-top:18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.ft-bot p,.ft-bot span{color:var(--muted-lt);font-size:.76rem;}
+.seo-links{display:flex;flex-wrap:wrap;gap:5px 14px;max-width:1160px;margin:10px auto 0;}
+.seo-links a{color:var(--muted-lt);font-size:.72rem;text-decoration:none;}
+.seo-links a:hover{color:var(--green);}
+
+/* CHAT ANIM */
+.cm{opacity:0;transform:translateY(6px);transition:opacity .4s ease,transform .4s ease;}
+.cm.show{opacity:1;transform:none;}
+
+/* REVEAL */
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease;}
+.reveal.vis{opacity:1;transform:none;}
+
+@media(max-width:960px){
+  .hero-wrap,.two-col,.feat-alt{grid-template-columns:1fr;}
+  .feat-alt.reverse{direction:ltr;}
+  .chat-phone,.hero-visual{display:none;}
+  .nav-links{display:none;}
+  .pf-grid,.bf-grid,.why-grid{grid-template-columns:repeat(2,1fr);}
+  .steps-row{grid-template-columns:1fr;gap:28px;}.steps-row::before{display:none;}
+}
+@media(max-width:600px){.pf-grid,.bf-grid,.why-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="logo">Wagen<span>AI</span></a>
+  <ul class="nav-links">
+    <li><a href="/#features">Features</a></li>
+    <li><a href="/#how">How it Works</a></li>
+    <li><a href="/pricing">Pricing</a></li>
+    <li><a href="/#industries">Industries</a></li>
+  </ul>
+  <div class="nav-right">
+    <button class="btn-nav-ghost">Log In</button>
+    <button class="btn-nav-cta">Start Free (QR Mode)</button>
+  </div>
+</nav>
+
+<main>
+<!-- HERO -->
+<section class="ind-hero">
+  <div class="hero-wrap">
+    <div>
+      <div class="ind-badge">🛍️ E-commerce Chatbot</div>
+      <h1>E-commerce Chatbot that Turns Visitors into <span class="g">Buyers</span></h1>
+      <p class="hero-sub">Give your customers instant answers, personalised product recommendations, order tracking, and support — all in real time on WhatsApp and your website.</p>
+      <ul class="hero-checks"><li>✅ Reduce cart abandonment with smart WhatsApp follow-ups</li><li>✅ Automate FAQs, order updates, and return queries</li><li>✅ Increase sales through personalised product suggestions</li></ul>
+      <div class="hero-btns"><button class="btn-primary">Start Free Trial</button><button class="btn-outline">Request a Demo</button></div>
+    </div>
+    <div class="hero-visual">
+      <div class="chat-phone">
+        <div class="cp-bar"><div class="cp-av">🛍️</div><div><b>WagenAI Agent</b><br/><span>Online · 24/7</span></div></div>
+        <div class="cp-msgs" id="chatEcom"><div class="cm r" id="ec1">Hi! Does this kurta come in size L?</div>
+<div class="cm s" id="ec2">Yes! The <b>Blue Embroidered Kurta</b> is in S/M/L/XL. Want the full catalog? 🛍️</div>
+<div class="cm r" id="ec3">Yes! Also what's your return policy?</div>
+<div class="cm s" id="ec4">Catalog sent! 📋 Returns in 7 days, free pickup. Anything else?</div>
+<div class="cm r" id="ec5">I'll order the L now!</div>
+<div class="cm s" id="ec6">✅ <b>Order placed!</b> Payment link sent. You'll get tracking updates here 🎉</div></div>
+        <div class="cp-input">Type a message...</div>
+      </div>
+      <div class="float-badge top">🛒 Cart recovered · ₹2,400 saved</div>
+      <div class="float-badge bot">📦 Order tracked instantly</div>
+    </div>
+  </div>
+  <div class="trust-bar"><span>Trusted by <b>500+ Indian businesses</b></span><div class="trust-logos"><span>👗 Fashion</span><span>💄 Beauty</span><span>🛒 Grocery</span><span>📦 D2C</span><span>🍕 F&B</span></div></div>
+</section>
+
+<!-- WHAT IS -->
+<section class="what-section">
+  <div class="sec-wrap two-col">
+    <div class="reveal">
+      <div class="sec-label">What is this?</div>
+      <h2>Your Online Store's <span class="g">AI Sales Assistant</span></h2>
+      <p style="color:var(--muted);margin-bottom:14px;">An e-commerce chatbot handles every stage of the buyer journey — from discovery to purchase to post-sale — so your team can focus on growth.</p>
+<ul class="check-list"><li>Shoppers get instant answers instead of bouncing</li><li>No cart abandonment due to unanswered questions</li><li>Support scales without hiring more staff</li></ul>
+<div class="highlight-box"><b>With WagenAI:</b> Shoppers get instant multilingual support 24/7. They can browse catalogs, get recommendations, and resolve issues — all in real time.</div>
+    </div>
+    <div class="what-stats reveal"><div class="stat-card"><div class="sc-val">80%</div><div class="sc-lbl">Queries resolved automatically</div></div><div class="stat-card"><div class="sc-val">3×</div><div class="sc-lbl">More leads vs static forms</div></div><div class="stat-card"><div class="sc-val">40%</div><div class="sc-lbl">Reduction in cart abandonment</div></div><div class="stat-card"><div class="sc-val">24/7</div><div class="sc-lbl">Always on, never sleeps</div></div></div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features-section">
+  <div class="sec-wrap">
+    <div class="sec-center reveal">
+      <div class="sec-label">How WagenAI Transforms E-commerce</div>
+      <h2>Up to <span class="g">200% more conversions</span> — here's how</h2>
+    </div>
+    <div class="feat-alt reveal">
+  <div class="fa-text"><div class="fa-num">01</div><h3>24/7 Customer Support</h3><p>No query goes unanswered. WagenAI instantly resolves 80% of queries — product details, sizing, availability, delivery timelines — without any human involvement.</p><button class="btn-outline-sm">Request a Demo</button></div>
+  <div class="fa-visual"><div class="feat-mockup"><div class="fm-q">What sizes do you have for the black dress?</div><div class="fm-a">We have XS, S, M, <b>L, XL</b> in the Black Wrap Dress. XL is sold out — want a restock alert? 👗</div><div class="fm-tag">⚡ Answered in 0.3s</div></div></div>
+</div><div class="feat-alt reverse reveal">
+  <div class="fa-text"><div class="fa-num">02</div><h3>Cart Abandonment Recovery</h3><p>Customers browse, add to cart, and leave. WagenAI follows up on WhatsApp with a personalised reminder and optionally a coupon code — bringing them back.</p><button class="btn-outline-sm">Request a Demo</button></div>
+  <div class="fa-visual"><div class="feat-mockup"><div class="fm-sys">Customer left cart 5 mins ago...</div><div class="fm-a">Hey! Your <b>Blue Kurta (L)</b> is waiting 🛒 Here's <b>10% off</b> just for you: <b>SAVE10</b> — valid 2 hours!</div><div class="fm-tag">🔄 Cart recovery sent</div></div></div>
+</div><div class="feat-alt reveal">
+  <div class="fa-text"><div class="fa-num">03</div><h3>Lead Qualification & Conversion</h3><p>Engage undecided visitors. WagenAI qualifies them, collects name, phone, and product interest, and saves leads directly to your dashboard.</p><button class="btn-outline-sm">Request a Demo</button></div>
+  <div class="fa-visual"><div class="feat-mockup"><div class="fm-q">I'm looking for gifts under ₹1000</div><div class="fm-a">Great! We have 12 gifts under ₹1000 🎁 May I have your name and number to send our gift catalog on WhatsApp?</div><div class="fm-tag">✅ Lead captured</div></div></div>
+</div><div class="feat-alt reverse reveal">
+  <div class="fa-text"><div class="fa-num">04</div><h3>Order Tracking & Updates</h3><p>Customers can check their order status instantly in chat. WagenAI reads their order ID and shares real-time tracking — no app, no call needed.</p><button class="btn-outline-sm">Request a Demo</button></div>
+  <div class="fa-visual"><div class="feat-mockup"><div class="fm-q">What's my order status?</div><div class="fm-a">Order <b>#ORD-2891</b> is out for delivery! 🚚 Expected <b>today by 6 PM</b>. Track here: [link]</div><div class="fm-tag">📦 Real-time update</div></div></div>
+</div><div class="feat-alt reveal">
+  <div class="fa-text"><div class="fa-num">05</div><h3>Multilingual Support</h3><p>Customers message in Hindi, English, Gujarati, or Tamil. WagenAI auto-detects and replies in their language — no extra setup needed.</p><button class="btn-outline-sm">Request a Demo</button></div>
+  <div class="fa-visual"><div class="feat-mockup"><div class="fm-q">Bhai, ye dress ka price kya hai?</div><div class="fm-a">Bhai, <b>Red Floral Dress</b> sirf <b>₹899</b> mein available hai! 🔥 Kya main size chart bheju?</div><div class="fm-tag">🌐 Hindi detected</div></div></div>
+</div>
+  </div>
+</section>
+
+<!-- PLATFORM FEATURES -->
+<section class="platform-section">
+  <div class="sec-wrap">
+    <div class="sec-center reveal"><div class="sec-label">Discover the Platform</div><h2>Smart features for <span class="g">your business</span></h2></div>
+    <div class="pf-grid"><div class="pf-card reveal"><div class="pf-icon">⚡</div><h4>Instant AI Replies</h4><p>Answers product, price, delivery queries instantly — 24/7, without any human.</p></div><div class="pf-card reveal"><div class="pf-icon">❓</div><h4>Unanswered Questions</h4><p>Track what the bot couldn't answer. Keep improving your AI's knowledge base.</p></div><div class="pf-card reveal"><div class="pf-icon">🎯</div><h4>Smart Lead Capture</h4><p>Automatically collects name, phone, and product interest from every visitor.</p></div><div class="pf-card reveal"><div class="pf-icon">🌐</div><h4>Website + WhatsApp</h4><p>One chatbot on both your website and WhatsApp, managed from one dashboard.</p></div><div class="pf-card reveal"><div class="pf-icon">📄</div><h4>Product Catalog AI</h4><p>Upload your catalog PDF — WagenAI reads it and answers product queries automatically.</p></div><div class="pf-card reveal"><div class="pf-icon">🔜</div><h4>CRM Integration</h4><p>Leads will sync to Google Sheets, Zoho, HubSpot automatically. <b>Coming Soon.</b></p></div></div>
+  </div>
+</section>
+
+<!-- BEST FOR -->
+<section class="bestfor-section">
+  <div class="sec-wrap">
+    <div class="sec-center reveal"><div class="sec-label">Best For</div><h2>Built for <span class="g">growing e-commerce businesses</span></h2></div>
+    <div class="bf-grid"><div class="bf-card reveal"><div class="bf-num">01</div><div class="bf-icon">🛒</div><h4>Online Stores</h4><p>Engage visitors instantly, answer questions, and guide them to checkout — 24/7.</p></div><div class="bf-card reveal"><div class="bf-num">02</div><div class="bf-icon">📦</div><h4>D2C Brands</h4><p>Capture preferences, recommend products, and build loyalty with personalised conversations.</p></div><div class="bf-card reveal"><div class="bf-num">03</div><div class="bf-icon">💄</div><h4>Beauty & Wellness</h4><p>Recommend routines, explain ingredients, and guide customers to checkout.</p></div><div class="bf-card reveal"><div class="bf-num">04</div><div class="bf-icon">👗</div><h4>Fashion & Apparel</h4><p>Share size charts, styling suggestions, and answer sizing queries before they abandon.</p></div></div>
+  </div>
+</section>
+
+<section class="setup-section">
+  <div class="sec-wrap">
+    <div class="sec-center reveal">
+      <div class="sec-label">Simple Setup</div>
+      <h2>Build and go live in <span class="g">5 minutes!</span></h2>
+      <p style="color:var(--muted);max-width:480px;margin:10px auto 0;">No heavy setup. No coding needed. Any business owner can do it.</p>
+    </div>
+    <div class="steps-row">
+      <div class="step-item reveal">
+        <div class="step-circle">01</div>
+        <h4>Sign Up</h4>
+        <p>Create your free WagenAI account. No credit card needed to get started.</p>
+      </div>
+      <div class="step-item reveal">
+        <div class="step-circle">02</div>
+        <h4>Train Your AI</h4>
+        <p>Add your website URL, upload PDFs, or type FAQs. WagenAI learns your business instantly.</p>
+      </div>
+      <div class="step-item reveal">
+        <div class="step-circle">03</div>
+        <h4>Go Live</h4>
+        <p>Scan the WhatsApp QR or paste one line of code on your website. Done — your AI is live.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY -->
+<section class="why-section">
+  <div class="sec-wrap">
+    <div class="sec-center reveal"><div class="sec-label">Why WagenAI</div><h2>Why choose <span class="g">WagenAI?</span></h2></div>
+    <div class="why-grid"><div class="why-card reveal"><div class="wc-icon">🕐</div><h4>Available 24/7</h4><p>Your store keeps selling even while you sleep. No missed shoppers.</p></div><div class="why-card reveal"><div class="wc-icon">⚡</div><h4>Instant Accurate Replies</h4><p>Resolve order, size, and shipping queries in under a second.</p></div><div class="why-card reveal"><div class="wc-icon">🌍</div><h4>Multilingual Support</h4><p>Connect with shoppers in Hindi, Tamil, Gujarati, and more.</p></div><div class="why-card reveal"><div class="wc-icon">💰</div><h4>Lower Support Costs</h4><p>Automate 80% of repetitive queries. Save on staffing costs.</p></div><div class="why-card reveal"><div class="wc-icon">📊</div><h4>Analytics for Growth</h4><p>Boost performance based on unanswered question tracking.</p></div><div class="why-card reveal"><div class="wc-icon">🚀</div><h4>No-Code Setup</h4><p>Go live with one QR scan or one line of code. In 5 minutes.</p></div></div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-section">
+  <div class="sec-wrap">
+    <div class="sec-center reveal"><div class="sec-label">FAQ</div><h2>Got <span class="g">Questions?</span></h2></div>
+    <div class="faq-wrap"><details class="reveal"><summary>What is an e-commerce chatbot and how does it help my store?<span class="fi-icon">+</span></summary><div class="fa">An e-commerce chatbot is your store's virtual AI assistant. It chats with customers in real time, answers product queries, guides them through buying, and even follows up on abandoned carts — on WhatsApp and your website, 24/7.</div></details><details class="reveal"><summary>Can WagenAI reduce cart abandonment?<span class="fi-icon">+</span></summary><div class="fa">Yes. WagenAI detects when a customer stops mid-purchase and sends a personalised WhatsApp follow-up with a reminder or coupon code to bring them back.</div></details><details class="reveal"><summary>Can customers track orders through the chatbot?<span class="fi-icon">+</span></summary><div class="fa">Yes. Customers type their order number in chat and WagenAI shares real-time tracking updates and delivery status instantly.</div></details><details class="reveal"><summary>Does WagenAI support Hindi and Indian languages?<span class="fi-icon">+</span></summary><div class="fa">Yes. WagenAI automatically detects and responds in Hindi, Tamil, Gujarati, Bengali, Marathi, and more — no extra setup needed.</div></details><details class="reveal"><summary>Are CRM and Google Sheets integrations available?<span class="fi-icon">+</span></summary><div class="fa">Integrations are <b>coming soon</b>. Currently all captured leads are stored in your WagenAI dashboard. CRM sync will roll out on Growth and Pro plans.</div></details><details class="reveal"><summary>Is there a free trial?<span class="fi-icon">+</span></summary><div class="fa">Yes — free trial with no credit card required. Go live on WhatsApp or your website in under 5 minutes.</div></details></div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-inner">
+    <div class="sec-label" style="color:var(--green);">Get Started Today</div>
+    <h2>Start Winning Customers with <span class="g">AI Today</span></h2>
+    <p>Setup in 5 minutes. No credit card. No developer. Just a smarter way to grow your store.</p>
+    <div class="cta-btns">
+      <button class="btn-primary">🚀 Start Free Trial</button>
+      <button class="btn-wa"><svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> Chat on WhatsApp</button>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="ft-top">
+    <div class="ft-brand">
+      <a href="/" class="logo">Wagen<span>AI</span></a>
+      <p>India's most accessible AI chatbot — built for SMEs who want to grow without growing their team.</p>
+    </div>
+    <div class="ft-links">
+      <div class="ft-col"><h5>Product</h5><a href="#">WhatsApp Bot</a><a href="#">Website Widget</a><a href="#">WhatsApp API</a><a href="#">Lead Capture</a><a href="/pricing">Pricing</a></div>
+      <div class="ft-col"><h5>Industries</h5><a href="/ecommerce-chatbot">E-commerce</a><a href="/real-estate-chatbot">Real Estate</a><a href="/education-chatbot">Education</a><a href="/healthcare-chatbot">Healthcare</a><a href="/restaurant-chatbot">Restaurants</a></div>
+      <div class="ft-col"><h5>Company</h5><a href="#">About Us</a><a href="#">Blog</a><a href="#">Contact</a><a href="#">Privacy Policy</a></div>
+    </div>
+  </div>
+  <div class="ft-bot">
+    <p>© 2025 WagenAI. All rights reserved. 🇮🇳 Proudly Made in India</p>
+    <span>WhatsApp™ is a trademark of Meta Platforms, Inc.</span>
+  </div>
+  <div class="seo-links"><a href="/ecommerce-chatbot" title="E-commerce Chatbot India">E-commerce Chatbot India</a><a href="/whatsapp-chatbot-india" title="WhatsApp Chatbot India">WhatsApp Chatbot India</a><a href="/cart-abandonment-chatbot" title="Cart Abandonment Chatbot">Cart Abandonment Chatbot</a><a href="/d2c-whatsapp-bot" title="D2C WhatsApp Bot">D2C WhatsApp Bot</a><a href="/whatsapp-chatbot-online-store" title="WhatsApp Chatbot Online Store">WhatsApp Chatbot Online Store</a></div>
+</footer>
+<script>
+// scroll reveal
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('vis');});},{threshold:0.1});
+document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(i%4*0.08)+'s';obs.observe(el);});
+// chat anim
+function runChat(){
+  document.querySelectorAll('#chatEcom .cm').forEach(e=>e.classList.remove('show'));
+  setTimeout(()=>{ const e=document.getElementById('ec1'); if(e) e.classList.add('show'); }, 500);
+  setTimeout(()=>{ const e=document.getElementById('ec2'); if(e) e.classList.add('show'); }, 1300);
+  setTimeout(()=>{ const e=document.getElementById('ec3'); if(e) e.classList.add('show'); }, 2300);
+  setTimeout(()=>{ const e=document.getElementById('ec4'); if(e) e.classList.add('show'); }, 3100);
+  setTimeout(()=>{ const e=document.getElementById('ec5'); if(e) e.classList.add('show'); }, 4000);
+  setTimeout(()=>{ const e=document.getElementById('ec6'); if(e) e.classList.add('show'); }, 4700);
+  setTimeout(runChat, 6100);
+}
+runChat();
+</script>
+</body>
+</html>

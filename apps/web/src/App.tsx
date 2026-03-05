@@ -21,6 +21,55 @@ const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage").then(
 const ContactUsPage = lazy(() => import("./pages/ContactUsPage").then((m) => ({ default: m.ContactUsPage })));
 const DataDeletionPage = lazy(() => import("./pages/DataDeletionPage").then((m) => ({ default: m.DataDeletionPage })));
 
+const LANDING_PAGE_PATHS = [
+  "/",
+  "/pricing",
+  "/whatsapp-bot",
+  "/website-widget",
+  "/whatsapp-api",
+  "/lead-capture",
+  "/ecommerce-chatbot",
+  "/real-estate-chatbot",
+  "/education-chatbot",
+  "/healthcare-chatbot",
+  "/restaurant-chatbot"
+] as const;
+
+const LANDING_PAGE_REDIRECTS: Readonly<Record<string, (typeof LANDING_PAGE_PATHS)[number]>> = {
+  "/whatsapp-chatbot-india": "/whatsapp-bot",
+  "/whatsapp-ai-bot": "/whatsapp-bot",
+  "/whatsapp-agent": "/whatsapp-bot",
+  "/lead-capture-chatbot": "/lead-capture",
+  "/wati-alternative": "/pricing",
+  "/aisensy-alternative": "/pricing",
+  "/whatsapp-business-api-india": "/whatsapp-api",
+  "/no-code-whatsapp-chatbot": "/",
+  "/whatsapp-chatbot-real-estate": "/real-estate-chatbot",
+  "/ai-chatbot-india": "/",
+  "/whatsapp-chatbot-pricing-india": "/pricing",
+  "/official-whatsapp-api": "/whatsapp-api",
+  "/whatsapp-green-tick": "/whatsapp-api",
+  "/whatsapp-lead-capture": "/lead-capture",
+  "/lead-generation-chatbot": "/lead-capture",
+  "/cart-abandonment-chatbot": "/ecommerce-chatbot",
+  "/d2c-whatsapp-bot": "/ecommerce-chatbot",
+  "/whatsapp-chatbot-online-store": "/ecommerce-chatbot",
+  "/whatsapp-bot-property-agents": "/real-estate-chatbot",
+  "/lead-capture-real-estate": "/real-estate-chatbot",
+  "/property-chatbot-india": "/real-estate-chatbot",
+  "/whatsapp-chatbot-coaching": "/education-chatbot",
+  "/admission-chatbot-india": "/education-chatbot",
+  "/student-support-chatbot": "/education-chatbot",
+  "/whatsapp-chatbot-clinic": "/healthcare-chatbot",
+  "/appointment-booking-chatbot": "/healthcare-chatbot",
+  "/hospital-chatbot-india": "/healthcare-chatbot",
+  "/whatsapp-chatbot-restaurant": "/restaurant-chatbot",
+  "/table-booking-chatbot": "/restaurant-chatbot",
+  "/food-delivery-chatbot": "/restaurant-chatbot",
+  "/ai-chatbot-website": "/website-widget",
+  "/lead-capture-widget": "/website-widget"
+};
+
 function isOnboardingComplete(user: User | null): boolean {
   if (!user) {
     return false;
@@ -62,7 +111,12 @@ export function App() {
   return (
     <Suspense fallback={<div className="loading-screen">Loading...</div>}>
       <Routes>
-        <Route path="/" element={<OrchidsLandingPage />} />
+        {LANDING_PAGE_PATHS.map((path) => (
+          <Route key={path} path={path} element={<OrchidsLandingPage />} />
+        ))}
+        {Object.entries(LANDING_PAGE_REDIRECTS).map(([path, target]) => (
+          <Route key={path} path={path} element={<Navigate to={target} replace />} />
+        ))}
         <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
         <Route path="/terms-of-service" element={<TermsOfServicePage />} />
         <Route path="/contact-us" element={<ContactUsPage />} />

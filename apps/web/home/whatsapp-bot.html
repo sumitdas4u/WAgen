@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WhatsApp AI Bot for Indian Businesses — WagenAI | Go Live in 2 Minutes</title>
+<meta name="description" content="WagenAI WhatsApp AI bot lets any Indian business go live in 2 minutes with QR scan. No API approval. AI answers queries, captures leads, and supports Hindi 24/7."/>
+<meta name="keywords" content="whatsapp bot india, whatsapp ai bot, whatsapp chatbot india, whatsapp business bot, ai whatsapp agent india"/>
+<link rel="canonical" href="https://wagenai.com/whatsapp-bot"/>
+<meta name="robots" content="index,follow"/>
+<meta property="og:title" content="WhatsApp AI Bot for Indian Businesses — WagenAI | Go Live in 2 Minutes"/><meta property="og:description" content="WagenAI WhatsApp AI bot lets any Indian business go live in 2 minutes with QR scan. No API approval. AI answers queries, captures leads, and supports Hindi 24/7."/><meta property="og:type" content="website"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How does WagenAI WhatsApp bot work?","acceptedAnswer":{"@type":"Answer","text":"WagenAI connects to your WhatsApp Business number via QR scan in under 2 minutes. The AI agent replies to customer messages 24/7 using your website, PDFs, and FAQ content."}}]}</script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --green:#1DB954;--green-dark:#17a349;--green-deep:#0d6b31;
+  --black:#0F0F0F;--text:#1A1A1A;--muted:#6B7280;--muted-lt:#9CA3AF;
+  --bg:#fff;--bg2:#F8FAF8;--bg3:#F0F7F0;--border:#E5E7EB;
+  --border-green:rgba(29,185,84,.2);--wa-bubble:#DCF8C6;--wa-bg:#ECE5DD;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;line-height:1.6;}
+
+/* ── NAV ── */
+nav{position:fixed;top:0;left:0;right:0;z-index:300;display:flex;align-items:center;justify-content:space-between;padding:0 5%;height:64px;background:rgba(255,255,255,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);}
+.logo{font-weight:800;font-size:1.3rem;color:var(--black);text-decoration:none;letter-spacing:-.02em;}
+.logo span{color:var(--green);}
+.nav-links{display:flex;gap:0;list-style:none;align-items:center;}
+.nav-item{position:relative;}
+.nav-item>a{display:block;padding:0 14px;height:64px;line-height:64px;color:var(--muted);text-decoration:none;font-size:.88rem;font-weight:500;transition:color .2s;white-space:nowrap;}
+.nav-item>a:hover,.nav-item>a.active{color:var(--black);}
+.nav-item:hover .drop{display:flex;}
+.drop{display:none;position:absolute;top:60px;left:0;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;flex-direction:column;min-width:220px;box-shadow:0 12px 32px rgba(0,0,0,.1);z-index:400;}
+.drop a{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;color:var(--text);font-size:.84rem;font-weight:500;text-decoration:none;transition:background .15s;}
+.drop a:hover{background:var(--bg3);color:var(--green);}
+.drop a.active{background:var(--bg3);color:var(--green);font-weight:700;}
+.nav-right{display:flex;gap:10px;}
+.btn-ghost{background:transparent;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-ghost:hover{border-color:var(--green);color:var(--green);}
+.btn-cta{background:var(--green);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(29,185,84,.3);transition:all .2s;}
+.btn-cta:hover{background:var(--green-dark);transform:translateY(-1px);}
+
+/* ── HERO ── */
+.hero{padding:100px 5% 72px;position:relative;overflow:hidden;}
+.hero-bg{position:absolute;inset:0;background-image:radial-gradient(circle,#d1d5db 1px,transparent 1px);background-size:28px 28px;opacity:.28;mask-image:radial-gradient(ellipse 55% 70% at 25% 50%,black,transparent);}
+.hero-glow{position:absolute;top:-5%;right:-5%;width:500px;height:500px;background:radial-gradient(ellipse,rgba(29,185,84,.1),transparent 65%);pointer-events:none;}
+.hero-wrap{display:grid;grid-template-columns:1fr 430px;gap:60px;align-items:center;max-width:1160px;margin:0 auto;position:relative;z-index:1;}
+.prod-badge{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border-green);border-radius:100px;padding:5px 14px;font-size:.76rem;font-weight:700;color:var(--green-deep);margin-bottom:16px;}
+h1{font-size:clamp(2rem,4.2vw,3.3rem);font-weight:800;line-height:1.1;letter-spacing:-.03em;margin-bottom:16px;}
+.g{color:var(--green);}
+.hero-sub{font-size:1rem;color:var(--muted);max-width:500px;line-height:1.75;margin-bottom:24px;}
+.hero-btns{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;}
+.btn-primary{background:var(--green);color:#fff;border:none;border-radius:9px;padding:13px 26px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 4px 16px rgba(29,185,84,.3);}
+.btn-primary:hover{background:var(--green-dark);transform:translateY(-2px);}
+.btn-outline{background:#fff;color:var(--text);border:2px solid var(--border);border-radius:9px;padding:13px 24px;font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-outline:hover{border-color:var(--green);color:var(--green);}
+.hero-checks{list-style:none;display:flex;flex-direction:column;gap:9px;}
+.hero-checks li{display:flex;align-items:center;gap:9px;font-size:.9rem;font-weight:500;}
+.hero-checks li::before{content:"✓";width:20px;height:20px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;}
+
+/* ── PHONE ── */
+.phone-wrap{position:relative;max-width:300px;margin:0 auto;}
+.phone{background:var(--black);border-radius:30px;padding:8px;box-shadow:0 28px 70px rgba(0,0,0,.2);}
+.p-screen{background:var(--wa-bg);border-radius:24px;overflow:hidden;}
+.p-bar{background:var(--green);padding:11px 14px;display:flex;align-items:center;gap:9px;}
+.p-av{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;}
+.p-bar b{color:#fff;font-size:.84rem;display:block;}
+.p-bar span{color:rgba(255,255,255,.7);font-size:.7rem;}
+.p-msgs{background:var(--wa-bg);padding:12px 10px;min-height:256px;display:flex;flex-direction:column;gap:8px;}
+.bbl{max-width:84%;padding:8px 11px;border-radius:10px;font-size:.78rem;line-height:1.5;}
+.bbl.r{background:#fff;border-radius:0 10px 10px 10px;align-self:flex-start;box-shadow:0 1px 3px rgba(0,0,0,.07);}
+.bbl.s{background:var(--wa-bubble);border-radius:10px 10px 0 10px;align-self:flex-end;}
+.bbl b{color:var(--green-deep);}
+.p-input{background:#f0f0f0;border-radius:0 0 24px 24px;padding:8px 12px;font-size:.74rem;color:#aaa;}
+.fbadge{position:absolute;background:#fff;border:1.5px solid var(--border-green);border-radius:10px;padding:8px 13px;font-size:.74rem;font-weight:700;color:var(--green-deep);box-shadow:0 5px 18px rgba(0,0,0,.1);white-space:nowrap;}
+.fbadge.t{top:-12px;right:-20px;animation:flt 3s ease-in-out infinite;}
+.fbadge.b{bottom:-12px;left:-20px;animation:flt 3.5s 1s ease-in-out infinite;}
+@keyframes flt{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+
+/* ── TRUST BAR ── */
+.trust-bar{max-width:1160px;margin:44px auto 0;padding-top:28px;border-top:1px solid var(--border);display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
+.trust-bar p{font-size:.84rem;color:var(--muted);}
+.trust-bar p b{color:var(--text);}
+.trust-pips{display:flex;gap:10px;flex-wrap:wrap;}
+.trust-pips span{font-size:.8rem;font-weight:600;background:var(--bg2);border:1px solid var(--border);border-radius:100px;padding:4px 12px;}
+
+/* ── SECTIONS ── */
+.sec{padding:80px 5%;}
+.sec.alt{background:var(--bg2);}
+.sw{max-width:1160px;margin:0 auto;}
+.sec-lbl{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:10px;}
+h2{font-size:clamp(1.7rem,3vw,2.5rem);font-weight:800;line-height:1.2;letter-spacing:-.02em;margin-bottom:14px;}
+.sec-ctr{text-align:center;margin-bottom:52px;}
+.sec-sub{color:var(--muted);font-size:.96rem;max-width:560px;margin:12px auto 0;line-height:1.75;}
+
+/* ── STATS ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:60px;}
+.sc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:24px 18px;text-align:center;transition:border-color .2s;}
+.sec.alt .sc{background:var(--bg);}
+.sc:hover{border-color:var(--border-green);}
+.sc-v{font-size:2.3rem;font-weight:800;color:var(--green);letter-spacing:-.02em;}
+.sc-l{font-size:.8rem;color:var(--muted);margin-top:5px;line-height:1.4;}
+
+/* ── FEATURE ALT ── */
+.fa-row{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-bottom:72px;}
+.fa-row.rv{direction:rtl;}
+.fa-row.rv>*{direction:ltr;}
+.fa-num{font-size:3rem;font-weight:800;color:rgba(29,185,84,.12);line-height:1;margin-bottom:6px;}
+.fa-txt h3{font-size:1.35rem;font-weight:800;margin-bottom:12px;}
+.fa-txt p{color:var(--muted);font-size:.92rem;line-height:1.75;margin-bottom:18px;}
+.btn-sm{background:#fff;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:9px 18px;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-sm:hover{border-color:var(--green);color:var(--green);}
+.mockup{background:var(--bg2);border:1.5px solid var(--border);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px;}
+.sec.alt .mockup{background:#fff;}
+.mk-q{background:#fff;border-radius:0 12px 12px 12px;padding:9px 12px;font-size:.82rem;align-self:flex-start;max-width:88%;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+.mk-a{background:var(--wa-bubble);border-radius:12px 12px 0 12px;padding:9px 12px;font-size:.82rem;align-self:flex-end;max-width:88%;}
+.mk-a b{color:var(--green-deep);}
+.mk-sys{text-align:center;font-size:.72rem;color:var(--muted);background:rgba(0,0,0,.04);border-radius:7px;padding:5px 10px;}
+.mk-tag{font-size:.72rem;font-weight:700;color:var(--green-deep);background:rgba(29,185,84,.1);border-radius:6px;padding:5px 11px;align-self:center;}
+.mk-code{background:var(--black);border-radius:12px;padding:18px;font-family:'Courier New',monospace;font-size:.8rem;line-height:1.8;color:#a8ff78;}
+.mk-code .cy{color:#facc15;}.mk-code .cb{color:#60a5fa;}.mk-code .cw{color:#e5e7eb;}.mk-code .cg{color:#1DB954;}.mk-code .cm2{color:#f0abfc;}
+
+/* ── FEATURE GRID ── */
+.fg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+.fc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:26px;transition:all .22s;}
+.fc:hover{border-color:var(--border-green);transform:translateY(-4px);box-shadow:0 8px 24px rgba(29,185,84,.09);}
+.sec.alt .fc{background:var(--bg);}
+.fc-icon{font-size:1.8rem;margin-bottom:12px;}
+.fc h4{font-weight:700;font-size:.95rem;margin-bottom:7px;}
+.fc p{color:var(--muted);font-size:.84rem;line-height:1.6;}
+.tag-soon{font-size:.68rem;font-weight:700;background:rgba(245,158,11,.1);color:#d97706;padding:2px 7px;border-radius:4px;margin-left:5px;vertical-align:middle;}
+
+/* ── STEPS ── */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);position:relative;margin-top:48px;}
+.steps::before{content:'';position:absolute;top:34px;left:16%;right:16%;height:2px;background:repeating-linear-gradient(90deg,var(--green) 0,var(--green) 8px,transparent 8px,transparent 18px);}
+.step{text-align:center;padding:0 20px;}
+.s-circ{width:68px;height:68px;border-radius:50%;background:#fff;border:2px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:1.1rem;font-weight:800;color:var(--green);box-shadow:0 0 0 8px rgba(29,185,84,.07);}
+.sec.alt .s-circ{background:var(--bg);}
+.step h4{font-weight:700;font-size:.98rem;margin-bottom:8px;}
+.step p{color:var(--muted);font-size:.86rem;line-height:1.6;}
+
+/* ── COMPARE TABLE ── */
+.ctbl-wrap{overflow-x:auto;margin-top:36px;}
+.ctbl{width:100%;border-collapse:collapse;font-size:.86rem;}
+.ctbl thead tr{background:var(--black);}
+.ctbl th{padding:14px 16px;text-align:center;color:#fff;font-size:.76rem;letter-spacing:.06em;text-transform:uppercase;}
+.ctbl th:first-child{text-align:left;border-radius:12px 0 0 0;}
+.ctbl th:last-child{border-radius:0 12px 0 0;}
+.ctbl th.hi{background:var(--green);}
+.ctbl td{padding:13px 16px;text-align:center;border-bottom:1px solid var(--border);background:#fff;}
+.ctbl td:first-child{text-align:left;font-weight:500;}
+.ctbl td.hi{background:rgba(29,185,84,.05);}
+.ctbl tr:last-child td{border-bottom:none;}
+.ctbl tr:last-child td:first-child{border-radius:0 0 0 12px;}
+.ctbl tr:last-child td:last-child{border-radius:0 0 12px 0;}
+.yes{color:var(--green);font-weight:700;font-size:.9rem;}
+.no{color:#ef4444;font-size:.9rem;}
+.cs{font-size:.7rem;font-weight:700;background:rgba(245,158,11,.1);color:#d97706;padding:2px 8px;border-radius:4px;}
+
+/* ── FAQ ── */
+.faq-wrap{max-width:780px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px;}
+details{background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s;}
+.sec.alt details{background:var(--bg);}
+details:hover,details[open]{border-color:var(--border-green);}
+summary{display:flex;justify-content:space-between;align-items:center;padding:17px 22px;cursor:pointer;list-style:none;font-weight:700;font-size:.91rem;gap:12px;}
+summary::-webkit-details-marker{display:none;}
+.fi{color:var(--green);font-size:1.3rem;flex-shrink:0;transition:transform .25s;}
+details[open] .fi{transform:rotate(45deg);}
+.fa-body{padding:0 22px 18px;color:var(--muted);font-size:.87rem;line-height:1.75;}
+.fa-body b{color:var(--text);}
+
+/* ── PRICING ── */
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1060px;margin:0 auto;}
+.p-card{background:#fff;border:1.5px solid var(--border);border-radius:20px;padding:32px;position:relative;transition:transform .25s,border-color .25s;}
+.p-card:hover{transform:translateY(-5px);}
+.p-card.pop{border-color:var(--green);background:linear-gradient(160deg,rgba(29,185,84,.04),#fff);}
+.p-badge{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:5px 16px;border-radius:100px;white-space:nowrap;box-shadow:0 0 18px rgba(29,185,84,.4);}
+.p-name{font-weight:800;font-size:1.1rem;margin-bottom:5px;}
+.p-tag{color:var(--muted);font-size:.83rem;margin-bottom:22px;}
+.p-price-box{background:rgba(29,185,84,.06);border:1px solid var(--border-green);border-radius:10px;padding:14px;margin-bottom:6px;text-align:center;}
+.p-amt{font-size:2.8rem;font-weight:800;color:var(--text);letter-spacing:-.03em;line-height:1;}
+.p-orig{font-size:.9rem;color:var(--muted-lt);text-decoration:line-through;margin-left:6px;}
+.p-per{color:var(--muted);font-size:.85rem;margin-top:3px;}
+.p-cpp{font-size:.75rem;color:var(--green-deep);font-weight:700;margin-top:2px;}
+.p-convos{font-size:.83rem;color:var(--muted);margin:10px 0 22px;padding-bottom:18px;border-bottom:1px solid var(--border);}
+.p-convos b{color:var(--green);}
+.p-feats{display:flex;flex-direction:column;gap:10px;margin-bottom:26px;}
+.pf{display:flex;align-items:flex-start;gap:9px;font-size:.86rem;line-height:1.5;}
+.pf-ck{width:18px;height:18px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:.68rem;flex-shrink:0;margin-top:2px;}
+.pf-x{width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.05);color:var(--muted-lt);display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;margin-top:2px;}
+.p-btn{width:100%;padding:13px;border-radius:10px;font-family:inherit;font-size:.93rem;font-weight:700;cursor:pointer;transition:all .2s;}
+.p-btn.out{background:transparent;color:var(--text);border:1.5px solid var(--border);}
+.p-btn.out:hover{border-color:var(--green);color:var(--green);}
+.p-btn.fill{background:var(--green);color:#fff;border:none;box-shadow:0 0 22px rgba(29,185,84,.3);}
+.p-btn.fill:hover{background:var(--green-dark);transform:translateY(-1px);}
+.overage-box{max-width:1060px;margin:18px auto 0;background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:20px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;}
+.overage-box p{font-size:.9rem;color:var(--muted);}
+.overage-box p b{color:var(--text);}
+.ov-pill{background:rgba(29,185,84,.08);border:1px solid var(--border-green);border-radius:8px;padding:8px 18px;font-weight:800;font-size:1.1rem;color:var(--green-deep);}
+.toggle-wrap{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:36px;}
+.tgl-lbl{font-size:.9rem;font-weight:600;color:var(--muted);}
+.tgl-lbl.on{color:var(--text);}
+.tgl{width:52px;height:28px;background:#e5e7eb;border-radius:100px;cursor:pointer;position:relative;transition:background .2s;border:none;outline:none;}
+.tgl.active{background:var(--green);}
+.tgl-dot{width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:4px;left:4px;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.15);pointer-events:none;}
+.tgl.active .tgl-dot{transform:translateX(24px);}
+.save-pill{background:rgba(29,185,84,.1);color:var(--green-deep);border-radius:100px;padding:3px 10px;font-size:.74rem;font-weight:700;}
+
+/* ── COMPETITOR TABLE ── */
+.comp-tbl{width:100%;border-collapse:collapse;margin-top:36px;font-size:.86rem;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);}
+.comp-tbl thead tr{background:var(--black);}
+.comp-tbl th{padding:14px 16px;text-align:center;color:#fff;font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;}
+.comp-tbl th:first-child{text-align:left;}
+.comp-tbl th.hi{background:var(--green);}
+.comp-tbl td{padding:13px 16px;text-align:center;border-bottom:1px solid var(--border);}
+.comp-tbl td:first-child{text-align:left;font-weight:600;}
+.comp-tbl td.hi{background:rgba(29,185,84,.04);}
+.comp-tbl tr:last-child td{border-bottom:none;}
+
+/* ── WHY GRID ── */
+.why-g{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:44px;}
+.wc{background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:22px;transition:border-color .2s;}
+.sec.alt .wc{background:var(--bg);}
+.wc:hover{border-color:var(--border-green);}
+.wc-ic{font-size:1.5rem;margin-bottom:10px;}
+.wc h4{font-weight:700;font-size:.93rem;margin-bottom:6px;}
+.wc p{color:var(--muted);font-size:.83rem;line-height:1.55;}
+
+/* ── DARK CTA ── */
+.cta-sec{background:var(--black);padding:90px 5%;text-align:center;position:relative;overflow:hidden;}
+.cta-sec::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(29,185,84,.18),transparent 60%);}
+.cta-inner{position:relative;z-index:1;}
+.cta-sec h2{color:#fff;}
+.cta-sec h2 .g{color:var(--green);}
+.cta-sec p{color:rgba(255,255,255,.6);max-width:480px;margin:14px auto 0;font-size:.96rem;}
+.cta-btns{display:flex;gap:12px;justify-content:center;margin-top:30px;flex-wrap:wrap;}
+.btn-wa{display:flex;align-items:center;gap:8px;background:#25D366;color:#fff;border:none;border-radius:9px;padding:13px 22px;font-family:inherit;font-size:.93rem;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-wa:hover{background:#1ebe5c;transform:translateY(-2px);}
+
+/* ── LEAD VISUAL ── */
+.lead-dash{background:#fff;border:1.5px solid var(--border);border-radius:16px;padding:20px;overflow:hidden;}
+.ld-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.ld-hdr h5{font-weight:700;font-size:.9rem;}
+.ld-count{background:rgba(29,185,84,.1);color:var(--green-deep);font-size:.76rem;font-weight:700;padding:4px 10px;border-radius:6px;}
+.lead-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;margin-bottom:6px;background:var(--bg2);transition:background .2s;}
+.lead-row:hover{background:var(--bg3);}
+.lr-av{width:34px;height:34px;border-radius:50%;background:var(--border-green);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;color:var(--green-deep);flex-shrink:0;}
+.lr-info{flex:1;}
+.lr-name{font-weight:700;font-size:.83rem;}
+.lr-meta{font-size:.74rem;color:var(--muted);}
+.lr-tag{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:5px;}
+.lr-tag.hot{background:rgba(239,68,68,.1);color:#dc2626;}
+.lr-tag.warm{background:rgba(245,158,11,.1);color:#d97706;}
+.lr-tag.new{background:rgba(29,185,84,.1);color:var(--green-deep);}
+
+/* ── FOOTER ── */
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 28px;}
+.ft-top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:32px;max-width:1160px;margin:0 auto;}
+.ft-brand p{color:var(--muted);font-size:.83rem;margin-top:8px;max-width:240px;line-height:1.7;}
+.ft-links{display:flex;gap:44px;flex-wrap:wrap;}
+.ft-col h5{font-weight:700;font-size:.84rem;margin-bottom:12px;}
+.ft-col a{display:block;color:var(--muted);text-decoration:none;font-size:.82rem;margin-bottom:7px;transition:color .2s;}
+.ft-col a:hover{color:var(--green);}
+.ft-bot{max-width:1160px;margin:32px auto 0;padding-top:18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.ft-bot p,.ft-bot span{color:var(--muted-lt);font-size:.76rem;}
+.seo-links{display:flex;flex-wrap:wrap;gap:5px 14px;max-width:1160px;margin:10px auto 0;}
+.seo-links a{color:var(--muted-lt);font-size:.72rem;text-decoration:none;}
+.seo-links a:hover{color:var(--green);}
+
+/* ── ANIMATIONS ── */
+.bbl{opacity:0;transform:translateY(6px);transition:opacity .4s,transform .4s;}
+.bbl.show{opacity:1;transform:none;}
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease;}
+.reveal.vis{opacity:1;transform:none;}
+
+@media(max-width:960px){
+  .hero-wrap,.fa-row{grid-template-columns:1fr;}.fa-row.rv{direction:ltr;}
+  .phone-wrap{display:none;}.nav-links{display:none;}
+  .fg,.why-g{grid-template-columns:repeat(2,1fr);}
+  .stats-row{grid-template-columns:repeat(2,1fr);}
+  .steps{grid-template-columns:1fr;gap:28px;}.steps::before{display:none;}
+  .pricing-grid{grid-template-columns:1fr;}
+}
+@media(max-width:600px){.fg,.why-g{grid-template-columns:1fr;}.stats-row{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="logo">Wagen<span>AI</span></a>
+  <ul class="nav-links">
+    <li class="nav-item"><a href="#">Product ▾</a><div class="drop"><a href="/whatsapp-bot" class="active">📱 WhatsApp Bot</a><a href="/website-widget">💬 Website Widget</a><a href="/whatsapp-api">⚡ WhatsApp API</a><a href="/lead-capture">🎯 Lead Capture</a></div></li>
+    <li class="nav-item"><a href="/pricing">Pricing</a></li>
+    <li class="nav-item"><a href="#">Industries ▾</a><div class="drop"><a href="/ecommerce-chatbot">🛍️ E-commerce</a><a href="/real-estate-chatbot">🏠 Real Estate</a><a href="/education-chatbot">🎓 Education</a><a href="/healthcare-chatbot">🏥 Healthcare</a><a href="/restaurant-chatbot">🍽️ Restaurants</a></div></li>
+  </ul>
+  <div class="nav-right">
+    <button class="btn-ghost">Log In</button>
+    <button class="btn-cta">Start Free</button>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-bg"></div><div class="hero-glow"></div>
+  <div class="hero-wrap">
+    <div>
+      <div class="prod-badge">📱 WhatsApp AI Bot</div>
+      <h1>AI-Powered <span class="g">WhatsApp Bot</span><br/>for Your Business</h1>
+      <p class="hero-sub">Deploy a smart AI agent on your WhatsApp Business number in minutes. Answer every query, capture leads automatically, and never miss a customer — 24/7.</p>
+      <div class="hero-btns">
+        <button class="btn-primary">🚀 Start Free — Scan QR</button>
+        <button class="btn-outline">Request a Demo</button>
+      </div>
+      <ul class="hero-checks">
+        <li>Go live in 2 minutes — scan QR, no API approval needed</li>
+        <li>AI learns from your website, PDFs, and FAQs</li>
+        <li>Captures leads automatically every conversation</li>
+        <li>Hindi, Tamil, Gujarati and all Indian languages</li>
+      </ul>
+    </div>
+    <div class="phone-wrap">
+      <div class="phone"><div class="p-screen">
+        <div class="p-bar"><div class="p-av">🤖</div><div><b>WagenAI Assistant</b><br/><span>● Online · Replies instantly</span></div></div>
+        <div class="p-msgs" id="chatWA">
+          <div class="bbl r" id="w1">Hi, do you offer weekend discounts?</div>
+          <div class="bbl s" id="w2">Hey! 👋 Yes — this weekend we have <b>20% off</b> on all services. Can I get your name?</div>
+          <div class="bbl r" id="w3">Neha — 9812XXXXXX</div>
+          <div class="bbl s" id="w4">✅ <b>Noted, Neha!</b> Our team will reach you shortly. Anything else I can help with? 😊</div>
+        </div>
+        <div class="p-input">Type a message...</div>
+      </div></div>
+      <div class="fbadge t">⚡ Live in 2 min · No approval</div>
+      <div class="fbadge b">✅ Lead captured automatically</div>
+    </div>
+  </div>
+  <div class="trust-bar">
+    <p>Trusted by <b>500+ Indian SMEs</b></p>
+    <div class="trust-pips"><span>🏠 Real Estate</span><span>🎓 Education</span><span>🏥 Healthcare</span><span>🛍️ D2C</span><span>🍽️ Restaurants</span></div>
+  </div>
+</section>
+
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr reveal">
+      <div class="sec-lbl">Why WhatsApp</div>
+      <h2>WhatsApp is where your <span class="g">customers already are</span></h2>
+      <p class="sec-sub">500 million Indians use WhatsApp daily. Your customers prefer messaging over calling. WagenAI turns your WhatsApp number into a 24/7 AI sales and support agent.</p>
+    </div>
+    <div class="stats-row">
+      <div class="sc reveal"><div class="sc-v">500M+</div><div class="sc-l">Indians use WhatsApp every day</div></div>
+      <div class="sc reveal"><div class="sc-v">80%</div><div class="sc-l">Queries resolved without human help</div></div>
+      <div class="sc reveal"><div class="sc-v">3×</div><div class="sc-l">More leads vs website contact forms</div></div>
+      <div class="sc reveal"><div class="sc-v">&lt;2s</div><div class="sc-l">Average AI response time</div></div>
+    </div>
+    <div class="fa-row reveal">
+      <div class="fa-txt">
+        <div class="fa-num">01</div>
+        <h3>Instant Start with QR Scan</h3>
+        <p>Connect your existing WhatsApp Business number by scanning a QR code. No Meta Business API approval, no developer, no IT team. You're live in under 2 minutes — just scan and go.</p>
+        <button class="btn-sm">Try QR Mode Free →</button>
+      </div>
+      <div><div class="mockup">
+        <div class="mk-sys">📱 Scan QR with WhatsApp Business app</div>
+        <div class="mk-tag">✅ Bot connected instantly</div>
+        <div class="mk-a">Hello! I'm your <b>AI assistant</b> 👋 I'm trained on your business and ready to answer customer queries 24/7. How can I help today?</div>
+        <div class="mk-tag">⚡ First reply in &lt;2 seconds</div>
+      </div></div>
+    </div>
+    <div class="fa-row rv reveal">
+      <div class="fa-txt">
+        <div class="fa-num">02</div>
+        <h3>AI That Knows Your Business</h3>
+        <p>Train WagenAI on your website URL, uploaded PDF documents, and custom FAQs. The bot answers exclusively from your content — no generic responses, no hallucinations, no off-brand replies.</p>
+        <button class="btn-sm">See How Training Works →</button>
+      </div>
+      <div><div class="mockup">
+        <div class="mk-q">What's included in the gold package?</div>
+        <div class="mk-a">Our <b>Gold Package</b> includes: 4 sessions/month, priority support, home visits, and a dedicated coach. It's ₹4,999/month 💼 Want me to book a free consultation?</div>
+        <div class="mk-tag">📚 Answered from your uploaded docs</div>
+      </div></div>
+    </div>
+    <div class="fa-row reveal">
+      <div class="fa-txt">
+        <div class="fa-num">03</div>
+        <h3>Automatic Lead Capture Every Time</h3>
+        <p>WagenAI doesn't just answer — it qualifies. During every conversation it naturally collects the customer's name, phone number, and requirement, saving each lead straight to your dashboard.</p>
+        <button class="btn-sm">See Lead Dashboard →</button>
+      </div>
+      <div><div class="mockup">
+        <div class="mk-q">I'm interested in your services</div>
+        <div class="mk-a">Great to hear! 😊 I'd love to help. May I get your <b>name and phone number</b> so our team can assist you personally with the right option?</div>
+        <div class="mk-tag">🎯 Lead saved → Dashboard instantly</div>
+      </div></div>
+    </div>
+    <div class="fa-row rv reveal">
+      <div class="fa-txt">
+        <div class="fa-num">04</div>
+        <h3>Hindi & All Indian Languages</h3>
+        <p>WagenAI automatically detects which language your customer is writing in — Hindi, Tamil, Gujarati, Bengali, Marathi — and responds fluently in that same language. Zero extra setup required.</p>
+        <button class="btn-sm">View Language Support →</button>
+      </div>
+      <div><div class="mockup">
+        <div class="mk-q">Bhai, kya aapke paas koi offer hai?</div>
+        <div class="mk-a">Haan bhai! 🎉 Is hafte <b>20% discount</b> chal raha hai sab services pe. Aapka naam aur number batao — main team ko message karta hoon!</div>
+        <div class="mk-tag">🌐 Hindi auto-detected · Replied in Hindi</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr reveal">
+      <div class="sec-lbl">All Features</div>
+      <h2>Everything your <span class="g">WhatsApp bot includes</span></h2>
+    </div>
+    <div class="fg">
+      <div class="fc reveal"><div class="fc-icon">⚡</div><h4>QR Mode — Instant Start</h4><p>Scan with your WhatsApp Business number. Live in 2 minutes. No API approval, no developer, no waiting.</p></div>
+      <div class="fc reveal"><div class="fc-icon">✅</div><h4>WhatsApp Business API</h4><p>Scale with the official Meta-verified integration — unlimited conversations and verified green tick. Available on Growth and Pro plans.</p></div>
+      <div class="fc reveal"><div class="fc-icon">🧠</div><h4>Learns From Your Docs</h4><p>Upload PDFs, paste your website URL, or type FAQs. WagenAI only answers from your own business content.</p></div>
+      <div class="fc reveal"><div class="fc-icon">🎯</div><h4>Auto Lead Capture</h4><p>Automatically collects name, phone, and requirement from every customer. All stored in your dashboard.</p></div>
+      <div class="fc reveal"><div class="fc-icon">🖼️</div><h4>Send Files & Brochures</h4><p>AI automatically sends your PDFs, brochures, and catalogs when customers ask — no human required.</p></div>
+      <div class="fc reveal"><div class="fc-icon">🔜</div><h4>CRM Integration <span class="tag-soon">Coming Soon</span></h4><p>Auto-sync leads to Google Sheets, Zoho, and HubSpot. Currently stored in WagenAI dashboard.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr reveal">
+      <div class="sec-lbl">Simple Setup</div>
+      <h2>Live on WhatsApp in <span class="g">5 minutes</span></h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><div class="s-circ">01</div><h4>Sign Up Free</h4><p>Create your WagenAI account. No credit card, no commitment.</p></div>
+      <div class="step reveal"><div class="s-circ">02</div><h4>Train Your AI</h4><p>Add your website URL, upload a PDF, or type your FAQs. Done in minutes.</p></div>
+      <div class="step reveal"><div class="s-circ">03</div><h4>Scan & Go Live</h4><p>Open WhatsApp, scan the QR code shown in your dashboard. Your AI bot is live instantly.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr reveal">
+      <div class="sec-lbl">FAQ</div>
+      <h2>WhatsApp Bot <span class="g">Questions Answered</span></h2>
+    </div>
+    <div class="faq-wrap">
+      <details class="reveal"><summary>What is a WhatsApp AI bot and how does WagenAI work?<span class="fi">+</span></summary><div class="fa-body">WagenAI is an AI agent connected to your WhatsApp Business number. It reads every incoming customer message and replies automatically using your business content — website, PDFs, and FAQs — 24/7 without any human involvement.</div></details>
+      <details class="reveal"><summary>Do I need WhatsApp Business API approval to get started?<span class="fi">+</span></summary><div class="fa-body">No. WagenAI's <b>QR Mode</b> lets you connect your existing WhatsApp Business number instantly by scanning a QR code — live in under 2 minutes, zero approval process. The official WhatsApp Business API (for unlimited scale and green tick) is available on Growth and Pro plans.</div></details>
+      <details class="reveal"><summary>What's the difference between QR Mode and WhatsApp Business API?<span class="fi">+</span></summary><div class="fa-body"><b>QR Mode</b> — connect your existing WhatsApp Business number by scanning a QR. Instant, no approval. Best for getting started fast.<br/><br/><b>WhatsApp Business API</b> — official Meta-verified integration. Unlimited conversations, verified green tick, and best for scaling businesses. Available on Growth and Pro plans.</div></details>
+      <details class="reveal"><summary>Can the bot reply in Hindi and regional Indian languages?<span class="fi">+</span></summary><div class="fa-body">Yes. WagenAI automatically detects and responds in Hindi, Tamil, Gujarati, Bengali, Marathi, and other Indian languages — no extra configuration needed.</div></details>
+      <details class="reveal"><summary>Will WagenAI capture leads without me asking it to?<span class="fi">+</span></summary><div class="fa-body">Yes. WagenAI naturally and conversationally collects the customer's name, phone number, and requirement during every chat. All leads are stored in your WagenAI dashboard. CRM and Google Sheets sync is coming soon.</div></details>
+      <details class="reveal"><summary>Is there a free trial?<span class="fi">+</span></summary><div class="fa-body">Yes — free trial with no credit card required. Go live in under 5 minutes.</div></details>
+    </div>
+  </div>
+</section>
+
+<section class="cta-sec">
+  <div class="cta-inner">
+    <div class="sec-lbl" style="color:var(--green)">Get Started Today</div>
+    <h2>Deploy Your WhatsApp AI Bot <span class="g">in 5 Minutes</span></h2>
+    <p>No credit card. No developer. Just scan the QR code and go live.</p>
+    <div class="cta-btns">
+      <button class="btn-primary">🚀 Start Free — QR Mode</button>
+      <button class="btn-wa"><svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> Chat on WhatsApp</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ft-top">
+    <div class="ft-brand">
+      <a href="/" class="logo">Wagen<span>AI</span></a>
+      <p>India's most accessible WhatsApp AI chatbot — built for SMEs who want to grow without growing their team.</p>
+    </div>
+    <div class="ft-links">
+      <div class="ft-col"><h5>Product</h5><a href="/whatsapp-bot">WhatsApp Bot</a><a href="/website-widget">Website Widget</a><a href="/whatsapp-api">WhatsApp API</a><a href="/lead-capture">Lead Capture</a><a href="/pricing">Pricing</a></div>
+      <div class="ft-col"><h5>Industries</h5><a href="/ecommerce-chatbot">E-commerce</a><a href="/real-estate-chatbot">Real Estate</a><a href="/education-chatbot">Education</a><a href="/healthcare-chatbot">Healthcare</a><a href="/restaurant-chatbot">Restaurants</a></div>
+      <div class="ft-col"><h5>Company</h5><a href="#">About</a><a href="#">Blog</a><a href="#">Contact</a><a href="#">Privacy</a></div>
+    </div>
+  </div>
+  <div class="ft-bot">
+    <p>© 2025 WagenAI. All rights reserved. 🇮🇳 Proudly Made in India</p>
+    <span>WhatsApp™ is a trademark of Meta Platforms, Inc.</span>
+  </div>
+  <div class="seo-links"><a href="/whatsapp-bot">WhatsApp AI Bot India</a><a href="/whatsapp-chatbot-india">WhatsApp Chatbot India</a><a href="/whatsapp-api">WhatsApp Business API India</a></div>
+</footer>
+<script>
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('vis'); });
+}, {threshold: 0.08});
+document.querySelectorAll('.reveal').forEach((el,i) => {
+  el.style.transitionDelay = (i % 4 * 0.08) + 's';
+  obs.observe(el);
+});
+function runChat() {
+  document.querySelectorAll('#chatWA .bbl').forEach(e => e.classList.remove('show'));
+  setTimeout(()=>{const e=document.getElementById('w1');if(e)e.classList.add('show');},600);
+  setTimeout(()=>{const e=document.getElementById('w2');if(e)e.classList.add('show');},1200);
+  setTimeout(()=>{const e=document.getElementById('w3');if(e)e.classList.add('show');},1900);
+  setTimeout(()=>{const e=document.getElementById('w4');if(e)e.classList.add('show');},2700);
+  setTimeout(runChat, 4100);
+}
+runChat();
+</script>
+</body>
+</html>
