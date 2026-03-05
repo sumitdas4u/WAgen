@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
-import { LandingScaffold } from "./landing-orchids/LandingScaffold";
+import { OrchidsMarketingShell } from "./landing-orchids/OrchidsMarketingShell";
 
 export function DataDeletionPage() {
   return (
-    <LandingScaffold>
+    <OrchidsMarketingShell>
       <section className="orch-section orch-legal-section">
         <div className="policy-page">
           <article className="policy-card">
@@ -82,6 +82,6 @@ export function DataDeletionPage() {
           </article>
         </div>
       </section>
-    </LandingScaffold>
+    </OrchidsMarketingShell>
   );
 }

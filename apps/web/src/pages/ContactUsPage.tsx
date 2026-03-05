@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
-import { LandingScaffold } from "./landing-orchids/LandingScaffold";
+import { OrchidsMarketingShell } from "./landing-orchids/OrchidsMarketingShell";
 
 export function ContactUsPage() {
   return (
-    <LandingScaffold>
+    <OrchidsMarketingShell>
       <section className="orch-section orch-legal-section">
         <div className="policy-page">
           <article className="policy-card">
@@ -77,6 +77,6 @@ export function ContactUsPage() {
           </article>
         </div>
       </section>
-    </LandingScaffold>
+    </OrchidsMarketingShell>
   );
 }

@@ -21,9 +21,8 @@ services:
     restart: unless-stopped
 
   api:
-    build:
-      context: ..
-      dockerfile: apps/api/Dockerfile
+    image: ${API_IMAGE}
+    pull_policy: always
     env_file:
       - ../apps/api/.env
     environment:
@@ -56,27 +55,10 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    develop:
-      watch:
-        - action: rebuild
-          path: ../apps/api
-          ignore:
-            - node_modules/
-            - dist/
-            - .env
-        - action: rebuild
-          path: ../apps/api/package.json
-        - action: rebuild
-          path: ../package-lock.json
-        - action: rebuild
-          path: ../package.json
 
   web:
-    build:
-      context: ..
-      dockerfile: apps/web/Dockerfile
-      args:
-        VITE_API_URL: ""
+    image: ${WEB_IMAGE}
+    pull_policy: always
     depends_on:
       api:
         condition: service_started
@@ -88,22 +70,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    develop:
-      watch:
-        - action: rebuild
-          path: ../apps/web
-          ignore:
-            - node_modules/
-            - dist/
-            - tsconfig.tsbuildinfo
-        - action: rebuild
-          path: ../apps/web/package.json
-        - action: rebuild
-          path: ../apps/web/nginx.conf
-        - action: rebuild
-          path: ../package-lock.json
-        - action: rebuild
-          path: ../package.json
 
 volumes:
   postgres_data:

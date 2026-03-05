@@ -9,6 +9,9 @@ const QrConnectPage = lazy(() => import("./pages/QrConnectPage").then((m) => ({ 
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
 const PurchasePage = lazy(() => import("./pages/PurchasePage").then((m) => ({ default: m.PurchasePage })));
 const MetaCallbackPage = lazy(() => import("./pages/MetaCallbackPage").then((m) => ({ default: m.MetaCallbackPage })));
+const OrchidsLandingPage = lazy(() =>
+  import("./pages/landing-orchids/OrchidsLandingPage").then((m) => ({ default: m.OrchidsLandingPage }))
+);
 const SuperAdminLoginPage = lazy(() =>
   import("./pages/SuperAdminLoginPage").then((m) => ({ default: m.SuperAdminLoginPage }))
 );
@@ -59,7 +62,7 @@ export function App() {
   return (
     <Suspense fallback={<div className="loading-screen">Loading...</div>}>
       <Routes>
-        <Route path="/" element={<Navigate to="/signup" replace />} />
+        <Route path="/" element={<OrchidsLandingPage />} />
         <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
         <Route path="/terms-of-service" element={<TermsOfServicePage />} />
         <Route path="/contact-us" element={<ContactUsPage />} />

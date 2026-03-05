@@ -1,291 +1,217 @@
-﻿import { Link } from "react-router-dom";
-import { ChatAnimation } from "./ChatAnimation";
-import "./orchids-landing.css";
+import { useEffect, useRef } from "react";
+import wagenHomeBody from "./wagen-home-body.html?raw";
+import wagenHomeCss from "./wagen-home.css?raw";
 
-const STARTER_POINTS = [
-  "Setup in 2 minutes",
-  "No approval required",
-  "Train AI easily",
-  "Affordable",
+type TimedStep = {
+  el: string;
+  delay: number;
+  hide?: number;
+};
+
+const HERO_SEQUENCE: TimedStep[] = [
+  { el: "hc1", delay: 600 },
+  { el: "hcTyping", delay: 1200, hide: 1800 },
+  { el: "hc2", delay: 1800 },
+  { el: "hc3", delay: 2800 },
+  { el: "hcTyping", delay: 3400, hide: 4000 },
+  { el: "hc4", delay: 4000 },
+  { el: "hc5", delay: 5000 },
+  { el: "hcTyping", delay: 5600, hide: 6200 },
+  { el: "hc6", delay: 6200 }
 ];
 
-const SCALE_POINTS = [
-  "Official WhatsApp Business API",
-  "No ban risk",
-  "High message volume",
-  "Multi-agent support",
-  "CRM integrations",
+const LEARN_SEQUENCE: TimedStep[] = [
+  { el: "lc1", delay: 400 },
+  { el: "lc2", delay: 1200 },
+  { el: "lc3", delay: 2200 },
+  { el: "lc4", delay: 3000 },
+  { el: "lc5", delay: 3800 }
 ];
 
-const COMPARISON_ROWS = [
-  { feature: "Setup Time", qr: "2 Minutes", api: "1-2 Days" },
-  { feature: "WhatsApp Approval", qr: "Not Required", api: "Required" },
-  { feature: "Ban Risk", qr: "Medium", api: "Very Low" },
-  { feature: "Bulk Messaging", qr: "Limited", api: "Full Support" },
-  { feature: "Multi Agents", qr: "No", api: "Yes" },
-  { feature: "Automation", qr: "Basic", api: "Advanced" },
-  { feature: "Ideal For", qr: "Testing", api: "Growing Businesses" },
-];
-
-const USE_CASES = [
-  "Restaurants",
-  "E-commerce",
-  "Coaching Institutes",
-  "Clinics",
-  "Real Estate",
-  "Agencies",
-];
-
-const FAQ_ITEMS = [
-  {
-    q: "Is QR Mode safe?",
-    a: "It is ideal for testing and small use.",
-  },
-  {
-    q: "Is Official API better?",
-    a: "Yes, for scaling and high message volume.",
-  },
-  {
-    q: "Can I upgrade later?",
-    a: "Yes, you can upgrade anytime.",
-  },
+const HOME_THEME_VARS: ReadonlyArray<readonly [string, string]> = [
+  ["--green", "#1DB954"],
+  ["--green-dark", "#17a349"],
+  ["--green-deep", "#0d6b31"],
+  ["--black", "#0F0F0F"],
+  ["--near-black", "#1A1A1A"],
+  ["--text", "#1A1A1A"],
+  ["--muted", "#6B7280"],
+  ["--muted-lt", "#9CA3AF"],
+  ["--bg", "#FFFFFF"],
+  ["--bg2", "#F8FAF8"],
+  ["--bg3", "#F0F7F0"],
+  ["--border", "#E5E7EB"],
+  ["--border-green", "rgba(29,185,84,.2)"],
+  ["--wa-green", "#25D366"],
+  ["--wa-bubble", "#DCF8C6"],
+  ["--wa-bg", "#ECE5DD"]
 ];
 
 export function OrchidsLandingPage() {
-  return (
-    <main className="orch-page">
-      <header className="orch-nav-wrap">
-        <div className="orch-nav">
-          <Link to="/" className="orch-brand">
-            <span>Wagen</span>AI
-          </Link>
-          <nav className="orch-links">
-            <a href="#modes">Modes</a>
-            <a href="#comparison">Comparison</a>
-            <a href="#pricing">Pricing</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-          <div className="orch-nav-actions">
-            <Link to="/signup?plan=starter" className="orch-btn primary">
-              Start Free
-            </Link>
-          </div>
-        </div>
-      </header>
+  const hostRef = useRef<HTMLDivElement | null>(null);
 
-      <section className="orch-hero">
-        <div className="orch-hero-copy">
-          <p className="orch-kicker">WhatsApp AI Automation Platform for Startups, SMBs and Enterprises</p>
-          <h1>
-            Automate Your WhatsApp with AI - From Instant Setup to <span>Official API Scale</span>
-          </h1>
-          <p className="orch-subtitle">
-            Start instantly with QR mode. Upgrade anytime to official WhatsApp Business API for large-scale automation.
-          </p>
-          <div className="orch-hero-actions">
-            <Link to="/signup?plan=starter" className="orch-btn primary big">
-              Start Free (QR Mode)
-            </Link>
-            <Link to="/signup?plan=growth" className="orch-btn outline big">
-              Get Official WhatsApp API
-            </Link>
-          </div>
-        </div>
-        <div className="orch-hero-chat">
-          <ChatAnimation />
-        </div>
-      </section>
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) {
+      return;
+    }
 
-      <section id="modes" className="orch-section muted">
-        <div className="orch-heading">
-          <h2>Choose Your Mode</h2>
-          <p>One platform, two paths: Instant start or official scale.</p>
-        </div>
-        <div className="orch-grid-2">
-          <article className="orch-card">
-            <h3>Mode 1 - Instant QR Setup (Starter)</h3>
-            <p>Perfect for testing and small businesses.</p>
-            <ul>
-              {STARTER_POINTS.map((point) => (
-                <li key={point}>{point}</li>
-              ))}
-            </ul>
-            <p className="orch-proof">Best for limited usage and testing.</p>
-            <p className="orch-price">
-              ₹99 <span>/ month</span>
-            </p>
-          </article>
+    const shadowRoot = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    const scopedCss = wagenHomeCss
+      .replace(/:root/g, ".wagen-home-shadow")
+      .replace(/\bhtml\s*\{/g, ".wagen-home-shadow{")
+      .replace(/\bbody\s*\{/g, ".wagen-home-shadow{");
 
-          <article className="orch-card">
-            <h3>Mode 2 - Official WhatsApp API (Scale)</h3>
-            <p>For serious business automation.</p>
-            <ul>
-              {SCALE_POINTS.map((point) => (
-                <li key={point}>{point}</li>
-              ))}
-            </ul>
-            <p className="orch-price">
-              ₹249 <span>/ month</span>
-            </p>
-            <p className="orch-proof">or ₹2000/year</p>
-          </article>
-        </div>
-      </section>
+    shadowRoot.innerHTML = `
+      <style>${scopedCss}</style>
+      <main class="wagen-home-shadow">${wagenHomeBody}</main>
+    `;
 
-      <section className="orch-section green">
-        <div className="orch-heading">
-          <h2>Why Official API Is Important</h2>
-          <p>
-            Many tools only use QR connection. QR can disconnect, is not reliable for scale, and carries number restriction risk.
-          </p>
-        </div>
-        <div className="orch-grid-2">
-          <article className="orch-card">
-            <h3>What WAgen AI Offers</h3>
-            <ul>
-              <li>Instant QR for testing</li>
-              <li>Official API for long-term growth</li>
-            </ul>
-            <p className="orch-proof">You choose what fits your business.</p>
-          </article>
-          <article className="orch-card">
-            <h3>Transparent Recommendation</h3>
-            <p>
-              QR mode is ideal for testing and early-stage businesses. For long-term growth, we recommend upgrading to Official API mode.
-            </p>
-          </article>
-        </div>
-      </section>
+    const root = shadowRoot.querySelector<HTMLElement>(".wagen-home-shadow");
+    if (!root) {
+      return;
+    }
+    HOME_THEME_VARS.forEach(([name, value]) => {
+      root.style.setProperty(name, value);
+    });
 
-      <section id="comparison" className="orch-section">
-        <div className="orch-heading">
-          <h2>Feature Comparison Table</h2>
-          <p>QR Mode vs Official API Mode.</p>
-        </div>
-        <div className="orch-table-wrap">
-          <table className="orch-table">
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>QR Mode</th>
-                <th>Official API Mode</th>
-              </tr>
-            </thead>
-            <tbody>
-              {COMPARISON_ROWS.map((row) => (
-                <tr key={row.feature}>
-                  <td>{row.feature}</td>
-                  <td>{row.qr}</td>
-                  <td>{row.api}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+    const timerIds: number[] = [];
+    const schedule = (callback: () => void, delay: number) => {
+      const timerId = window.setTimeout(callback, delay);
+      timerIds.push(timerId);
+      return timerId;
+    };
 
-      <section className="orch-section dark">
-        <div className="orch-heading">
-          <h2>Use Cases</h2>
-          <p>Built for real businesses across industries.</p>
-        </div>
-        <div className="orch-grid-3">
-          {USE_CASES.map((item) => (
-            <article key={item} className="orch-dark-card">
-              <h3>{item}</h3>
-            </article>
-          ))}
-        </div>
-      </section>
+    const revealObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("vis");
+          }
+        });
+      },
+      { threshold: 0.1 }
+    );
 
-      <section id="pricing" className="orch-section muted">
-        <div className="orch-heading">
-          <h2>Pricing</h2>
-        </div>
-        <div className="orch-grid-2">
-          <article className="orch-plan">
-            <h3>Starter (QR Mode)</h3>
-            <small>Instant AI Bot Setup</small>
-            <p className="orch-price">
-              ₹99 <span>/ month</span>
-            </p>
-            <Link className="orch-btn primary" to="/signup?plan=starter">
-              Start Free (QR Mode)
-            </Link>
-          </article>
+    root.querySelectorAll<HTMLElement>(".reveal").forEach((element, index) => {
+      element.style.transitionDelay = `${(index % 4) * 0.08}s`;
+      revealObserver.observe(element);
+    });
 
-          <article className="orch-plan featured">
-            <h3>Growth (API Mode)</h3>
-            <small>Official WhatsApp API + AI Automation</small>
-            <p className="orch-price">
-              ₹249 <span>/ month</span>
-            </p>
-            <small>or ₹2000/year</small>
-            <Link className="orch-btn outline" to="/signup?plan=growth">
-              Get Official WhatsApp API
-            </Link>
-          </article>
-        </div>
-      </section>
+    const runHeroChat = () => {
+      root.querySelectorAll<HTMLElement>("#heroChat .wb, #heroChat .typing-bubble").forEach((element) => {
+        element.classList.remove("show");
+      });
 
-      <section id="faq" className="orch-section">
-        <div className="orch-heading">
-          <h2>FAQ</h2>
-        </div>
-        <div className="orch-faq">
-          {FAQ_ITEMS.map((item) => (
-            <details key={item.q}>
-              <summary>{item.q}</summary>
-              <p>{item.a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
+      HERO_SEQUENCE.forEach((item) => {
+        schedule(() => {
+          const element = root.querySelector<HTMLElement>(`#${item.el}`);
+          if (element) {
+            element.classList.add("show");
+          }
+        }, item.delay);
 
-      <section className="orch-support">
-        <h2>Need help choosing a mode?</h2>
-        <p>Start with QR mode now and move to Official API when you scale.</p>
-        <div className="orch-hero-actions">
-          <a href="mailto:support@wagenai.com" className="orch-btn light">
-            Email Support
-          </a>
-          <Link to="/signup" className="orch-btn dark">
-            Start Setup
-          </Link>
-        </div>
-      </section>
+        if (item.hide) {
+          schedule(() => {
+            const element = root.querySelector<HTMLElement>(`#${item.el}`);
+            if (element) {
+              element.classList.remove("show");
+            }
+          }, item.hide);
+        }
+      });
 
-      <footer className="orch-footer">
-        <div className="orch-footer-grid">
-          <article>
-            <h4>
-              <span>Wagen</span>AI
-            </h4>
-            <p>WhatsApp AI Automation Platform with QR Setup and Official API Scale.</p>
-          </article>
-          <article>
-            <h5>Product</h5>
-            <a href="#modes">Modes</a>
-            <a href="#comparison">Comparison</a>
-            <a href="#pricing">Pricing</a>
-          </article>
-          <article>
-            <h5>Support</h5>
-            <a href="#faq">FAQ</a>
-            <Link to="/privacy-policy">Privacy Policy</Link>
-            <Link to="/terms-of-service">Terms of Service</Link>
-            <Link to="/data-deletion">Data Deletion</Link>
-            <Link to="/contact-us">Contact Us</Link>
-            <a href="mailto:support@wagenai.com">support@wagenai.com</a>
-          </article>
-          <article>
-            <h5>CTA</h5>
-            <Link to="/signup?plan=starter">Start Free</Link>
-            <Link to="/signup?plan=growth">Get Official API</Link>
-          </article>
-        </div>
-        <p className="orch-copy">Copyright 2026 WAgen AI. All rights reserved.</p>
-      </footer>
-    </main>
-  );
+      schedule(runHeroChat, 9000);
+    };
+
+    runHeroChat();
+
+    let learnAnimated = false;
+    const learnObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting || learnAnimated) {
+            return;
+          }
+
+          learnAnimated = true;
+          root.querySelectorAll<HTMLElement>(".chat-msgs .cm, .chat-msgs .cm-lead").forEach((element) => {
+            element.classList.remove("show");
+          });
+
+          LEARN_SEQUENCE.forEach((item) => {
+            schedule(() => {
+              const element = root.querySelector<HTMLElement>(`#${item.el}`);
+              if (element) {
+                element.classList.add("show");
+              }
+            }, item.delay);
+          });
+        });
+      },
+      { threshold: 0.3 }
+    );
+
+    const learnVisual = root.querySelector<HTMLElement>(".learn-visual");
+    if (learnVisual) {
+      learnObserver.observe(learnVisual);
+    }
+
+    const clickHandler = (event: Event) => {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+
+      const hashLink = event.target.closest<HTMLAnchorElement>('a[href^="#"]');
+      if (hashLink) {
+        const targetId = hashLink.getAttribute("href")?.slice(1).trim();
+        if (targetId) {
+          const target = shadowRoot.getElementById(targetId);
+          if (target) {
+            event.preventDefault();
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+            return;
+          }
+        }
+      }
+
+      const actionElement = event.target.closest<HTMLElement>(
+        ".btn-login, .btn-cta, .hero-btns .btn-hero-primary, .hero-btns .btn-hero-secondary, .cta-btns .btn-hero-primary, .btn-wa"
+      );
+
+      if (!actionElement) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (actionElement.matches(".btn-login")) {
+        window.location.assign("/signup");
+        return;
+      }
+
+      if (actionElement.matches(".hero-btns .btn-hero-secondary")) {
+        window.location.assign("/signup?plan=growth");
+        return;
+      }
+
+      if (actionElement.matches(".btn-wa")) {
+        window.open("https://wa.me/919804735837", "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      window.location.assign("/signup?plan=starter");
+    };
+
+    shadowRoot.addEventListener("click", clickHandler);
+
+    return () => {
+      shadowRoot.removeEventListener("click", clickHandler);
+      revealObserver.disconnect();
+      learnObserver.disconnect();
+      timerIds.forEach((timerId) => window.clearTimeout(timerId));
+    };
+  }, []);
+
+  return <div ref={hostRef} className="wagen-home-host" style={{ width: "100%", maxWidth: "none", margin: 0, padding: 0 }} />;
 }

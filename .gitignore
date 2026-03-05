@@ -7,6 +7,9 @@ coverage
 apps/api/uploads
 *.log
 tmp/
-tools/
+tools/*
+!tools/deploy/
+tools/deploy/*
+!tools/deploy/remote-deploy.sh
 ~/
 *.tsbuildinfo
