@@ -20,6 +20,9 @@ const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage").then((m
 const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage").then((m) => ({ default: m.TermsOfServicePage })));
 const ContactUsPage = lazy(() => import("./pages/ContactUsPage").then((m) => ({ default: m.ContactUsPage })));
 const DataDeletionPage = lazy(() => import("./pages/DataDeletionPage").then((m) => ({ default: m.DataDeletionPage })));
+const ForgotPasswordPage = lazy(() =>
+  import("./pages/ForgotPasswordPage").then((m) => ({ default: m.ForgotPasswordPage }))
+);
 
 const LANDING_PAGE_PATHS = [
   "/",
@@ -121,6 +124,7 @@ export function App() {
         <Route path="/terms-of-service" element={<TermsOfServicePage />} />
         <Route path="/contact-us" element={<ContactUsPage />} />
         <Route path="/data-deletion" element={<DataDeletionPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/super-admin">
           <Route path="login" element={<SuperAdminLoginPage />} />

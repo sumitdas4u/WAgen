@@ -236,7 +236,8 @@ export async function processIncomingMessage(
     };
   }
 
-  const history = await getConversationHistoryForPrompt(conversation.id, 10);
+  const historyLimit = Math.max(16, Math.min(40, env.PROMPT_HISTORY_LIMIT * 4));
+  const history = await getConversationHistoryForPrompt(conversation.id, historyLimit);
   const channelAgentProfile = await resolveAgentProfileForChannel(
     input.userId,
     input.channelType,

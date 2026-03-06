@@ -55,6 +55,8 @@ interface SettingsTabProps {
   apiWabaReviewStatus: string | null | undefined;
   apiLastMetaSyncLabel: string | null;
   hasMetaConnection: boolean;
+  apiSetupLoading: boolean;
+  apiSetupLoadingText: string | null;
   whatsAppBusinessDraft: WhatsAppBusinessProfileDraft;
   deleteAccountConfirmText: string;
   deletingAccount: boolean;
@@ -114,6 +116,8 @@ export function SettingsTab(props: SettingsTabProps) {
     apiWabaReviewStatus,
     apiLastMetaSyncLabel,
     hasMetaConnection,
+    apiSetupLoading,
+    apiSetupLoadingText,
     whatsAppBusinessDraft,
     deleteAccountConfirmText,
     deletingAccount,
@@ -488,6 +492,17 @@ export function SettingsTab(props: SettingsTabProps) {
             <h3>Official WhatsApp API Setup</h3>
             <p>Connect Meta Embedded Signup for stable production messaging at scale, then configure business profile.</p>
           </header>
+          {apiSetupLoading ? (
+            <div className="dashboard-connection-loading api-setup-loading-card" role="status" aria-live="polite">
+              <p className="dashboard-connection-loading-title">Syncing Meta channel...</p>
+              <p className="dashboard-connection-loading-subtitle">
+                {apiSetupLoadingText ?? "Fetching latest number and verification status."}
+              </p>
+              <div className="dashboard-connection-loading-track" aria-hidden="true">
+                <span className="dashboard-connection-loading-value" />
+              </div>
+            </div>
+          ) : null}
           <div className="api-setup-alert">
             <strong>
               Facebook Business Verification - {" "}

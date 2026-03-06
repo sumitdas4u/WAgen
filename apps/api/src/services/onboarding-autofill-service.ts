@@ -19,6 +19,10 @@ export interface AutofillDraft {
     supportEmail: string;
     aiDoRules: string;
     aiDontRules: string;
+    escalationWhenToEscalate: string;
+    escalationContactPerson: string;
+    escalationPhoneNumber: string;
+    escalationEmail: string;
   };
   personality: PersonalityOption;
   customPrompt: string;
@@ -48,7 +52,12 @@ const DEFAULT_DRAFT: AutofillDraft = {
     aiDoRules:
       "Be polite and empathetic.\nAnswer clearly using business context.\nEscalate when confidence is low.",
     aiDontRules:
-      "Do not ask budget qualification questions.\nDo not promise actions you cannot perform.\nDo not share sensitive data."
+      "Do not ask budget qualification questions.\nDo not promise actions you cannot perform.\nDo not share sensitive data.",
+    escalationWhenToEscalate:
+      "Escalate when knowledge is missing, user asks for human help, or issue remains unclear after one follow-up.",
+    escalationContactPerson: "",
+    escalationPhoneNumber: "",
+    escalationEmail: ""
   },
   personality: "professional",
   customPrompt: ""
@@ -107,7 +116,20 @@ function mergeDraft(raw: Record<string, unknown>): AutofillDraft {
       ),
       supportEmail: readString(basics.supportEmail, DEFAULT_DRAFT.businessBasics.supportEmail),
       aiDoRules: readString(basics.aiDoRules, DEFAULT_DRAFT.businessBasics.aiDoRules),
-      aiDontRules: readString(basics.aiDontRules, DEFAULT_DRAFT.businessBasics.aiDontRules)
+      aiDontRules: readString(basics.aiDontRules, DEFAULT_DRAFT.businessBasics.aiDontRules),
+      escalationWhenToEscalate: readString(
+        basics.escalationWhenToEscalate,
+        DEFAULT_DRAFT.businessBasics.escalationWhenToEscalate
+      ),
+      escalationContactPerson: readString(
+        basics.escalationContactPerson,
+        DEFAULT_DRAFT.businessBasics.escalationContactPerson
+      ),
+      escalationPhoneNumber: readString(
+        basics.escalationPhoneNumber,
+        DEFAULT_DRAFT.businessBasics.escalationPhoneNumber
+      ),
+      escalationEmail: readString(basics.escalationEmail, DEFAULT_DRAFT.businessBasics.escalationEmail)
     },
     personality: normalizePersonality(raw.personality),
     customPrompt: readString(raw.customPrompt)
@@ -151,7 +173,8 @@ export async function generateOnboardingDraft(description: string): Promise<Auto
     '    "greetingScript": "", "availabilityScript": "", "objectionHandlingScript": "",',
     '    "bookingScript": "", "feedbackCollectionScript": "", "complaintHandlingScript": "",',
     '    "supportEmail": "",',
-    '    "aiDoRules": "", "aiDontRules": ""',
+    '    "aiDoRules": "", "aiDontRules": "",',
+    '    "escalationWhenToEscalate": "", "escalationContactPerson": "", "escalationPhoneNumber": "", "escalationEmail": ""',
     "  },",
     '  "personality": "friendly_warm|professional|hard_closer|premium_consultant|custom",',
     '  "customPrompt": ""',

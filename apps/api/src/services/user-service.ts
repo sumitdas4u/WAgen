@@ -199,6 +199,10 @@ export async function updateBusinessBasics(
     supportEmail: string;
     aiDoRules: string;
     aiDontRules: string;
+    escalationWhenToEscalate: string;
+    escalationContactPerson: string;
+    escalationPhoneNumber: string;
+    escalationEmail: string;
     websiteUrl?: string;
     manualFaq?: string;
   }

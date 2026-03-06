@@ -21,6 +21,10 @@ const BusinessSchema = z.object({
   supportEmail: z.union([z.string().trim().email(), z.literal("")]).optional().default(""),
   aiDoRules: z.string().trim().max(3000).optional().default(""),
   aiDontRules: z.string().trim().max(3000).optional().default(""),
+  escalationWhenToEscalate: z.string().trim().max(2000).optional().default(""),
+  escalationContactPerson: z.string().trim().max(120).optional().default(""),
+  escalationPhoneNumber: z.string().trim().max(40).optional().default(""),
+  escalationEmail: z.union([z.string().trim().email(), z.literal("")]).optional().default(""),
   websiteUrl: z.string().trim().max(500).optional().default(""),
   manualFaq: z.string().trim().max(20000).optional().default("")
 });

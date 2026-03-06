@@ -45,7 +45,7 @@ function readPlanFromSearch(search: string): "starter" | "pro" | "business" | nu
 }
 
 export function SignupPage() {
-  const { signupAndLogin, loginWithPassword, loginWithGoogle, requestPasswordReset } = useAuth();
+  const { signupAndLogin, loginWithPassword, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mode, setMode] = useState<"signup" | "login">("login");
@@ -96,25 +96,6 @@ export function SignupPage() {
       navigate(selectedPlan ? `/purchase?plan=${selectedPlan}` : "/dashboard", { replace: true });
     } catch (submitError) {
       setError(mapAuthError((submitError as Error).message));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    if (!email.trim()) {
-      setError("Enter your email first, then click Forgot password.");
-      return;
-    }
-
-    setError(null);
-    setInfo(null);
-    setLoading(true);
-    try {
-      await requestPasswordReset(email);
-      setInfo("Password reset email sent. Please check your inbox.");
-    } catch (resetError) {
-      setError(mapAuthError((resetError as Error).message));
     } finally {
       setLoading(false);
     }
@@ -215,9 +196,9 @@ export function SignupPage() {
           )}
 
           {mode === "login" && (
-            <button type="button" className="auth-inline-btn firebase-auth-forgot" onClick={handleForgotPassword} disabled={loading}>
+            <Link to="/forgot-password" className="auth-inline-btn firebase-auth-forgot">
               Forgot Password?
-            </button>
+            </Link>
           )}
 
           {error && <p className="error-text">{error}</p>}

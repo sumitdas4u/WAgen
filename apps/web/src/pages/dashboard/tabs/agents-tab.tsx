@@ -5,9 +5,11 @@ type AgentObjectiveType = "lead" | "feedback" | "complaint" | "hybrid";
 interface AgentsTabProps {
   busy: boolean;
   selectedAgentProfile: AgentProfile | null;
+  agentActive: boolean;
   agentName: string;
   agentObjectiveType: AgentObjectiveType;
   agentTaskDescription: string;
+  onToggleAgentActive: () => void;
   onAgentNameChange: (value: string) => void;
   onAgentObjectiveTypeChange: (value: AgentObjectiveType) => void;
   onAgentTaskDescriptionChange: (value: string) => void;
@@ -18,9 +20,11 @@ export function AgentsTab(props: AgentsTabProps) {
   const {
     busy,
     selectedAgentProfile,
+    agentActive,
     agentName,
     agentObjectiveType,
     agentTaskDescription,
+    onToggleAgentActive,
     onAgentNameChange,
     onAgentObjectiveTypeChange,
     onAgentTaskDescriptionChange,
@@ -34,9 +38,14 @@ export function AgentsTab(props: AgentsTabProps) {
           <h3>Agent Workflow</h3>
           <p>One shared AI workflow runs across Web chat, WhatsApp QR, and WhatsApp API channels.</p>
         </div>
-        <span className={selectedAgentProfile?.isActive ? "agent-status-pill live" : "agent-status-pill disabled"}>
-          {selectedAgentProfile?.isActive ? "LIVE" : "NOT CONFIGURED"}
-        </span>
+        <div className="clone-hero-actions">
+          <span className={selectedAgentProfile?.isActive ? "agent-status-pill live" : "agent-status-pill disabled"}>
+            {selectedAgentProfile?.isActive ? "LIVE" : "NOT CONFIGURED"}
+          </span>
+          <button type="button" className="ghost-btn" disabled={busy} onClick={onToggleAgentActive}>
+            {agentActive ? "Pause Agent" : "Activate Agent"}
+          </button>
+        </div>
       </div>
 
       <form

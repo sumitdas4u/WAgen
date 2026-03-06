@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
 import {
   ingestManual,
-  ingestPdf,
+  ingestKnowledgeFiles,
   ingestWebsite,
   requestTestChatbotReply,
   saveBusinessBasics,
@@ -13,7 +13,7 @@ import {
 } from "../lib/api";
 
 type JourneyStep = 1 | 2 | 3 | 4;
-type KnowledgeMode = "website" | "pdf" | "manual";
+type KnowledgeMode = "website" | "file" | "manual";
 
 type ChatRow = {
   id: string;
@@ -22,7 +22,13 @@ type ChatRow = {
   time: string;
 };
 
-const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_KNOWLEDGE_FILE_UPLOAD_BYTES = 20 * 1024 * 1024;
+const SUPPORTED_KNOWLEDGE_FILE_EXTENSIONS = new Set(["pdf", "txt", "doc", "docx", "xls", "xlsx"]);
+
+function isSupportedKnowledgeFile(file: File): boolean {
+  const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
+  return Boolean(extension && SUPPORTED_KNOWLEDGE_FILE_EXTENSIONS.has(extension));
+}
 
 const firstBotMessage: ChatRow = {
   id: "seed",
@@ -66,7 +72,7 @@ export function OnboardingPage() {
   const [knowledgeMode, setKnowledgeMode] = useState<KnowledgeMode>("website");
   const [websiteUrl, setWebsiteUrl] = useState(readSavedString(savedBasics.websiteUrl, ""));
   const [manualText, setManualText] = useState(readSavedString(savedBasics.manualFaq, ""));
-  const [pdfFiles, setPdfFiles] = useState<File[]>([]);
+  const [knowledgeFiles, setKnowledgeFiles] = useState<File[]>([]);
 
   const [chatInput, setChatInput] = useState("");
   const [chatRows, setChatRows] = useState<ChatRow[]>([firstBotMessage]);
@@ -81,8 +87,8 @@ export function OnboardingPage() {
     if (knowledgeMode === "manual") {
       return manualText.trim().length >= 20;
     }
-    return pdfFiles.length > 0;
-  }, [knowledgeMode, manualText, pdfFiles, websiteUrl]);
+    return knowledgeFiles.length > 0;
+  }, [knowledgeMode, knowledgeFiles, manualText, websiteUrl]);
 
   const progressTicks = [24, 41, 57, 73, 88, 100];
   const stepLabel = `${step} of 4`;
@@ -109,6 +115,11 @@ export function OnboardingPage() {
       supportEmail: user?.email ?? "",
       aiDoRules: doRules.trim() || "Answer clearly using business context and available knowledge.",
       aiDontRules: dontRules.trim() || "Do not hallucinate policy or pricing details.",
+      escalationWhenToEscalate:
+        "Escalate when the answer is not available in knowledge, query is unclear after one follow-up, or customer asks for a human.",
+      escalationContactPerson: user?.name ?? "",
+      escalationPhoneNumber: "",
+      escalationEmail: user?.email ?? "",
       websiteUrl: websiteUrl.trim(),
       manualFaq: manualText.trim()
     };
@@ -119,7 +130,11 @@ export function OnboardingPage() {
       customPrompt: [
         `Bot identity: ${payload.companyName}`,
         `Business context: ${payload.whatDoYouSell}`,
-        `Fallback reply: ${payload.complaintHandlingScript}`
+        `Fallback reply: ${payload.complaintHandlingScript}`,
+        `Escalation policy: ${payload.escalationWhenToEscalate}`,
+        `Escalation contact person: ${payload.escalationContactPerson || "not configured"}`,
+        `Escalation phone: ${payload.escalationPhoneNumber || "not configured"}`,
+        `Escalation email: ${payload.escalationEmail || "not configured"}`
       ].join("\n")
     });
   };
@@ -139,8 +154,8 @@ export function OnboardingPage() {
       return;
     }
 
-    if (pdfFiles.length > 0) {
-      await ingestPdf(token, pdfFiles);
+    if (knowledgeFiles.length > 0) {
+      await ingestKnowledgeFiles(token, knowledgeFiles);
     }
   };
 
@@ -155,6 +170,13 @@ export function OnboardingPage() {
 
     setIsTraining(false);
     setStep(4);
+  };
+
+  const ensureAgentEnabled = async () => {
+    if (!token) {
+      return;
+    }
+    await setAgentActive(token, true);
   };
 
   const handleStep1Proceed = () => {
@@ -188,6 +210,7 @@ export function OnboardingPage() {
     try {
       await persistBusinessProfile();
       await ingestKnowledge();
+      await ensureAgentEnabled();
       await refreshUser();
       await runTrainingSequence();
     } catch (onboardingError) {
@@ -207,6 +230,7 @@ export function OnboardingPage() {
     setLoading(true);
     try {
       await persistBusinessProfile();
+      await ensureAgentEnabled();
       await refreshUser();
       await runTrainingSequence();
     } catch (onboardingError) {
@@ -297,7 +321,7 @@ export function OnboardingPage() {
               : step === 2
                 ? "Add do's and don'ts for how your bot should behave."
                 : step === 3
-                  ? "Import website, PDF, or manual content to train responses."
+                  ? "Import website, documents, or manual content to train responses."
                   : "Ask sample questions and check answer quality."}
           </p>
           <nav className="journey-stepper" aria-label="Onboarding steps">
@@ -380,8 +404,8 @@ export function OnboardingPage() {
               <button type="button" className={knowledgeMode === "website" ? "active" : ""} onClick={() => setKnowledgeMode("website")}>
                 Website
               </button>
-              <button type="button" className={knowledgeMode === "pdf" ? "active" : ""} onClick={() => setKnowledgeMode("pdf")}>
-                PDF Upload
+              <button type="button" className={knowledgeMode === "file" ? "active" : ""} onClick={() => setKnowledgeMode("file")}>
+                Document Upload
               </button>
               <button type="button" className={knowledgeMode === "manual" ? "active" : ""} onClick={() => setKnowledgeMode("manual")}>
                 Manually
@@ -407,20 +431,22 @@ export function OnboardingPage() {
               </label>
             )}
 
-            {knowledgeMode === "pdf" && (
+            {knowledgeMode === "file" && (
               <label>
-                PDF Files
+                Document files
                 <input
                   type="file"
-                  accept="application/pdf"
+                  accept=".pdf,.txt,.doc,.docx,.xls,.xlsx,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   multiple
                   onChange={(event) => {
                     const files = Array.from(event.target.files ?? []);
-                    const accepted = files.filter((file) => file.size <= MAX_PDF_UPLOAD_BYTES);
-                    setPdfFiles(accepted);
+                    const accepted = files.filter(
+                      (file) => isSupportedKnowledgeFile(file) && file.size <= MAX_KNOWLEDGE_FILE_UPLOAD_BYTES
+                    );
+                    setKnowledgeFiles(accepted);
                   }}
                 />
-                {pdfFiles.length > 0 && <small className="journey-muted">{pdfFiles.length} file(s) selected</small>}
+                {knowledgeFiles.length > 0 && <small className="journey-muted">{knowledgeFiles.length} file(s) selected</small>}
               </label>
             )}
 

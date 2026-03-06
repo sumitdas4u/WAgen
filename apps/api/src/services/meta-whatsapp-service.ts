@@ -1201,23 +1201,41 @@ export async function completeMetaEmbeddedSignup(
   if (!row) {
     return connection;
   }
+  let syncedConnection: MetaConnection | null = null;
+  let initialSyncError: string | null = null;
   try {
     const synced = await refreshConnectionStatusFromMeta(row, { forceRefresh: true });
-    if (!registration.success && synced.status !== "connected") {
-      if (registration.reason === "missing_pin") {
-        throw new Error("WhatsApp number is pending. Set META_PHONE_REGISTRATION_PIN and reconnect to finish registration.");
-      }
-      if (registration.error) {
-        throw new Error(`WhatsApp number registration failed: ${registration.error}`);
-      }
-    }
-    return mapConnection(synced);
+    syncedConnection = mapConnection(synced);
   } catch (error) {
+    initialSyncError = (error as Error).message;
     console.warn(
-      `[MetaStatusSync] initial sync failed user=${userId} phoneNumberId=${connection.phoneNumberId}: ${(error as Error).message}`
+      `[MetaStatusSync] initial sync failed user=${userId} phoneNumberId=${connection.phoneNumberId}: ${initialSyncError}`
     );
-    return connection;
   }
+
+  const effectiveConnection = syncedConnection ?? connection;
+  if (effectiveConnection.status !== "connected") {
+    if (registration.reason === "missing_pin") {
+      throw new Error(
+        "WhatsApp number is not fully connected yet. Set META_PHONE_REGISTRATION_PIN in API env and reconnect this number."
+      );
+    }
+    if (registration.error) {
+      throw new Error(`WhatsApp number registration failed: ${registration.error}`);
+    }
+    if (!webhookSubscription.success) {
+      throw new Error(
+        `Webhook subscription failed for this number: ${webhookSubscription.error ?? "unknown error"}. Please reconnect.`
+      );
+    }
+    if (initialSyncError) {
+      throw new Error(
+        `Meta setup completed but status sync failed: ${initialSyncError}. Please click Refresh status in Settings.`
+      );
+    }
+  }
+
+  return effectiveConnection;
 }
 
 async function listDisconnectTargetConnections(userId: string, connectionId?: string): Promise<MetaConnectionRow[]> {

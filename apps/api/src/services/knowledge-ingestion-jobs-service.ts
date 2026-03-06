@@ -1,12 +1,12 @@
 import { pool } from "../db/pool.js";
-import { ingestPdfBuffer } from "./knowledge-ingestion-service.js";
+import { ingestFileBuffer } from "./knowledge-ingestion-service.js";
 
 type JobStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface KnowledgeIngestJob {
   id: string;
   source_name: string | null;
-  source_type: "pdf" | "website" | "manual";
+  source_type: "file" | "pdf" | "website" | "manual";
   status: JobStatus;
   stage: string;
   progress: number;
@@ -17,14 +17,15 @@ export interface KnowledgeIngestJob {
   completed_at: string | null;
 }
 
-interface PendingPdfJob {
+interface PendingFileJob {
   jobId: string;
   userId: string;
   fileName: string;
+  mimeType?: string | null;
   buffer: Buffer;
 }
 
-const pendingJobs = new Map<string, PendingPdfJob>();
+const pendingJobs = new Map<string, PendingFileJob>();
 const pendingQueue: string[] = [];
 const runningJobs = new Set<string>();
 let queueLoopRunning = false;
@@ -63,7 +64,7 @@ async function updateJobState(
   );
 }
 
-async function runPdfJob(job: PendingPdfJob): Promise<void> {
+async function runFileJob(job: PendingFileJob): Promise<void> {
   runningJobs.add(job.jobId);
   try {
     await updateJobState(job.jobId, {
@@ -73,7 +74,8 @@ async function runPdfJob(job: PendingPdfJob): Promise<void> {
       errorMessage: null
     });
 
-    const chunksCreated = await ingestPdfBuffer(job.userId, job.fileName, job.buffer, {
+    const chunksCreated = await ingestFileBuffer(job.userId, job.fileName, job.buffer, {
+      mimeType: job.mimeType,
       onProgress: ({ stage, progress }) => updateJobState(job.jobId, { status: "processing", stage, progress })
     });
 
@@ -86,7 +88,7 @@ async function runPdfJob(job: PendingPdfJob): Promise<void> {
       completed: true
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "PDF ingestion failed";
+    const message = error instanceof Error ? error.message : "File ingestion failed";
     await updateJobState(job.jobId, {
       status: "failed",
       stage: "Failed",
@@ -118,7 +120,7 @@ async function runQueueLoop(): Promise<void> {
         continue;
       }
 
-      await runPdfJob(next);
+      await runFileJob(next);
     }
   } finally {
     queueLoopRunning = false;
@@ -128,7 +130,7 @@ async function runQueueLoop(): Promise<void> {
   }
 }
 
-function schedulePdfJob(job: PendingPdfJob): void {
+function scheduleFileJob(job: PendingFileJob): void {
   if (runningJobs.has(job.jobId) || pendingJobs.has(job.jobId)) {
     return;
   }
@@ -143,16 +145,16 @@ function schedulePdfJob(job: PendingPdfJob): void {
   });
 }
 
-export async function createPdfIngestionJobs(
+export async function createFileIngestionJobs(
   userId: string,
-  files: Array<{ filename: string; buffer: Buffer }>
+  files: Array<{ filename: string; mimeType?: string | null; buffer: Buffer }>
 ): Promise<KnowledgeIngestJob[]> {
   const created: KnowledgeIngestJob[] = [];
 
   for (const file of files) {
     const result = await pool.query<KnowledgeIngestJob>(
       `INSERT INTO knowledge_ingest_jobs (user_id, source_type, source_name, status, stage, progress)
-       VALUES ($1, 'pdf', $2, 'queued', 'Queued', 0)
+       VALUES ($1, 'file', $2, 'queued', 'Queued', 0)
        RETURNING
          id,
          source_name,
@@ -174,10 +176,11 @@ export async function createPdfIngestionJobs(
     }
 
     created.push(job);
-    schedulePdfJob({
+    scheduleFileJob({
       jobId: job.id,
       userId,
       fileName: file.filename,
+      mimeType: file.mimeType,
       buffer: file.buffer
     });
   }

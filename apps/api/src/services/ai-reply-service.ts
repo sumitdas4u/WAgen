@@ -2,7 +2,7 @@ import type { User } from "../types/models.js";
 import { env } from "../config/env.js";
 import { resolvePersonalityPrompt } from "./personality.js";
 import { openAIService } from "./openai-service.js";
-import { retrieveKnowledge } from "./rag-service.js";
+import { retrieveKnowledge, type KnowledgeChunk } from "./rag-service.js";
 
 interface ReplyInput {
   user: User;
@@ -27,6 +27,15 @@ type SupportIntent =
   | "complaint_handling";
 type QueryComplexity = "simple" | "medium" | "complex";
 
+interface RetrievalQueryProfile {
+  asksMenuOrCatalog: boolean;
+  asksDocument: boolean;
+  asksLocation: boolean;
+  asksContact: boolean;
+  asksBroadList: boolean;
+  isShortFollowup: boolean;
+}
+
 interface BusinessBasicsProfile {
   companyName: string;
   whatDoYouSell: string;
@@ -44,8 +53,14 @@ interface BusinessBasicsProfile {
   supportEmail: string;
   aiDoRules: string;
   aiDontRules: string;
+  escalationWhenToEscalate: string;
+  escalationContactPerson: string;
+  escalationPhoneNumber: string;
+  escalationEmail: string;
   agentObjectiveType: string;
   agentTaskDescription: string;
+  websiteUrl: string;
+  manualFaq: string;
 }
 
 interface LocaleContext {
@@ -54,6 +69,10 @@ interface LocaleContext {
   locale: string;
   currencyCode: string;
   currencySymbol: string;
+}
+
+interface RankedKnowledgeChunk extends KnowledgeChunk {
+  rankScore: number;
 }
 
 const INTENT_ORDER: SupportIntent[] = [
@@ -76,7 +95,23 @@ const INTENT_LABELS: Record<SupportIntent, string> = {
 
 const INTENT_KEYWORDS: Record<SupportIntent, string[]> = {
   greeting: ["hi", "hello", "hey", "good morning", "good evening", "namaste", "hlo"],
-  availability: ["available", "availability", "in stock", "stock", "open", "timing", "today", "tomorrow"],
+  availability: [
+    "available",
+    "availability",
+    "in stock",
+    "stock",
+    "open",
+    "timing",
+    "today",
+    "tomorrow",
+    "alcohol",
+    "beer",
+    "wine",
+    "liquor",
+    "drinks",
+    "cocktail",
+    "mocktail"
+  ],
   objection_handling: [
     "expensive",
     "costly",
@@ -105,6 +140,22 @@ const PRICING_KEYWORDS = [
   "how much",
   "quotation"
 ];
+
+const MENU_QUERY_KEYWORDS = [
+  "menu",
+  "catalog",
+  "rate card",
+  "dish",
+  "dishes",
+  "food items",
+  "items list",
+  "price list"
+];
+const DOCUMENT_QUERY_KEYWORDS = ["pdf", "document", "file", "brochure", "download"];
+const LOCATION_QUERY_KEYWORDS = ["address", "location", "where are you", "map", "direction"];
+const CONTACT_QUERY_KEYWORDS = ["contact", "phone", "email", "manager", "human", "support"];
+const BROAD_LIST_KEYWORDS = ["full", "complete", "entire", "all", "whole"];
+const FOLLOWUP_TERMS = new Set(["it", "that", "this", "same", "those", "these", "details", "more", "again"]);
 
 
 const DEFAULT_PLAYBOOKS: Record<SupportIntent, string> = {
@@ -245,21 +296,63 @@ function toBasicsProfile(rawBasics: Record<string, unknown>): BusinessBasicsProf
     supportEmail: readString(rawBasics.supportEmail),
     aiDoRules: readString(rawBasics.aiDoRules),
     aiDontRules: readString(rawBasics.aiDontRules),
+    escalationWhenToEscalate: readString(
+      rawBasics.escalationWhenToEscalate,
+      "Escalate when knowledge is missing, conversation is unclear, or the user asks for a human."
+    ),
+    escalationContactPerson: readString(rawBasics.escalationContactPerson),
+    escalationPhoneNumber: readString(rawBasics.escalationPhoneNumber),
+    escalationEmail: readString(rawBasics.escalationEmail),
     agentObjectiveType: readString(rawBasics.agentObjectiveType, "hybrid"),
-    agentTaskDescription: readString(rawBasics.agentTaskDescription)
+    agentTaskDescription: readString(rawBasics.agentTaskDescription),
+    websiteUrl: readString(rawBasics.websiteUrl),
+    manualFaq: readString(rawBasics.manualFaq)
   };
 }
 
-function detectSupportIntent(message: string): SupportIntent {
-  const normalized = message.toLowerCase();
+function detectSupportIntent(
+  message: string,
+  history: Array<{ direction: "inbound" | "outbound"; message_text: string }>,
+  retrievalProfile: RetrievalQueryProfile
+): SupportIntent {
+  const normalized = normalizePromptText(message);
+  const tokenCount = normalized.split(/\s+/).filter(Boolean).length;
+  const hasGreetingKeyword = INTENT_KEYWORDS.greeting.some((keyword) => normalized.includes(keyword));
 
   for (const intent of INTENT_ORDER) {
     if (INTENT_KEYWORDS[intent].some((keyword) => normalized.includes(keyword))) {
+      if (intent === "greeting" && tokenCount > 6) {
+        break;
+      }
       return intent;
     }
   }
 
-  return "greeting";
+  if (
+    retrievalProfile.asksMenuOrCatalog ||
+    retrievalProfile.asksDocument ||
+    retrievalProfile.asksLocation ||
+    retrievalProfile.asksContact ||
+    retrievalProfile.asksBroadList
+  ) {
+    return "availability";
+  }
+
+  const lastBot = [...history].reverse().find((row) => row.direction === "outbound");
+  if (lastBot) {
+    const lastBotNormalized = normalizePromptText(lastBot.message_text);
+    for (const intent of INTENT_ORDER) {
+      if (intent === "greeting") {
+        continue;
+      }
+      if (INTENT_KEYWORDS[intent].some((keyword) => lastBotNormalized.includes(keyword))) {
+        return intent;
+      }
+    }
+    return "availability";
+  }
+
+  return hasGreetingKeyword ? "greeting" : "availability";
 }
 
 function isPricingQuery(message: string): boolean {
@@ -289,32 +382,194 @@ function estimateQueryComplexity(message: string): QueryComplexity {
   return "medium";
 }
 
-function resolveHistoryWindow(complexity: QueryComplexity, topSimilarity: number): number {
-  const maxAllowed = Math.max(1, Math.min(env.PROMPT_HISTORY_LIMIT, 6));
-
-  if (topSimilarity >= 0.9) {
-    return 0;
-  }
-  if (complexity === "simple") {
-    return Math.min(1, maxAllowed);
-  }
-  if (complexity === "medium") {
-    return Math.min(2, maxAllowed);
-  }
-
-  return Math.min(4, maxAllowed);
+function includesAnyKeyword(text: string, keywords: string[]): boolean {
+  return keywords.some((keyword) => text.includes(keyword));
 }
 
-function resolveKnowledgePromptBudget(complexity: QueryComplexity): number {
-  const configuredBudget = Math.max(900, Math.min(env.RAG_MAX_PROMPT_CHARS, 3200));
+function detectRetrievalProfile(message: string): RetrievalQueryProfile {
+  const normalized = normalizePromptText(message);
+  const tokenCount = normalized.split(/\s+/).filter(Boolean).length;
+  const asksMenuOrCatalog = includesAnyKeyword(normalized, MENU_QUERY_KEYWORDS);
+  const asksDocument = includesAnyKeyword(normalized, DOCUMENT_QUERY_KEYWORDS);
+  const asksLocation = includesAnyKeyword(normalized, LOCATION_QUERY_KEYWORDS);
+  const asksContact = includesAnyKeyword(normalized, CONTACT_QUERY_KEYWORDS);
+  const asksBroadList = includesAnyKeyword(normalized, BROAD_LIST_KEYWORDS);
+  const isShortFollowup =
+    tokenCount <= 4 ||
+    normalized
+      .split(/\s+/)
+      .filter(Boolean)
+      .some((token) => FOLLOWUP_TERMS.has(token));
+
+  return {
+    asksMenuOrCatalog,
+    asksDocument,
+    asksLocation,
+    asksContact,
+    asksBroadList,
+    isShortFollowup
+  };
+}
+
+function resolveKnowledgeRetrievalLimit(
+  complexity: QueryComplexity,
+  profile: RetrievalQueryProfile
+): number {
+  const configured = Math.max(10, env.RAG_RETRIEVAL_LIMIT);
+  let limit = Math.max(14, configured * 2);
+
+  if (complexity === "complex") {
+    limit += 4;
+  }
+
+  if (profile.asksMenuOrCatalog || profile.asksDocument || profile.asksBroadList) {
+    limit = Math.max(limit, configured * 4, 24);
+  }
+
+  if (profile.asksLocation || profile.asksContact) {
+    limit = Math.max(limit, configured * 3, 18);
+  }
+
+  return Math.min(limit, 36);
+}
+
+function resolveHistoryWindow(complexity: QueryComplexity, topSimilarity: number): number {
+  const configured = Math.max(6, env.PROMPT_HISTORY_LIMIT * 2);
+  const maxAllowed = Math.min(configured, 24);
+  const minimumWindow = Math.min(6, maxAllowed);
+
+  let target = complexity === "simple" ? 8 : complexity === "medium" ? 12 : 16;
+  if (topSimilarity >= 0.96) {
+    target -= 2;
+  } else if (topSimilarity >= 0.9) {
+    target -= 1;
+  }
+
+  return Math.max(minimumWindow, Math.min(maxAllowed, target));
+}
+
+function resolveKnowledgePromptBudget(
+  complexity: QueryComplexity,
+  profile: RetrievalQueryProfile
+): number {
+  const configuredBudget = Math.max(1400, Math.min(env.RAG_MAX_PROMPT_CHARS, 5200));
+  if (profile.asksMenuOrCatalog || profile.asksDocument || profile.asksBroadList) {
+    return configuredBudget;
+  }
   if (complexity === "simple") {
-    return Math.min(1200, configuredBudget);
+    return Math.min(1800, configuredBudget);
   }
   if (complexity === "medium") {
-    return Math.min(2000, configuredBudget);
+    return Math.min(3200, configuredBudget);
   }
 
   return configuredBudget;
+}
+
+function normalizePromptText(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function removeCurrentInboundFromHistory(
+  history: Array<{ direction: "inbound" | "outbound"; message_text: string }>,
+  incomingMessage: string
+): Array<{ direction: "inbound" | "outbound"; message_text: string }> {
+  if (history.length === 0) {
+    return history;
+  }
+
+  const last = history[history.length - 1];
+  if (
+    last.direction === "inbound" &&
+    normalizePromptText(last.message_text) === normalizePromptText(incomingMessage)
+  ) {
+    return history.slice(0, -1);
+  }
+
+  return history;
+}
+
+function buildKnowledgeQuery(
+  incomingMessage: string,
+  history: Array<{ direction: "inbound" | "outbound"; message_text: string }>,
+  profile: RetrievalQueryProfile
+): string {
+  const query = incomingMessage.trim();
+  const queryParts = [query];
+
+  if (profile.asksMenuOrCatalog) {
+    queryParts.push("menu dishes items catalog rates prices");
+  }
+  if (profile.asksDocument) {
+    queryParts.push("pdf document file brochure download link url");
+  }
+  if (profile.asksLocation) {
+    queryParts.push("address location map directions reach");
+  }
+  if (profile.asksContact) {
+    queryParts.push("contact phone email support manager");
+  }
+
+  const contextCandidates = profile.isShortFollowup
+    ? history.slice(-4)
+    : history.filter((item) => item.direction === "inbound").slice(-1);
+  const contextLines = contextCandidates
+    .map((item) => {
+      const message = item.message_text.trim();
+      if (!message) {
+        return "";
+      }
+      return `${item.direction === "inbound" ? "User" : "Bot"}: ${trimForPrompt(message, 220)}`;
+    })
+    .filter((line) => line.length > 0);
+
+  if (contextLines.length === 0) {
+    return Array.from(new Set(queryParts)).join("\n");
+  }
+
+  return `${Array.from(new Set(queryParts)).join("\n")}\n\nRecent conversation context:\n${contextLines.join("\n")}`;
+}
+
+function mergeUniqueKnowledgeChunks(first: KnowledgeChunk[], second: KnowledgeChunk[], limit: number): KnowledgeChunk[] {
+  const seen = new Set<string>();
+  const merged: KnowledgeChunk[] = [];
+
+  for (const chunk of [...first, ...second]) {
+    if (!chunk.id || seen.has(chunk.id)) {
+      continue;
+    }
+    seen.add(chunk.id);
+    merged.push(chunk);
+    if (merged.length >= limit) {
+      break;
+    }
+  }
+
+  return merged;
+}
+
+function recencyBoost(createdAt: string | undefined): number {
+  if (!createdAt) {
+    return 0;
+  }
+  const timestamp = Date.parse(createdAt);
+  if (!Number.isFinite(timestamp)) {
+    return 0;
+  }
+  const ageDays = Math.max(0, (Date.now() - timestamp) / (24 * 60 * 60 * 1000));
+  if (ageDays <= 1) {
+    return 0.8;
+  }
+  if (ageDays <= 3) {
+    return 0.65;
+  }
+  if (ageDays <= 14) {
+    return 0.45;
+  }
+  if (ageDays <= 45) {
+    return 0.2;
+  }
+  return 0;
 }
 
 function resolveLocaleContext(conversationPhone: string, basics: BusinessBasicsProfile): LocaleContext {
@@ -362,7 +617,33 @@ function playbookForIntent(intent: SupportIntent, basics: BusinessBasicsProfile)
 }
 
 function buildSupportContactLine(basics: BusinessBasicsProfile): string {
-  return basics.supportEmail ? `support team (${basics.supportEmail}).` : "support team.";
+  const contactPerson = basics.escalationContactPerson || "our support team";
+  const phone = basics.escalationPhoneNumber;
+  const email = basics.escalationEmail || basics.supportEmail;
+  const channels: string[] = [];
+  if (phone) {
+    channels.push(`phone ${phone}`);
+  }
+  if (email) {
+    channels.push(`email ${email}`);
+  }
+  return channels.length > 0
+    ? `${contactPerson} via ${channels.join(" or ")}.`
+    : `${contactPerson}.`;
+}
+
+function buildEscalationPolicyLine(basics: BusinessBasicsProfile): string {
+  return (
+    basics.escalationWhenToEscalate ||
+    "Escalate when knowledge is missing, conversation is unclear, or the user asks for human help."
+  );
+}
+
+function buildNoKnowledgeReply(basics: BusinessBasicsProfile): string {
+  const fallback = basics.complaintHandlingScript || "I do not have this information right now.";
+  const supportLine = buildSupportContactLine(basics);
+  const escalationPolicy = buildEscalationPolicyLine(basics);
+  return `${fallback} I could not find a reliable match in my knowledge base. Please connect with ${supportLine} We escalate when: ${escalationPolicy}`;
 }
 
 function trimForPrompt(text: string, maxChars: number): string {
@@ -459,6 +740,145 @@ function scoreChunkForQuery(chunk: string, queryTerms: string[]): number {
   }
 
   return score;
+}
+
+async function retrieveRankedKnowledge(input: {
+  userId: string;
+  incomingMessage: string;
+  retrievalQuery: string;
+  limit: number;
+  profile: RetrievalQueryProfile;
+}): Promise<RankedKnowledgeChunk[]> {
+  const safeRetrieve = async (query: string, minSimilarity: number, limit = input.limit): Promise<KnowledgeChunk[]> => {
+    try {
+      return await retrieveKnowledge({
+        userId: input.userId,
+        query,
+        limit,
+        minSimilarity
+      });
+    } catch (error) {
+      console.warn(
+        `[ReplyFunnel] retrieval error user=${input.userId} minSimilarity=${minSimilarity} limit=${limit}: ${(error as Error).message}`
+      );
+      return [];
+    }
+  };
+
+  const strictIncoming = await safeRetrieve(input.incomingMessage, env.RAG_MIN_SIMILARITY);
+  const strictContext = await safeRetrieve(input.retrievalQuery, env.RAG_MIN_SIMILARITY);
+  const broadIncoming = await safeRetrieve(input.incomingMessage, 0);
+
+  const broadContext =
+    strictIncoming.length + strictContext.length >= Math.min(6, input.limit)
+      ? strictContext
+      : await safeRetrieve(input.retrievalQuery, 0);
+
+  const sourceBoosterQueryParts: string[] = [];
+  if (input.profile.asksMenuOrCatalog) {
+    sourceBoosterQueryParts.push("menu catalog dishes items prices");
+  }
+  if (input.profile.asksDocument) {
+    sourceBoosterQueryParts.push("pdf document download link url");
+  }
+  if (input.profile.asksLocation) {
+    sourceBoosterQueryParts.push("address location map directions");
+  }
+  if (input.profile.asksContact) {
+    sourceBoosterQueryParts.push("contact phone email support manager");
+  }
+
+  const boosted =
+    sourceBoosterQueryParts.length > 0
+      ? await safeRetrieve(sourceBoosterQueryParts.join(" "), 0, Math.max(8, Math.floor(input.limit / 2)))
+      : [];
+
+  const combined = mergeUniqueKnowledgeChunks(
+    mergeUniqueKnowledgeChunks(strictIncoming, strictContext, input.limit * 4),
+    mergeUniqueKnowledgeChunks(
+      mergeUniqueKnowledgeChunks(broadIncoming, broadContext, input.limit * 4),
+      boosted,
+      input.limit * 4
+    ),
+    input.limit * 5
+  );
+
+  const primaryTerms = extractQueryTerms(input.incomingMessage);
+  const contextTerms = extractQueryTerms(`${input.incomingMessage}\n${input.retrievalQuery}`);
+  return combined
+    .filter((chunk) => chunk.content_chunk && chunk.content_chunk.trim().length >= 20)
+    .map((chunk) => {
+      const lexicalPrimary = scoreChunkForQuery(chunk.content_chunk, primaryTerms);
+      const lexicalContext = scoreChunkForQuery(chunk.content_chunk, contextTerms);
+      const lexical = lexicalPrimary * 2 + lexicalContext;
+      const similarity = Number.isFinite(chunk.similarity) ? Number(chunk.similarity) : 0;
+      return { ...chunk, rankScore: similarity * 4 + lexical + recencyBoost(chunk.created_at) };
+    })
+    .sort((a, b) => {
+      if (b.rankScore !== a.rankScore) {
+        return b.rankScore - a.rankScore;
+      }
+      return Number(b.similarity) - Number(a.similarity);
+    })
+    .slice(0, input.limit);
+}
+
+function sourceKeyForChunk(chunk: KnowledgeChunk): string {
+  const sourceName = chunk.source_name?.trim() || "(unknown)";
+  return `${chunk.source_type}:${sourceName}`;
+}
+
+function diversifyKnowledgeCoverage(chunks: RankedKnowledgeChunk[], limit: number): RankedKnowledgeChunk[] {
+  if (chunks.length <= 2) {
+    return chunks.slice(0, limit);
+  }
+
+  const grouped = new Map<string, RankedKnowledgeChunk[]>();
+  for (const chunk of chunks) {
+    const key = sourceKeyForChunk(chunk);
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key)?.push(chunk);
+  }
+
+  for (const sourceChunks of grouped.values()) {
+    sourceChunks.sort((a, b) => b.rankScore - a.rankScore);
+  }
+
+  const prioritizedSources = [...grouped.entries()]
+    .sort((a, b) => (b[1][0]?.rankScore ?? 0) - (a[1][0]?.rankScore ?? 0))
+    .map((entry) => entry[0]);
+
+  const selected: RankedKnowledgeChunk[] = [];
+  const seen = new Set<string>();
+
+  // Pass 1: at least one chunk per source.
+  for (const source of prioritizedSources) {
+    const chunk = grouped.get(source)?.[0];
+    if (!chunk || seen.has(chunk.id)) {
+      continue;
+    }
+    seen.add(chunk.id);
+    selected.push(chunk);
+    if (selected.length >= limit) {
+      return selected;
+    }
+  }
+
+  // Pass 2: fill by overall rank.
+  for (const chunk of chunks) {
+    if (seen.has(chunk.id)) {
+      continue;
+    }
+    seen.add(chunk.id);
+    selected.push(chunk);
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected;
 }
 
 function compactChunkForQuery(chunk: string, queryTerms: string[], maxChars: number): string {
@@ -565,14 +985,17 @@ function buildKnowledgeBlock(
   );
 
   const requestedBudget = maxPromptCharsOverride ?? env.RAG_MAX_PROMPT_CHARS;
-  const maxPromptChars = Math.max(900, Math.min(requestedBudget, 3200));
+  const maxPromptChars = Math.max(1400, Math.min(requestedBudget, 5200));
   const perChunkChars = Math.min(1000, Math.max(260, Math.floor(maxPromptChars / Math.max(1, rankedChunks.length))));
   let usedChars = 0;
   const lines: string[] = [];
 
   for (let index = 0; index < rankedChunks.length; index += 1) {
     const chunk = compactChunkForQuery(rankedChunks[index].content_chunk, queryTerms, perChunkChars);
-    const entry = `${index + 1}. ${chunk}`;
+    const source = rankedChunks[index].source_name
+      ? `${rankedChunks[index].source_type}:${rankedChunks[index].source_name}`
+      : rankedChunks[index].source_type;
+    const entry = `${index + 1}. [${source}] ${chunk}`;
     if (usedChars + entry.length > maxPromptChars) {
       break;
     }
@@ -582,6 +1005,236 @@ function buildKnowledgeBlock(
   }
 
   return lines.length > 0 ? lines.join("\n") : "No stored knowledge available.";
+}
+
+function normalizeUrlCandidate(raw: string): string | null {
+  const trimmed = raw.trim().replace(/[),.;]+$/g, "");
+  if (!trimmed) {
+    return null;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : /^(www\.)/i.test(trimmed) || /^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)+/i.test(trimmed)
+      ? `https://${trimmed}`
+      : "";
+
+  if (!withProtocol) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(withProtocol);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractUrlsFromText(text: string): string[] {
+  const protocolMatches = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
+  const bareDomainMatches = text.match(/\b(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+(?:\/[^\s<>"']*)?/gi) ?? [];
+  const urls = new Set<string>();
+
+  for (const candidate of [...protocolMatches, ...bareDomainMatches]) {
+    const normalized = normalizeUrlCandidate(candidate);
+    if (normalized) {
+      urls.add(normalized);
+    }
+  }
+
+  return Array.from(urls);
+}
+
+function buildSourceCoverageBlock(
+  chunks: RankedKnowledgeChunk[],
+  query: string,
+  maxChars: number
+): string {
+  if (chunks.length === 0) {
+    return "No source summaries available.";
+  }
+
+  const grouped = new Map<string, RankedKnowledgeChunk[]>();
+  for (const chunk of chunks) {
+    const key = sourceKeyForChunk(chunk);
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key)?.push(chunk);
+  }
+
+  const terms = extractQueryTerms(query);
+  const sortedSources = [...grouped.entries()].sort(
+    (a, b) => (b[1][0]?.rankScore ?? 0) - (a[1][0]?.rankScore ?? 0)
+  );
+
+  const lines: string[] = [];
+  let used = 0;
+  for (const [key, sourceChunks] of sortedSources) {
+    const selectedChunks = sourceChunks.slice(0, 2);
+    const snippets = selectedChunks
+      .map((chunk) => compactChunkForQuery(chunk.content_chunk, terms, 220))
+      .filter(Boolean);
+    if (snippets.length === 0) {
+      continue;
+    }
+    const line = `- ${key}: ${trimForPrompt(snippets.join(" | "), 360)}`;
+    if (used + line.length > maxChars) {
+      break;
+    }
+    lines.push(line);
+    used += line.length;
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "No source summaries available.";
+}
+
+function resolveLinkFromKnowledge(chunks: RankedKnowledgeChunk[], basics: BusinessBasicsProfile): string | null {
+  for (const chunk of chunks) {
+    const urls = extractUrlsFromText(chunk.content_chunk || "");
+    if (urls.length > 0) {
+      return urls[0];
+    }
+  }
+
+  return normalizeUrlCandidate(basics.websiteUrl) || null;
+}
+
+function buildDeterministicKnowledgeReply(
+  profile: RetrievalQueryProfile,
+  chunks: RankedKnowledgeChunk[],
+  basics: BusinessBasicsProfile
+): string | null {
+  if (!(profile.asksMenuOrCatalog || profile.asksDocument)) {
+    return null;
+  }
+
+  const link = resolveLinkFromKnowledge(chunks, basics);
+  if (!link) {
+    return null;
+  }
+
+  if (profile.asksDocument || profile.asksBroadList) {
+    return `For full details, please use this link: ${link}`;
+  }
+
+  return null;
+}
+
+function normalizeReplyForComparison(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .trim();
+}
+
+function resolveLastOutboundReply(
+  history: Array<{ direction: "inbound" | "outbound"; message_text: string }>
+): string | null {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const row = history[index];
+    if (row.direction !== "outbound") {
+      continue;
+    }
+    const text = row.message_text.trim();
+    if (text) {
+      return text;
+    }
+  }
+  return null;
+}
+
+function shouldAllowSelfIntroduction(input: {
+  intent: SupportIntent;
+  incomingMessage: string;
+  historyForPrompt: Array<{ direction: "inbound" | "outbound"; message_text: string }>;
+}): boolean {
+  const hasPriorBotReply = input.historyForPrompt.some((row) => row.direction === "outbound");
+  if (hasPriorBotReply) {
+    return false;
+  }
+
+  if (input.intent !== "greeting") {
+    return false;
+  }
+
+  const normalized = normalizePromptText(input.incomingMessage);
+  const tokenCount = normalized.split(/\s+/).filter(Boolean).length;
+  const hasGreetingKeyword = INTENT_KEYWORDS.greeting.some((keyword) => normalized.includes(keyword));
+  return hasGreetingKeyword || tokenCount <= 4;
+}
+
+function stripRepeatedSelfIntroduction(text: string): string {
+  const patterns = [
+    /^\s*(?:hi|hello|hey|good (?:morning|afternoon|evening)|namaste)[!,. ]+(?:i am|i'm|this is)\s+[^.!?\n]{1,140}[.!?]?\s*/i,
+    /^\s*(?:i am|i'm|this is)\s+[^.!?\n]{1,140}\b(?:from|support|assistant|team|bot)\b[^.!?\n]{0,140}[.!?]?\s*/i
+  ];
+
+  let cleaned = text.trimStart();
+  for (const pattern of patterns) {
+    cleaned = cleaned.replace(pattern, "").trimStart();
+  }
+
+  const finalText = cleaned.trim();
+  return finalText.length >= 8 ? finalText : text.trim();
+}
+
+function buildRepeatGuardReply(input: {
+  intent: SupportIntent;
+  incomingMessage: string;
+  basics: BusinessBasicsProfile;
+  deterministicReply: string | null;
+}): string {
+  if (input.deterministicReply) {
+    return input.deterministicReply;
+  }
+
+  if (input.intent === "booking") {
+    return "I can help you book this. Please share date, guest count, and preferred time so I can guide the next step.";
+  }
+
+  const normalizedIncoming = normalizePromptText(input.incomingMessage);
+  if (/alcohol|beer|wine|liquor|cocktail|drinks/.test(normalizedIncoming)) {
+    return "Please share what type of alcohol you want (beer, wine, whisky, cocktail) and quantity; I will check options and availability.";
+  }
+
+  const supportLine = buildSupportContactLine(input.basics);
+  return `I noted your latest message. Please share one more specific detail and I will answer precisely. If needed, connect with ${supportLine}`;
+}
+
+function buildCompactRetryPrompt(input: {
+  basics: BusinessBasicsProfile;
+  localeContext: LocaleContext;
+  supportLine: string;
+  escalationPolicyLine: string;
+  historyForPrompt: Array<{ direction: "inbound" | "outbound"; message_text: string }>;
+  selectedKnowledge: RankedKnowledgeChunk[];
+  incomingMessage: string;
+}): string {
+  const compactHistory = input.historyForPrompt
+    .slice(-4)
+    .map((item) => `${item.direction === "inbound" ? "User" : "Bot"}: ${trimForPrompt(item.message_text, 180)}`)
+    .join("\n");
+  const compactKnowledge = buildKnowledgeBlock(
+    input.selectedKnowledge.slice(0, 8),
+    input.incomingMessage,
+    1800
+  );
+
+  return [
+    `Business context: ${input.basics.companyName} | ${input.basics.whatDoYouSell}`,
+    `Locale: ${input.localeContext.countryName} (${input.localeContext.currencyCode})`,
+    `Escalation: ${trimForPrompt(input.escalationPolicyLine, 260)} | Contact: ${input.supportLine}`,
+    `Recent conversation:\n${compactHistory || "No prior messages."}`,
+    `Knowledge:\n${compactKnowledge}`,
+    `User message: ${input.incomingMessage}`,
+    "Reply with a concise support answer based on available knowledge. If exact answer is missing, state it clearly and offer handoff."
+  ].join("\n\n");
 }
 
 function buildStructuredKnowledgeHints(
@@ -668,10 +1321,19 @@ function buildFallbackReply(
 
 export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   const basics = toBasicsProfile(input.user.business_basics as Record<string, unknown>);
-  const detectedIntent = detectSupportIntent(input.incomingMessage);
   const queryComplexity = estimateQueryComplexity(input.incomingMessage);
+  const retrievalProfile = detectRetrievalProfile(input.incomingMessage);
   const localeContext = resolveLocaleContext(input.conversationPhone, basics);
   const supportLine = buildSupportContactLine(basics);
+  const escalationPolicyLine = buildEscalationPolicyLine(basics);
+  const historyForPrompt = removeCurrentInboundFromHistory(input.history, input.incomingMessage);
+  const detectedIntent = detectSupportIntent(input.incomingMessage, historyForPrompt, retrievalProfile);
+  const allowSelfIntroduction = shouldAllowSelfIntroduction({
+    intent: detectedIntent,
+    incomingMessage: input.incomingMessage,
+    historyForPrompt
+  });
+  const retrievalQuery = buildKnowledgeQuery(input.incomingMessage, historyForPrompt, retrievalProfile);
 
   if (!openAIService.isConfigured()) {
     return {
@@ -682,24 +1344,27 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     };
   }
 
-  let knowledge: Awaited<ReturnType<typeof retrieveKnowledge>> = [];
+  let knowledge: RankedKnowledgeChunk[] = [];
   try {
-    knowledge = await retrieveKnowledge({
+    knowledge = await retrieveRankedKnowledge({
       userId: input.user.id,
-      query: input.incomingMessage,
-      limit: Math.max(6, Math.min(10, env.RAG_RETRIEVAL_LIMIT)),
-      minSimilarity: 0
+      incomingMessage: input.incomingMessage,
+      retrievalQuery,
+      limit: resolveKnowledgeRetrievalLimit(queryComplexity, retrievalProfile),
+      profile: retrievalProfile
     });
   } catch {
     knowledge = [];
   }
 
-  if (knowledge.length === 0) {
+  const selectedKnowledge = diversifyKnowledgeCoverage(knowledge, Math.min(knowledge.length, 24));
+  const deterministicReply = buildDeterministicKnowledgeReply(retrievalProfile, selectedKnowledge, basics);
+  if (deterministicReply) {
     return {
-      text: "I could not find a matching answer in your knowledge base. Please add/update the relevant knowledge and try again.",
+      text: deterministicReply,
       model: null,
       usage: null,
-      retrievalChunks: 0
+      retrievalChunks: selectedKnowledge.length
     };
   }
 
@@ -710,9 +1375,12 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     return `- ${INTENT_LABELS[intent]}: ${playbookForIntent(intent, basics)}`;
   }).join("\n");
 
-  const topSimilarity = Math.max(0, Math.min(1, Number(knowledge[0]?.similarity ?? 0)));
+  const topSimilarity =
+    selectedKnowledge.length > 0
+      ? Math.max(0, Math.min(1, ...selectedKnowledge.map((chunk) => Number(chunk.similarity || 0))))
+      : 0;
   const historyWindow = resolveHistoryWindow(queryComplexity, topSimilarity);
-  const knowledgeBudget = resolveKnowledgePromptBudget(queryComplexity);
+  const knowledgeBudget = resolveKnowledgePromptBudget(queryComplexity, retrievalProfile);
 
   const systemPrompt = [
     "You are WAgen AI, a WhatsApp customer support agent.",
@@ -720,11 +1388,16 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     "- Primary role is customer support, not sales.",
     "- Reply in plain conversational text, usually under 120 words.",
     "- Ask at most one follow-up question.",
+    allowSelfIntroduction
+      ? "- You may include one short self-introduction in this first greeting turn only."
+      : "- Do not start with self-introduction in ongoing chat. Avoid repeating lines like 'Hello, I'm ...'.",
     "- Use retrieved knowledge only; do not invent facts.",
     "- If the answer is missing in knowledge, say that clearly and offer support handoff.",
     "- If item price/amount is present near item name in knowledge, return that numeric value.",
     "- Format money in the user's currency.",
     "- Never claim actions you cannot perform.",
+    "- Follow the AI Do and AI Don't rules from business context strictly.",
+    "- If escalation policy triggers, hand off to human support and include configured contact details.",
     `- Query complexity: ${queryComplexity}. Match response depth to this.`,
     `- Agent objective: ${basics.agentObjectiveType || "hybrid"}.`,
     basics.agentTaskDescription
@@ -733,48 +1406,51 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     `Personality: ${personality}`
   ].join("\n");
 
-  const knowledgeBlock = buildKnowledgeBlock(knowledge, input.incomingMessage, knowledgeBudget);
-  const includeStructuredHints = queryComplexity !== "simple" || isPricingQuery(input.incomingMessage);
+  const knowledgeBlock = buildKnowledgeBlock(selectedKnowledge, input.incomingMessage, knowledgeBudget);
+  const sourceCoverageBlock = buildSourceCoverageBlock(
+    selectedKnowledge,
+    input.incomingMessage,
+    Math.min(1400, Math.max(600, Math.floor(knowledgeBudget * 0.45)))
+  );
+  const includeStructuredHints =
+    queryComplexity !== "simple" ||
+    isPricingQuery(input.incomingMessage) ||
+    retrievalProfile.asksMenuOrCatalog ||
+    retrievalProfile.asksDocument ||
+    retrievalProfile.asksLocation;
   const structuredHints = includeStructuredHints
-    ? buildStructuredKnowledgeHints(knowledge, input.incomingMessage)
+    ? buildStructuredKnowledgeHints(selectedKnowledge, input.incomingMessage)
     : "Not required for this query.";
 
-  const selectedHistory = historyWindow > 0 ? input.history.slice(-historyWindow) : [];
+  const selectedHistory = historyWindow > 0 ? historyForPrompt.slice(-historyWindow) : [];
   const historyBlock = selectedHistory
     .map((item) => `${item.direction === "inbound" ? "User" : "WAgen AI"}: ${item.message_text}`)
     .join("\n");
 
   const baseSections = [
     `Business context:\n- Company: ${basics.companyName}\n- Support domain: ${basics.whatDoYouSell}`,
+    `AI Do rules:\n${trimForPrompt(basics.aiDoRules || "Answer clearly and stay factual.", 600)}`,
+    `AI Don't rules:\n${trimForPrompt(basics.aiDontRules || "Do not invent details not present in knowledge.", 600)}`,
+    `Escalation policy:\n- When to escalate: ${trimForPrompt(escalationPolicyLine, 600)}\n- Human contact: ${supportLine}`,
     `Locale context:\n- User country: ${localeContext.countryName} (${localeContext.countryCode})\n- Currency: ${localeContext.currencyCode} (${localeContext.currencySymbol})\n- Locale format: ${localeContext.locale}`,
     `Detected support scenario: ${INTENT_LABELS[detectedIntent]}`,
     `Primary scenario playbook:\n${selectedPlaybook}`,
     `Support handoff contact:\n${supportLine}`
   ];
 
-  const mediumSections = [
+  const settingsSections = [
     `Customer fit context:\n- Audience: ${basics.targetAudience}\n- Promise/USP: ${basics.usp}\n- Common issues: ${basics.objections}`,
-    `AI Do rules:\n${basics.aiDoRules || "No custom do rules provided."}`,
-    `AI Don't rules:\n${basics.aiDontRules || "No custom don't rules provided."}`
-  ];
-
-  const complexSections = [
     `All configured playbooks:\n${allPlaybooksBlock}`,
     `Agent objective type:\n${basics.agentObjectiveType || "hybrid"}`,
     `Agent task guideline:\n${basics.agentTaskDescription || "No extra task guidance."}`
   ];
 
-  const promptSections = [...baseSections];
-  if (queryComplexity !== "simple") {
-    promptSections.push(...mediumSections);
-  }
-  if (queryComplexity === "complex") {
-    promptSections.push(...complexSections);
-  }
+  const promptSections = [...baseSections, ...settingsSections];
 
   promptSections.push(
     `Conversation with ${input.conversationPhone}:\n${historyBlock || "No prior messages used for this turn."}`,
-    `Retrieved knowledge:\n${knowledgeBlock}`
+    `Retrieved knowledge:\n${knowledgeBlock}`,
+    `Knowledge source coverage:\n${sourceCoverageBlock}`
   );
 
   if (includeStructuredHints && structuredHints !== "No structured hints.") {
@@ -784,21 +1460,78 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   promptSections.push(`Incoming message: ${input.incomingMessage}`, "Craft the best support response now.");
 
   const userPrompt = promptSections.join("\n\n");
+  if (env.OPENAI_LOG_USAGE) {
+    console.info(
+      `[ReplyFunnel] user=${input.user.id} complexity=${queryComplexity} retrieval=${selectedKnowledge.length} sources=${new Set(selectedKnowledge.map((chunk) => sourceKeyForChunk(chunk))).size}`
+    );
+  }
 
   try {
     const response = await openAIService.generateReply(systemPrompt, userPrompt);
+    let finalText = allowSelfIntroduction ? response.content : stripRepeatedSelfIntroduction(response.content);
+    const lastOutbound = resolveLastOutboundReply(historyForPrompt);
+    const lastInboundBeforeCurrent = [...historyForPrompt]
+      .reverse()
+      .find((item) => item.direction === "inbound")
+      ?.message_text;
+    const currentInboundNormalized = normalizePromptText(input.incomingMessage);
+    const isSameQuestionAsPreviousInbound =
+      Boolean(lastInboundBeforeCurrent) &&
+      normalizePromptText(lastInboundBeforeCurrent as string) === currentInboundNormalized;
+
+    if (
+      lastOutbound &&
+      !isSameQuestionAsPreviousInbound &&
+      normalizeReplyForComparison(lastOutbound) === normalizeReplyForComparison(finalText)
+    ) {
+      finalText = buildRepeatGuardReply({
+        intent: detectedIntent,
+        incomingMessage: input.incomingMessage,
+        basics,
+        deterministicReply: buildDeterministicKnowledgeReply(retrievalProfile, selectedKnowledge, basics)
+      });
+    }
+
     return {
-      text: response.content,
+      text: finalText,
       model: response.model,
       usage: response.usage ?? null,
-      retrievalChunks: knowledge.length
+      retrievalChunks: selectedKnowledge.length
     };
-  } catch {
-    return {
-      text: buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage),
-      model: null,
-      usage: null,
-      retrievalChunks: knowledge.length
-    };
+  } catch (primaryError) {
+    console.warn(
+      `[ReplyFunnel] primary generation failed user=${input.user.id}: ${(primaryError as Error).message}`
+    );
+    try {
+      const retryPrompt = buildCompactRetryPrompt({
+        basics,
+        localeContext,
+        supportLine,
+        escalationPolicyLine,
+        historyForPrompt,
+        selectedKnowledge,
+        incomingMessage: input.incomingMessage
+      });
+      const retry = await openAIService.generateReply(systemPrompt, retryPrompt, undefined, {
+        maxTokens: Math.max(160, Math.min(260, env.OPENAI_MAX_OUTPUT_TOKENS))
+      });
+      const retryText = allowSelfIntroduction ? retry.content : stripRepeatedSelfIntroduction(retry.content);
+      return {
+        text: retryText,
+        model: retry.model,
+        usage: retry.usage ?? null,
+        retrievalChunks: selectedKnowledge.length
+      };
+    } catch (retryError) {
+      console.warn(
+        `[ReplyFunnel] retry generation failed user=${input.user.id}: ${(retryError as Error).message}`
+      );
+      return {
+        text: buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage),
+        model: null,
+        usage: null,
+        retrievalChunks: selectedKnowledge.length
+      };
+    }
   }
 }

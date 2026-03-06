@@ -1,12 +1,15 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import {
+  getSupportedKnowledgeFileAcceptValue,
+  getSupportedKnowledgeFileExtensions,
   ingestManualText,
+  isSupportedKnowledgeFile,
   ingestWebsiteUrl
 } from "../services/knowledge-ingestion-service.js";
-import { createPdfIngestionJobs, listIngestionJobs } from "../services/knowledge-ingestion-jobs-service.js";
+import { createFileIngestionJobs, listIngestionJobs } from "../services/knowledge-ingestion-jobs-service.js";
 import { deleteKnowledgeSource, getKnowledgeStats, listKnowledgeChunks, listKnowledgeSources } from "../services/rag-service.js";
 
 const ManualSchema = z.object({
@@ -20,11 +23,11 @@ const WebsiteSchema = z.object({
 });
 
 const SourcesQuerySchema = z.object({
-  sourceType: z.enum(["pdf", "website", "manual"]).optional()
+  sourceType: z.enum(["file", "pdf", "website", "manual"]).optional()
 });
 
 const DeleteSourceSchema = z.object({
-  sourceType: z.enum(["pdf", "website", "manual"]),
+  sourceType: z.enum(["file", "pdf", "website", "manual"]),
   sourceName: z.string().trim().min(1)
 });
 
@@ -33,7 +36,7 @@ const IngestJobsQuerySchema = z.object({
 });
 
 const ChunksQuerySchema = z.object({
-  sourceType: z.enum(["pdf", "website", "manual"]).optional(),
+  sourceType: z.enum(["file", "pdf", "website", "manual"]).optional(),
   sourceName: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
@@ -81,48 +84,51 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  fastify.post(
-    "/api/knowledge/ingest/pdf",
-    { preHandler: [fastify.requireAuth] },
-    async (request, reply) => {
-      const files = await withTimeout(
-        request.saveRequestFiles(),
-        env.PDF_UPLOAD_BUFFER_TIMEOUT_MS,
-        "PDF upload buffering timed out"
-      );
+  const ingestFilesHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+    const files = await withTimeout(
+      request.saveRequestFiles(),
+      env.PDF_UPLOAD_BUFFER_TIMEOUT_MS,
+      "File upload buffering timed out"
+    );
 
-      try {
-        if (files.length === 0) {
-          return reply.status(400).send({ error: "PDF file is required" });
-        }
-
-        const nonPdf = files.find((file) => file.mimetype !== "application/pdf");
-        if (nonPdf) {
-          return reply.status(400).send({ error: `Only PDF files are allowed. Invalid file: ${nonPdf.filename}` });
-        }
-
-        const preparedFiles: Array<{ filename: string; buffer: Buffer }> = [];
-        for (const file of files) {
-          try {
-            const buffer = await withTimeout(
-              readFile(file.filepath),
-              env.PDF_UPLOAD_BUFFER_TIMEOUT_MS,
-              "PDF upload buffering timed out"
-            );
-            preparedFiles.push({ filename: file.filename, buffer });
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "PDF ingestion failed";
-            return reply.status(422).send({ error: `Failed to process "${file.filename}": ${message}` });
-          }
-        }
-
-        const jobs = await createPdfIngestionJobs(request.authUser.userId, preparedFiles);
-        return reply.send({ ok: true, jobs });
-      } finally {
-        await request.cleanRequestFiles();
+    try {
+      if (files.length === 0) {
+        return reply.status(400).send({ error: "At least one file is required" });
       }
+
+      const invalidFile = files.find((file) => !isSupportedKnowledgeFile(file.filename, file.mimetype));
+      if (invalidFile) {
+        return reply.status(400).send({
+          error: `Unsupported file "${invalidFile.filename}". Supported formats: ${getSupportedKnowledgeFileExtensions().join(", ")}`,
+          accept: getSupportedKnowledgeFileAcceptValue()
+        });
+      }
+
+      const preparedFiles: Array<{ filename: string; mimeType?: string | null; buffer: Buffer }> = [];
+      for (const file of files) {
+        try {
+          const buffer = await withTimeout(
+            readFile(file.filepath),
+            env.PDF_UPLOAD_BUFFER_TIMEOUT_MS,
+            "File upload buffering timed out"
+          );
+          preparedFiles.push({ filename: file.filename, mimeType: file.mimetype, buffer });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "File ingestion failed";
+          return reply.status(422).send({ error: `Failed to process "${file.filename}": ${message}` });
+        }
+      }
+
+      const jobs = await createFileIngestionJobs(request.authUser.userId, preparedFiles);
+      return reply.send({ ok: true, jobs });
+    } finally {
+      await request.cleanRequestFiles();
     }
-  );
+  };
+
+  fastify.post("/api/knowledge/ingest/files", { preHandler: [fastify.requireAuth] }, ingestFilesHandler);
+  // Backward-compatible alias for older clients that still call /ingest/pdf.
+  fastify.post("/api/knowledge/ingest/pdf", { preHandler: [fastify.requireAuth] }, ingestFilesHandler);
 
   fastify.get(
     "/api/knowledge/ingest/jobs",

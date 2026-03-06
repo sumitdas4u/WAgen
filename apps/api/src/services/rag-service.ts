@@ -8,6 +8,7 @@ export interface KnowledgeChunk {
   source_type: string;
   source_name: string | null;
   similarity: number;
+  created_at?: string;
 }
 
 export interface KnowledgeSource {
@@ -95,9 +96,10 @@ function mergeAndLimitChunks(primary: KnowledgeChunk[], secondary: KnowledgeChun
 
 export async function ingestKnowledgeChunks(input: {
   userId: string;
-  sourceType: "pdf" | "website" | "manual";
+  sourceType: "file" | "pdf" | "website" | "manual";
   sourceName?: string;
   chunks: Array<string | IngestChunkInput>;
+  replaceExistingSource?: boolean;
   onEmbeddingProgress?: (completed: number, total: number) => void;
 }): Promise<number> {
   const validChunks = input.chunks
@@ -118,6 +120,21 @@ export async function ingestKnowledgeChunks(input: {
   }
 
   await withTransaction(async (client) => {
+    if (input.replaceExistingSource && input.sourceName) {
+      const normalizedSourceName = input.sourceName.replace(/\s+/g, " ").trim();
+      await client.query(
+        `DELETE FROM knowledge_base
+         WHERE user_id = $1
+           AND source_type = $2
+           AND (
+             source_name = $3
+             OR LOWER(TRIM(COALESCE(source_name, ''))) = LOWER(TRIM($3))
+             OR REGEXP_REPLACE(LOWER(TRIM(COALESCE(source_name, ''))), '[[:space:]]+', ' ', 'g') = LOWER($4)
+           )`,
+        [input.userId, input.sourceType, input.sourceName, normalizedSourceName.toLowerCase()]
+      );
+    }
+
     let completed = 0;
     for (const chunk of validChunks) {
       let vectorLiteral = ZERO_VECTOR;
@@ -172,6 +189,7 @@ export async function retrieveKnowledge(input: {
          content_chunk,
          source_type,
          source_name,
+         created_at,
          ts_rank(to_tsvector('simple', content_chunk), to_tsquery('simple', $2)) AS similarity
        FROM knowledge_base
        WHERE user_id = $1
@@ -194,6 +212,7 @@ export async function retrieveKnowledge(input: {
         content_chunk,
         source_type,
         source_name,
+        created_at,
         1 - (embedding_vector <=> $2::vector) AS similarity
        FROM knowledge_base
        WHERE user_id = $1
@@ -219,6 +238,7 @@ export async function retrieveKnowledge(input: {
          content_chunk,
          source_type,
          source_name,
+         created_at,
          ts_rank(to_tsvector('simple', content_chunk), plainto_tsquery('simple', $2)) AS similarity
        FROM knowledge_base
        WHERE user_id = $1
@@ -241,6 +261,7 @@ export async function retrieveKnowledge(input: {
         content_chunk,
         source_type,
         source_name,
+        created_at,
         ts_rank(to_tsvector('simple', content_chunk), plainto_tsquery('simple', $2)) AS similarity
        FROM knowledge_base
        WHERE user_id = $1
@@ -265,7 +286,7 @@ export async function getKnowledgeStats(userId: string): Promise<{ chunks: numbe
 
 export async function listKnowledgeSources(
   userId: string,
-  sourceType?: "pdf" | "website" | "manual"
+  sourceType?: "file" | "pdf" | "website" | "manual"
 ): Promise<KnowledgeSource[]> {
   const result = await pool.query<{
     source_type: string;
@@ -296,7 +317,7 @@ export async function listKnowledgeSources(
 
 export async function deleteKnowledgeSource(input: {
   userId: string;
-  sourceType: "pdf" | "website" | "manual";
+  sourceType: "file" | "pdf" | "website" | "manual";
   sourceName: string;
 }): Promise<number> {
   const normalizedSourceName = input.sourceName.replace(/\s+/g, " ").trim();
@@ -336,7 +357,7 @@ export async function deleteKnowledgeSource(input: {
 
 export async function listKnowledgeChunks(input: {
   userId: string;
-  sourceType?: "pdf" | "website" | "manual";
+  sourceType?: "file" | "pdf" | "website" | "manual";
   sourceName?: string;
   limit?: number;
 }): Promise<KnowledgeChunkPreview[]> {

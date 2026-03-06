@@ -24,7 +24,7 @@ import {
   fetchKnowledgeChunks,
   fetchKnowledgeSources,
   ingestManual,
-  ingestPdf,
+  ingestKnowledgeFiles,
   ingestWebsite,
   resolveAiReviewQueueItem,
   saveBusinessBasics,
@@ -54,7 +54,13 @@ import { AgentsTab } from "./dashboard/tabs/agents-tab";
 import { LeadsTab } from "./dashboard/tabs/leads-tab";
 import { SettingsTab } from "./dashboard/tabs/settings-tab";
 
-const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_KNOWLEDGE_FILE_UPLOAD_BYTES = 20 * 1024 * 1024;
+const SUPPORTED_KNOWLEDGE_FILE_EXTENSIONS = new Set(["pdf", "txt", "doc", "docx", "xls", "xlsx"]);
+
+function isSupportedKnowledgeFile(file: File): boolean {
+  const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
+  return Boolean(extension && SUPPORTED_KNOWLEDGE_FILE_EXTENSIONS.has(extension));
+}
 type PersonalityKey = "friendly_warm" | "professional" | "hard_closer" | "premium_consultant" | "custom";
 type NavIconName =
   | "brand"
@@ -87,7 +93,7 @@ type LeadChannelFilter = "all" | "web" | "qr" | "api";
 type LeadQuickFilter = "all" | "today_hot" | "today_warm" | "today_complaint" | "needs_reply";
 type SettingsSubmenu = "setup_web" | "setup_qr" | "setup_api";
 type AgentProfile = AgentProfileApi;
-type PersonalityPanelTab = "answer_formatting" | "bot_identity" | "custom_instructions";
+type PersonalityPanelTab = "answer_formatting" | "bot_identity" | "custom_instructions" | "escalation";
 type ResponseLengthPreference = "descriptive" | "medium" | "short";
 type TonePreference = "matter_of_fact" | "friendly" | "humorous" | "neutral" | "professional";
 type GenderPreference = "female" | "male" | "neutral";
@@ -356,6 +362,101 @@ function readMetaString(record: Record<string, unknown> | null, key: string): st
   return null;
 }
 
+function readMetaNumber(record: Record<string, unknown> | null, key: string): number | null {
+  if (!record) {
+    return null;
+  }
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function sortChunksForEditing(chunks: KnowledgeChunkPreview[]): KnowledgeChunkPreview[] {
+  return [...chunks].sort((left, right) => {
+    const leftMeta = getNestedRecord(left.metadata_json);
+    const rightMeta = getNestedRecord(right.metadata_json);
+
+    const leftStart = readMetaNumber(leftMeta, "startChar");
+    const rightStart = readMetaNumber(rightMeta, "startChar");
+    if (leftStart !== null || rightStart !== null) {
+      if (leftStart === null) {
+        return 1;
+      }
+      if (rightStart === null) {
+        return -1;
+      }
+      if (leftStart !== rightStart) {
+        return leftStart - rightStart;
+      }
+    }
+
+    const leftPage = readMetaNumber(leftMeta, "page");
+    const rightPage = readMetaNumber(rightMeta, "page");
+    if (leftPage !== null || rightPage !== null) {
+      if (leftPage === null) {
+        return 1;
+      }
+      if (rightPage === null) {
+        return -1;
+      }
+      if (leftPage !== rightPage) {
+        return leftPage - rightPage;
+      }
+      const leftSegment = readMetaNumber(leftMeta, "segment") ?? 0;
+      const rightSegment = readMetaNumber(rightMeta, "segment") ?? 0;
+      if (leftSegment !== rightSegment) {
+        return leftSegment - rightSegment;
+      }
+    }
+
+    const leftCreatedAt = Date.parse(left.created_at);
+    const rightCreatedAt = Date.parse(right.created_at);
+    if (Number.isFinite(leftCreatedAt) && Number.isFinite(rightCreatedAt) && leftCreatedAt !== rightCreatedAt) {
+      return leftCreatedAt - rightCreatedAt;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function rebuildManualSourceText(chunks: KnowledgeChunkPreview[]): string {
+  const unique = new Set<string>();
+  const sections: string[] = [];
+  for (const chunk of sortChunksForEditing(chunks)) {
+    const text = chunk.content_chunk.trim();
+    if (!text) {
+      continue;
+    }
+    const key = text.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!key || unique.has(key)) {
+      continue;
+    }
+    unique.add(key);
+    sections.push(text);
+  }
+  return sections.join("\n\n").trim();
+}
+
+function resolveWebsiteSourceUrl(chunks: KnowledgeChunkPreview[]): string {
+  const urls = new Set<string>();
+  for (const chunk of sortChunksForEditing(chunks)) {
+    const url = readMetaString(getNestedRecord(chunk.metadata_json), "url");
+    if (url) {
+      urls.add(url);
+    }
+  }
+  if (urls.size === 0) {
+    return "";
+  }
+  return Array.from(urls).sort((left, right) => left.length - right.length)[0] ?? "";
+}
+
 function formatMetaStatusLabel(value: string | null | undefined, fallback = "Not available"): string {
   const raw = value?.trim();
   if (!raw) {
@@ -617,7 +718,12 @@ const DEFAULT_BUSINESS_BASICS: BusinessBasicsPayload = {
   aiDoRules:
     "Be polite and empathetic.\nAnswer clearly using available business knowledge.\nEscalate to support contact when needed.",
   aiDontRules:
-    "Do not ask customer budget or pricing qualification questions.\nDo not promise actions you cannot perform.\nDo not share sensitive data."
+    "Do not ask customer budget or pricing qualification questions.\nDo not promise actions you cannot perform.\nDo not share sensitive data.",
+  escalationWhenToEscalate:
+    "Escalate when the query is outside knowledge, details are unclear after one follow-up, or customer asks for a human.",
+  escalationContactPerson: "",
+  escalationPhoneNumber: "",
+  escalationEmail: ""
 };
 
 function readSavedString(value: unknown, fallback: string): string {
@@ -667,7 +773,17 @@ function loadSavedBusinessBasics(value: unknown): BusinessBasicsPayload {
     ),
     supportEmail: readSavedString(saved.supportEmail, DEFAULT_BUSINESS_BASICS.supportEmail),
     aiDoRules: readSavedString(saved.aiDoRules, DEFAULT_BUSINESS_BASICS.aiDoRules),
-    aiDontRules: readSavedString(saved.aiDontRules, DEFAULT_BUSINESS_BASICS.aiDontRules)
+    aiDontRules: readSavedString(saved.aiDontRules, DEFAULT_BUSINESS_BASICS.aiDontRules),
+    escalationWhenToEscalate: readSavedString(
+      saved.escalationWhenToEscalate,
+      DEFAULT_BUSINESS_BASICS.escalationWhenToEscalate
+    ),
+    escalationContactPerson: readSavedString(
+      saved.escalationContactPerson,
+      DEFAULT_BUSINESS_BASICS.escalationContactPerson
+    ),
+    escalationPhoneNumber: readSavedString(saved.escalationPhoneNumber, DEFAULT_BUSINESS_BASICS.escalationPhoneNumber),
+    escalationEmail: readSavedString(saved.escalationEmail, DEFAULT_BUSINESS_BASICS.escalationEmail)
   };
 }
 
@@ -747,7 +863,7 @@ export function DashboardPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [manualFaq, setManualFaq] = useState("");
   const [showKnowledgeMenu, setShowKnowledgeMenu] = useState(false);
-  const [knowledgeModal, setKnowledgeModal] = useState<"manual" | "website" | "pdf" | null>(null);
+  const [knowledgeModal, setKnowledgeModal] = useState<"manual" | "website" | "file" | null>(null);
   const [knowledgeMode, setKnowledgeMode] = useState<"add" | "edit">("add");
   const [settingsSubmenu, setSettingsSubmenu] = useState<SettingsSubmenu>("setup_web");
   const [metaBusinessConfig, setMetaBusinessConfig] = useState<MetaBusinessConfig | null>(null);
@@ -757,11 +873,13 @@ export function DashboardPage() {
   const [agentName, setAgentName] = useState("");
   const [agentObjectiveType, setAgentObjectiveType] = useState<"lead" | "feedback" | "complaint" | "hybrid">("lead");
   const [agentTaskDescription, setAgentTaskDescription] = useState("");
+  const [manualComposeConversationId, setManualComposeConversationId] = useState<string | null>(null);
   const [editingSource, setEditingSource] = useState<{ sourceType: KnowledgeSource["source_type"]; sourceName: string } | null>(null);
   const [modalSourceName, setModalSourceName] = useState("");
   const [modalWebsiteUrl, setModalWebsiteUrl] = useState("");
   const [modalManualText, setModalManualText] = useState("");
-  const [modalPdfFiles, setModalPdfFiles] = useState<File[]>([]);
+  const [modalKnowledgeFiles, setModalKnowledgeFiles] = useState<File[]>([]);
+  const [knowledgeModalLoading, setKnowledgeModalLoading] = useState(false);
   const [chunkViewerSource, setChunkViewerSource] = useState<{ sourceType: KnowledgeSource["source_type"]; sourceName: string } | null>(null);
   const [chunkViewerItems, setChunkViewerItems] = useState<KnowledgeChunkPreview[]>([]);
   const [chunkViewerLoading, setChunkViewerLoading] = useState(false);
@@ -785,6 +903,8 @@ export function DashboardPage() {
   const [deleteAccountConfirmText, setDeleteAccountConfirmText] = useState("");
   const [sendingAgentMessage, setSendingAgentMessage] = useState(false);
   const [agentReplyText, setAgentReplyText] = useState("");
+  const [metaApiSetupLoading, setMetaApiSetupLoading] = useState(false);
+  const [metaApiSetupLoadingText, setMetaApiSetupLoadingText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const uploadPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -796,6 +916,7 @@ export function DashboardPage() {
   const chatAiTimerProcessingRef = useRef<Set<string>>(new Set());
   const notifiedInboundMessageKeysRef = useRef<string[]>([]);
   const notificationPermissionBoundRef = useRef(false);
+  const knowledgeModalRequestRef = useRef(0);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1457,7 +1578,7 @@ export function DashboardPage() {
     setAgentName(primary.name);
     setAgentObjectiveType(primary.objectiveType);
     setAgentTaskDescription(primary.taskDescription ?? "");
-    setBusinessBasics(primary.businessBasics);
+    setBusinessBasics(loadSavedBusinessBasics(primary.businessBasics));
     setPersonality(primary.personality);
     setCustomPrompt(primary.customPrompt ?? "");
   }, [token]);
@@ -1768,6 +1889,12 @@ export function DashboardPage() {
     if (!token || !selectedConversation) {
       return;
     }
+    const targetConversationId = selectedConversation.id;
+    if (switchToPaused) {
+      setManualComposeConversationId(targetConversationId);
+    } else if (manualComposeConversationId === targetConversationId) {
+      setManualComposeConversationId(null);
+    }
 
     setBusy(true);
     setError(null);
@@ -1775,14 +1902,14 @@ export function DashboardPage() {
     setChatAiMenuOpen(false);
     try {
       await Promise.all([
-        setManualTakeover(token, selectedConversation.id, switchToPaused),
-        setConversationPaused(token, selectedConversation.id, switchToPaused)
+        setManualTakeover(token, targetConversationId, switchToPaused),
+        setConversationPaused(token, targetConversationId, switchToPaused)
       ]);
       setChatAiTimers((current) => {
         const next = { ...current };
-        delete next[selectedConversation.id];
+        delete next[targetConversationId];
         if (durationMinutes !== null) {
-          next[selectedConversation.id] = {
+          next[targetConversationId] = {
             switchToPaused: !switchToPaused,
             executeAt: Date.now() + durationMinutes * 60_000
           };
@@ -1796,6 +1923,9 @@ export function DashboardPage() {
         setInfo(durationMinutes === null ? "AI turned on for this chat." : `AI turned on for ${durationMinutes} minutes.`);
       }
     } catch (toggleError) {
+      if (switchToPaused && manualComposeConversationId === targetConversationId) {
+        setManualComposeConversationId(null);
+      }
       setError((toggleError as Error).message);
     } finally {
       setBusy(false);
@@ -1846,6 +1976,8 @@ export function DashboardPage() {
     }
 
     setBusy(true);
+    setMetaApiSetupLoading(true);
+    setMetaApiSetupLoadingText("Opening Facebook login...");
     setError(null);
     setInfo(null);
 
@@ -1860,6 +1992,7 @@ export function DashboardPage() {
       }
 
       await ensureFacebookSdk(config.appId, config.graphVersion);
+      setMetaApiSetupLoadingText("Waiting for Facebook authorization...");
       const captured: EmbeddedSignupSnapshot = {};
       const redirectUri = config.redirectUri || `${window.location.origin}/meta-callback`;
 
@@ -1900,6 +2033,7 @@ export function DashboardPage() {
           throw new Error("Meta signup was cancelled or did not return an authorization code.");
         }
 
+        setMetaApiSetupLoadingText("Connecting number and syncing Meta status...");
         const signup = await completeMetaBusinessSignup(token, {
           code,
           redirectUri,
@@ -1907,8 +2041,13 @@ export function DashboardPage() {
         });
 
         setMetaBusinessStatus({ connected: signup.connection.status === "connected", connection: signup.connection });
+        setMetaApiSetupLoadingText("Finalizing setup and refreshing channel data...");
         await loadData({ forceMetaRefresh: true });
-        setInfo("Official WhatsApp Business API connected successfully.");
+        if (signup.connection.status === "connected") {
+          setInfo("Official WhatsApp Business API connected successfully.");
+        } else {
+          setInfo("Meta signup is complete, but number status is still syncing. Click Refresh status in a few seconds.");
+        }
       } finally {
         window.removeEventListener("message", messageListener);
       }
@@ -1916,6 +2055,8 @@ export function DashboardPage() {
       setError((setupError as Error).message);
     } finally {
       setBusy(false);
+      setMetaApiSetupLoading(false);
+      setMetaApiSetupLoadingText(null);
     }
   };
 
@@ -1924,6 +2065,8 @@ export function DashboardPage() {
       return;
     }
     setBusy(true);
+    setMetaApiSetupLoading(true);
+    setMetaApiSetupLoadingText("Refreshing channel status from Meta...");
     setError(null);
     setInfo(null);
     try {
@@ -1934,6 +2077,8 @@ export function DashboardPage() {
       setError((refreshError as Error).message);
     } finally {
       setBusy(false);
+      setMetaApiSetupLoading(false);
+      setMetaApiSetupLoadingText(null);
     }
   };
 
@@ -2263,7 +2408,18 @@ export function DashboardPage() {
           : businessBasics.complaintHandlingScript || "I don't have this information right now.",
       aiDoRules: cleanDoRules.length > 0 ? cleanDoRules.join("\n") : "Answer clearly and stay factual.",
       aiDontRules:
-        cleanDontRules.length > 0 ? cleanDontRules.join("\n") : "Do not hallucinate policy or pricing details."
+        cleanDontRules.length > 0 ? cleanDontRules.join("\n") : "Do not hallucinate policy or pricing details.",
+      escalationWhenToEscalate:
+        businessBasics.escalationWhenToEscalate.trim().length > 0
+          ? businessBasics.escalationWhenToEscalate.trim()
+          : DEFAULT_BUSINESS_BASICS.escalationWhenToEscalate,
+      escalationContactPerson: businessBasics.escalationContactPerson.trim(),
+      escalationPhoneNumber: businessBasics.escalationPhoneNumber.trim(),
+      escalationEmail:
+        businessBasics.escalationEmail.trim() ||
+        businessBasics.supportEmail.trim() ||
+        user?.email?.trim() ||
+        ""
     };
   };
 
@@ -2277,7 +2433,13 @@ export function DashboardPage() {
       enableBulletPoints ? "Use bullet points for multi-step answers." : "Avoid bullet points unless asked.",
       `Bot identity: ${basics.companyName}.`,
       `Business context: ${basics.whatDoYouSell}.`,
-      `Fallback when answer is unknown: ${basics.complaintHandlingScript}.`
+      `Fallback when answer is unknown: ${basics.complaintHandlingScript}.`,
+      `Escalation trigger: ${basics.escalationWhenToEscalate}.`,
+      `Escalation contact person: ${basics.escalationContactPerson || "not provided"}.`,
+      basics.escalationPhoneNumber
+        ? `Escalation phone: ${basics.escalationPhoneNumber}.`
+        : "Escalation phone: not provided.",
+      basics.escalationEmail ? `Escalation email: ${basics.escalationEmail}.` : "Escalation email: not provided."
     ];
     return lines.join("\n");
   };
@@ -2330,6 +2492,25 @@ export function DashboardPage() {
         personality: selectedPersonality,
         customPrompt: selectedPersonality === "custom" ? selectedCustomPrompt.trim() : undefined
       });
+      const currentProfile =
+        agentProfiles.find((profile) => profile.id === selectedAgentProfileId) ??
+        agentProfiles[0] ??
+        null;
+      if (currentProfile) {
+        const profileResponse = await updateAgentProfile(token, currentProfile.id, {
+          name: currentProfile.name,
+          channelType: currentProfile.channelType,
+          linkedNumber: currentProfile.linkedNumber,
+          businessBasics: basics,
+          personality: selectedPersonality,
+          customPrompt: selectedPersonality === "custom" ? selectedCustomPrompt.trim() : undefined,
+          objectiveType: currentProfile.objectiveType,
+          taskDescription: currentProfile.taskDescription,
+          isActive: currentProfile.isActive
+        });
+        setAgentProfiles([profileResponse.profile]);
+        setSelectedAgentProfileId(profileResponse.profile.id);
+      }
       await refreshUser();
       setInfo(successMessage);
     } catch (saveError) {
@@ -2474,19 +2655,19 @@ export function DashboardPage() {
     }
   };
 
-  const handlePdfUpload = async (files: File[]) => {
+  const handleKnowledgeFileUpload = async (files: File[]) => {
     if (!token || files.length === 0) {
       return;
     }
 
     if (uploadingFiles) {
-      setError("A PDF upload is already running.");
+      setError("A file upload is already running.");
       return;
     }
 
-    const accepted = files.filter((file) => file.type === "application/pdf" && file.size <= MAX_PDF_UPLOAD_BYTES);
+    const accepted = files.filter((file) => isSupportedKnowledgeFile(file) && file.size <= MAX_KNOWLEDGE_FILE_UPLOAD_BYTES);
     if (accepted.length === 0) {
-      setError("No valid PDF selected (max 20MB each).");
+      setError("No valid file selected. Supported: PDF, TXT, DOC, DOCX, XLS, XLSX (max 20MB each).");
       return;
     }
 
@@ -2504,7 +2685,7 @@ export function DashboardPage() {
     stopUploadPolling();
 
     try {
-      const response = await ingestPdf(token, accepted);
+      const response = await ingestKnowledgeFiles(token, accepted);
       const jobsByName = new Map(response.jobs.map((job) => [job.source_name || "", job]));
       setPdfUploadItems((current) =>
         current.map((item) => {
@@ -2582,28 +2763,65 @@ export function DashboardPage() {
     }
   };
 
-  const openKnowledgeModal = (
-    type: "manual" | "website" | "pdf",
+  const openKnowledgeModal = async (
+    type: "manual" | "website" | "file",
     mode: "add" | "edit" = "add",
     source?: { sourceType: KnowledgeSource["source_type"]; sourceName: string }
   ) => {
+    knowledgeModalRequestRef.current += 1;
+    const requestId = knowledgeModalRequestRef.current;
     setShowKnowledgeMenu(false);
     setKnowledgeMode(mode);
     setEditingSource(source ?? null);
     setKnowledgeModal(type);
+    setKnowledgeModalLoading(false);
     setModalSourceName(source?.sourceName ?? "");
     if (type === "website") {
-      setModalWebsiteUrl(websiteUrl);
+      setModalWebsiteUrl(mode === "edit" ? "" : websiteUrl);
     }
     if (type === "manual") {
-      setModalManualText(manualFaq);
+      setModalManualText(mode === "edit" ? "" : manualFaq);
     }
-    if (type === "pdf") {
-      setModalPdfFiles([]);
+    if (type === "file") {
+      setModalKnowledgeFiles([]);
+    }
+
+    if (mode !== "edit" || !source || !token || type === "file") {
+      return;
+    }
+
+    setKnowledgeModalLoading(true);
+    setError(null);
+    try {
+      const response = await fetchKnowledgeChunks(token, {
+        sourceType: source.sourceType,
+        sourceName: source.sourceName,
+        limit: 200
+      });
+      if (knowledgeModalRequestRef.current !== requestId) {
+        return;
+      }
+      if (type === "manual") {
+        setModalManualText(rebuildManualSourceText(response.chunks));
+      } else {
+        const detectedUrl = resolveWebsiteSourceUrl(response.chunks);
+        setModalWebsiteUrl(detectedUrl || websiteUrl);
+      }
+    } catch (modalError) {
+      if (knowledgeModalRequestRef.current !== requestId) {
+        return;
+      }
+      setError((modalError as Error).message);
+    } finally {
+      if (knowledgeModalRequestRef.current === requestId) {
+        setKnowledgeModalLoading(false);
+      }
     }
   };
 
   const closeKnowledgeModal = () => {
+    knowledgeModalRequestRef.current += 1;
+    setKnowledgeModalLoading(false);
     setKnowledgeModal(null);
     setEditingSource(null);
     setKnowledgeMode("add");
@@ -2631,7 +2849,7 @@ export function DashboardPage() {
       return;
     }
 
-    await handlePdfUpload(modalPdfFiles);
+    await handleKnowledgeFileUpload(modalKnowledgeFiles);
     closeKnowledgeModal();
   };
 
@@ -2819,6 +3037,25 @@ export function DashboardPage() {
     </section>
   );
 
+  if (connectionLoading) {
+    return (
+      <main
+        className="dashboard-shell dashboard-clone-shell dashboard-flat-shell dashboard-connection-shell"
+        aria-busy="true"
+      >
+        <section className="dashboard-connection-loading" role="status" aria-live="polite" aria-label="Checking connection">
+          <p className="dashboard-connection-loading-title">Checking your connection...</p>
+          <p className="dashboard-connection-loading-subtitle">
+            Loading dashboard and channel status.
+          </p>
+          <div className="dashboard-connection-loading-track" aria-hidden="true">
+            <span className="dashboard-connection-loading-value" />
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="dashboard-shell dashboard-clone-shell dashboard-flat-shell">
       <section className="clone-workspace">
@@ -2919,19 +3156,27 @@ export function DashboardPage() {
               <button className="ghost-btn" type="button" onClick={() => setActiveTab("billing")}>
                 Billing
               </button>
-              <button className="ghost-btn" type="button" disabled={busy} onClick={handlePauseAgent}>
-                {overview?.agent.active ? "Pause Agent" : "Activate Agent"}
-              </button>
               <button className="ghost-btn" type="button" onClick={openTestChatOverlay}>
                 Test chatbot
               </button>
-              {isStudioTab && (
-                <button className="ghost-btn" type="button" onClick={() => setActiveTab("chatbot_personality")}>
-                  Bot settings
-                </button>
-              )}
             </div>
           </header>
+          {overview && !overview.agent.active ? (
+            <div className="agent-off-warning-banner" role="alert">
+              <strong>Your agent is OFF.</strong> Please activate it from AI Agents to continue automated replies.
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={busy}
+                onClick={() => {
+                  setActiveTab("bot_agents");
+                  void handlePauseAgent();
+                }}
+              >
+                Activate now
+              </button>
+            </div>
+          ) : null}
           {workspaceLowCreditMessage ? (
             <div className="credits-warning-banner" role="status">
               {workspaceLowCreditMessage}
@@ -2957,17 +3202,17 @@ export function DashboardPage() {
                   </button>
                   {showKnowledgeMenu && (
                     <div className="kb-add-menu">
-                      <button type="button" onClick={() => openKnowledgeModal("manual")}>
+                      <button type="button" onClick={() => void openKnowledgeModal("manual")}>
                         <strong>Manual</strong>
                         <small>Manually add business info to train the chatbot</small>
                       </button>
-                      <button type="button" onClick={() => openKnowledgeModal("website")}>
+                      <button type="button" onClick={() => void openKnowledgeModal("website")}>
                         <strong>URL</strong>
                         <small>Add URL and fetch pages from your website</small>
                       </button>
-                      <button type="button" onClick={() => openKnowledgeModal("pdf")}>
-                        <strong>PDF</strong>
-                        <small>Upload PDF with your business details</small>
+                      <button type="button" onClick={() => void openKnowledgeModal("file")}>
+                        <strong>Document</strong>
+                        <small>Upload PDF, TXT, DOC, DOCX, XLS, or XLSX files</small>
                       </button>
                     </div>
                   )}
@@ -3027,7 +3272,7 @@ export function DashboardPage() {
                                   className="ghost-btn"
                                   type="button"
                                   onClick={() =>
-                                    openKnowledgeModal(
+                                    void openKnowledgeModal(
                                       source.source_type === "manual" ? "manual" : "website",
                                       "edit",
                                       { sourceType: source.source_type, sourceName: source.source_name as string }
@@ -3058,14 +3303,18 @@ export function DashboardPage() {
       {knowledgeModal && (
         <div className="kb-modal-backdrop" onClick={closeKnowledgeModal}>
           <div className="kb-modal" onClick={(event) => event.stopPropagation()}>
-            <h3>{knowledgeMode === "edit" ? "Edit knowledge" : knowledgeModal === "manual" ? "Add manual text" : knowledgeModal === "website" ? "Add URL" : "Add PDF"}</h3>
+            <h3>{knowledgeMode === "edit" ? "Edit knowledge" : knowledgeModal === "manual" ? "Add manual text" : knowledgeModal === "website" ? "Add URL" : "Add document"}</h3>
+            {knowledgeMode === "edit" && knowledgeModalLoading ? (
+              <p className="tiny-note">Loading existing source content...</p>
+            ) : null}
 
-            {knowledgeModal !== "pdf" && (
+            {knowledgeModal !== "file" && (
               <label>
                 Knowledge name
                 <input
                   value={modalSourceName}
                   onChange={(event) => setModalSourceName(event.target.value)}
+                  disabled={knowledgeModalLoading}
                   placeholder={knowledgeModal === "manual" ? "Example: Return policy v2" : "Example: Website pricing page"}
                 />
               </label>
@@ -3077,7 +3326,12 @@ export function DashboardPage() {
                 <textarea
                   value={modalManualText}
                   onChange={(event) => setModalManualText(event.target.value)}
-                  placeholder="Manually add your business info to train the chatbot"
+                  disabled={knowledgeModalLoading}
+                  placeholder={
+                    knowledgeModalLoading
+                      ? "Loading existing source content..."
+                      : "Manually add your business info to train the chatbot"
+                  }
                 />
               </label>
             )}
@@ -3089,29 +3343,30 @@ export function DashboardPage() {
                   type="url"
                   value={modalWebsiteUrl}
                   onChange={(event) => setModalWebsiteUrl(event.target.value)}
+                  disabled={knowledgeModalLoading}
                   placeholder="https://yourcompany.com"
                 />
               </label>
             )}
 
-            {knowledgeModal === "pdf" && (
+            {knowledgeModal === "file" && (
               <label>
-                PDF file(s)
+                Document file(s)
                 <input
                   type="file"
-                  accept="application/pdf"
+                  accept=".pdf,.txt,.doc,.docx,.xls,.xlsx,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   multiple
-                  onChange={(event) => setModalPdfFiles(Array.from(event.target.files ?? []))}
+                  onChange={(event) => setModalKnowledgeFiles(Array.from(event.target.files ?? []))}
                 />
-                {modalPdfFiles.length > 0 && (
+                {modalKnowledgeFiles.length > 0 && (
                   <div className="kb-modal-file-list">
-                    {modalPdfFiles.map((file) => (
+                    {modalKnowledgeFiles.map((file) => (
                       <div key={`${file.name}-${file.size}`} className="kb-modal-file">
                         <span>{file.name}</span>
                         <button
                           type="button"
                           onClick={() =>
-                            setModalPdfFiles((current) => current.filter((currentFile) => currentFile !== file))
+                            setModalKnowledgeFiles((current) => current.filter((currentFile) => currentFile !== file))
                           }
                         >
                           x
@@ -3132,10 +3387,11 @@ export function DashboardPage() {
                 className="primary-btn"
                 disabled={
                   busy ||
+                  knowledgeModalLoading ||
                   ((knowledgeModal === "manual" || knowledgeModal === "website") && !modalSourceName.trim()) ||
                   (knowledgeModal === "manual" && modalManualText.trim().length < 20) ||
                   (knowledgeModal === "website" && !modalWebsiteUrl.trim()) ||
-                  (knowledgeModal === "pdf" && modalPdfFiles.length === 0)
+                  (knowledgeModal === "file" && modalKnowledgeFiles.length === 0)
                 }
                 onClick={() => void handleProceedKnowledgeModal()}
               >
@@ -3180,9 +3436,11 @@ export function DashboardPage() {
           <article className="chatbot-personality-panel">
             <header className="chatbot-personality-head">
               <h2>Bot settings</h2>
-              <button type="button" className="primary-btn" disabled={busy} onClick={() => void handleSaveChatbotPersonality()}>
-                Save settings
-              </button>
+              <div className="clone-hero-actions">
+                <button type="button" className="primary-btn" disabled={busy} onClick={() => void handleSaveChatbotPersonality()}>
+                  Save settings
+                </button>
+              </div>
             </header>
 
             <nav className="chatbot-personality-tabs">
@@ -3206,6 +3464,13 @@ export function DashboardPage() {
                 onClick={() => setPersonalityPanelTab("custom_instructions")}
               >
                 Custom instructions
+              </button>
+              <button
+                type="button"
+                className={personalityPanelTab === "escalation" ? "active" : ""}
+                onClick={() => setPersonalityPanelTab("escalation")}
+              >
+                Escalation
               </button>
             </nav>
 
@@ -3378,6 +3643,65 @@ export function DashboardPage() {
                     + Add
                   </button>
                 </div>
+              </div>
+            )}
+
+            {personalityPanelTab === "escalation" && (
+              <div className="chatbot-personality-body">
+                <label>
+                  When to escalate to human
+                  <textarea
+                    rows={4}
+                    value={businessBasics.escalationWhenToEscalate}
+                    onChange={(event) =>
+                      setBusinessBasics((current) => ({
+                        ...current,
+                        escalationWhenToEscalate: event.target.value
+                      }))
+                    }
+                    placeholder="Escalate when knowledge is missing, query is confusing, or customer asks for a human."
+                  />
+                </label>
+                <label>
+                  Contact person
+                  <input
+                    value={businessBasics.escalationContactPerson}
+                    onChange={(event) =>
+                      setBusinessBasics((current) => ({
+                        ...current,
+                        escalationContactPerson: event.target.value
+                      }))
+                    }
+                    placeholder="e.g. Priya Sharma"
+                  />
+                </label>
+                <label>
+                  Phone number
+                  <input
+                    value={businessBasics.escalationPhoneNumber}
+                    onChange={(event) =>
+                      setBusinessBasics((current) => ({
+                        ...current,
+                        escalationPhoneNumber: event.target.value
+                      }))
+                    }
+                    placeholder="+91 98765 43210"
+                  />
+                </label>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={businessBasics.escalationEmail}
+                    onChange={(event) =>
+                      setBusinessBasics((current) => ({
+                        ...current,
+                        escalationEmail: event.target.value
+                      }))
+                    }
+                    placeholder="support@yourcompany.com"
+                  />
+                </label>
               </div>
             )}
           </article>
@@ -3599,6 +3923,8 @@ export function DashboardPage() {
           apiWabaReviewStatus={apiWabaReviewStatus}
           apiLastMetaSyncLabel={apiLastMetaSyncLabel}
           hasMetaConnection={Boolean(metaBusinessStatus.connection)}
+          apiSetupLoading={metaApiSetupLoading}
+          apiSetupLoadingText={metaApiSetupLoadingText}
           whatsAppBusinessDraft={whatsAppBusinessDraft}
           deleteAccountConfirmText={deleteAccountConfirmText}
           deletingAccount={deletingAccount}
@@ -3651,9 +3977,11 @@ export function DashboardPage() {
         <AgentsTab
           busy={busy}
           selectedAgentProfile={selectedAgentProfile}
+          agentActive={Boolean(overview?.agent.active)}
           agentName={agentName}
           agentObjectiveType={agentObjectiveType}
           agentTaskDescription={agentTaskDescription}
+          onToggleAgentActive={handlePauseAgent}
           onAgentNameChange={setAgentName}
           onAgentObjectiveTypeChange={setAgentObjectiveType}
           onAgentTaskDescriptionChange={setAgentTaskDescription}
@@ -3977,39 +4305,33 @@ export function DashboardPage() {
                     </div>
                     {selectedConversation && (
                       <div className="chat-actions" ref={chatAiMenuRef}>
-                        <button className="ghost-btn" disabled={busy} onClick={() => setChatAiMenuOpen((current) => !current)}>
-                          {selectedConversation.ai_paused ? "Turn on AI" : "Turn off AI"}
+                        <button
+                          className="ghost-btn"
+                          disabled={busy}
+                          onClick={() => {
+                            if (selectedConversation.ai_paused) {
+                              setChatAiMenuOpen((current) => !current);
+                              return;
+                            }
+                            void handleApplyChatAiMode(true, null);
+                          }}
+                        >
+                          {selectedConversation.ai_paused ? "Turn on AI" : "Manual Chat"}
                         </button>
                         {selectedConversationAiTimerLabel && (
                           <span className="chat-ai-timer-badge">Timer {selectedConversationAiTimerLabel}</span>
                         )}
-                        {chatAiMenuOpen && (
+                        {selectedConversation.ai_paused && chatAiMenuOpen && (
                           <div className="chat-ai-menu">
-                            {selectedConversation.ai_paused ? (
-                              <>
-                                {CHAT_AI_DURATION_OPTIONS.map((option) => (
-                                  <button
-                                    key={option.label}
-                                    type="button"
-                                    onClick={() => void handleApplyChatAiMode(false, option.minutes)}
-                                  >
-                                    {option.label}
-                                  </button>
-                                ))}
-                              </>
-                            ) : (
-                              <>
-                                {CHAT_AI_DURATION_OPTIONS.map((option) => (
-                                  <button
-                                    key={option.label}
-                                    type="button"
-                                    onClick={() => void handleApplyChatAiMode(true, option.minutes)}
-                                  >
-                                    {option.label}
-                                  </button>
-                                ))}
-                              </>
-                            )}
+                            {CHAT_AI_DURATION_OPTIONS.map((option) => (
+                              <button
+                                key={option.label}
+                                type="button"
+                                onClick={() => void handleApplyChatAiMode(false, option.minutes)}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -4036,7 +4358,10 @@ export function DashboardPage() {
                       ))
                     )}
                   </div>
-                  {selectedConversation && (
+                  {selectedConversation &&
+                    (selectedConversation.ai_paused ||
+                      selectedConversation.manual_takeover ||
+                      manualComposeConversationId === selectedConversation.id) && (
                     <form className="chat-manual-compose" onSubmit={handleSendAgentMessage}>
                       <input
                         value={agentReplyText}

@@ -1,5 +1,8 @@
 import { load } from "cheerio";
+import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
+import * as XLSX from "xlsx";
+import WordExtractor from "word-extractor";
 import { env } from "../config/env.js";
 import { semanticChunkText, type SemanticChunk } from "../utils/semantic-chunk.js";
 import { ingestKnowledgeChunks, type IngestChunkInput } from "./rag-service.js";
@@ -27,6 +30,24 @@ interface PdfExtractResult {
   pageTexts: string[];
 }
 
+const SUPPORTED_FILE_EXTENSIONS = [".pdf", ".txt", ".doc", ".docx", ".xls", ".xlsx"] as const;
+type SupportedFileExtension = (typeof SUPPORTED_FILE_EXTENSIONS)[number];
+type SupportedFileKind = "pdf" | "txt" | "doc" | "docx" | "xls" | "xlsx";
+
+const SUPPORTED_MIME_TYPES: Record<SupportedFileKind, string[]> = {
+  pdf: ["application/pdf"],
+  txt: ["text/plain", "text/csv", "application/json", "application/xml", "text/xml"],
+  doc: ["application/msword"],
+  docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  xls: ["application/vnd.ms-excel"],
+  xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+};
+
+interface ResolvedUploadedFile {
+  kind: SupportedFileKind;
+  extension: SupportedFileExtension;
+}
+
 function clampProgress(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -43,6 +64,74 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMes
       clearTimeout(timer);
     }
   }
+}
+
+function normalizeMimeType(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .split(";")[0]
+    .trim();
+}
+
+function getFileExtension(fileName: string): SupportedFileExtension | null {
+  const index = fileName.lastIndexOf(".");
+  if (index < 0) {
+    return null;
+  }
+  const extension = fileName.slice(index).toLowerCase();
+  return SUPPORTED_FILE_EXTENSIONS.includes(extension as SupportedFileExtension)
+    ? (extension as SupportedFileExtension)
+    : null;
+}
+
+function extensionToKind(extension: SupportedFileExtension): SupportedFileKind {
+  return extension.slice(1) as SupportedFileKind;
+}
+
+function resolveSupportedUploadedFile(fileName: string, mimeType?: string | null): ResolvedUploadedFile | null {
+  const extension = getFileExtension(fileName);
+  if (extension) {
+    return { kind: extensionToKind(extension), extension };
+  }
+
+  const normalizedMimeType = normalizeMimeType(mimeType);
+  if (!normalizedMimeType) {
+    return null;
+  }
+
+  const kind = (Object.keys(SUPPORTED_MIME_TYPES) as SupportedFileKind[]).find((candidate) =>
+    SUPPORTED_MIME_TYPES[candidate].includes(normalizedMimeType)
+  );
+  if (!kind) {
+    return null;
+  }
+
+  return { kind, extension: `.${kind}` as SupportedFileExtension };
+}
+
+function hasReplacementCharacters(value: string): boolean {
+  return value.includes("\ufffd");
+}
+
+function decodeTextBuffer(fileBuffer: Buffer): string {
+  const utf8 = fileBuffer.toString("utf8");
+  return hasReplacementCharacters(utf8) ? fileBuffer.toString("latin1") : utf8;
+}
+
+function stringifySpreadsheetCell(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return String(value);
 }
 
 function normalizeText(value: string): string {
@@ -550,7 +639,8 @@ export async function ingestManualText(userId: string, text: string, sourceName?
     userId,
     sourceType: "manual",
     sourceName: resolvedSource,
-    chunks
+    chunks,
+    replaceExistingSource: true
   });
 }
 
@@ -596,14 +686,96 @@ export async function ingestWebsiteUrl(userId: string, url: string, sourceName?:
     userId,
     sourceType: "website",
     sourceName: resolvedSourceName,
-    chunks
+    chunks,
+    replaceExistingSource: true
   });
 }
 
-export async function ingestPdfBuffer(
+function buildStandardDocumentChunks(fileName: string, kind: SupportedFileKind, text: string): IngestChunkInput[] {
+  return prepareManualOrWebsiteChunks(text, {
+    source: fileName,
+    sourceKind: "uploaded_file",
+    fileType: kind
+  });
+}
+
+async function extractWordDocumentText(fileBuffer: Buffer): Promise<string> {
+  const extractor = new WordExtractor();
+  const extracted = await extractor.extract(fileBuffer);
+  const textVariants = [
+    extracted.getBody?.() ?? "",
+    extracted.getFootnotes?.() ?? "",
+    extracted.getEndnotes?.() ?? "",
+    extracted.getHeaders?.() ?? "",
+    extracted.getFooters?.() ?? "",
+    extracted.getTextboxes?.() ?? ""
+  ];
+  return normalizeText(textVariants.join("\n\n"));
+}
+
+function extractSpreadsheetText(fileBuffer: Buffer): string {
+  const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true });
+  const sheetTexts: string[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) {
+      continue;
+    }
+    const rows = XLSX.utils.sheet_to_json<Array<unknown>>(worksheet, {
+      header: 1,
+      blankrows: false,
+      defval: ""
+    });
+    if (rows.length === 0) {
+      continue;
+    }
+    const rowLines = rows
+      .map((row) => row.map((cell) => stringifySpreadsheetCell(cell).trim()).filter(Boolean).join(" | "))
+      .filter(Boolean);
+    if (rowLines.length === 0) {
+      continue;
+    }
+    sheetTexts.push(`Sheet: ${sheetName}\n${rowLines.join("\n")}`);
+  }
+
+  return normalizeText(sheetTexts.join("\n\n"));
+}
+
+async function extractDocxText(fileBuffer: Buffer): Promise<string> {
+  const mammothResult = await mammoth.extractRawText({ buffer: fileBuffer });
+  const mammothText = normalizeText(mammothResult.value || "");
+  if (mammothText.length >= 20) {
+    return mammothText;
+  }
+  return extractWordDocumentText(fileBuffer);
+}
+
+async function extractUploadedFileText(
+  kind: SupportedFileKind,
+  fileBuffer: Buffer,
+  fileName: string
+): Promise<string> {
+  if (kind === "txt") {
+    return normalizeText(decodeTextBuffer(fileBuffer));
+  }
+  if (kind === "doc") {
+    return extractWordDocumentText(fileBuffer);
+  }
+  if (kind === "docx") {
+    return extractDocxText(fileBuffer);
+  }
+  if (kind === "xls" || kind === "xlsx") {
+    return extractSpreadsheetText(fileBuffer);
+  }
+  throw new Error(`Unsupported file type for extraction: ${fileName}`);
+}
+
+async function ingestPdfBufferBySourceType(
   userId: string,
   fileName: string,
   fileBuffer: Buffer,
+  sourceType: "pdf" | "file",
   options?: { onProgress?: (state: IngestProgress) => void }
 ): Promise<number> {
   options?.onProgress?.({ stage: "Extracting text", progress: 20 });
@@ -645,9 +817,10 @@ export async function ingestPdfBuffer(
   options?.onProgress?.({ stage: "Creating AI chunks", progress: 52 });
   const created = await ingestKnowledgeChunks({
     userId,
-    sourceType: "pdf",
+    sourceType,
     sourceName: fileName,
     chunks,
+    replaceExistingSource: true,
     onEmbeddingProgress: (completed, total) => {
       const ratio = total > 0 ? completed / total : 1;
       const progress = 60 + ratio * 38;
@@ -656,4 +829,76 @@ export async function ingestPdfBuffer(
   });
 
   return created;
+}
+
+export function getSupportedKnowledgeFileExtensions(): SupportedFileExtension[] {
+  return [...SUPPORTED_FILE_EXTENSIONS];
+}
+
+export function isSupportedKnowledgeFile(fileName: string, mimeType?: string | null): boolean {
+  return resolveSupportedUploadedFile(fileName, mimeType) !== null;
+}
+
+export function getSupportedKnowledgeFileAcceptValue(): string {
+  return [
+    ...SUPPORTED_FILE_EXTENSIONS,
+    ...Object.values(SUPPORTED_MIME_TYPES).flat()
+  ].join(",");
+}
+
+export async function ingestFileBuffer(
+  userId: string,
+  fileName: string,
+  fileBuffer: Buffer,
+  options?: { mimeType?: string | null; onProgress?: (state: IngestProgress) => void }
+): Promise<number> {
+  const resolved = resolveSupportedUploadedFile(fileName, options?.mimeType);
+  if (!resolved) {
+    throw new Error(
+      `Unsupported file format for "${fileName}". Supported formats: ${SUPPORTED_FILE_EXTENSIONS.join(", ")}`
+    );
+  }
+
+  if (resolved.kind === "pdf") {
+    return ingestPdfBufferBySourceType(userId, fileName, fileBuffer, "file", options);
+  }
+
+  options?.onProgress?.({ stage: "Extracting text", progress: 24 });
+  const extractedText = await extractUploadedFileText(resolved.kind, fileBuffer, fileName);
+
+  options?.onProgress?.({ stage: "Cleaning text", progress: 40 });
+  const cleanedText = applyTextLimit(normalizeText(extractedText));
+  if (!cleanedText) {
+    throw new Error(`No readable text found in "${fileName}"`);
+  }
+
+  const chunks = buildStandardDocumentChunks(fileName, resolved.kind, cleanedText);
+  if (chunks.length === 0) {
+    throw new Error(`No chunkable text found in "${fileName}"`);
+  }
+
+  options?.onProgress?.({ stage: "Creating AI chunks", progress: 54 });
+  const created = await ingestKnowledgeChunks({
+    userId,
+    sourceType: "file",
+    sourceName: fileName,
+    chunks,
+    replaceExistingSource: true,
+    onEmbeddingProgress: (completed, total) => {
+      const ratio = total > 0 ? completed / total : 1;
+      const progress = 62 + ratio * 36;
+      options?.onProgress?.({ stage: "Generating embeddings", progress: clampProgress(progress) });
+    }
+  });
+
+  return created;
+}
+
+export async function ingestPdfBuffer(
+  userId: string,
+  fileName: string,
+  fileBuffer: Buffer,
+  options?: { onProgress?: (state: IngestProgress) => void }
+): Promise<number> {
+  return ingestPdfBufferBySourceType(userId, fileName, fileBuffer, "pdf", options);
 }

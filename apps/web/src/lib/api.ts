@@ -916,6 +916,10 @@ export interface BusinessBasicsPayload {
   supportEmail: string;
   aiDoRules: string;
   aiDontRules: string;
+  escalationWhenToEscalate: string;
+  escalationContactPerson: string;
+  escalationPhoneNumber: string;
+  escalationEmail: string;
   websiteUrl?: string;
   manualFaq?: string;
 }
@@ -989,7 +993,7 @@ export function ingestManual(token: string, text: string, sourceName?: string) {
 export interface KnowledgeIngestJob {
   id: string;
   source_name: string | null;
-  source_type: "pdf" | "website" | "manual";
+  source_type: "file" | "pdf" | "website" | "manual";
   status: "queued" | "processing" | "completed" | "failed";
   stage: string;
   progress: number;
@@ -1000,19 +1004,22 @@ export interface KnowledgeIngestJob {
   completed_at: string | null;
 }
 
-export function ingestPdf(token: string, files: File[]) {
+export function ingestKnowledgeFiles(token: string, files: File[]) {
   const form = new FormData();
   for (const file of files) {
     form.append("file", file);
   }
 
-  return apiRequest<{ ok: boolean; jobs: KnowledgeIngestJob[] }>("/api/knowledge/ingest/pdf", {
+  return apiRequest<{ ok: boolean; jobs: KnowledgeIngestJob[] }>("/api/knowledge/ingest/files", {
     method: "POST",
     token,
     body: form,
     timeoutMs: 5 * 60_000
   });
 }
+
+// Backward-compatible alias. Use ingestKnowledgeFiles for all supported formats.
+export const ingestPdf = ingestKnowledgeFiles;
 
 export function fetchIngestionJobs(token: string, ids?: string[]) {
   const params = new URLSearchParams();
@@ -1025,7 +1032,7 @@ export function fetchIngestionJobs(token: string, ids?: string[]) {
 }
 
 export interface KnowledgeSource {
-  source_type: "pdf" | "website" | "manual";
+  source_type: "file" | "pdf" | "website" | "manual";
   source_name: string | null;
   chunks: number;
   last_ingested_at: string;
@@ -1034,7 +1041,7 @@ export interface KnowledgeSource {
 export interface KnowledgeChunkPreview {
   id: string;
   content_chunk: string;
-  source_type: "pdf" | "website" | "manual";
+  source_type: "file" | "pdf" | "website" | "manual";
   source_name: string | null;
   metadata_json: Record<string, unknown> | null;
   created_at: string;

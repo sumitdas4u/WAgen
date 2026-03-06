@@ -55,7 +55,8 @@ export class OpenAIService {
   async generateReply(
     systemPrompt: string,
     userPrompt: string,
-    modelOverride?: string
+    modelOverride?: string,
+    options?: { maxTokens?: number; temperature?: number }
   ): Promise<{
     content: string;
     model: string;
@@ -68,8 +69,8 @@ export class OpenAIService {
     const model = modelOverride?.trim() || (await getEffectiveChatModel());
     const response = await this.client.chat.completions.create({
       model,
-      temperature: 0.4,
-      max_tokens: env.OPENAI_MAX_OUTPUT_TOKENS,
+      temperature: options?.temperature ?? 0.4,
+      max_tokens: options?.maxTokens ?? env.OPENAI_MAX_OUTPUT_TOKENS,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
