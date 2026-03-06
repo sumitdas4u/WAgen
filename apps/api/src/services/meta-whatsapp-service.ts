@@ -76,6 +76,7 @@ type MetaStatusSnapshot = {
   nameStatus: string | null;
   verifiedName: string | null;
   phoneStatus: string | null;
+  webhookAppSubscribed: boolean | null;
   displayPhoneNumber: string | null;
   syncedAt: string;
 };
@@ -280,6 +281,23 @@ type PhoneRegistrationAttempt = {
   error?: string;
 };
 
+type WebhookSubscriptionAttempt = {
+  attempted: boolean;
+  success: boolean;
+  reason: "subscribed" | "already_subscribed" | "failed";
+  error?: string;
+};
+
+function buildWebhookSubscriptionMetadata(attempt: WebhookSubscriptionAttempt, trigger: string): Record<string, unknown> {
+  return {
+    webhookSubscription: {
+      ...attempt,
+      trigger,
+      attemptedAt: new Date().toISOString()
+    }
+  };
+}
+
 async function registerPhoneNumberIfConfigured(accessToken: string, phoneNumberId: string): Promise<PhoneRegistrationAttempt> {
   const pin = env.META_PHONE_REGISTRATION_PIN?.trim();
   if (!pin) {
@@ -307,6 +325,32 @@ async function registerPhoneNumberIfConfigured(accessToken: string, phoneNumberI
         attempted: true,
         success: true,
         reason: "already_registered"
+      };
+    }
+    return {
+      attempted: true,
+      success: false,
+      reason: "failed",
+      error: message
+    };
+  }
+}
+
+async function subscribeAppToWabaWebhook(accessToken: string, wabaId: string): Promise<WebhookSubscriptionAttempt> {
+  try {
+    await graphPost<{ success?: boolean }>(`/${wabaId}/subscribed_apps`, accessToken, {});
+    return {
+      attempted: true,
+      success: true,
+      reason: "subscribed"
+    };
+  } catch (error) {
+    const message = (error as Error).message || "Unknown webhook subscription failure";
+    if (message.toLowerCase().includes("already") && message.toLowerCase().includes("subscribed")) {
+      return {
+        attempted: true,
+        success: true,
+        reason: "already_subscribed"
       };
     }
     return {
@@ -414,6 +458,9 @@ function deriveSubscriptionStatusFromMeta(current: string, snapshot: MetaStatusS
 
   if (/(revoked|rejected|disabled|blocked|banned|deactivated)/.test(signal)) {
     return "restricted";
+  }
+  if (snapshot.webhookAppSubscribed === false) {
+    return "pending";
   }
   if (/(verified|approved|active|connected|ok|complete)/.test(signal)) {
     return "active";
@@ -839,6 +886,30 @@ async function fetchMetaStatusSnapshot(row: MetaConnectionRow, accessToken: stri
     ...(phoneInfo ?? {})
   };
 
+  let webhookAppSubscribed: boolean | null = null;
+  try {
+    const subscribedApps = await graphGet<GraphListResponse<Record<string, unknown>>>(
+      `/${row.waba_id}/subscribed_apps`,
+      accessToken,
+      { fields: "id,name", limit: 50 }
+    );
+    const apps = subscribedApps.data ?? [];
+    const currentAppId = env.META_APP_ID?.trim() || null;
+    if (currentAppId) {
+      webhookAppSubscribed = apps.some((app) => {
+        const nestedApiData = getRecord(app.whatsapp_business_api_data);
+        const candidateAppId =
+          pickStringField(app, ["id"]) ||
+          pickStringField(nestedApiData, ["id"]);
+        return candidateAppId === currentAppId;
+      });
+    } else {
+      webhookAppSubscribed = apps.length > 0;
+    }
+  } catch {
+    // Keep unknown state if this endpoint is temporarily unavailable.
+  }
+
   return {
     businessVerificationStatus: pickStringField(businessInfo, [
       "business_verification_status",
@@ -867,6 +938,7 @@ async function fetchMetaStatusSnapshot(row: MetaConnectionRow, accessToken: stri
     nameStatus: pickStringField(mergedPhone, ["name_status"]),
     verifiedName: pickStringField(mergedPhone, ["verified_name", "name"]),
     phoneStatus: pickStringField(mergedPhone, ["status"]),
+    webhookAppSubscribed,
     displayPhoneNumber: pickStringField(mergedPhone, ["display_phone_number"]),
     syncedAt: new Date().toISOString()
   };
@@ -874,7 +946,8 @@ async function fetchMetaStatusSnapshot(row: MetaConnectionRow, accessToken: stri
 
 async function persistMetaStatusSnapshot(
   row: MetaConnectionRow,
-  snapshot: MetaStatusSnapshot
+  snapshot: MetaStatusSnapshot,
+  options?: { metadataPatch?: Record<string, unknown> }
 ): Promise<MetaConnectionRow> {
   const nextDisplayPhone = snapshot.displayPhoneNumber ?? row.display_phone_number;
   const nextLinkedNumber = normalizePhoneDigits(nextDisplayPhone) ?? row.linked_number;
@@ -882,7 +955,8 @@ async function persistMetaStatusSnapshot(
   const nextConnectionStatus = deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status);
   const metadataPatch: Record<string, unknown> = {
     metaHealth: snapshot,
-    lastMetaSyncAt: snapshot.syncedAt
+    lastMetaSyncAt: snapshot.syncedAt,
+    ...(options?.metadataPatch ?? {})
   };
 
   const result = await pool.query<MetaConnectionRow>(
@@ -922,8 +996,29 @@ async function refreshConnectionStatusFromMeta(
   }
 
   const accessToken = decryptToken(row.access_token_encrypted);
-  const snapshot = await fetchMetaStatusSnapshot(row, accessToken);
-  return persistMetaStatusSnapshot(row, snapshot);
+  let snapshot = await fetchMetaStatusSnapshot(row, accessToken);
+  const metadataPatch: Record<string, unknown> = {};
+
+  // Auto-heal missing subscription on status refresh/reconnect.
+  if (snapshot.webhookAppSubscribed === false) {
+    const subscriptionAttempt = await subscribeAppToWabaWebhook(accessToken, row.waba_id);
+    Object.assign(metadataPatch, buildWebhookSubscriptionMetadata(subscriptionAttempt, "status_refresh"));
+    if (subscriptionAttempt.success) {
+      snapshot = {
+        ...snapshot,
+        webhookAppSubscribed: true,
+        syncedAt: new Date().toISOString()
+      };
+    } else {
+      console.warn(
+        `[MetaStatusSync] webhook subscribe retry failed user=${row.user_id} wabaId=${row.waba_id}: ${subscriptionAttempt.error ?? "unknown error"}`
+      );
+    }
+  }
+
+  return persistMetaStatusSnapshot(row, snapshot, {
+    metadataPatch: Object.keys(metadataPatch).length > 0 ? metadataPatch : undefined
+  });
 }
 
 export function getMetaBusinessConfig() {
@@ -951,7 +1046,9 @@ export async function getMetaBusinessStatus(
   let row = await getLatestConnectionRowByUserId(userId);
   if (row) {
     try {
-      row = await refreshConnectionStatusFromMeta(row, options);
+      row = await refreshConnectionStatusFromMeta(row, {
+        forceRefresh: options?.forceRefresh ?? true
+      });
     } catch (error) {
       console.warn(
         `[MetaStatusSync] unable to refresh user=${userId} phoneNumberId=${row.phone_number_id}: ${(error as Error).message}`
@@ -1072,6 +1169,13 @@ export async function completeMetaEmbeddedSignup(
   await ensureMetaConnectionWithinPlanLimit(userId, discovered.phoneNumberId);
 
   const registration = await registerPhoneNumberIfConfigured(resolvedToken, discovered.phoneNumberId);
+  const webhookSubscription = await subscribeAppToWabaWebhook(resolvedToken, discovered.wabaId);
+  if (!webhookSubscription.success) {
+    console.warn(
+      `[MetaConnect] webhook subscribe failed user=${userId} wabaId=${discovered.wabaId}: ${webhookSubscription.error ?? "unknown error"}`
+    );
+  }
+  const isConnected = registration.success && webhookSubscription.success;
   const connection = await upsertConnection({
     userId,
     metaBusinessId: discovered.metaBusinessId,
@@ -1080,11 +1184,12 @@ export async function completeMetaEmbeddedSignup(
     displayPhoneNumber: discovered.displayPhoneNumber,
     accessToken: resolvedToken,
     expiresInSeconds: resolvedExpiry,
-    subscriptionStatus: registration.success ? "active" : "pending",
-    status: registration.success ? "connected" : "pending",
+    subscriptionStatus: isConnected ? "active" : "pending",
+    status: isConnected ? "connected" : "pending",
     metadata: {
       source: "embedded_signup",
       connectedAt: new Date().toISOString(),
+      ...buildWebhookSubscriptionMetadata(webhookSubscription, "embedded_signup"),
       registration: {
         ...registration,
         attemptedAt: new Date().toISOString()
@@ -1305,9 +1410,20 @@ export async function sendMetaTextDirect(input: {
     throw new Error("No connected WhatsApp Business API number found.");
   }
 
-  const accessToken = decryptToken(row.access_token_encrypted);
+  let resolvedRow = row;
+  if (resolvedRow.subscription_status !== "active" || resolvedRow.status !== "connected") {
+    try {
+      resolvedRow = await refreshConnectionStatusFromMeta(resolvedRow, { forceRefresh: true });
+    } catch (error) {
+      console.warn(
+        `[MetaSend] pre-send status refresh failed user=${input.userId} phoneNumberId=${resolvedRow.phone_number_id}: ${(error as Error).message}`
+      );
+    }
+  }
+
+  const accessToken = decryptToken(resolvedRow.access_token_encrypted);
   const response = await graphPost<{ messages?: Array<{ id?: string }> }>(
-    `/${row.phone_number_id}/messages`,
+    `/${resolvedRow.phone_number_id}/messages`,
     accessToken,
     {
       messaging_product: "whatsapp",
@@ -1321,7 +1437,7 @@ export async function sendMetaTextDirect(input: {
 
   return {
     messageId: response.messages?.[0]?.id ?? null,
-    connection: mapConnection(row),
+    connection: mapConnection(resolvedRow),
     to: normalizedTo,
     text
   };
@@ -1423,7 +1539,23 @@ async function sendAutoReplyViaMetaApi(input: {
 }
 
 async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
-  const connectionRow = await getConnectionRowByPhoneNumberId(task.phoneNumberId);
+  let connectionRow = await getConnectionRowByPhoneNumberId(task.phoneNumberId);
+  if (!connectionRow) {
+    const pendingRow = await getConnectionRowByPhoneNumberId(task.phoneNumberId, { includePending: true });
+    if (pendingRow) {
+      try {
+        const healedRow = await refreshConnectionStatusFromMeta(pendingRow, { forceRefresh: true });
+        if (healedRow.status === "connected") {
+          connectionRow = healedRow;
+        }
+      } catch (error) {
+        console.warn(
+          `[MetaWebhook] pending connection refresh failed phoneNumberId=${task.phoneNumberId}: ${(error as Error).message}`
+        );
+      }
+    }
+  }
+
   if (!connectionRow) {
     return;
   }
