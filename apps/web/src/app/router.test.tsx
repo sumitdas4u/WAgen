@@ -77,6 +77,12 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
       low_credit_threshold_percent: 10,
       low_credit_message: null
     },
+    agentSummary: {
+      configuredProfiles: 1,
+      activeProfiles: 1,
+      hasConfiguredProfile: true,
+      hasActiveProfile: true
+    },
     channelSummary: {
       website: {
         enabled: true
@@ -160,6 +166,48 @@ describe("dashboard router", () => {
     expect(mockApiRequest).toHaveBeenCalledWith("/api/dashboard/bootstrap", {
       token: "test-token"
     });
+  });
+
+  it("hides the paused-agent banner when no workflow is configured", async () => {
+    renderRoute(
+      "/dashboard/billing",
+      createBootstrap({
+        userSummary: {
+          ...createBootstrap().userSummary,
+          aiActive: false
+        },
+        agentSummary: {
+          configuredProfiles: 0,
+          activeProfiles: 0,
+          hasConfiguredProfile: false,
+          hasActiveProfile: false
+        }
+      })
+    );
+
+    expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
+    expect(screen.queryByText("Your agent workflow is paused.")).not.toBeInTheDocument();
+  });
+
+  it("shows the paused-agent banner when a workflow exists but automation is disabled", async () => {
+    renderRoute(
+      "/dashboard/billing",
+      createBootstrap({
+        userSummary: {
+          ...createBootstrap().userSummary,
+          aiActive: false
+        },
+        agentSummary: {
+          configuredProfiles: 1,
+          activeProfiles: 1,
+          hasConfiguredProfile: true,
+          hasActiveProfile: true
+        }
+      })
+    );
+
+    expect(await screen.findByText("Your agent workflow is paused.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Activate now" })).toBeInTheDocument();
   });
 
   it("keeps disabled feature-flag routes reachable but blocked", async () => {

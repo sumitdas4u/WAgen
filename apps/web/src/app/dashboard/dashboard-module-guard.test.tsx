@@ -31,6 +31,12 @@ function createBootstrap(): DashboardBootstrapResponse {
       low_credit_threshold_percent: 10,
       low_credit_message: null
     },
+    agentSummary: {
+      configuredProfiles: 1,
+      activeProfiles: 1,
+      hasConfiguredProfile: true,
+      hasActiveProfile: true
+    },
     channelSummary: {
       website: {
         enabled: true

@@ -23,10 +23,18 @@ export interface DashboardChannelSummary {
   anyConnected: boolean;
 }
 
+export interface DashboardAgentSummary {
+  configuredProfiles: number;
+  activeProfiles: number;
+  hasConfiguredProfile: boolean;
+  hasActiveProfile: boolean;
+}
+
 export interface DashboardBootstrapResponse {
   userSummary: DashboardBootstrapUserSummary;
   planEntitlements: PlanEntitlements;
   featureFlags: Record<string, boolean>;
   creditsSummary: WorkspaceCreditsResponse;
+  agentSummary: DashboardAgentSummary;
   channelSummary: DashboardChannelSummary;
 }

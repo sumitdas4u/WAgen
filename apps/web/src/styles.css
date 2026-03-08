@@ -1996,6 +1996,12 @@
   border-color: #86efac;
 }
 
+.agent-status-pill.paused {
+  color: #8b5700;
+  background: #fff7e8;
+  border-color: #efd7a8;
+}
+
 .agent-status-pill.disabled {
   color: #64748b;
   background: #e2e8f0;

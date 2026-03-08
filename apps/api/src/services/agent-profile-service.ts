@@ -19,6 +19,11 @@ export interface AgentProfileRecord {
   updatedAt: string;
 }
 
+export interface AgentProfileSummary {
+  configuredProfiles: number;
+  activeProfiles: number;
+}
+
 type AgentProfileRow = {
   id: string;
   user_id: string;
@@ -101,6 +106,21 @@ export async function listAgentProfiles(userId: string): Promise<AgentProfileRec
   );
 
   return result.rows.map(mapRow);
+}
+
+export async function getAgentProfileSummary(userId: string): Promise<AgentProfileSummary> {
+  const result = await pool.query<{ configured_profiles: string; active_profiles: string }>(
+    `SELECT COUNT(*)::text AS configured_profiles,
+            COUNT(*) FILTER (WHERE is_active = TRUE)::text AS active_profiles
+     FROM agent_profiles
+     WHERE user_id = $1`,
+    [userId]
+  );
+
+  return {
+    configuredProfiles: Number(result.rows[0]?.configured_profiles ?? 0),
+    activeProfiles: Number(result.rows[0]?.active_profiles ?? 0)
+  };
 }
 
 export async function createAgentProfile(

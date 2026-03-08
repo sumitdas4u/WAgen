@@ -31,6 +31,13 @@ export function AgentsTab(props: AgentsTabProps) {
     onSubmit
   } = props;
 
+  const statusClassName = !selectedAgentProfile
+    ? "agent-status-pill disabled"
+    : agentActive
+      ? "agent-status-pill live"
+      : "agent-status-pill paused";
+  const statusLabel = !selectedAgentProfile ? "NOT CONFIGURED" : agentActive ? "LIVE" : "PAUSED";
+
   return (
     <section className="clone-settings-view agent-manager-shell">
       <div className="agent-manager-head">
@@ -39,9 +46,7 @@ export function AgentsTab(props: AgentsTabProps) {
           <p>One shared AI workflow runs across Web chat, WhatsApp QR, and WhatsApp API channels.</p>
         </div>
         <div className="clone-hero-actions">
-          <span className={selectedAgentProfile?.isActive ? "agent-status-pill live" : "agent-status-pill disabled"}>
-            {selectedAgentProfile?.isActive ? "LIVE" : "NOT CONFIGURED"}
-          </span>
+          <span className={statusClassName}>{statusLabel}</span>
           <button type="button" className="ghost-btn" disabled={busy} onClick={onToggleAgentActive}>
             {agentActive ? "Pause Agent" : "Activate Agent"}
           </button>

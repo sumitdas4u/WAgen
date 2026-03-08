@@ -254,6 +254,8 @@ function DashboardShellLayout() {
     ? `${bootstrap.creditsSummary.remaining_credits} / ${bootstrap.creditsSummary.total_credits}`
     : "-- / --";
   const workspaceLowCreditMessage = bootstrap?.creditsSummary.low_credit_message ?? null;
+  const hasConfiguredAgentProfile = Boolean(bootstrap?.agentSummary.hasConfiguredProfile);
+  const showAgentOffBanner = Boolean(bootstrap && !bootstrap.userSummary.aiActive && hasConfiguredAgentProfile);
 
   const sectionMeta = SECTION_META[currentModuleId] ?? SECTION_META.inbox;
   const dashboardHeaderTitle =
@@ -434,10 +436,10 @@ function DashboardShellLayout() {
             </div>
           </header>
 
-          {!bootstrap?.userSummary.aiActive ? (
+          {showAgentOffBanner ? (
             <div className="agent-off-warning-banner" role="alert">
               <div className="agent-off-warning-copy">
-                <strong>Your agent is OFF.</strong>
+                <strong>Your agent workflow is paused.</strong>
                 <span>Please activate it from AI Agents to continue automated replies.</span>
               </div>
               <button type="button" className="ghost-btn" onClick={() => navigate("/dashboard/agents")}>
