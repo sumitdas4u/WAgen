@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, type PropsWithChildren } from "react";
 import { useRealtime } from "../../lib/use-realtime";
+import { normalizeDashboardBootstrap } from "../../shared/dashboard/bootstrap";
 import { dashboardQueryKeys } from "../../shared/dashboard/query-keys";
 import type { DashboardBootstrapResponse } from "../../shared/dashboard/contracts";
 
@@ -38,24 +39,26 @@ export function DashboardRealtimeProvider({
               return current;
             }
 
+            const normalizedCurrent = normalizeDashboardBootstrap(current);
+
             return {
-              ...current,
+              ...normalizedCurrent,
               channelSummary: {
-                ...current.channelSummary,
+                ...normalizedCurrent.channelSummary,
                 whatsapp: {
-                  ...current.channelSummary.whatsapp,
+                  ...normalizedCurrent.channelSummary.whatsapp,
                   status:
-                    typeof payload.status === "string" ? payload.status : current.channelSummary.whatsapp.status,
+                    typeof payload.status === "string" ? payload.status : normalizedCurrent.channelSummary.whatsapp.status,
                   phoneNumber:
                     typeof payload.phoneNumber === "string" || payload.phoneNumber === null
                       ? (payload.phoneNumber as string | null)
-                      : current.channelSummary.whatsapp.phoneNumber,
+                      : normalizedCurrent.channelSummary.whatsapp.phoneNumber,
                   hasQr:
-                    typeof payload.hasQr === "boolean" ? payload.hasQr : current.channelSummary.whatsapp.hasQr,
+                    typeof payload.hasQr === "boolean" ? payload.hasQr : normalizedCurrent.channelSummary.whatsapp.hasQr,
                   qr:
                     typeof payload.qr === "string" || payload.qr === null
                       ? (payload.qr as string | null)
-                      : current.channelSummary.whatsapp.qr
+                      : normalizedCurrent.channelSummary.whatsapp.qr
                 }
               }
             };

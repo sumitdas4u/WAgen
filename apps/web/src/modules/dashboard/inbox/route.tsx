@@ -441,6 +441,8 @@ export function Component() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileConversationOpen, setIsMobileConversationOpen] = useState(false);
+  const [isDesktopFilterPanelOpen, setIsDesktopFilterPanelOpen] = useState(true);
+  const [isDesktopLeadPanelOpen, setIsDesktopLeadPanelOpen] = useState(true);
   const [chatAiMenuOpen, setChatAiMenuOpen] = useState(false);
   const [chatAiTimers, setChatAiTimers] = useState<Record<string, ChatAiTimedAction>>({});
   const [manualComposeConversationId, setManualComposeConversationId] = useState<string | null>(null);
@@ -800,6 +802,17 @@ export function Component() {
   const isAnyChannelConnected = Boolean(bootstrap?.channelSummary.anyConnected);
   const showConversationListPane = !isMobileViewport || !isMobileConversationOpen;
   const showConversationDetailPane = !isMobileViewport || isMobileConversationOpen;
+  const showFilterPane = !isMobileViewport && isDesktopFilterPanelOpen;
+  const showLeadDetailPane = !isMobileViewport && isDesktopLeadPanelOpen;
+  const workbenchClassName = [
+    "clone-chat-layout",
+    "inbox-workbench",
+    isMobileViewport ? (isMobileConversationOpen ? "mobile-conversation-panel" : "mobile-conversation-list") : "",
+    !isDesktopFilterPanelOpen ? "desktop-filter-collapsed" : "",
+    !isDesktopLeadPanelOpen ? "desktop-detail-collapsed" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <section className="clone-chat-wrap">
@@ -880,207 +893,221 @@ export function Component() {
           </div>
         </section>
       ) : (
-        <section
-          className={
-            isMobileViewport
-              ? `clone-chat-layout inbox-workbench ${isMobileConversationOpen ? "mobile-conversation-panel" : "mobile-conversation-list"}`
-              : "clone-chat-layout inbox-workbench"
-          }
-        >
+        <section className={workbenchClassName}>
           {showConversationListPane ? (
             <>
-              <aside className="inbox-filter-panel">
-                <div className="inbox-panel-head">
-                  <div>
-                    <h3>Lead Filters</h3>
-                    <p>Lead intelligence filters that update the inbox instantly.</p>
+              {showFilterPane ? (
+                <aside className="inbox-filter-panel">
+                  <div className="inbox-panel-head">
+                    <div>
+                      <h3>Lead Filters</h3>
+                      <p>Lead intelligence filters that update the inbox instantly.</p>
+                    </div>
+                    {activeFilterCount > 0 ? (
+                      <button type="button" className="ghost-btn" onClick={clearFilters}>
+                        Clear
+                      </button>
+                    ) : null}
                   </div>
-                  {activeFilterCount > 0 ? (
-                    <button type="button" className="ghost-btn" onClick={clearFilters}>
-                      Clear
-                    </button>
-                  ) : null}
-                </div>
 
-                <section className={activeFilterCount > 0 ? "inbox-active-filter-summary is-active" : "inbox-active-filter-summary"}>
-                  <div className="inbox-active-filter-copy">
-                    <strong>
-                      {activeFilterCount > 0
-                        ? `${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}`
-                        : "No lead filter applied"}
-                    </strong>
-                    <span>
-                      {activeFilterCount > 0
-                        ? "These filters are controlling the chat list right now."
-                        : "All conversations are visible until you apply a filter below."}
-                    </span>
+                  <section className={activeFilterCount > 0 ? "inbox-active-filter-summary is-active" : "inbox-active-filter-summary"}>
+                    <div className="inbox-active-filter-copy">
+                      <strong>
+                        {activeFilterCount > 0
+                          ? `${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}`
+                          : "No lead filter applied"}
+                      </strong>
+                      <span>
+                        {activeFilterCount > 0
+                          ? "These filters are controlling the chat list right now."
+                          : "All conversations are visible until you apply a filter below."}
+                      </span>
+                    </div>
+                    {activeFilterChips.length > 0 ? (
+                      <div className="inbox-active-filter-chips">
+                        {activeFilterChips.map((chip) => (
+                          <span key={chip} className="inbox-active-filter-chip">
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <div className="inbox-stat-grid">
+                    <article className="inbox-stat-card">
+                      <span>All chats</span>
+                      <strong>{inboxStats.total}</strong>
+                    </article>
+                    <article className="inbox-stat-card hot">
+                      <span>Hot leads</span>
+                      <strong>{inboxStats.hot}</strong>
+                    </article>
+                    <article className="inbox-stat-card human">
+                      <span>Human handling</span>
+                      <strong>{inboxStats.human}</strong>
+                    </article>
+                    <article className="inbox-stat-card">
+                      <span>Unassigned</span>
+                      <strong>{inboxStats.unassigned}</strong>
+                    </article>
                   </div>
-                  {activeFilterChips.length > 0 ? (
-                    <div className="inbox-active-filter-chips">
-                      {activeFilterChips.map((chip) => (
-                        <span key={chip} className="inbox-active-filter-chip">
-                          {chip}
-                        </span>
+
+                  <section className="inbox-filter-group">
+                    <div className="inbox-filter-group-head">
+                      <strong>Status</strong>
+                      <span>Lead stage</span>
+                    </div>
+                    <div className="inbox-choice-grid">
+                      {LEAD_STAGE_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={stageFilter === option.value ? "active" : ""}
+                          onClick={() => updateSearchParam("stage", option.value)}
+                        >
+                          {option.label}
+                        </button>
                       ))}
                     </div>
-                  ) : null}
-                </section>
+                  </section>
 
-                <div className="inbox-stat-grid">
-                  <article className="inbox-stat-card">
-                    <span>All chats</span>
-                    <strong>{inboxStats.total}</strong>
-                  </article>
-                  <article className="inbox-stat-card hot">
-                    <span>Hot leads</span>
-                    <strong>{inboxStats.hot}</strong>
-                  </article>
-                  <article className="inbox-stat-card human">
-                    <span>Human handling</span>
-                    <strong>{inboxStats.human}</strong>
-                  </article>
-                  <article className="inbox-stat-card">
-                    <span>Unassigned</span>
-                    <strong>{inboxStats.unassigned}</strong>
-                  </article>
-                </div>
+                  <section className="inbox-filter-group">
+                    <div className="inbox-filter-group-head">
+                      <strong>Source</strong>
+                      <span>Conversation channel</span>
+                    </div>
+                    <select
+                      className="inbox-select"
+                      value={channelFilter}
+                      onChange={(event) => updateSearchParam("channel", event.target.value)}
+                    >
+                      {CHANNEL_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
 
-                <section className="inbox-filter-group">
-                  <div className="inbox-filter-group-head">
-                    <strong>Status</strong>
-                    <span>Lead stage</span>
-                  </div>
-                  <div className="inbox-choice-grid">
-                    {LEAD_STAGE_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={stageFilter === option.value ? "active" : ""}
-                        onClick={() => updateSearchParam("stage", option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
+                  <section className="inbox-filter-group">
+                    <div className="inbox-filter-group-head">
+                      <strong>AI Score</strong>
+                      <span>Derived from lead score</span>
+                    </div>
+                    <div className="inbox-choice-grid">
+                      {SCORE_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={scoreFilter === option.value ? "active" : ""}
+                          onClick={() => updateSearchParam("score", option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
 
-                <section className="inbox-filter-group">
-                  <div className="inbox-filter-group-head">
-                    <strong>Source</strong>
-                    <span>Conversation channel</span>
-                  </div>
-                  <select
-                    className="inbox-select"
-                    value={channelFilter}
-                    onChange={(event) => updateSearchParam("channel", event.target.value)}
-                  >
-                    {CHANNEL_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </section>
+                  <section className="inbox-filter-group">
+                    <div className="inbox-filter-group-head">
+                      <strong>Lead Type</strong>
+                      <span>Intent classification</span>
+                    </div>
+                    <select
+                      className="inbox-select"
+                      value={leadKindFilter}
+                      onChange={(event) => updateSearchParam("kind", event.target.value)}
+                    >
+                      {LEAD_KIND_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
 
-                <section className="inbox-filter-group">
-                  <div className="inbox-filter-group-head">
-                    <strong>AI Score</strong>
-                    <span>Derived from lead score</span>
-                  </div>
-                  <div className="inbox-choice-grid">
-                    {SCORE_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={scoreFilter === option.value ? "active" : ""}
-                        onClick={() => updateSearchParam("score", option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
+                  <section className="inbox-filter-group">
+                    <div className="inbox-filter-group-head">
+                      <strong>Assigned</strong>
+                      <span>Owner routing</span>
+                    </div>
+                    <select
+                      className="inbox-select"
+                      value={assignmentFilter}
+                      onChange={(event) => updateSearchParam("assignment", event.target.value)}
+                    >
+                      {ASSIGNMENT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
 
-                <section className="inbox-filter-group">
-                  <div className="inbox-filter-group-head">
-                    <strong>Lead Type</strong>
-                    <span>Intent classification</span>
-                  </div>
-                  <select
-                    className="inbox-select"
-                    value={leadKindFilter}
-                    onChange={(event) => updateSearchParam("kind", event.target.value)}
-                  >
-                    {LEAD_KIND_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </section>
+                  <section className="inbox-filter-group">
+                    <div className="inbox-filter-group-head">
+                      <strong>AI Status</strong>
+                      <span>Automation mode</span>
+                    </div>
+                    <select
+                      className="inbox-select"
+                      value={aiModeFilter}
+                      onChange={(event) => updateSearchParam("ai", event.target.value)}
+                    >
+                      {AI_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
 
-                <section className="inbox-filter-group">
-                  <div className="inbox-filter-group-head">
-                    <strong>Assigned</strong>
-                    <span>Owner routing</span>
-                  </div>
-                  <select
-                    className="inbox-select"
-                    value={assignmentFilter}
-                    onChange={(event) => updateSearchParam("assignment", event.target.value)}
-                  >
-                    {ASSIGNMENT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </section>
-
-                <section className="inbox-filter-group">
-                  <div className="inbox-filter-group-head">
-                    <strong>AI Status</strong>
-                    <span>Automation mode</span>
-                  </div>
-                  <select
-                    className="inbox-select"
-                    value={aiModeFilter}
-                    onChange={(event) => updateSearchParam("ai", event.target.value)}
-                  >
-                    {AI_MODE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </section>
-
-                <section className="inbox-filter-group">
-                  <div className="inbox-filter-group-head">
-                    <strong>Date</strong>
-                    <span>Latest message window</span>
-                  </div>
-                  <select
-                    className="inbox-select"
-                    value={dateRangeFilter}
-                    onChange={(event) => updateSearchParam("range", event.target.value)}
-                  >
-                    {DATE_RANGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </section>
-              </aside>
+                  <section className="inbox-filter-group">
+                    <div className="inbox-filter-group-head">
+                      <strong>Date</strong>
+                      <span>Latest message window</span>
+                    </div>
+                    <select
+                      className="inbox-select"
+                      value={dateRangeFilter}
+                      onChange={(event) => updateSearchParam("range", event.target.value)}
+                    >
+                      {DATE_RANGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
+                </aside>
+              ) : null}
 
               <aside className="clone-thread-list inbox-chat-list">
                 <div className="clone-thread-toolbar inbox-list-toolbar">
                   <div className="inbox-list-heading">
-                    <h3>
-                      Chat List <span>{filteredConversations.length}</span>
-                    </h3>
+                    <div className="inbox-list-heading-row">
+                      {!isMobileViewport ? (
+                        <button
+                          type="button"
+                          className="inbox-panel-toggle"
+                          aria-label={showFilterPane ? "Hide filters panel" : "Show filters panel"}
+                          title={showFilterPane ? "Hide filters panel" : "Show filters panel"}
+                          onClick={() => setIsDesktopFilterPanelOpen((current) => !current)}
+                        >
+                          {showFilterPane ? "<" : ">"}
+                        </button>
+                      ) : null}
+                      <h3>
+                        Chat List <span>{filteredConversations.length}</span>
+                      </h3>
+                    </div>
                     <p>Search, scan, and pick the lead to work.</p>
+                    {!showFilterPane && activeFilterCount > 0 ? (
+                      <button type="button" className="ghost-btn" onClick={clearFilters}>
+                        Clear filters
+                      </button>
+                    ) : null}
                   </div>
                   <label className="clone-chat-search inbox-chat-search">
                     <input
@@ -1183,8 +1210,20 @@ export function Component() {
                       ) : null}
                     </div>
                   </div>
-                  {selectedConversation ? (
-                    <div className="chat-actions" ref={chatAiMenuRef}>
+                  <div className="chat-actions" ref={chatAiMenuRef}>
+                    {!isMobileViewport ? (
+                      <button
+                        type="button"
+                        className="inbox-panel-toggle"
+                        aria-label={showLeadDetailPane ? "Hide details panel" : "Show details panel"}
+                        title={showLeadDetailPane ? "Hide details panel" : "Show details panel"}
+                        onClick={() => setIsDesktopLeadPanelOpen((current) => !current)}
+                      >
+                        {showLeadDetailPane ? ">" : "<"}
+                      </button>
+                    ) : null}
+                    {selectedConversation ? (
+                      <>
                       <button
                         className="ghost-btn"
                         type="button"
@@ -1226,8 +1265,9 @@ export function Component() {
                           ))}
                         </div>
                       ) : null}
-                    </div>
-                  ) : null}
+                      </>
+                    ) : null}
+                  </div>
                 </header>
 
                 {selectedConversation && false ? (
@@ -1282,29 +1322,31 @@ export function Component() {
 
                 {selectedConversation ? (
                   <div className="inbox-compose-stack">
-                    <div className="inbox-reply-assist">
-                      <div className="inbox-reply-assist-copy">
-                        <strong>AI Suggested Replies</strong>
-                        <span>
-                          {getLeadIntentLabel(selectedConversation)} - {getLeadSuggestedAction(selectedConversation)}
-                        </span>
-                        <small className="inbox-reply-assist-tip">Tap one reply to place it in the message box below.</small>
+                    {showManualComposer ? (
+                      <div className="inbox-reply-assist">
+                        <div className="inbox-reply-assist-copy">
+                          <strong>AI Suggested Replies</strong>
+                          <span>
+                            {getLeadIntentLabel(selectedConversation)} - {getLeadSuggestedAction(selectedConversation)}
+                          </span>
+                          <small className="inbox-reply-assist-tip">Tap one reply to place it in the message box below.</small>
+                        </div>
+                        <div className="inbox-suggestion-strip">
+                          {replySuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => {
+                                setManualComposeConversationId(selectedConversation.id);
+                                setAgentReplyText(suggestion);
+                              }}
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="inbox-suggestion-strip">
-                        {replySuggestions.map((suggestion) => (
-                          <button
-                            key={suggestion}
-                            type="button"
-                            onClick={() => {
-                              setManualComposeConversationId(selectedConversation.id);
-                              setAgentReplyText(suggestion);
-                            }}
-                          >
-                            {suggestion}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    ) : null}
 
                     {showManualComposer ? (
                       <form
@@ -1333,109 +1375,111 @@ export function Component() {
                       </form>
                     ) : (
                       <div className="inbox-manual-hint">
-                        Tap a suggestion to start drafting here, or switch to manual mode if you want to take over the chat.
+                        Switch to manual mode if you want to take over the chat and draft a reply here.
                       </div>
                     )}
                   </div>
                 ) : null}
               </section>
 
-              <aside className="inbox-lead-panel">
-                {!selectedConversation ? (
-                  <p className="empty-note inbox-empty-state">Select a chat to inspect the lead profile and activity.</p>
-                ) : (
-                  <>
-                    <section className="inbox-detail-card">
-                      <div className="inbox-detail-card-head">
-                        <h3>Lead / Contact Info</h3>
-                        <span>{getConversationChannelBadge(selectedConversation.channel_type)}</span>
-                      </div>
-                      <dl className="inbox-detail-list">
-                        <div>
-                          <dt>Name</dt>
-                          <dd>{getConversationDisplayName(selectedConversation)}</dd>
+              {showLeadDetailPane ? (
+                <aside className="inbox-lead-panel">
+                  {!selectedConversation ? (
+                    <p className="empty-note inbox-empty-state">Select a chat to inspect the lead profile and activity.</p>
+                  ) : (
+                    <>
+                      <section className="inbox-detail-card">
+                        <div className="inbox-detail-card-head">
+                          <h3>Lead / Contact Info</h3>
+                          <span>{getConversationChannelBadge(selectedConversation.channel_type)}</span>
                         </div>
-                        <div>
-                          <dt>Phone</dt>
-                          <dd>{formatPhone(selectedConversation.contact_phone || selectedConversation.phone_number)}</dd>
-                        </div>
-                        <div>
-                          <dt>Email</dt>
-                          <dd>{selectedConversation.contact_email || "Not captured yet"}</dd>
-                        </div>
-                        <div>
-                          <dt>Owner</dt>
-                          <dd>{selectedConversation.assigned_agent_name || "Unassigned"}</dd>
-                        </div>
-                        <div>
-                          <dt>Last touch</dt>
-                          <dd>{formatDateTime(selectedConversation.last_message_at)}</dd>
-                        </div>
-                        <div>
-                          <dt>Connected number</dt>
-                          <dd>{selectedConversation.channel_linked_number || "Workspace default"}</dd>
-                        </div>
-                      </dl>
-                    </section>
+                        <dl className="inbox-detail-list">
+                          <div>
+                            <dt>Name</dt>
+                            <dd>{getConversationDisplayName(selectedConversation)}</dd>
+                          </div>
+                          <div>
+                            <dt>Phone</dt>
+                            <dd>{formatPhone(selectedConversation.contact_phone || selectedConversation.phone_number)}</dd>
+                          </div>
+                          <div>
+                            <dt>Email</dt>
+                            <dd>{selectedConversation.contact_email || "Not captured yet"}</dd>
+                          </div>
+                          <div>
+                            <dt>Owner</dt>
+                            <dd>{selectedConversation.assigned_agent_name || "Unassigned"}</dd>
+                          </div>
+                          <div>
+                            <dt>Last touch</dt>
+                            <dd>{formatDateTime(selectedConversation.last_message_at)}</dd>
+                          </div>
+                          <div>
+                            <dt>Connected number</dt>
+                            <dd>{selectedConversation.channel_linked_number || "Workspace default"}</dd>
+                          </div>
+                        </dl>
+                      </section>
 
-                    <section className="inbox-detail-card">
-                      <div className="inbox-detail-card-head">
-                        <h3>AI Insights</h3>
-                        <span>Live</span>
-                      </div>
-                      <div className="inbox-insight-grid">
-                        <article>
-                          <span>Intent</span>
-                          <strong>{getLeadIntentLabel(selectedConversation)}</strong>
-                        </article>
-                        <article>
-                          <span>Buying Probability</span>
-                          <strong>{selectedConversation.score}%</strong>
-                        </article>
-                        <article>
-                          <span>Classifier Confidence</span>
-                          <strong>{selectedConversation.classification_confidence}%</strong>
-                        </article>
-                        <article>
-                          <span>Next Follow-up</span>
-                          <strong>{getNextFollowUpLabel(selectedConversation)}</strong>
-                        </article>
-                      </div>
-                      <p className="inbox-detail-summary">{getLeadSuggestedAction(selectedConversation)}</p>
-                    </section>
-
-                    <section className="inbox-detail-card">
-                      <div className="inbox-detail-card-head">
-                        <h3>Tags</h3>
-                        <span>{conversationTags.length}</span>
-                      </div>
-                      <div className="inbox-tag-cloud">
-                        {conversationTags.map((tag) => (
-                          <span key={tag} className="inbox-tag">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="inbox-detail-card">
-                      <div className="inbox-detail-card-head">
-                        <h3>Activity Timeline</h3>
-                        <span>{messagesQuery.isFetching ? "Refreshing" : "Current"}</span>
-                      </div>
-                      <div className="inbox-timeline">
-                        {timelineItems.map((item) => (
-                          <article key={item.label} className="inbox-timeline-item">
-                            <strong>{item.label}</strong>
-                            <p>{item.detail}</p>
-                            <small>{formatDateTime(item.at)}</small>
+                      <section className="inbox-detail-card">
+                        <div className="inbox-detail-card-head">
+                          <h3>AI Insights</h3>
+                          <span>Live</span>
+                        </div>
+                        <div className="inbox-insight-grid">
+                          <article>
+                            <span>Intent</span>
+                            <strong>{getLeadIntentLabel(selectedConversation)}</strong>
                           </article>
-                        ))}
-                      </div>
-                    </section>
-                  </>
-                )}
-              </aside>
+                          <article>
+                            <span>Buying Probability</span>
+                            <strong>{selectedConversation.score}%</strong>
+                          </article>
+                          <article>
+                            <span>Classifier Confidence</span>
+                            <strong>{selectedConversation.classification_confidence}%</strong>
+                          </article>
+                          <article>
+                            <span>Next Follow-up</span>
+                            <strong>{getNextFollowUpLabel(selectedConversation)}</strong>
+                          </article>
+                        </div>
+                        <p className="inbox-detail-summary">{getLeadSuggestedAction(selectedConversation)}</p>
+                      </section>
+
+                      <section className="inbox-detail-card">
+                        <div className="inbox-detail-card-head">
+                          <h3>Tags</h3>
+                          <span>{conversationTags.length}</span>
+                        </div>
+                        <div className="inbox-tag-cloud">
+                          {conversationTags.map((tag) => (
+                            <span key={tag} className="inbox-tag">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="inbox-detail-card">
+                        <div className="inbox-detail-card-head">
+                          <h3>Activity Timeline</h3>
+                          <span>{messagesQuery.isFetching ? "Refreshing" : "Current"}</span>
+                        </div>
+                        <div className="inbox-timeline">
+                          {timelineItems.map((item) => (
+                            <article key={item.label} className="inbox-timeline-item">
+                              <strong>{item.label}</strong>
+                              <p>{item.detail}</p>
+                              <small>{formatDateTime(item.at)}</small>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    </>
+                  )}
+                </aside>
+              ) : null}
             </>
           ) : null}
         </section>

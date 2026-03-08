@@ -223,14 +223,14 @@ function DashboardShellLayout() {
 
   const companyLabel =
     (typeof user?.business_basics?.companyName === "string" && user.business_basics.companyName.trim()) ||
-    bootstrap?.userSummary.name ||
+    bootstrap?.userSummary?.name ||
     user?.name ||
     "WAgen AI";
 
-  const websiteChannelEnabled = Boolean(bootstrap?.channelSummary.website.enabled);
-  const qrChannelStatus = bootstrap?.channelSummary.whatsapp.status ?? "not_connected";
+  const websiteChannelEnabled = Boolean(bootstrap?.channelSummary?.website?.enabled);
+  const qrChannelStatus = bootstrap?.channelSummary?.whatsapp?.status ?? "not_connected";
   const qrChannelConnected = qrChannelStatus === "connected";
-  const apiChannelConnected = Boolean(bootstrap?.channelSummary.metaApi.connected);
+  const apiChannelConnected = Boolean(bootstrap?.channelSummary?.metaApi?.connected);
   const isAnyChannelConnected = websiteChannelEnabled || qrChannelConnected || apiChannelConnected;
   const connectionBadgeStatus = loading
     ? "checking"
@@ -254,7 +254,7 @@ function DashboardShellLayout() {
     ? `${bootstrap.creditsSummary.remaining_credits} / ${bootstrap.creditsSummary.total_credits}`
     : "-- / --";
   const workspaceLowCreditMessage = bootstrap?.creditsSummary.low_credit_message ?? null;
-  const hasConfiguredAgentProfile = Boolean(bootstrap?.agentSummary.hasConfiguredProfile);
+  const hasConfiguredAgentProfile = Boolean(bootstrap?.agentSummary?.hasConfiguredProfile);
   const showAgentOffBanner = Boolean(bootstrap && !bootstrap.userSummary.aiActive && hasConfiguredAgentProfile);
 
   const sectionMeta = SECTION_META[currentModuleId] ?? SECTION_META.inbox;

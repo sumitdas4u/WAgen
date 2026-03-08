@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, type PropsWithChildren } from "react";
 import { useAuth } from "../../lib/auth-context";
 import { apiRequest } from "../../shared/api/client";
+import { normalizeDashboardBootstrap } from "../../shared/dashboard/bootstrap";
 import { dashboardQueryKeys } from "../../shared/dashboard/query-keys";
 import {
   DashboardShellContextProvider,
@@ -11,7 +12,8 @@ import { DashboardRealtimeProvider } from "./dashboard-realtime-provider";
 import type { DashboardBootstrapResponse } from "../../shared/dashboard/contracts";
 
 async function fetchDashboardBootstrap(token: string) {
-  return apiRequest<DashboardBootstrapResponse>("/api/dashboard/bootstrap", { token });
+  const response = await apiRequest<DashboardBootstrapResponse>("/api/dashboard/bootstrap", { token });
+  return normalizeDashboardBootstrap(response);
 }
 
 export function DashboardShellDataProvider({ children }: PropsWithChildren) {
@@ -29,7 +31,7 @@ export function DashboardShellDataProvider({ children }: PropsWithChildren) {
   const value = useMemo<DashboardShellContextValue>(
     () => ({
       token,
-      bootstrap: bootstrapQuery.data ?? null,
+      bootstrap: bootstrapQuery.data ? normalizeDashboardBootstrap(bootstrapQuery.data) : null,
       loading: bootstrapQuery.isLoading,
       refetchBootstrap: () => bootstrapQuery.refetch()
     }),

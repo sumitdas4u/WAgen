@@ -168,6 +168,16 @@ describe("dashboard router", () => {
     });
   });
 
+  it("normalizes legacy bootstrap payloads that omit dashboard summaries", async () => {
+    const { agentSummary: _agentSummary, channelSummary: _channelSummary, ...legacyBootstrap } = createBootstrap();
+
+    renderRoute("/dashboard/billing", legacyBootstrap as DashboardBootstrapResponse);
+
+    expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
+    expect(screen.getByText("Billing module")).toBeInTheDocument();
+    expect(screen.queryByText("Unexpected Application Error!")).not.toBeInTheDocument();
+  });
+
   it("hides the paused-agent banner when no workflow is configured", async () => {
     renderRoute(
       "/dashboard/billing",
