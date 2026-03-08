@@ -16,6 +16,7 @@ const UsageQuerySchema = z.object({
 });
 
 function buildDashboardFeatureFlags(): Record<string, boolean> {
+  const envFeatureFlags = (env as { DASHBOARD_FEATURE_FLAGS?: Record<string, boolean> }).DASHBOARD_FEATURE_FLAGS ?? {};
   const defaults: Record<string, boolean> = {
     "dashboard.inbox": true,
     "dashboard.leads": true,
@@ -32,7 +33,7 @@ function buildDashboardFeatureFlags(): Record<string, boolean> {
 
   return {
     ...defaults,
-    ...env.DASHBOARD_FEATURE_FLAGS
+    ...envFeatureFlags
   };
 }
 
