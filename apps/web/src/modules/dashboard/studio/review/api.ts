@@ -1,0 +1,30 @@
+import {
+  fetchAiReviewQueue,
+  fetchConversationMessages,
+  resolveAiReviewQueueItem,
+  type AiReviewQueueItem,
+  type ConversationMessage
+} from "../../../../lib/api";
+
+export async function fetchReviewQueue(token: string, status: "all" | "pending" | "resolved") {
+  const response = await fetchAiReviewQueue(token, {
+    status,
+    limit: 300
+  });
+  return response.queue;
+}
+
+export async function fetchReviewConversation(token: string, conversationId: string): Promise<ConversationMessage[]> {
+  const response = await fetchConversationMessages(token, conversationId);
+  return response.messages;
+}
+
+export function resolveReviewItem(
+  token: string,
+  reviewId: string,
+  payload: { resolutionAnswer?: string; addToKnowledgeBase?: boolean }
+) {
+  return resolveAiReviewQueueItem(token, reviewId, payload);
+}
+
+export type { AiReviewQueueItem, ConversationMessage };

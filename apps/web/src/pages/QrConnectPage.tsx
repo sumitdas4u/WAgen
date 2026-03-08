@@ -133,6 +133,9 @@ export function QrConnectPage() {
           <button type="button" className="link-btn" onClick={() => navigate("/onboarding")}>
             Back to onboarding
           </button>
+          <button type="button" className="link-btn" onClick={() => navigate("/dashboard")}>
+            Back to dashboard
+          </button>
         </div>
 
         {error && <p className="error-text">{error}</p>}
