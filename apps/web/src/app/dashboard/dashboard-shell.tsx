@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "billing" | "knowledge" | "settings";
+type PrimaryNavId = "conversations" | "leads" | "templates" | "billing" | "knowledge" | "settings";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -39,6 +39,13 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "leads",
     title: "Leads",
     defaultModuleIds: ["leads"]
+  },
+  {
+    id: "templates",
+    label: "Templates",
+    icon: "templates",
+    title: "Templates",
+    defaultModuleIds: ["templates"]
   },
   {
     id: "billing",
@@ -79,6 +86,7 @@ const STUDIO_MENU_ITEMS: StudioNavItem[] = [
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   inbox: { label: "Chats", subtitle: "Live Inbox" },
   leads: { label: "Leads", subtitle: "Priority Queue" },
+  templates: { label: "Templates", subtitle: "Create and manage broadcast templates" },
   billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
   "studio-personality": { label: "Chatbot Personality", subtitle: "Tune voice, identity, and behavior" },
@@ -181,11 +189,13 @@ function DashboardShellLayout() {
           ? "/dashboard/inbox"
           : item.id === "leads"
             ? "/dashboard/leads"
-            : item.id === "billing"
-              ? "/dashboard/billing"
-              : item.id === "knowledge"
-                ? studioDefaultTo
-                : settingsDefaultTo
+            : item.id === "templates"
+              ? "/dashboard/templates"
+              : item.id === "billing"
+                ? "/dashboard/billing"
+                : item.id === "knowledge"
+                  ? studioDefaultTo
+                  : settingsDefaultTo
     }));
 
   const currentPrimaryNavId: PrimaryNavId =
@@ -193,11 +203,13 @@ function DashboardShellLayout() {
       ? "conversations"
       : currentModuleId === "leads"
         ? "leads"
-        : currentModuleId === "billing"
-          ? "billing"
-          : currentModuleId.startsWith("settings-")
-            ? "settings"
-            : "knowledge";
+        : currentModuleId === "templates"
+          ? "templates"
+          : currentModuleId === "billing"
+            ? "billing"
+            : currentModuleId.startsWith("settings-")
+              ? "settings"
+              : "knowledge";
 
   const handleModulePrefetch = async (moduleId: string) => {
     const module = dashboardModules.find((definition) => definition.id === moduleId);

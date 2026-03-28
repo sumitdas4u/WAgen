@@ -6,6 +6,7 @@ const dashboardSettingsRoot = ["dashboard", "settings"] as const;
 const dashboardReviewRoot = ["dashboard", "studio", "review"] as const;
 const dashboardKnowledgeRoot = ["dashboard", "studio", "knowledge"] as const;
 const dashboardBillingRoot = ["dashboard", "billing"] as const;
+const dashboardTemplatesRoot = ["dashboard", "templates"] as const;
 
 export const dashboardQueryKeys = {
   bootstrap: dashboardBootstrapRoot,
@@ -27,5 +28,7 @@ export const dashboardQueryKeys = {
   knowledgeSources: [...dashboardKnowledgeRoot, "sources"] as const,
   knowledgeChunks: (sourceType: string, sourceName: string) =>
     [...dashboardKnowledgeRoot, "chunks", sourceType, sourceName] as const,
-  billingRoot: dashboardBillingRoot
+  billingRoot: dashboardBillingRoot,
+  templatesRoot: dashboardTemplatesRoot,
+  templates: [...dashboardTemplatesRoot, "list"] as const
 };

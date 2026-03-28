@@ -10,6 +10,7 @@ import {
   sendMetaTextMessage,
   verifyMetaWebhookSignature
 } from "../services/meta-whatsapp-service.js";
+import { applyTemplateWebhookUpdate } from "../services/template-service.js";
 
 const CompleteEmbeddedSignupSchema = z.object({
   code: z.string().trim().min(4),
@@ -184,6 +185,23 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     await handleMetaWebhookPayload(payload);
+
+    // Handle template status update events
+    const parsed = payload as { entry?: Array<{ changes?: Array<{ field?: string; value?: unknown }> }> };
+    for (const entry of parsed.entry ?? []) {
+      for (const change of entry.changes ?? []) {
+        if (change.field === "message_template_status_update" && change.value) {
+          try {
+            await applyTemplateWebhookUpdate(
+              change.value as Parameters<typeof applyTemplateWebhookUpdate>[0]
+            );
+          } catch (err) {
+            console.error("[MetaWebhook] template status update failed", err);
+          }
+        }
+      }
+    }
+
     return reply.send({ ok: true });
   };
 

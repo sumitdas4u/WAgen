@@ -47,7 +47,7 @@ export interface CompleteEmbeddedSignupInput {
   displayPhoneNumber?: string;
 }
 
-interface GraphListResponse<T> {
+export interface GraphListResponse<T> {
   data?: T[];
 }
 
@@ -179,7 +179,7 @@ function encryptToken(token: string): string {
   return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${encrypted.toString("base64")}`;
 }
 
-function decryptToken(value: string): string {
+export function decryptToken(value: string): string {
   const [version, ivB64, tagB64, payloadB64] = value.split(":");
   if (version !== "v1" || !ivB64 || !tagB64 || !payloadB64) {
     throw new Error("Invalid encrypted token payload");
@@ -206,7 +206,7 @@ function getMetaRedirectUri(override?: string): string {
   return env.META_REDIRECT_URI || `${env.APP_BASE_URL.replace(/\/$/, "")}/meta-callback`;
 }
 
-function buildGraphUrl(path: string, query?: Record<string, string | number | undefined>): string {
+export function buildGraphUrl(path: string, query?: Record<string, string | number | undefined>): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const url = new URL(`https://graph.facebook.com/${env.META_GRAPH_VERSION}${normalizedPath}`);
   if (query) {
@@ -219,7 +219,7 @@ function buildGraphUrl(path: string, query?: Record<string, string | number | un
   return url.toString();
 }
 
-async function parseGraphResponse<T>(response: Response): Promise<T> {
+export async function parseGraphResponse<T>(response: Response): Promise<T> {
   const json = await response.json().catch(() => null);
   if (!response.ok) {
     const message =
@@ -230,7 +230,7 @@ async function parseGraphResponse<T>(response: Response): Promise<T> {
   return json as T;
 }
 
-async function graphGet<T>(
+export async function graphGet<T>(
   path: string,
   accessToken: string,
   query?: Record<string, string | number | undefined>
@@ -244,7 +244,7 @@ async function graphGet<T>(
   return parseGraphResponse<T>(response);
 }
 
-async function graphPost<T>(
+export async function graphPost<T>(
   path: string,
   accessToken: string,
   body: Record<string, unknown>
@@ -260,7 +260,7 @@ async function graphPost<T>(
   return parseGraphResponse<T>(response);
 }
 
-async function graphDelete<T>(
+export async function graphDelete<T>(
   path: string,
   accessToken: string,
   query?: Record<string, string | number | undefined>
@@ -272,6 +272,30 @@ async function graphDelete<T>(
     }
   });
   return parseGraphResponse<T>(response);
+}
+
+export async function graphPostMedia(
+  phoneNumberId: string,
+  accessToken: string,
+  fileBuffer: Buffer,
+  mimeType: string
+): Promise<{ id: string }> {
+  const formData = new FormData();
+  formData.append("messaging_product", "whatsapp");
+  formData.append(
+    "file",
+    new Blob([fileBuffer], { type: mimeType }),
+    `upload.${mimeType.split("/")[1] ?? "bin"}`
+  );
+
+  const response = await fetch(buildGraphUrl(`/${phoneNumberId}/media`), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: formData
+  });
+  return parseGraphResponse<{ id: string }>(response);
 }
 
 type PhoneRegistrationAttempt = {

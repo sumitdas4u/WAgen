@@ -30,6 +30,19 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     requiresAuth: true
   },
   {
+    id: "templates",
+    path: "templates",
+    navTo: "/dashboard/templates",
+    navLabel: "Templates",
+    subtitle: "Broadcast templates",
+    icon: "templates",
+    section: "main",
+    lazyRoute: () => import("../modules/dashboard/templates/route"),
+    featureFlag: "dashboard.templates",
+    prefetchStrategy: "code+data",
+    requiresAuth: true
+  },
+  {
     id: "billing",
     path: "billing",
     navTo: "/dashboard/billing",

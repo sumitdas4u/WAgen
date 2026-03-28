@@ -18,6 +18,7 @@ export type DashboardIconName =
   | "settings"
   | "personality"
   | "unanswered"
+  | "templates"
   | "logout";
 
 export interface DashboardEntitlementRequirement {
