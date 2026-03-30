@@ -1493,7 +1493,7 @@ export function Component() {
                     <>
                       <section className="inbox-detail-card">
                         <div className="inbox-detail-card-head">
-                          <h3>Lead / Contact Info</h3>
+                          <h3>Contact Info</h3>
                           <span>{getConversationChannelBadge(selectedConversation.channel_type)}</span>
                         </div>
                         <dl className="inbox-detail-list">

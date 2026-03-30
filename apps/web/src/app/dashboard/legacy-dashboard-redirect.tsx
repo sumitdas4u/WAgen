@@ -6,6 +6,7 @@ export function resolveLegacyDashboardPath(search: string): string {
   const submenu = params.get("submenu");
 
   switch (tab) {
+    case "contacts":
     case "leads":
       return "/dashboard/leads";
     case "billing":

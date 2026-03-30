@@ -24,7 +24,7 @@ export function DashboardRealtimeProvider({
       (event) => {
         if (event.event === "conversation.updated") {
           void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
-          void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.leadsRoot });
+          void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactsRoot });
           void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.reviewRoot });
         }
 

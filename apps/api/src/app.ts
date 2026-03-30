@@ -24,6 +24,7 @@ import { aiReviewRoutes } from "./routes/ai-review.js";
 import { sdkRoutes } from "./routes/sdk.js";
 import { workspaceRoutes } from "./routes/workspace.js";
 import { workspaceBillingRoutes } from "./routes/workspace-billing.js";
+import { contactRoutes } from "./routes/contacts.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
 
@@ -151,6 +152,7 @@ export async function buildApp() {
   await aiReviewRoutes(app);
   await sdkRoutes(app);
   await conversationRoutes(app);
+  await contactRoutes(app);
   await flowRoutes(app);
   await registerRealtimeRoutes(app);
   await registerWidgetChatGatewayRoutes(app);

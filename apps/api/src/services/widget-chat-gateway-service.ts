@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { pool } from "../db/pool.js";
 import { getOrCreateConversation } from "./conversation-service.js";
+import { syncConversationContact } from "./contacts-service.js";
 import { processIncomingMessage } from "./message-router-service.js";
 import { getUserById } from "./user-service.js";
 
@@ -135,6 +136,16 @@ async function persistWidgetLeadProfile(input: {
      WHERE id = $1`,
     [conversation.id, leadMessage]
   );
+
+  await syncConversationContact({
+    userId: input.userId,
+    phoneNumber: input.profile.phone,
+    displayName: input.profile.name,
+    email: input.profile.email,
+    contactType: "lead",
+    sourceType: "web",
+    linkedConversationId: conversation.id
+  });
 }
 
 export async function sendWidgetConversationMessage(input: {

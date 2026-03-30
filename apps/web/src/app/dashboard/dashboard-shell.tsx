@@ -35,9 +35,9 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   },
   {
     id: "leads",
-    label: "Leads",
+    label: "Contacts",
     icon: "leads",
-    title: "Leads",
+    title: "Contacts",
     defaultModuleIds: ["leads"]
   },
   {
@@ -79,7 +79,7 @@ const STUDIO_MENU_ITEMS: StudioNavItem[] = [
 
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   inbox: { label: "Chats", subtitle: "Live Inbox" },
-  leads: { label: "Leads", subtitle: "Priority Queue" },
+  leads: { label: "Contacts", subtitle: "Customer Directory" },
   billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
   "studio-flows": { label: "Flows", subtitle: "Build chatbot workflows visually" },

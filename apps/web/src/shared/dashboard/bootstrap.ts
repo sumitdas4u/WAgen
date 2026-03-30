@@ -51,6 +51,8 @@ const DEFAULT_DASHBOARD_BOOTSTRAP: DashboardBootstrapResponse = {
 export function normalizeDashboardBootstrap(
   value: Partial<DashboardBootstrapResponse> | null | undefined
 ): DashboardBootstrapResponse {
+  const rawFeatureFlags = value?.featureFlags ?? DEFAULT_DASHBOARD_BOOTSTRAP.featureFlags;
+  const contactsEnabled = rawFeatureFlags["dashboard.contacts"] ?? rawFeatureFlags["dashboard.leads"] ?? true;
   return {
     userSummary: {
       ...DEFAULT_DASHBOARD_BOOTSTRAP.userSummary,
@@ -60,7 +62,11 @@ export function normalizeDashboardBootstrap(
       ...DEFAULT_DASHBOARD_BOOTSTRAP.planEntitlements,
       ...(value?.planEntitlements ?? {})
     },
-    featureFlags: value?.featureFlags ?? DEFAULT_DASHBOARD_BOOTSTRAP.featureFlags,
+    featureFlags: {
+      ...rawFeatureFlags,
+      "dashboard.contacts": contactsEnabled,
+      "dashboard.leads": contactsEnabled
+    },
     creditsSummary: {
       ...DEFAULT_DASHBOARD_BOOTSTRAP.creditsSummary,
       ...(value?.creditsSummary ?? {})

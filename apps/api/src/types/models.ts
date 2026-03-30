@@ -8,6 +8,7 @@ export type PersonalityOption =
 export type AgentChannelType = "web" | "qr" | "api";
 export type AgentObjectiveType = "lead" | "feedback" | "complaint" | "hybrid";
 export type ConversationKind = "lead" | "feedback" | "complaint" | "other";
+export type ContactSourceType = "manual" | "import" | "web" | "qr" | "api";
 
 export interface User {
   id: string;
@@ -38,4 +39,21 @@ export interface Conversation {
   ai_paused: boolean;
   manual_takeover: boolean;
   last_ai_reply_at: string | null;
+}
+
+export interface Contact {
+  id: string;
+  user_id: string;
+  display_name: string | null;
+  phone_number: string;
+  email: string | null;
+  contact_type: ConversationKind;
+  tags: string[];
+  order_date: string | null;
+  source_type: ContactSourceType;
+  source_id: string | null;
+  source_url: string | null;
+  linked_conversation_id: string | null;
+  created_at: string;
+  updated_at: string;
 }

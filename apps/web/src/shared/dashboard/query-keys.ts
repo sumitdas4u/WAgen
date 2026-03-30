@@ -1,6 +1,7 @@
 const dashboardBootstrapRoot = ["dashboard", "bootstrap"] as const;
 const dashboardInboxRoot = ["dashboard", "inbox"] as const;
 const dashboardContactsRoot = ["dashboard", "contacts"] as const;
+const dashboardLeadsRoot = ["dashboard", "leads"] as const;
 const dashboardAgentsRoot = ["dashboard", "agents"] as const;
 const dashboardSettingsRoot = ["dashboard", "settings"] as const;
 const dashboardReviewRoot = ["dashboard", "studio", "review"] as const;
@@ -16,8 +17,8 @@ export const dashboardQueryKeys = {
   inboxPublishedFlows: [...dashboardInboxRoot, "published-flows"] as const,
   contactsRoot: dashboardContactsRoot,
   contacts: (filters: Record<string, string | boolean>) => [...dashboardContactsRoot, filters] as const,
-  leadsRoot: dashboardContactsRoot,
-  leads: (filters: Record<string, string | boolean>) => [...dashboardContactsRoot, filters] as const,
+  leadsRoot: dashboardLeadsRoot,
+  leads: (filters: Record<string, string | boolean>) => [...dashboardLeadsRoot, filters] as const,
   agentsRoot: dashboardAgentsRoot,
   agents: [...dashboardAgentsRoot, "profiles"] as const,
   settingsRoot: dashboardSettingsRoot,

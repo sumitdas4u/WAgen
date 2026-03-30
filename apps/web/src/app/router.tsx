@@ -70,6 +70,10 @@ const dashboardChildren: RouteObject[] = [
     index: true,
     element: <LegacyDashboardRedirect />
   },
+  {
+    path: "contacts",
+    element: <Navigate to="/dashboard/leads" replace />
+  },
   ...dashboardModules.map((definition) => ({
     path: definition.path,
     async lazy() {

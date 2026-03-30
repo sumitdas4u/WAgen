@@ -4,6 +4,7 @@ import type { AgentChannelType, Conversation, ConversationKind } from "../types/
 import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
 import { openAIService } from "./openai-service.js";
 import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
+import { extractCapturedProfileDetails, reconcileContactPhone, syncConversationContact } from "./contacts-service.js";
 
 function scoreMessageBase(text: string): number {
   const normalized = text.toLowerCase();
@@ -438,6 +439,8 @@ export async function reconcileConversationPhone(
     await client.query(`DELETE FROM lead_summaries WHERE conversation_id = $1`, [source.id]);
     await client.query(`DELETE FROM conversations WHERE id = $1`, [source.id]);
   });
+
+  await reconcileContactPhone(userId, previous, canonical);
 }
 
 export async function getConversationById(conversationId: string): Promise<Conversation | null> {
@@ -517,6 +520,24 @@ export async function trackInboundMessage(
     [conversation.id, senderName ?? null, message]
   );
 
+  const capturedProfile = extractCapturedProfileDetails(message);
+  const contactPhoneNumber = capturedProfile.phoneNumber ?? phoneNumber;
+  if (contactPhoneNumber.replace(/\D/g, "").length >= 8) {
+    try {
+      await syncConversationContact({
+        userId,
+        phoneNumber: contactPhoneNumber,
+        displayName: capturedProfile.displayName ?? senderName ?? undefined,
+        email: capturedProfile.email ?? undefined,
+        contactType: classification.kind,
+        sourceType: channelType,
+        linkedConversationId: conversation.id
+      });
+    } catch (error) {
+      console.warn(`[Contacts] contact sync failed for conversation ${conversation.id}`, error);
+    }
+  }
+
   return updated.rows[0];
 }
 
@@ -529,6 +550,7 @@ export async function trackOutboundMessage(
     totalTokens?: number | null;
     aiModel?: string | null;
     retrievalChunks?: number | null;
+    markAsAiReply?: boolean;
   }
 ): Promise<void> {
   await pool.query(
@@ -555,11 +577,12 @@ export async function trackOutboundMessage(
   );
 
   const retrievalDelta = scoreFromRetrievalChunks(usage?.retrievalChunks);
+  const markAsAiReply = usage?.markAsAiReply ?? false;
   await pool.query(
     `UPDATE conversations
      SET last_message = $1,
          last_message_at = NOW(),
-         last_ai_reply_at = NOW(),
+         last_ai_reply_at = CASE WHEN $4 THEN NOW() ELSE last_ai_reply_at END,
          score = LEAST(100, GREATEST(0, score + $3)),
          stage = CASE
            WHEN LEAST(100, GREATEST(0, score + $3)) >= 75 THEN 'hot'
@@ -567,7 +590,7 @@ export async function trackOutboundMessage(
            ELSE 'cold'
          END
      WHERE id = $2`,
-    [message, conversationId, retrievalDelta]
+    [message, conversationId, retrievalDelta, markAsAiReply]
   );
 }
 
@@ -593,8 +616,10 @@ export async function listConversations(
   >(
     `SELECT
        c.*,
+       COALESCE(ct.contact_type, c.lead_kind) AS lead_kind,
        ap.name AS assigned_agent_name,
        COALESCE(
+         ct.display_name,
          (
            SELECT cm.sender_name
            FROM conversation_messages cm
@@ -614,26 +639,41 @@ export async function listConversations(
            LIMIT 1
          )
        ) AS contact_name,
-       (
-         SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
-         FROM conversation_messages cm
-         WHERE cm.conversation_id = c.id
-           AND cm.direction = 'inbound'
-           AND cm.message_text LIKE 'Lead details captured:%'
-         ORDER BY cm.created_at DESC
-         LIMIT 1
+       COALESCE(
+         ct.phone_number,
+         (
+           SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         c.phone_number
        ) AS contact_phone,
-       (
-         SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
-         FROM conversation_messages cm
-         WHERE cm.conversation_id = c.id
-           AND cm.direction = 'inbound'
-           AND cm.message_text LIKE 'Lead details captured:%'
-         ORDER BY cm.created_at DESC
-         LIMIT 1
+       COALESCE(
+         ct.email,
+         (
+           SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
        ) AS contact_email
      FROM conversations c
      LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
+     LEFT JOIN LATERAL (
+       SELECT *
+       FROM contacts ct
+       WHERE ct.user_id = c.user_id
+         AND (ct.linked_conversation_id = c.id OR ct.phone_number = c.phone_number)
+       ORDER BY CASE WHEN ct.linked_conversation_id = c.id THEN 0 ELSE 1 END, ct.updated_at DESC
+       LIMIT 1
+     ) ct ON TRUE
      WHERE c.user_id = $1
      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC`,
     [userId]
@@ -804,7 +844,7 @@ async function listLeadSummaryRows(
   }
   if (filters?.kind) {
     values.push(filters.kind);
-    where.push(`c.lead_kind = $${values.length}`);
+    where.push(`COALESCE(ct.contact_type, c.lead_kind) = $${values.length}`);
   }
   if (filters?.channelType) {
     values.push(filters.channelType);
@@ -819,8 +859,10 @@ async function listLeadSummaryRows(
 
   const sql = `SELECT
        c.*,
+       COALESCE(ct.contact_type, c.lead_kind) AS lead_kind,
        ap.name AS assigned_agent_name,
        COALESCE(
+         ct.display_name,
          (
            SELECT cm.sender_name
            FROM conversation_messages cm
@@ -840,29 +882,44 @@ async function listLeadSummaryRows(
            LIMIT 1
          )
        ) AS contact_name,
-       (
-         SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
-         FROM conversation_messages cm
-         WHERE cm.conversation_id = c.id
-           AND cm.direction = 'inbound'
-           AND cm.message_text LIKE 'Lead details captured:%'
-         ORDER BY cm.created_at DESC
-         LIMIT 1
+       COALESCE(
+         ct.phone_number,
+         (
+           SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         c.phone_number
        ) AS contact_phone,
-       (
-         SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
-         FROM conversation_messages cm
-         WHERE cm.conversation_id = c.id
-           AND cm.direction = 'inbound'
-           AND cm.message_text LIKE 'Lead details captured:%'
-         ORDER BY cm.created_at DESC
-         LIMIT 1
+       COALESCE(
+         ct.email,
+         (
+           SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
        ) AS contact_email,
        ls.summary_text AS ai_summary,
        ls.source_last_message_at::text AS summary_source_last_message_at,
        ls.updated_at::text AS summary_updated_at
      FROM conversations c
      LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
+     LEFT JOIN LATERAL (
+       SELECT *
+       FROM contacts ct
+       WHERE ct.user_id = c.user_id
+         AND (ct.linked_conversation_id = c.id OR ct.phone_number = c.phone_number)
+       ORDER BY CASE WHEN ct.linked_conversation_id = c.id THEN 0 ELSE 1 END, ct.updated_at DESC
+       LIMIT 1
+     ) ct ON TRUE
      LEFT JOIN lead_summaries ls ON ls.conversation_id = c.id
      WHERE ${where.join(" AND ")}
      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
