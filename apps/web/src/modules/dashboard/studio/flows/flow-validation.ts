@@ -464,7 +464,21 @@ function validateNodeData(
         }
       }
       const bookingMode = node.data.bookingMode ?? "suggest_slots";
-      if (bookingMode === "suggest_slots") {
+      const timeInputMode = node.data.timeInputMode ?? "prefilled";
+      if (Number.isNaN(Number(node.data.promptSearchWindowHours)) || Number(node.data.promptSearchWindowHours) <= 0) {
+        pushNodeError(errors, node, `${describeNode(node)} needs a valid prompt search window in hours.`);
+      }
+      if (timeInputMode === "ask_user") {
+        if (!node.data.timeRequestPrompt.trim()) {
+          pushNodeError(errors, node, `${describeNode(node)} needs a time-request prompt.`);
+        }
+        if (!node.data.invalidTimeRequestMessage.trim()) {
+          pushNodeError(errors, node, `${describeNode(node)} needs an invalid-time message.`);
+        }
+        if (bookingMode !== "check_only" && !node.data.bookingTitle.trim()) {
+          pushNodeError(errors, node, `${describeNode(node)} needs a booking title.`);
+        }
+      } else if (bookingMode === "suggest_slots") {
         if (!node.data.windowStart.trim()) {
           pushNodeError(errors, node, `${describeNode(node)} needs a window start date-time.`);
         }

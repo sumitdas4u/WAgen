@@ -19,6 +19,11 @@ const MODE_LABELS: Record<GoogleCalendarBookingData["bookingMode"], string> = {
   book_if_available: "Book Requested Time"
 };
 
+const TIME_INPUT_LABELS: Record<GoogleCalendarBookingData["timeInputMode"], string> = {
+  prefilled: "Use Node Fields / Variables",
+  ask_user: "Ask User In Chat"
+};
+
 function GoogleCalendarBookingNode({
   id,
   data,
@@ -27,8 +32,10 @@ function GoogleCalendarBookingNode({
   const { patch, del } = useNodePatch<GoogleCalendarBookingData>(id);
   const token = useFlowEditorToken();
   const bookingMode = data.bookingMode || "suggest_slots";
+  const timeInputMode = data.timeInputMode || "prefilled";
   const isSuggestMode = bookingMode === "suggest_slots";
   const isCheckOnlyMode = bookingMode === "check_only";
+  const isPromptMode = timeInputMode === "ask_user";
 
   const [config, setConfig] = useState<GoogleCalendarConfig | null>(null);
   const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
@@ -186,7 +193,9 @@ function GoogleCalendarBookingNode({
       <NodeHeader icon="GC" title="Google Calendar Scheduler" onDelete={del} />
       <div className="fn-node-body">
         <div className="fn-api-hint" style={{ marginBottom: "0.45rem" }}>
-          {isSuggestMode
+          {isPromptMode
+            ? "Ask the contact for a preferred appointment time or time range, parse the reply, then continue the scheduling wizard automatically."
+            : isSuggestMode
             ? "Show live free slots, collect booking details, confirm, and create the Google Calendar event."
             : isCheckOnlyMode
               ? "Check a requested chat time, suggest alternates if needed, and save the confirmed slot for the next flow step."
@@ -320,7 +329,57 @@ function GoogleCalendarBookingNode({
 
         <div className="fn-section">
           <div className="fn-node-label">SCHEDULING</div>
-          {isSuggestMode ? (
+          <div className="fn-two">
+            <div className="fn-node-field">
+              <label className="fn-node-label">TIME INPUT</label>
+              <select
+                className="fn-node-select nodrag"
+                value={timeInputMode}
+                onChange={(event) =>
+                  patch({
+                    timeInputMode: event.target.value as GoogleCalendarBookingData["timeInputMode"]
+                  })
+                }
+              >
+                <option value="prefilled">{TIME_INPUT_LABELS.prefilled}</option>
+                <option value="ask_user">{TIME_INPUT_LABELS.ask_user}</option>
+              </select>
+            </div>
+            <div className="fn-node-field">
+              <label className="fn-node-label">SEARCH WINDOW HRS</label>
+              <input
+                className="fn-node-input nodrag"
+                value={data.promptSearchWindowHours}
+                onChange={(event) => patch({ promptSearchWindowHours: event.target.value })}
+                placeholder="6"
+              />
+            </div>
+          </div>
+
+          {isPromptMode ? (
+            <>
+              <div className="fn-node-field">
+                <label className="fn-node-label">TIME REQUEST PROMPT</label>
+                <textarea
+                  className="fn-node-textarea nodrag"
+                  rows={3}
+                  value={data.timeRequestPrompt}
+                  onChange={(event) => patch({ timeRequestPrompt: event.target.value })}
+                  placeholder="Please share your preferred appointment time or time range. Example: tomorrow 3 PM or tomorrow between 2 PM and 5 PM."
+                />
+              </div>
+              <div className="fn-node-field">
+                <label className="fn-node-label">INVALID TIME MESSAGE</label>
+                <textarea
+                  className="fn-node-textarea nodrag"
+                  rows={2}
+                  value={data.invalidTimeRequestMessage}
+                  onChange={(event) => patch({ invalidTimeRequestMessage: event.target.value })}
+                  placeholder="I couldn't understand that timing. Please share a clear date/time or time range."
+                />
+              </div>
+            </>
+          ) : isSuggestMode ? (
             <div className="fn-two">
               <div className="fn-node-field">
                 <label className="fn-node-label">WINDOW START</label>
@@ -667,9 +726,18 @@ function GoogleCalendarBookingNode({
         </div>
 
         <div className="fn-api-hint" style={{ marginBottom: "0.4rem" }}>
-          Use full ISO date-times like <code style={{ fontSize: "0.65rem" }}>2026-04-01T09:00:00+05:30</code>.
-          You can pass chat-captured values such as <code style={{ fontSize: "0.65rem" }}>{`{{appointment_start}}`}</code>.
-          {!isSuggestMode ? " If the requested time is busy, the block searches the alternate window and keeps the booking wizard going." : ""}
+          {isPromptMode ? (
+            <>
+              The block will ask the user for a preferred time or time range, then parse that reply and search availability automatically.
+              If the user gives one exact time, the scheduler searches nearby slots inside the configured search window hours.
+            </>
+          ) : (
+            <>
+              Use full ISO date-times like <code style={{ fontSize: "0.65rem" }}>2026-04-01T09:00:00+05:30</code>.
+              You can pass chat-captured values such as <code style={{ fontSize: "0.65rem" }}>{`{{appointment_start}}`}</code>.
+              {!isSuggestMode ? " If the requested time is busy, the block searches the alternate window and keeps the booking wizard going." : ""}
+            </>
+          )}
         </div>
 
         <div className="fn-api-outputs">
@@ -731,6 +799,7 @@ export const googleCalendarBookingStudioBlock: StudioFlowBlockDefinition<GoogleC
       calendarId: "",
       calendarSummary: "",
       bookingMode: "suggest_slots",
+      timeInputMode: "prefilled",
       timeZone: "Asia/Kolkata",
       windowStart: "",
       windowEnd: "",
@@ -738,6 +807,11 @@ export const googleCalendarBookingStudioBlock: StudioFlowBlockDefinition<GoogleC
       alternateWindowEnd: "",
       requestedStart: "",
       requestedEnd: "",
+      timeRequestPrompt:
+        "Please share your preferred appointment time or time range. Example: tomorrow 3 PM or tomorrow between 2 PM and 5 PM.",
+      invalidTimeRequestMessage:
+        "I couldn't understand that timing yet. Please share a clear date/time or a time range.",
+      promptSearchWindowHours: "6",
       slotDurationMinutes: "30",
       slotIntervalMinutes: "30",
       maxOptions: "5",

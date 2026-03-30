@@ -211,6 +211,7 @@ export interface GoogleCalendarBookingData {
   calendarId: string;
   calendarSummary: string;
   bookingMode: "suggest_slots" | "check_only" | "book_if_available";
+  timeInputMode: "prefilled" | "ask_user";
   timeZone: string;
   windowStart: string;
   windowEnd: string;
@@ -218,6 +219,9 @@ export interface GoogleCalendarBookingData {
   alternateWindowEnd: string;
   requestedStart: string;
   requestedEnd: string;
+  timeRequestPrompt: string;
+  invalidTimeRequestMessage: string;
+  promptSearchWindowHours: string;
   slotDurationMinutes: string;
   slotIntervalMinutes: string;
   maxOptions: string;
