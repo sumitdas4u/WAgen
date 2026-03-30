@@ -51,8 +51,8 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/typo
       REDIS_URL: redis://localhost:6379
       VITE_API_URL: http://localhost:4000
-      VITE_SUPABASE_URL: https://example.supabase.co
-      VITE_SUPABASE_ANON_KEY: example-anon-key
+      VITE_SUPABASE_URL: https://rbuvaekbwvkcaoffkzum.supabase.co
+      VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJidXZhZWtid3ZrY2FvZmZrenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NTM3MzUsImV4cCI6MjA5MDAyOTczNX0.rQJq3RdLOk8KuxBXjfBh5IgY_CJ6gxSgJ-i5oZ01DVc
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -110,6 +110,11 @@ jobs:
             git checkout develop
             git pull --ff-only origin develop
             export COMPOSE_BAKE=false
+            cat > apps/web/.env <<'EOF'
+            VITE_API_URL=http://api:4000
+            VITE_SUPABASE_URL=https://rbuvaekbwvkcaoffkzum.supabase.co
+            VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJidXZhZWtid3ZrY2FvZmZrenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NTM3MzUsImV4cCI6MjA5MDAyOTczNX0.rQJq3RdLOk8KuxBXjfBh5IgY_CJ6gxSgJ-i5oZ01DVc
+            EOF
             set -a
             if [ -f apps/web/.env ]; then . apps/web/.env; fi
             set +a
@@ -140,6 +145,11 @@ jobs:
             git checkout main
             git pull --ff-only origin main
             export COMPOSE_BAKE=false
+            cat > apps/web/.env <<'EOF'
+            VITE_API_URL=http://api:4000
+            VITE_SUPABASE_URL=https://rbuvaekbwvkcaoffkzum.supabase.co
+            VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJidXZhZWtid3ZrY2FvZmZrenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NTM3MzUsImV4cCI6MjA5MDAyOTczNX0.rQJq3RdLOk8KuxBXjfBh5IgY_CJ6gxSgJ-i5oZ01DVc
+            EOF
             set -a
             if [ -f apps/web/.env ]; then . apps/web/.env; fi
             set +a
