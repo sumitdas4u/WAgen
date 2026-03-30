@@ -13,6 +13,12 @@ import {
 import { NodeHeader, useFlowEditorToken, useNodePatch } from "../editor-shared";
 import type { GoogleCalendarBookingData, StudioFlowBlockDefinition } from "../types";
 
+const MODE_LABELS: Record<GoogleCalendarBookingData["bookingMode"], string> = {
+  suggest_slots: "Suggest & Book Slots",
+  check_only: "Check Requested Time",
+  book_if_available: "Book Requested Time"
+};
+
 function GoogleCalendarBookingNode({
   id,
   data,
@@ -42,6 +48,7 @@ function GoogleCalendarBookingNode({
 
     let cancelled = false;
     setLoading(true);
+
     void Promise.all([fetchGoogleCalendarConfig(token), fetchGoogleCalendarStatus(token)])
       .then(([nextConfig, nextStatus]) => {
         if (cancelled) {
@@ -82,6 +89,7 @@ function GoogleCalendarBookingNode({
 
     let cancelled = false;
     setCatalogLoading(true);
+
     void fetchGoogleCalendars(token, { connectionId: status.connection?.id ?? null })
       .then((response) => {
         if (!cancelled) {
@@ -106,10 +114,7 @@ function GoogleCalendarBookingNode({
 
   useEffect(() => {
     const listener = (event: MessageEvent) => {
-      const payload = event.data as {
-        type?: string;
-        message?: string;
-      };
+      const payload = event.data as { type?: string; message?: string };
       if (payload?.type !== "wagen-google-calendar-oauth") {
         return;
       }
@@ -131,6 +136,7 @@ function GoogleCalendarBookingNode({
 
     setOauthLoading(true);
     setStatusMessage(null);
+
     try {
       const response = await startGoogleCalendarConnect(token);
       const popup = window.open(
@@ -155,6 +161,7 @@ function GoogleCalendarBookingNode({
 
     setDisconnecting(true);
     setStatusMessage(null);
+
     try {
       await disconnectGoogleCalendar(token, { connectionId: status.connection.id });
       patch({
@@ -170,17 +177,20 @@ function GoogleCalendarBookingNode({
     }
   };
 
+  const toggleRequiredField = (field: "requireName" | "requireEmail" | "requirePhone") =>
+    patch({ [field]: !data[field] } as Partial<GoogleCalendarBookingData>);
+
   return (
     <div className={`fn-node fn-node-googleCalendarBooking${selected ? " selected" : ""}`}>
       <Handle type="target" position={Position.Left} id="in" className="fn-handle-in" />
-      <NodeHeader icon="GC" title="Google Calendar Booking" onDelete={del} />
+      <NodeHeader icon="GC" title="Google Calendar Scheduler" onDelete={del} />
       <div className="fn-node-body">
         <div className="fn-api-hint" style={{ marginBottom: "0.45rem" }}>
           {isSuggestMode
-            ? "Check live availability, show free slots, and book the user's selected appointment."
+            ? "Show live free slots, collect booking details, confirm, and create the Google Calendar event."
             : isCheckOnlyMode
-              ? "Use date/time captured earlier in the chat flow to check one exact appointment slot."
-              : "Use date/time captured earlier in the chat flow to book one exact appointment slot if it is still free."}
+              ? "Check a requested chat time, suggest alternates if needed, and save the confirmed slot for the next flow step."
+              : "Check a requested chat time, suggest alternates if needed, then confirm and book the slot in Google Calendar."}
         </div>
 
         <div className="fn-google-connection">
@@ -238,74 +248,79 @@ function GoogleCalendarBookingNode({
           {statusMessage ? <div className="fn-google-note">{statusMessage}</div> : null}
         </div>
 
-        <div className="fn-two">
-          <div className="fn-node-field">
-            <label className="fn-node-label">CALENDAR</label>
-            <select
-              className="fn-node-select nodrag"
-              value={data.calendarId}
-              onChange={(event) => {
-                const next = calendars.find((calendar) => calendar.id === event.target.value);
-                patch({
-                  calendarId: event.target.value,
-                  calendarSummary: next?.summary ?? "",
-                  timeZone: data.timeZone || next?.timeZone || ""
-                });
-              }}
-              disabled={!status?.connected || catalogLoading}
-            >
-              <option value="">{catalogLoading ? "Loading calendars..." : "Select a calendar"}</option>
-              {data.calendarId && !calendars.some((calendar) => calendar.id === data.calendarId) ? (
-                <option value={data.calendarId}>{data.calendarSummary || data.calendarId}</option>
-              ) : null}
-              {calendars.map((calendar) => (
-                <option key={calendar.id} value={calendar.id}>
-                  {calendar.summary}{calendar.primary ? " (Primary)" : ""}
-                </option>
-              ))}
-            </select>
+        <div className="fn-section">
+          <div className="fn-node-label">BASIC</div>
+          <div className="fn-two">
+            <div className="fn-node-field">
+              <label className="fn-node-label">CALENDAR</label>
+              <select
+                className="fn-node-select nodrag"
+                value={data.calendarId}
+                onChange={(event) => {
+                  const next = calendars.find((calendar) => calendar.id === event.target.value);
+                  patch({
+                    calendarId: event.target.value,
+                    calendarSummary: next?.summary ?? "",
+                    timeZone: data.timeZone || next?.timeZone || ""
+                  });
+                }}
+                disabled={!status?.connected || catalogLoading}
+              >
+                <option value="">{catalogLoading ? "Loading calendars..." : "Select a calendar"}</option>
+                {data.calendarId && !calendars.some((calendar) => calendar.id === data.calendarId) ? (
+                  <option value={data.calendarId}>{data.calendarSummary || data.calendarId}</option>
+                ) : null}
+                {calendars.map((calendar) => (
+                  <option key={calendar.id} value={calendar.id}>
+                    {calendar.summary}
+                    {calendar.primary ? " (Primary)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="fn-node-field">
+              <label className="fn-node-label">MODE</label>
+              <select
+                className="fn-node-select nodrag"
+                value={bookingMode}
+                onChange={(event) =>
+                  patch({
+                    bookingMode: event.target.value as GoogleCalendarBookingData["bookingMode"]
+                  })
+                }
+              >
+                <option value="suggest_slots">{MODE_LABELS.suggest_slots}</option>
+                <option value="check_only">{MODE_LABELS.check_only}</option>
+                <option value="book_if_available">{MODE_LABELS.book_if_available}</option>
+              </select>
+            </div>
           </div>
-          <div className="fn-node-field">
-            <label className="fn-node-label">MODE</label>
-            <select
-              className="fn-node-select nodrag"
-              value={bookingMode}
-              onChange={(event) =>
-                patch({
-                  bookingMode: event.target.value as GoogleCalendarBookingData["bookingMode"]
-                })
-              }
-            >
-              <option value="suggest_slots">Suggest free slots</option>
-              <option value="check_only">Check requested time</option>
-              <option value="book_if_available">Book requested time</option>
-            </select>
+
+          <div className="fn-two">
+            <div className="fn-node-field">
+              <label className="fn-node-label">TIME ZONE</label>
+              <input
+                className="fn-node-input nodrag"
+                value={data.timeZone}
+                onChange={(event) => patch({ timeZone: event.target.value })}
+                placeholder="Asia/Kolkata"
+              />
+            </div>
+            <div className="fn-node-field">
+              <label className="fn-node-label">SAVE AS</label>
+              <input
+                className="fn-node-input nodrag"
+                value={data.saveAs}
+                onChange={(event) => patch({ saveAs: event.target.value })}
+                placeholder="google_calendar_booking"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="fn-two">
-          <div className="fn-node-field">
-            <label className="fn-node-label">TIME ZONE</label>
-            <input
-              className="fn-node-input nodrag"
-              value={data.timeZone}
-              onChange={(event) => patch({ timeZone: event.target.value })}
-              placeholder="Asia/Kolkata"
-            />
-          </div>
-          <div className="fn-node-field">
-            <label className="fn-node-label">SAVE AS</label>
-            <input
-              className="fn-node-input nodrag"
-              value={data.saveAs}
-              onChange={(event) => patch({ saveAs: event.target.value })}
-              placeholder="google_calendar_booking"
-            />
-          </div>
-        </div>
-
-        {isSuggestMode ? (
-          <>
+        <div className="fn-section">
+          <div className="fn-node-label">SCHEDULING</div>
+          {isSuggestMode ? (
             <div className="fn-two">
               <div className="fn-node-field">
                 <label className="fn-node-label">WINDOW START</label>
@@ -326,71 +341,53 @@ function GoogleCalendarBookingNode({
                 />
               </div>
             </div>
+          ) : (
+            <>
+              <div className="fn-two">
+                <div className="fn-node-field">
+                  <label className="fn-node-label">REQUESTED START</label>
+                  <input
+                    className="fn-node-input nodrag"
+                    value={data.requestedStart}
+                    onChange={(event) => patch({ requestedStart: event.target.value })}
+                    placeholder="{{appointment_start}}"
+                  />
+                </div>
+                <div className="fn-node-field">
+                  <label className="fn-node-label">REQUESTED END</label>
+                  <input
+                    className="fn-node-input nodrag"
+                    value={data.requestedEnd}
+                    onChange={(event) => patch({ requestedEnd: event.target.value })}
+                    placeholder="{{appointment_end}}"
+                  />
+                </div>
+              </div>
 
-            <div className="fn-three">
-              <div className="fn-node-field">
-                <label className="fn-node-label">SLOT MINS</label>
-                <input
-                  className="fn-node-input nodrag"
-                  value={data.slotDurationMinutes}
-                  onChange={(event) => patch({ slotDurationMinutes: event.target.value })}
-                  placeholder="30"
-                />
+              <div className="fn-two">
+                <div className="fn-node-field">
+                  <label className="fn-node-label">ALT WINDOW START</label>
+                  <input
+                    className="fn-node-input nodrag"
+                    value={data.alternateWindowStart}
+                    onChange={(event) => patch({ alternateWindowStart: event.target.value })}
+                    placeholder="2026-04-01T09:00:00+05:30"
+                  />
+                </div>
+                <div className="fn-node-field">
+                  <label className="fn-node-label">ALT WINDOW END</label>
+                  <input
+                    className="fn-node-input nodrag"
+                    value={data.alternateWindowEnd}
+                    onChange={(event) => patch({ alternateWindowEnd: event.target.value })}
+                    placeholder="2026-04-01T18:00:00+05:30"
+                  />
+                </div>
               </div>
-              <div className="fn-node-field">
-                <label className="fn-node-label">STEP MINS</label>
-                <input
-                  className="fn-node-input nodrag"
-                  value={data.slotIntervalMinutes}
-                  onChange={(event) => patch({ slotIntervalMinutes: event.target.value })}
-                  placeholder="30"
-                />
-              </div>
-              <div className="fn-node-field">
-                <label className="fn-node-label">MAX OPTIONS</label>
-                <input
-                  className="fn-node-input nodrag"
-                  value={data.maxOptions}
-                  onChange={(event) => patch({ maxOptions: event.target.value })}
-                  placeholder="5"
-                />
-              </div>
-            </div>
+            </>
+          )}
 
-            <div className="fn-node-field">
-              <label className="fn-node-label">PROMPT MESSAGE</label>
-              <textarea
-                className="fn-node-textarea nodrag"
-                rows={3}
-                value={data.promptMessage}
-                onChange={(event) => patch({ promptMessage: event.target.value })}
-                placeholder="Please choose one of these appointment slots:"
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="fn-two">
-              <div className="fn-node-field">
-                <label className="fn-node-label">REQUESTED START</label>
-                <input
-                  className="fn-node-input nodrag"
-                  value={data.requestedStart}
-                  onChange={(event) => patch({ requestedStart: event.target.value })}
-                  placeholder="{{appointment_start}}"
-                />
-              </div>
-              <div className="fn-node-field">
-                <label className="fn-node-label">REQUESTED END</label>
-                <input
-                  className="fn-node-input nodrag"
-                  value={data.requestedEnd}
-                  onChange={(event) => patch({ requestedEnd: event.target.value })}
-                  placeholder="{{appointment_end}}"
-                />
-              </div>
-            </div>
-
+          <div className="fn-three">
             <div className="fn-node-field">
               <label className="fn-node-label">SLOT MINS</label>
               <input
@@ -400,43 +397,111 @@ function GoogleCalendarBookingNode({
                 placeholder="30"
               />
             </div>
-
             <div className="fn-node-field">
-              <label className="fn-node-label">AVAILABLE MESSAGE</label>
-              <textarea
-                className="fn-node-textarea nodrag"
-                rows={3}
-                value={data.availabilityMessage}
-                onChange={(event) => patch({ availabilityMessage: event.target.value })}
-                placeholder="That appointment time is available: {{selected_slot_label}}."
+              <label className="fn-node-label">STEP MINS</label>
+              <input
+                className="fn-node-input nodrag"
+                value={data.slotIntervalMinutes}
+                onChange={(event) => patch({ slotIntervalMinutes: event.target.value })}
+                placeholder="30"
               />
             </div>
-
             <div className="fn-node-field">
-              <label className="fn-node-label">UNAVAILABLE MESSAGE</label>
-              <textarea
-                className="fn-node-textarea nodrag"
-                rows={3}
-                value={data.unavailableMessage}
-                onChange={(event) => patch({ unavailableMessage: event.target.value })}
-                placeholder="That appointment time is not available: {{selected_slot_label}}."
+              <label className="fn-node-label">MAX OPTIONS</label>
+              <input
+                className="fn-node-input nodrag"
+                value={data.maxOptions}
+                onChange={(event) => patch({ maxOptions: event.target.value })}
+                placeholder="5"
               />
             </div>
-          </>
-        )}
+          </div>
+
+          <div className="fn-node-field">
+            <label className="fn-node-label">SLOT PROMPT</label>
+            <textarea
+              className="fn-node-textarea nodrag"
+              rows={3}
+              value={data.promptMessage}
+              onChange={(event) => patch({ promptMessage: event.target.value })}
+              placeholder="Please choose one of these appointment slots."
+            />
+          </div>
+
+          {!isSuggestMode ? (
+            <>
+              <div className="fn-node-field">
+                <label className="fn-node-label">AVAILABLE MESSAGE</label>
+                <textarea
+                  className="fn-node-textarea nodrag"
+                  rows={2}
+                  value={data.availabilityMessage}
+                  onChange={(event) => patch({ availabilityMessage: event.target.value })}
+                  placeholder="That appointment time is available: {{selected_slot_label}}."
+                />
+              </div>
+              <div className="fn-node-field">
+                <label className="fn-node-label">UNAVAILABLE MESSAGE</label>
+                <textarea
+                  className="fn-node-textarea nodrag"
+                  rows={2}
+                  value={data.unavailableMessage}
+                  onChange={(event) => patch({ unavailableMessage: event.target.value })}
+                  placeholder="That appointment time is no longer available: {{requested_slot_label}}."
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <div className="fn-section">
+          <div className="fn-node-label">DETAILS</div>
+          <div className="fn-api-hint" style={{ marginBottom: "0.35rem" }}>
+            Turn on only the details you want this block to collect inside the booking wizard.
+          </div>
+          <div className="fn-three">
+            <label className="fn-node-field" style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                className="nodrag"
+                checked={data.requireName}
+                onChange={() => toggleRequiredField("requireName")}
+              />
+              <span className="fn-node-label" style={{ margin: 0 }}>Collect Name</span>
+            </label>
+            <label className="fn-node-field" style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                className="nodrag"
+                checked={data.requireEmail}
+                onChange={() => toggleRequiredField("requireEmail")}
+              />
+              <span className="fn-node-label" style={{ margin: 0 }}>Collect Email</span>
+            </label>
+            <label className="fn-node-field" style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                className="nodrag"
+                checked={data.requirePhone}
+                onChange={() => toggleRequiredField("requirePhone")}
+              />
+              <span className="fn-node-label" style={{ margin: 0 }}>Collect Phone</span>
+            </label>
+          </div>
+        </div>
 
         {!isCheckOnlyMode ? (
-          <>
+          <div className="fn-section">
+            <div className="fn-node-label">BOOKING EVENT</div>
             <div className="fn-node-field">
               <label className="fn-node-label">BOOKING TITLE</label>
               <input
                 className="fn-node-input nodrag"
                 value={data.bookingTitle}
                 onChange={(event) => patch({ bookingTitle: event.target.value })}
-                placeholder="Appointment for {{name}}"
+                placeholder="Appointment for {{booking_name}}"
               />
             </div>
-
             <div className="fn-node-field">
               <label className="fn-node-label">BOOKING DESCRIPTION</label>
               <textarea
@@ -444,10 +509,9 @@ function GoogleCalendarBookingNode({
                 rows={3}
                 value={data.bookingDescription}
                 onChange={(event) => patch({ bookingDescription: event.target.value })}
-                placeholder="Lead details: {{phone}}"
+                placeholder="Lead details: {{booking_phone}}"
               />
             </div>
-
             <div className="fn-node-field">
               <label className="fn-node-label">CONFIRMATION MESSAGE</label>
               <textarea
@@ -458,7 +522,6 @@ function GoogleCalendarBookingNode({
                 placeholder="Your appointment is booked for {{selected_slot_label}}."
               />
             </div>
-
             <div className="fn-two">
               <div className="fn-node-field">
                 <label className="fn-node-label">ATTENDEE EMAIL</label>
@@ -479,7 +542,6 @@ function GoogleCalendarBookingNode({
                 />
               </div>
             </div>
-
             <div className="fn-two">
               <div className="fn-node-field">
                 <label className="fn-node-label">LOCATION</label>
@@ -507,23 +569,113 @@ function GoogleCalendarBookingNode({
                 </select>
               </div>
             </div>
-          </>
+          </div>
         ) : null}
 
+        <div className="fn-section">
+          <div className="fn-node-label">ADVANCED</div>
+          <div className="fn-node-field">
+            <label className="fn-node-label">REVIEW MESSAGE</label>
+            <textarea
+              className="fn-node-textarea nodrag"
+              rows={4}
+              value={data.reviewMessage}
+              onChange={(event) => patch({ reviewMessage: event.target.value })}
+              placeholder={"Please review the appointment details:\nSlot: {{selected_slot_label}}\nName: {{booking_name}}"}
+            />
+          </div>
+          <div className="fn-two">
+            <div className="fn-node-field">
+              <label className="fn-node-label">NO AVAILABILITY</label>
+              <textarea
+                className="fn-node-textarea nodrag"
+                rows={3}
+                value={data.noAvailabilityMessage}
+                onChange={(event) => patch({ noAvailabilityMessage: event.target.value })}
+                placeholder="No free appointment slots were found in that time window."
+              />
+            </div>
+            <div className="fn-node-field">
+              <label className="fn-node-label">CANCELLATION</label>
+              <textarea
+                className="fn-node-textarea nodrag"
+                rows={3}
+                value={data.cancellationMessage}
+                onChange={(event) => patch({ cancellationMessage: event.target.value })}
+                placeholder="Appointment booking was cancelled."
+              />
+            </div>
+          </div>
+
+          {data.requireName ? (
+            <div className="fn-node-field">
+              <label className="fn-node-label">NAME PROMPT</label>
+              <input
+                className="fn-node-input nodrag"
+                value={data.namePrompt}
+                onChange={(event) => patch({ namePrompt: event.target.value })}
+                placeholder="Please share the attendee name."
+              />
+            </div>
+          ) : null}
+
+          {data.requireEmail ? (
+            <div className="fn-two">
+              <div className="fn-node-field">
+                <label className="fn-node-label">EMAIL PROMPT</label>
+                <input
+                  className="fn-node-input nodrag"
+                  value={data.emailPrompt}
+                  onChange={(event) => patch({ emailPrompt: event.target.value })}
+                  placeholder="Please share the attendee email address."
+                />
+              </div>
+              <div className="fn-node-field">
+                <label className="fn-node-label">INVALID EMAIL</label>
+                <input
+                  className="fn-node-input nodrag"
+                  value={data.invalidEmailMessage}
+                  onChange={(event) => patch({ invalidEmailMessage: event.target.value })}
+                  placeholder="Please enter a valid email address."
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {data.requirePhone ? (
+            <div className="fn-two">
+              <div className="fn-node-field">
+                <label className="fn-node-label">PHONE PROMPT</label>
+                <input
+                  className="fn-node-input nodrag"
+                  value={data.phonePrompt}
+                  onChange={(event) => patch({ phonePrompt: event.target.value })}
+                  placeholder="Please share the attendee phone number."
+                />
+              </div>
+              <div className="fn-node-field">
+                <label className="fn-node-label">INVALID PHONE</label>
+                <input
+                  className="fn-node-input nodrag"
+                  value={data.invalidPhoneMessage}
+                  onChange={(event) => patch({ invalidPhoneMessage: event.target.value })}
+                  placeholder="Please enter a valid phone number."
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <div className="fn-api-hint" style={{ marginBottom: "0.4rem" }}>
-          Use full ISO date-times, for example
-          {" "}
-          <code style={{ fontSize: "0.65rem" }}>2026-04-01T09:00:00+05:30</code>.
-          You can inject chat flow variables like
-          {" "}
-          <code style={{ fontSize: "0.65rem" }}>{`{{appointment_start}}`}</code>.
-          {!isSuggestMode ? " Leave requested end blank to use the slot duration." : ""}
+          Use full ISO date-times like <code style={{ fontSize: "0.65rem" }}>2026-04-01T09:00:00+05:30</code>.
+          You can pass chat-captured values such as <code style={{ fontSize: "0.65rem" }}>{`{{appointment_start}}`}</code>.
+          {!isSuggestMode ? " If the requested time is busy, the block searches the alternate window and keeps the booking wizard going." : ""}
         </div>
 
         <div className="fn-api-outputs">
           <div className="fn-api-branch">
             <span className="fn-cond-dot fn-cond-dot-true" />
-            <span>{isCheckOnlyMode ? "Available" : "Booked"}</span>
+            <span>{isCheckOnlyMode ? "Confirmed Available" : "Booked"}</span>
             <Handle
               type="source"
               position={Position.Right}
@@ -533,8 +685,19 @@ function GoogleCalendarBookingNode({
             />
           </div>
           <div className="fn-api-branch">
+            <span className="fn-cond-dot" style={{ background: "#f59e0b" }} />
+            <span>Cancelled</span>
+            <Handle
+              type="source"
+              position={Position.Right}
+              id="cancelled"
+              className="fn-handle-out"
+              style={{ position: "absolute", right: -7, background: "#f59e0b", borderColor: "#f59e0b" }}
+            />
+          </div>
+          <div className="fn-api-branch">
             <span className="fn-cond-dot fn-cond-dot-false" />
-            <span>{isCheckOnlyMode ? "Unavailable / Failed" : "No Slot / Failed"}</span>
+            <span>Failed / No Slot</span>
             <Handle
               type="source"
               position={Position.Right}
@@ -549,46 +712,59 @@ function GoogleCalendarBookingNode({
   );
 }
 
-export const googleCalendarBookingStudioBlock: StudioFlowBlockDefinition<GoogleCalendarBookingData> =
-  {
+export const googleCalendarBookingStudioBlock: StudioFlowBlockDefinition<GoogleCalendarBookingData> = {
+  kind: "googleCalendarBooking",
+  channels: ["web", "qr", "api"],
+  catalog: {
     kind: "googleCalendarBooking",
-    channels: ["web", "qr", "api"],
-    catalog: {
+    icon: "GC",
+    name: "Google Calendar Scheduler",
+    desc: "Suggest, confirm, and book appointment slots",
+    section: "Actions",
+    availableInPalette: true,
+    status: "active"
+  },
+  createDefaultData() {
+    return {
       kind: "googleCalendarBooking",
-      icon: "GC",
-      name: "Google Calendar Booking",
-      desc: "Check availability and book appointments",
-      section: "Actions",
-      availableInPalette: true,
-      status: "active"
-    },
-    createDefaultData() {
-      return {
-        kind: "googleCalendarBooking",
-        connectionId: "",
-        calendarId: "",
-        calendarSummary: "",
-        bookingMode: "suggest_slots",
-        timeZone: "Asia/Kolkata",
-        windowStart: "",
-        windowEnd: "",
-        requestedStart: "",
-        requestedEnd: "",
-        slotDurationMinutes: "30",
-        slotIntervalMinutes: "30",
-        maxOptions: "5",
-        promptMessage: "Please choose one of these appointment slots:",
-        availabilityMessage: "That appointment time is available: {{selected_slot_label}}.",
-        unavailableMessage: "That appointment time is not available: {{selected_slot_label}}.",
-        bookingTitle: "Appointment",
-        bookingDescription: "",
-        confirmationMessage: "Your appointment is booked for {{selected_slot_label}}.",
-        attendeeEmail: "",
-        attendeeName: "",
-        location: "",
-        sendUpdates: "all",
-        saveAs: "google_calendar_booking"
-      };
-    },
-    NodeComponent: GoogleCalendarBookingNode
-  };
+      connectionId: "",
+      calendarId: "",
+      calendarSummary: "",
+      bookingMode: "suggest_slots",
+      timeZone: "Asia/Kolkata",
+      windowStart: "",
+      windowEnd: "",
+      alternateWindowStart: "",
+      alternateWindowEnd: "",
+      requestedStart: "",
+      requestedEnd: "",
+      slotDurationMinutes: "30",
+      slotIntervalMinutes: "30",
+      maxOptions: "5",
+      promptMessage: "Please choose one of these appointment slots.",
+      availabilityMessage: "That appointment time is available: {{selected_slot_label}}.",
+      unavailableMessage: "That appointment time is no longer available: {{requested_slot_label}}.",
+      reviewMessage:
+        "Please review the appointment details:\nSlot: {{selected_slot_label}}\nName: {{booking_name}}\nEmail: {{booking_email}}\nPhone: {{booking_phone}}",
+      noAvailabilityMessage: "No free appointment slots were found in that time window.",
+      requireName: false,
+      requireEmail: false,
+      requirePhone: false,
+      namePrompt: "Please share the attendee name.",
+      emailPrompt: "Please share the attendee email address.",
+      phonePrompt: "Please share the attendee phone number.",
+      invalidEmailMessage: "Please enter a valid email address.",
+      invalidPhoneMessage: "Please enter a valid phone number.",
+      cancellationMessage: "Appointment booking was cancelled.",
+      bookingTitle: "Appointment",
+      bookingDescription: "",
+      confirmationMessage: "Your appointment is booked for {{selected_slot_label}}.",
+      attendeeEmail: "",
+      attendeeName: "",
+      location: "",
+      sendUpdates: "all",
+      saveAs: "google_calendar_booking"
+    };
+  },
+  NodeComponent: GoogleCalendarBookingNode
+};

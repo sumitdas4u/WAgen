@@ -1,12 +1,14 @@
 import {
   createGoogleCalendarEvent,
   queryGoogleCalendarFreeBusy,
-  type GoogleCalendarBusyInterval
+  type GoogleCalendarBusyInterval,
+  type GoogleCalendarEventResult
 } from "../../google-calendar-service.js";
 import {
   buildChoicePrompt,
   getNextNodeId,
   interpolate,
+  joinTextParts,
   matchChoiceByMessage
 } from "../helpers.js";
 import type { FlowBlockModule, FlowVariables } from "../types.js";
@@ -16,9 +18,51 @@ interface CalendarBookingSlot {
   label: string;
   start: string;
   end: string;
+  title: string;
+  description: string;
 }
 
 type CalendarBookingMode = "suggest_slots" | "check_only" | "book_if_available";
+type WizardStage = "slot_selection" | "collect_name" | "collect_email" | "collect_phone" | "review";
+type DetailField = "name" | "email" | "phone";
+
+interface WizardDetails {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+interface WizardRequiredFields {
+  name: boolean;
+  email: boolean;
+  phone: boolean;
+}
+
+interface CalendarWizardState {
+  stage: WizardStage;
+  mode: CalendarBookingMode;
+  searchWindowStart: string;
+  searchWindowEnd: string;
+  requestedSlot: CalendarBookingSlot | null;
+  requestedAvailable: boolean;
+  selectedSlot: CalendarBookingSlot | null;
+  slots: CalendarBookingSlot[];
+  details: WizardDetails;
+  requiredFields: WizardRequiredFields;
+  collectAllDetails: boolean;
+}
+
+interface ChoiceOption {
+  id: string;
+  label: string;
+  aliases?: string[];
+}
+
+const SLOT_ID_PREFIX = "slot_";
+const REVIEW_CONFIRM_ID = "confirm";
+const REVIEW_CHANGE_TIME_ID = "change_time";
+const REVIEW_CHANGE_DETAILS_ID = "change_details";
+const REVIEW_CANCEL_ID = "cancel";
 
 function normalizeVariableName(value: unknown, fallback: string): string {
   const normalized = String(value ?? "")
@@ -39,11 +83,19 @@ function parsePositiveInteger(value: unknown, fallback: number): number {
 }
 
 function getBookingMode(value: unknown): CalendarBookingMode {
-  const mode = String(value ?? "").trim();
-  if (mode === "check_only" || mode === "book_if_available") {
-    return mode;
+  const normalized = String(value ?? "").trim();
+  if (normalized === "check_only" || normalized === "book_if_available") {
+    return normalized;
   }
   return "suggest_slots";
+}
+
+function normalizeBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
 }
 
 function parseDateTime(value: string, label: string): Date {
@@ -54,35 +106,99 @@ function parseDateTime(value: string, label: string): Date {
   return parsed;
 }
 
-function formatSlotLabel(start: string, end: string, timeZone: string | null): string {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  const formatDate = (date: Date, options: Intl.DateTimeFormatOptions) => {
-    try {
-      return new Intl.DateTimeFormat("en-US", {
-        timeZone: timeZone?.trim() || undefined,
-        ...options
-      }).format(date);
-    } catch {
-      return new Intl.DateTimeFormat("en-US", options).format(date);
-    }
+function formatWithTimeZone(
+  value: string,
+  timeZone: string | null,
+  options: Intl.DateTimeFormatOptions
+): string {
+  const date = new Date(value);
+  const formatterOptions = {
+    timeZone: timeZone?.trim() || undefined,
+    ...options
   };
 
-  const startDay = formatDate(startDate, {
+  try {
+    return new Intl.DateTimeFormat("en-US", formatterOptions).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-US", options).format(date);
+  }
+}
+
+function truncateText(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
+}
+
+function formatSlotLabel(start: string, end: string, timeZone: string | null): string {
+  const day = formatWithTimeZone(start, timeZone, {
     weekday: "short",
     month: "short",
     day: "2-digit"
   });
-  const startTime = formatDate(startDate, {
+  const startTime = formatWithTimeZone(start, timeZone, {
     hour: "numeric",
     minute: "2-digit"
   });
-  const endTime = formatDate(endDate, {
+  const endTime = formatWithTimeZone(end, timeZone, {
     hour: "numeric",
     minute: "2-digit"
   });
 
-  return `${startDay}, ${startTime} - ${endTime}`;
+  return `${day}, ${startTime} - ${endTime}`;
+}
+
+function formatSlotMenuTitle(start: string, timeZone: string | null): string {
+  return truncateText(
+    formatWithTimeZone(start, timeZone, {
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit"
+    }),
+    24
+  );
+}
+
+function formatSlotMenuDescription(start: string, end: string, timeZone: string | null): string {
+  const weekday = formatWithTimeZone(start, timeZone, {
+    weekday: "long"
+  });
+  const endTime = formatWithTimeZone(end, timeZone, {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+  return truncateText(`${weekday} until ${endTime}`, 72);
+}
+
+function serializeSlot(slot: CalendarBookingSlot | null): Record<string, unknown> | null {
+  if (!slot) {
+    return null;
+  }
+  return {
+    id: slot.id,
+    label: slot.label,
+    start: slot.start,
+    end: slot.end
+  };
+}
+
+function buildSlot(
+  id: string,
+  start: string,
+  end: string,
+  timeZone: string | null
+): CalendarBookingSlot {
+  return {
+    id,
+    label: formatSlotLabel(start, end, timeZone),
+    start,
+    end,
+    title: formatSlotMenuTitle(start, timeZone),
+    description: formatSlotMenuDescription(start, end, timeZone)
+  };
 }
 
 function overlapsBusy(
@@ -98,12 +214,7 @@ function overlapsBusy(
 }
 
 function buildExactSlot(start: string, end: string, timeZone: string | null): CalendarBookingSlot {
-  return {
-    id: "requested",
-    label: formatSlotLabel(start, end, timeZone),
-    start,
-    end
-  };
+  return buildSlot("requested_slot", start, end, timeZone);
 }
 
 async function buildAvailableSlots(context: {
@@ -135,10 +246,11 @@ async function buildAvailableSlots(context: {
   const slotDurationMs = context.slotDurationMinutes * 60_000;
   const slotIntervalMs = context.slotIntervalMinutes * 60_000;
   const slots: CalendarBookingSlot[] = [];
+  const windowEndMs = endDate.getTime();
 
   for (
     let cursor = startDate.getTime();
-    cursor + slotDurationMs <= endDate.getTime() && slots.length < context.maxOptions;
+    cursor + slotDurationMs <= windowEndMs && slots.length < context.maxOptions;
     cursor += slotIntervalMs
   ) {
     const slotEnd = cursor + slotDurationMs;
@@ -146,14 +258,14 @@ async function buildAvailableSlots(context: {
       continue;
     }
 
-    const startIso = new Date(cursor).toISOString();
-    const endIso = new Date(slotEnd).toISOString();
-    slots.push({
-      id: String(slots.length + 1),
-      label: formatSlotLabel(startIso, endIso, context.timeZone),
-      start: startIso,
-      end: endIso
-    });
+    slots.push(
+      buildSlot(
+        `${SLOT_ID_PREFIX}${slots.length + 1}`,
+        new Date(cursor).toISOString(),
+        new Date(slotEnd).toISOString(),
+        context.timeZone
+      )
+    );
   }
 
   return slots;
@@ -178,103 +290,332 @@ async function isSlotAvailable(context: {
   return busyIntervals.length === 0;
 }
 
-function buildPromptMessage(promptMessage: string, slots: CalendarBookingSlot[]): string {
-  const menu = buildChoicePrompt(
-    slots.map((slot) => ({
-      id: slot.id,
-      label: slot.label
-    }))
-  );
-  const intro = promptMessage.trim() || "Please choose a free appointment slot:";
-  return `${intro}\n${menu}`.trim();
+function buildSlotsChoiceOptions(slots: CalendarBookingSlot[]): ChoiceOption[] {
+  return slots.map((slot, index) => ({
+    id: slot.id,
+    label: slot.label,
+    aliases: [
+      slot.start,
+      slot.end,
+      slot.title,
+      slot.description,
+      `${index + 1}`,
+      `${index + 1}. ${slot.label}`
+    ]
+  }));
 }
 
-function buildSelectedSlotVariables(saveAs: string, slot: CalendarBookingSlot): FlowVariables {
+function buildReviewChoiceOptions(requiredFields: WizardRequiredFields): ChoiceOption[] {
+  const options: ChoiceOption[] = [
+    {
+      id: REVIEW_CONFIRM_ID,
+      label: "Confirm appointment",
+      aliases: ["confirm", "yes", "book", "okay"]
+    },
+    {
+      id: REVIEW_CHANGE_TIME_ID,
+      label: "Change time",
+      aliases: ["change time", "different time", "reschedule"]
+    }
+  ];
+
+  if (requiredFields.name || requiredFields.email || requiredFields.phone) {
+    options.push({
+      id: REVIEW_CHANGE_DETAILS_ID,
+      label: "Change details",
+      aliases: ["change details", "edit details", "edit information"]
+    });
+  }
+
+  options.push({
+    id: REVIEW_CANCEL_ID,
+    label: "Cancel booking",
+    aliases: ["cancel", "stop"]
+  });
+
+  return options;
+}
+
+function normalizeEmailValue(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : "";
+}
+
+function normalizePhoneValue(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const startsWithPlus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) {
+    return "";
+  }
+  return `${startsWithPlus ? "+" : ""}${digits}`;
+}
+
+function formatPhoneValue(value: string): string {
+  return value.trim();
+}
+
+function getRequiredFields(data: Record<string, unknown>): WizardRequiredFields {
   return {
-    [`${saveAs}_selected_slot_start`]: slot.start,
-    [`${saveAs}_selected_slot_end`]: slot.end,
-    [`${saveAs}_selected_slot_label`]: slot.label
+    name: normalizeBoolean(data.requireName),
+    email: normalizeBoolean(data.requireEmail),
+    phone: normalizeBoolean(data.requirePhone)
   };
+}
+
+function readFirstText(vars: FlowVariables, keys: string[]): string {
+  for (const key of keys) {
+    const value = String(vars[key] ?? "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function resolveInitialDetails(data: Record<string, unknown>, vars: FlowVariables): WizardDetails {
+  const name = interpolate(String(data.attendeeName ?? ""), vars).trim() ||
+    readFirstText(vars, ["booking_name", "name", "contact_name", "lead_name", "customer_name"]);
+  const email = normalizeEmailValue(
+    interpolate(String(data.attendeeEmail ?? ""), vars).trim() ||
+      readFirstText(vars, ["booking_email", "email", "contact_email", "lead_email"])
+  );
+  const phone = formatPhoneValue(
+    normalizePhoneValue(
+      readFirstText(vars, ["booking_phone", "phone", "contact_phone", "lead_phone", "mobile"])
+    )
+  );
+
+  return {
+    name,
+    email,
+    phone
+  };
+}
+
+function sanitizeDetails(value: unknown): WizardDetails {
+  const raw = (value ?? {}) as Partial<WizardDetails>;
+  return {
+    name: String(raw.name ?? "").trim(),
+    email: normalizeEmailValue(String(raw.email ?? "")),
+    phone: formatPhoneValue(normalizePhoneValue(String(raw.phone ?? "")))
+  };
+}
+
+function sanitizeRequiredFields(value: unknown): WizardRequiredFields {
+  const raw = (value ?? {}) as Partial<WizardRequiredFields>;
+  return {
+    name: normalizeBoolean(raw.name),
+    email: normalizeBoolean(raw.email),
+    phone: normalizeBoolean(raw.phone)
+  };
+}
+
+function sanitizeSlot(value: unknown): CalendarBookingSlot | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Partial<CalendarBookingSlot>;
+  const start = String(raw.start ?? "").trim();
+  const end = String(raw.end ?? "").trim();
+  const id = String(raw.id ?? "").trim();
+  const label = String(raw.label ?? "").trim();
+  const title = String(raw.title ?? "").trim();
+  const description = String(raw.description ?? "").trim();
+
+  if (!id || !start || !end || !label) {
+    return null;
+  }
+
+  return {
+    id,
+    start,
+    end,
+    label,
+    title: title || truncateText(label, 24),
+    description
+  };
+}
+
+function sanitizeSlots(value: unknown): CalendarBookingSlot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map(sanitizeSlot).filter((slot): slot is CalendarBookingSlot => Boolean(slot));
+}
+
+function getNextDetailField(
+  details: WizardDetails,
+  requiredFields: WizardRequiredFields,
+  collectAllDetails: boolean
+): DetailField | null {
+  const orderedFields: DetailField[] = ["name", "email", "phone"];
+
+  for (const field of orderedFields) {
+    if (!requiredFields[field]) {
+      continue;
+    }
+    if (collectAllDetails || !details[field].trim()) {
+      return field;
+    }
+  }
+
+  return null;
+}
+
+function stageForField(field: DetailField): WizardStage {
+  if (field === "name") {
+    return "collect_name";
+  }
+  if (field === "email") {
+    return "collect_email";
+  }
+  return "collect_phone";
 }
 
 function buildMessageVars(
   vars: FlowVariables,
   saveAs: string,
-  slot: CalendarBookingSlot | null,
+  state: CalendarWizardState,
   extras: FlowVariables = {}
 ): FlowVariables {
-  if (!slot) {
-    return {
-      ...vars,
-      ...extras
-    };
-  }
+  const selectedSlot = state.selectedSlot;
+  const requestedSlot = state.requestedSlot;
+  const details = state.details;
 
   return {
     ...vars,
-    ...buildSelectedSlotVariables(saveAs, slot),
-    selected_slot_start: slot.start,
-    selected_slot_end: slot.end,
-    selected_slot_label: slot.label,
+    selected_slot_start: selectedSlot?.start ?? "",
+    selected_slot_end: selectedSlot?.end ?? "",
+    selected_slot_label: selectedSlot?.label ?? "",
+    requested_slot_start: requestedSlot?.start ?? "",
+    requested_slot_end: requestedSlot?.end ?? "",
+    requested_slot_label: requestedSlot?.label ?? "",
+    booking_name: details.name,
+    booking_email: details.email,
+    booking_phone: details.phone,
+    [`${saveAs}_selected_slot_start`]: selectedSlot?.start ?? "",
+    [`${saveAs}_selected_slot_end`]: selectedSlot?.end ?? "",
+    [`${saveAs}_selected_slot_label`]: selectedSlot?.label ?? "",
+    [`${saveAs}_requested_slot_start`]: requestedSlot?.start ?? "",
+    [`${saveAs}_requested_slot_end`]: requestedSlot?.end ?? "",
+    [`${saveAs}_requested_slot_label`]: requestedSlot?.label ?? "",
+    [`${saveAs}_name`]: details.name,
+    [`${saveAs}_email`]: details.email,
+    [`${saveAs}_phone`]: details.phone,
     ...extras
   };
 }
 
-function buildStateVariables(input: {
+function buildPublicPayload(input: {
+  status: string;
+  state: CalendarWizardState | null;
+  event?: GoogleCalendarEventResult | null;
+  error?: string;
+}): Record<string, unknown> {
+  return {
+    status: input.status,
+    mode: input.state?.mode ?? null,
+    requestedAvailable: input.state?.requestedAvailable ?? false,
+    selectedSlot: serializeSlot(input.state?.selectedSlot ?? null),
+    requestedSlot: serializeSlot(input.state?.requestedSlot ?? null),
+    slots: (input.state?.slots ?? []).map((slot) => serializeSlot(slot)),
+    details: input.state?.details ?? { name: "", email: "", phone: "" },
+    event: input.event
+      ? {
+          id: input.event.id,
+          status: input.event.status,
+          htmlLink: input.event.htmlLink,
+          summary: input.event.summary,
+          startTime: input.event.startTime,
+          endTime: input.event.endTime
+        }
+      : null,
+    error: input.error ?? ""
+  };
+}
+
+function buildRuntimeVariables(input: {
   vars: FlowVariables;
   saveAs: string;
   status: string;
-  available: boolean;
-  slots?: CalendarBookingSlot[];
-  selectedSlot?: CalendarBookingSlot | null;
-  payload?: unknown;
+  state: CalendarWizardState | null;
+  event?: GoogleCalendarEventResult | null;
   error?: string;
+  clearWizardState?: boolean;
 }): FlowVariables {
-  const slots = input.slots ?? [];
-  const selectedSlotVars = input.selectedSlot
-    ? buildSelectedSlotVariables(input.saveAs, input.selectedSlot)
-    : {};
+  const payload = buildPublicPayload({
+    status: input.status,
+    state: input.state,
+    event: input.event,
+    error: input.error
+  });
 
   return {
-    ...input.vars,
-    ...selectedSlotVars,
-    [input.saveAs]: JSON.stringify(
-      input.payload ?? {
-        status: input.status,
-        available: input.available,
-        slots,
-        selectedSlot: input.selectedSlot
-          ? {
-              start: input.selectedSlot.start,
-              end: input.selectedSlot.end,
-              label: input.selectedSlot.label
-            }
-          : null,
-        error: input.error || ""
-      }
-    ),
+    ...buildMessageVars(input.vars, input.saveAs, input.state ?? {
+      stage: "review",
+      mode: "suggest_slots",
+      searchWindowStart: "",
+      searchWindowEnd: "",
+      requestedSlot: null,
+      requestedAvailable: false,
+      selectedSlot: null,
+      slots: [],
+      details: { name: "", email: "", phone: "" },
+      requiredFields: { name: false, email: false, phone: false },
+      collectAllDetails: false
+    }),
+    [input.saveAs]: JSON.stringify(payload),
+    [`${input.saveAs}_payload`]: payload,
     [`${input.saveAs}_status`]: input.status,
-    [`${input.saveAs}_available`]: input.available,
-    [`${input.saveAs}_requested_available`]: input.available,
-    [`${input.saveAs}_slot_count`]: slots.length,
-    [`${input.saveAs}_slots`]: slots,
+    [`${input.saveAs}_available`]: Boolean(input.state?.selectedSlot),
+    [`${input.saveAs}_requested_available`]: input.state?.requestedAvailable ?? false,
+    [`${input.saveAs}_slot_count`]: input.state?.slots.length ?? 0,
+    [`${input.saveAs}_slots`]: input.state?.slots ?? [],
+    [`${input.saveAs}_wizard_state`]: input.clearWizardState ? null : input.state,
+    [`${input.saveAs}_event_id`]: input.event?.id ?? "",
+    [`${input.saveAs}_event_status`]: input.event?.status ?? "",
+    [`${input.saveAs}_event_link`]: input.event?.htmlLink ?? "",
     [`${input.saveAs}_error`]: input.error ?? ""
   };
 }
 
-function buildPendingVariables(
-  vars: FlowVariables,
-  saveAs: string,
-  status: string,
-  slots: CalendarBookingSlot[]
-): FlowVariables {
-  return buildStateVariables({
-    vars,
-    saveAs,
-    status,
-    available: slots.length > 0,
-    slots
-  });
+function readWizardState(vars: FlowVariables, saveAs: string): CalendarWizardState | null {
+  const raw = vars[`${saveAs}_wizard_state`];
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const state = raw as Partial<CalendarWizardState>;
+  const mode = getBookingMode(state.mode);
+  const stage = String(state.stage ?? "").trim();
+
+  return {
+    stage:
+      stage === "slot_selection" ||
+      stage === "collect_name" ||
+      stage === "collect_email" ||
+      stage === "collect_phone" ||
+      stage === "review"
+        ? stage
+        : "slot_selection",
+    mode,
+    searchWindowStart: String(state.searchWindowStart ?? "").trim(),
+    searchWindowEnd: String(state.searchWindowEnd ?? "").trim(),
+    requestedSlot: sanitizeSlot(state.requestedSlot),
+    requestedAvailable: normalizeBoolean(state.requestedAvailable),
+    selectedSlot: sanitizeSlot(state.selectedSlot),
+    slots: sanitizeSlots(state.slots),
+    details: sanitizeDetails(state.details),
+    requiredFields: sanitizeRequiredFields(state.requiredFields),
+    collectAllDetails: normalizeBoolean(state.collectAllDetails)
+  };
 }
 
 function resolveRequestedSlot(input: {
@@ -282,10 +623,7 @@ function resolveRequestedSlot(input: {
   vars: FlowVariables;
   timeZone: string | null;
 }): CalendarBookingSlot {
-  const requestedStartValue = interpolate(
-    String(input.data.requestedStart ?? ""),
-    input.vars
-  ).trim();
+  const requestedStartValue = interpolate(String(input.data.requestedStart ?? ""), input.vars).trim();
   if (!requestedStartValue) {
     throw new Error("Requested start must be provided from the flow.");
   }
@@ -305,22 +643,434 @@ function resolveRequestedSlot(input: {
   return buildExactSlot(startDate.toISOString(), endDate.toISOString(), input.timeZone);
 }
 
-function readPendingSlots(vars: FlowVariables, saveAs: string): CalendarBookingSlot[] {
-  const raw = vars[`${saveAs}_slots`];
-  if (!Array.isArray(raw)) {
-    return [];
+function resolveSearchWindow(input: {
+  data: Record<string, unknown>;
+  vars: FlowVariables;
+  mode: CalendarBookingMode;
+}): { start: string; end: string } {
+  const startField =
+    input.mode === "suggest_slots" ? input.data.windowStart : input.data.alternateWindowStart;
+  const endField =
+    input.mode === "suggest_slots" ? input.data.windowEnd : input.data.alternateWindowEnd;
+
+  const start = interpolate(String(startField ?? ""), input.vars).trim();
+  const end = interpolate(String(endField ?? ""), input.vars).trim();
+
+  if (!start || !end) {
+    throw new Error(
+      input.mode === "suggest_slots"
+        ? "Window start and end are required to suggest appointment slots."
+        : "Alternate window start and end are required to suggest other appointment slots."
+    );
   }
-  return raw
-    .map((item) => {
-      const slot = (item ?? {}) as Partial<CalendarBookingSlot>;
+
+  if (parseDateTime(start, "Search window start") >= parseDateTime(end, "Search window end")) {
+    throw new Error("Search window end must be after search window start.");
+  }
+
+  return { start, end };
+}
+
+function createWizardState(input: {
+  mode: CalendarBookingMode;
+  searchWindowStart: string;
+  searchWindowEnd: string;
+  requestedSlot: CalendarBookingSlot | null;
+  requestedAvailable: boolean;
+  selectedSlot: CalendarBookingSlot | null;
+  slots: CalendarBookingSlot[];
+  details: WizardDetails;
+  requiredFields: WizardRequiredFields;
+  collectAllDetails?: boolean;
+}): CalendarWizardState {
+  return {
+    stage: "slot_selection",
+    mode: input.mode,
+    searchWindowStart: input.searchWindowStart,
+    searchWindowEnd: input.searchWindowEnd,
+    requestedSlot: input.requestedSlot,
+    requestedAvailable: input.requestedAvailable,
+    selectedSlot: input.selectedSlot,
+    slots: input.slots,
+    details: input.details,
+    requiredFields: input.requiredFields,
+    collectAllDetails: Boolean(input.collectAllDetails)
+  };
+}
+
+function buildSlotIntroText(
+  promptMessage: string,
+  vars: FlowVariables,
+  state: CalendarWizardState,
+  saveAs: string
+): string {
+  const fallback =
+    state.mode === "suggest_slots"
+      ? "Please choose one of these available appointment slots."
+      : "Please choose one of these alternative appointment slots.";
+  return (
+    interpolate(promptMessage.trim() || fallback, buildMessageVars(vars, saveAs, state)).trim() || fallback
+  );
+}
+
+function buildSlotPromptText(
+  promptMessage: string,
+  vars: FlowVariables,
+  state: CalendarWizardState,
+  saveAs: string,
+  prefix?: string | null
+): string {
+  return joinTextParts([
+    prefix,
+    buildSlotIntroText(promptMessage, vars, state, saveAs),
+    buildChoicePrompt(buildSlotsChoiceOptions(state.slots))
+  ]);
+}
+
+function buildReviewSummary(
+  reviewMessage: string,
+  vars: FlowVariables,
+  state: CalendarWizardState,
+  saveAs: string
+): string {
+  const fallback = [
+    "Please review the appointment details:",
+    `Slot: {{selected_slot_label}}`,
+    `Name: {{booking_name}}`,
+    `Email: {{booking_email}}`,
+    `Phone: {{booking_phone}}`
+  ].join("\n");
+
+  return (
+    interpolate(reviewMessage.trim() || fallback, buildMessageVars(vars, saveAs, state)).trim() ||
+    interpolate(fallback, buildMessageVars(vars, saveAs, state)).trim()
+  );
+}
+
+function buildReviewPromptText(
+  reviewMessage: string,
+  vars: FlowVariables,
+  state: CalendarWizardState,
+  saveAs: string,
+  prefix?: string | null
+): string {
+  return joinTextParts([
+    prefix,
+    buildReviewSummary(reviewMessage, vars, state, saveAs),
+    buildChoicePrompt(buildReviewChoiceOptions(state.requiredFields))
+  ]);
+}
+
+function buildFieldPrompt(data: Record<string, unknown>, field: DetailField): string {
+  if (field === "name") {
+    return String(data.namePrompt ?? "Please share the attendee name.").trim();
+  }
+  if (field === "email") {
+    return String(data.emailPrompt ?? "Please share the attendee email address.").trim();
+  }
+  return String(data.phonePrompt ?? "Please share the attendee phone number.").trim();
+}
+
+function buildAvailabilityPrefix(
+  data: Record<string, unknown>,
+  vars: FlowVariables,
+  saveAs: string,
+  state: CalendarWizardState
+): string {
+  const fallback = "That appointment time is available: {{selected_slot_label}}.";
+  return (
+    interpolate(
+      String(data.availabilityMessage ?? fallback).trim() || fallback,
+      buildMessageVars(vars, saveAs, state)
+    ).trim() || fallback
+  );
+}
+
+function buildUnavailablePrefix(
+  data: Record<string, unknown>,
+  vars: FlowVariables,
+  saveAs: string,
+  state: CalendarWizardState
+): string {
+  const fallback = "That appointment time is no longer available: {{requested_slot_label}}.";
+  return (
+    interpolate(
+      String(data.unavailableMessage ?? fallback).trim() || fallback,
+      buildMessageVars(vars, saveAs, state)
+    ).trim() || fallback
+  );
+}
+
+function buildNoAvailabilityText(
+  data: Record<string, unknown>,
+  vars: FlowVariables,
+  saveAs: string,
+  state: CalendarWizardState,
+  prefix?: string | null
+): string {
+  const fallback = "No free appointment slots were found in that time window.";
+  return joinTextParts([
+    prefix,
+    interpolate(
+      String(data.noAvailabilityMessage ?? fallback).trim() || fallback,
+      buildMessageVars(vars, saveAs, state)
+    ).trim()
+  ]);
+}
+
+function buildCancellationText(
+  data: Record<string, unknown>,
+  vars: FlowVariables,
+  saveAs: string,
+  state: CalendarWizardState
+): string {
+  const fallback = "Appointment booking was cancelled.";
+  return (
+    interpolate(
+      String(data.cancellationMessage ?? fallback).trim() || fallback,
+      buildMessageVars(vars, saveAs, state)
+    ).trim() || fallback
+  );
+}
+
+function getCurrentFieldForStage(stage: WizardStage): DetailField | null {
+  if (stage === "collect_name") {
+    return "name";
+  }
+  if (stage === "collect_email") {
+    return "email";
+  }
+  if (stage === "collect_phone") {
+    return "phone";
+  }
+  return null;
+}
+
+function normalizeDetailResponse(
+  field: DetailField,
+  message: string,
+  data: Record<string, unknown>
+): { ok: true; value: string } | { ok: false; errorText: string } {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return {
+      ok: false,
+      errorText: buildFieldPrompt(data, field)
+    };
+  }
+
+  if (field === "email") {
+    const normalized = normalizeEmailValue(trimmed);
+    if (!normalized) {
       return {
-        id: String(slot.id ?? "").trim(),
-        label: String(slot.label ?? "").trim(),
-        start: String(slot.start ?? "").trim(),
-        end: String(slot.end ?? "").trim()
+        ok: false,
+        errorText:
+          String(data.invalidEmailMessage ?? "Please enter a valid email address.").trim() ||
+          "Please enter a valid email address."
       };
-    })
-    .filter((slot) => slot.id && slot.label && slot.start && slot.end);
+    }
+    return { ok: true, value: normalized };
+  }
+
+  if (field === "phone") {
+    const normalized = normalizePhoneValue(trimmed);
+    if (!normalized) {
+      return {
+        ok: false,
+        errorText:
+          String(data.invalidPhoneMessage ?? "Please enter a valid phone number.").trim() ||
+          "Please enter a valid phone number."
+      };
+    }
+    return { ok: true, value: formatPhoneValue(normalized) };
+  }
+
+  return { ok: true, value: trimmed };
+}
+
+function resolveAttendeeName(
+  data: Record<string, unknown>,
+  vars: FlowVariables,
+  saveAs: string,
+  state: CalendarWizardState
+): string | null {
+  const fromField = interpolate(
+    String(data.attendeeName ?? ""),
+    buildMessageVars(vars, saveAs, state)
+  ).trim();
+  return fromField || state.details.name || null;
+}
+
+function resolveAttendeeEmail(
+  data: Record<string, unknown>,
+  vars: FlowVariables,
+  saveAs: string,
+  state: CalendarWizardState
+): string | null {
+  const fromField = normalizeEmailValue(
+    interpolate(String(data.attendeeEmail ?? ""), buildMessageVars(vars, saveAs, state)).trim()
+  );
+  return fromField || state.details.email || null;
+}
+
+async function refreshSelectionWindowSlots(input: {
+  userId: string;
+  connectionId: string | null;
+  calendarId: string;
+  timeZone: string | null;
+  state: CalendarWizardState;
+  slotDurationMinutes: number;
+  slotIntervalMinutes: number;
+  maxOptions: number;
+}): Promise<CalendarBookingSlot[]> {
+  return buildAvailableSlots({
+    userId: input.userId,
+    connectionId: input.connectionId,
+    calendarId: input.calendarId,
+    timeZone: input.timeZone,
+    windowStart: input.state.searchWindowStart,
+    windowEnd: input.state.searchWindowEnd,
+    slotDurationMinutes: input.slotDurationMinutes,
+    slotIntervalMinutes: input.slotIntervalMinutes,
+    maxOptions: input.maxOptions
+  });
+}
+
+function sanitizeSendUpdates(value: unknown): "all" | "externalOnly" | "none" {
+  const normalized = String(value ?? "").trim();
+  if (normalized === "externalOnly" || normalized === "none") {
+    return normalized;
+  }
+  return "all";
+}
+
+async function sendSlotSelectionPrompt(input: {
+  sendReply: (payload: { type: "text"; text: string } | { type: "list"; text: string; buttonLabel: string; sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }> }) => Promise<void>;
+  channel: "web" | "baileys" | "api_whatsapp";
+  data: Record<string, unknown>;
+  vars: FlowVariables;
+  saveAs: string;
+  state: CalendarWizardState;
+  prefix?: string | null;
+}): Promise<void> {
+  const text = buildSlotIntroText(input.data.promptMessage ? String(input.data.promptMessage) : "", input.vars, input.state, input.saveAs);
+  if (input.channel === "api_whatsapp") {
+    await input.sendReply({
+      type: "list",
+      text: joinTextParts([input.prefix, text]),
+      buttonLabel: "Choose a slot",
+      sections: [
+        {
+          title: "Available slots",
+          rows: input.state.slots.map((slot) => ({
+            id: slot.id,
+            title: slot.title,
+            description: slot.description || slot.label
+          }))
+        }
+      ]
+    });
+    return;
+  }
+
+  await input.sendReply({
+    type: "text",
+    text: buildSlotPromptText(String(input.data.promptMessage ?? ""), input.vars, input.state, input.saveAs, input.prefix)
+  });
+}
+
+async function sendReviewPrompt(input: {
+  sendReply: (payload: { type: "text"; text: string } | { type: "list"; text: string; buttonLabel: string; sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }> }) => Promise<void>;
+  channel: "web" | "baileys" | "api_whatsapp";
+  data: Record<string, unknown>;
+  vars: FlowVariables;
+  saveAs: string;
+  state: CalendarWizardState;
+  prefix?: string | null;
+}): Promise<void> {
+  const actions = buildReviewChoiceOptions(input.state.requiredFields);
+  const summary = buildReviewSummary(String(input.data.reviewMessage ?? ""), input.vars, input.state, input.saveAs);
+
+  if (input.channel === "api_whatsapp") {
+    await input.sendReply({
+      type: "list",
+      text: joinTextParts([input.prefix, summary]),
+      buttonLabel: "Choose next step",
+      sections: [
+        {
+          title: "Booking actions",
+          rows: actions.map((action) => ({
+            id: action.id,
+            title: truncateText(action.label, 24),
+            description: action.aliases?.[0]
+          }))
+        }
+      ]
+    });
+    return;
+  }
+
+  await input.sendReply({
+    type: "text",
+    text: buildReviewPromptText(String(input.data.reviewMessage ?? ""), input.vars, input.state, input.saveAs, input.prefix)
+  });
+}
+
+async function sendDetailPrompt(input: {
+  sendReply: (payload: { type: "text"; text: string }) => Promise<void>;
+  data: Record<string, unknown>;
+  field: DetailField;
+}): Promise<void> {
+  await input.sendReply({
+    type: "text",
+    text: buildFieldPrompt(input.data, input.field)
+  });
+}
+
+async function promptNextWizardStep(input: {
+  data: Record<string, unknown>;
+  vars: FlowVariables;
+  saveAs: string;
+  state: CalendarWizardState;
+  channel: "web" | "baileys" | "api_whatsapp";
+  sendReply: (payload: { type: "text"; text: string } | { type: "list"; text: string; buttonLabel: string; sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }> }) => Promise<void>;
+  prefix?: string | null;
+}): Promise<CalendarWizardState> {
+  const nextField = getNextDetailField(
+    input.state.details,
+    input.state.requiredFields,
+    input.state.collectAllDetails
+  );
+
+  if (nextField) {
+    const nextState: CalendarWizardState = {
+      ...input.state,
+      stage: stageForField(nextField),
+      collectAllDetails: input.state.collectAllDetails
+    };
+    await sendDetailPrompt({
+      sendReply: input.sendReply as (payload: { type: "text"; text: string }) => Promise<void>,
+      data: input.data,
+      field: nextField
+    });
+    return nextState;
+  }
+
+  const nextState: CalendarWizardState = {
+    ...input.state,
+    stage: "review",
+    collectAllDetails: false
+  };
+  await sendReviewPrompt({
+    sendReply: input.sendReply,
+    channel: input.channel,
+    data: input.data,
+    vars: input.vars,
+    saveAs: input.saveAs,
+    state: nextState,
+    prefix: input.prefix
+  });
+  return nextState;
 }
 
 export const googleCalendarBookingBlock: FlowBlockModule = {
@@ -333,238 +1083,222 @@ export const googleCalendarBookingBlock: FlowBlockModule = {
 
     const saveAs = normalizeVariableName(context.node.data.saveAs, "google_calendar_booking");
     const bookingMode = getBookingMode(context.node.data.bookingMode);
-    const calendarId = String(context.node.data.calendarId ?? "primary").trim() || "primary";
     const connectionId = String(context.node.data.connectionId ?? "").trim() || null;
+    const calendarId = String(context.node.data.calendarId ?? "primary").trim() || "primary";
     const timeZone = String(context.node.data.timeZone ?? "").trim() || null;
     const slotDurationMinutes = parsePositiveInteger(context.node.data.slotDurationMinutes, 30);
+    const slotIntervalMinutes = parsePositiveInteger(
+      context.node.data.slotIntervalMinutes,
+      slotDurationMinutes
+    );
+    const maxOptions = Math.min(parsePositiveInteger(context.node.data.maxOptions, 5), 10);
+    const requiredFields = getRequiredFields(context.node.data);
+    const initialDetails = resolveInitialDetails(context.node.data, context.vars);
 
     try {
-      if (bookingMode !== "suggest_slots") {
-        const requestedSlot = resolveRequestedSlot({
-          data: context.node.data,
-          vars: context.vars,
-          timeZone
-        });
-        const available = await isSlotAvailable({
+      const searchWindow = resolveSearchWindow({
+        data: context.node.data,
+        vars: context.vars,
+        mode: bookingMode
+      });
+
+      if (bookingMode === "suggest_slots") {
+        const slots = await buildAvailableSlots({
           userId,
           connectionId,
           calendarId,
           timeZone,
-          slot: requestedSlot
+          windowStart: searchWindow.start,
+          windowEnd: searchWindow.end,
+          slotDurationMinutes,
+          slotIntervalMinutes,
+          maxOptions
         });
 
-        if (!available) {
-          const unavailableVars = buildStateVariables({
+        const initialState = createWizardState({
+          mode: bookingMode,
+          searchWindowStart: searchWindow.start,
+          searchWindowEnd: searchWindow.end,
+          requestedSlot: null,
+          requestedAvailable: false,
+          selectedSlot: null,
+          slots,
+          details: initialDetails,
+          requiredFields
+        });
+
+        if (!slots.length) {
+          const failVars = buildRuntimeVariables({
             vars: context.vars,
             saveAs,
-            status: "unavailable",
-            available: false,
-            slots: [],
-            selectedSlot: requestedSlot,
-            error: "Requested appointment time is not available."
+            status: "no_availability",
+            state: initialState,
+            error: "No free appointment slots were found.",
+            clearWizardState: true
           });
-          const unavailableMessage = interpolate(
-            String(
-              context.node.data.unavailableMessage ??
-                "That appointment time is not available: {{selected_slot_label}}."
-            ),
-            buildMessageVars(unavailableVars, saveAs, requestedSlot)
-          ).trim();
-
-          if (unavailableMessage) {
-            await context.sendReply({
-              type: "text",
-              text: unavailableMessage
-            });
-          }
-
-          return {
-            signal: "continue",
-            nextNodeId: getNextNodeId(context.nodes, context.edges, context.node.id, "fail"),
-            variables: unavailableVars
-          };
-        }
-
-        if (bookingMode === "check_only") {
-          const availableVars = buildStateVariables({
-            vars: context.vars,
-            saveAs,
-            status: "available",
-            available: true,
-            slots: [requestedSlot],
-            selectedSlot: requestedSlot
-          });
-          const availabilityMessage = interpolate(
-            String(
-              context.node.data.availabilityMessage ??
-                "That appointment time is available: {{selected_slot_label}}."
-            ),
-            buildMessageVars(availableVars, saveAs, requestedSlot)
-          ).trim();
-
-          if (availabilityMessage) {
-            await context.sendReply({
-              type: "text",
-              text: availabilityMessage
-            });
-          }
-
-          return {
-            signal: "continue",
-            nextNodeId: getNextNodeId(context.nodes, context.edges, context.node.id, "success"),
-            variables: availableVars
-          };
-        }
-
-        const varsWithSelection = buildMessageVars(context.vars, saveAs, requestedSlot);
-        try {
-          const event = await createGoogleCalendarEvent({
-            userId,
-            connectionId,
-            calendarId,
-            summary:
-              interpolate(String(context.node.data.bookingTitle ?? ""), varsWithSelection).trim() ||
-              "Appointment",
-            description:
-              interpolate(
-                String(context.node.data.bookingDescription ?? ""),
-                varsWithSelection
-              ).trim() || null,
-            location:
-              interpolate(String(context.node.data.location ?? ""), varsWithSelection).trim() ||
-              null,
-            startTime: requestedSlot.start,
-            endTime: requestedSlot.end,
-            timeZone,
-            attendeeEmail:
-              interpolate(String(context.node.data.attendeeEmail ?? ""), varsWithSelection).trim() ||
-              null,
-            attendeeName:
-              interpolate(String(context.node.data.attendeeName ?? ""), varsWithSelection).trim() ||
-              null,
-            sendUpdates:
-              (String(context.node.data.sendUpdates ?? "all").trim() as
-                | "all"
-                | "externalOnly"
-                | "none") || "all"
-          });
-
-          const successVars = {
-            ...buildStateVariables({
-              vars: context.vars,
-              saveAs,
-              status: "booked",
-              available: true,
-              slots: [requestedSlot],
-              selectedSlot: requestedSlot,
-              payload: event
-            }),
-            [`${saveAs}_event_id`]: event.id,
-            [`${saveAs}_event_status`]: event.status,
-            [`${saveAs}_event_link`]: event.htmlLink ?? ""
-          };
-
-          const confirmationMessage = interpolate(
-            String(
-              context.node.data.confirmationMessage ??
-                "Your appointment is booked for {{selected_slot_label}}."
-            ),
-            buildMessageVars(successVars, saveAs, requestedSlot, {
-              event_id: event.id,
-              event_status: event.status,
-              event_link: event.htmlLink ?? ""
-            })
-          ).trim();
-
-          if (confirmationMessage) {
-            await context.sendReply({
-              type: "text",
-              text: confirmationMessage
-            });
-          }
-
-          return {
-            signal: "continue",
-            nextNodeId: getNextNodeId(context.nodes, context.edges, context.node.id, "success"),
-            variables: successVars
-          };
-        } catch (error) {
-          const message = (error as Error).message;
           await context.sendReply({
             type: "text",
-            text: message
+            text: buildNoAvailabilityText(context.node.data, failVars, saveAs, initialState)
           });
           return {
             signal: "continue",
             nextNodeId: getNextNodeId(context.nodes, context.edges, context.node.id, "fail"),
-            variables: buildStateVariables({
-              vars: context.vars,
-              saveAs,
-              status: "request_failed",
-              available: false,
-              slots: [requestedSlot],
-              selectedSlot: requestedSlot,
-              error: message
-            })
+            variables: failVars
           };
         }
+
+        const waitingVars = buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "awaiting_slot_selection",
+          state: initialState
+        });
+
+        await sendSlotSelectionPrompt({
+          sendReply: context.sendReply,
+          channel: context.channel,
+          data: context.node.data,
+          vars: waitingVars,
+          saveAs,
+          state: initialState
+        });
+
+        return {
+          signal: "wait",
+          waitingFor: "message",
+          waitingNodeId: context.node.id,
+          variables: waitingVars
+        };
       }
 
-      const windowStart = interpolate(String(context.node.data.windowStart ?? ""), context.vars).trim();
-      const windowEnd = interpolate(String(context.node.data.windowEnd ?? ""), context.vars).trim();
-      const slotIntervalMinutes = parsePositiveInteger(
-        context.node.data.slotIntervalMinutes,
-        slotDurationMinutes
-      );
-      const maxOptions = Math.min(parsePositiveInteger(context.node.data.maxOptions, 5), 10);
-
-      const slots = await buildAvailableSlots({
+      const requestedSlot = resolveRequestedSlot({
+        data: context.node.data,
+        vars: context.vars,
+        timeZone
+      });
+      const requestedAvailable = await isSlotAvailable({
         userId,
         connectionId,
         calendarId,
         timeZone,
-        windowStart,
-        windowEnd,
+        slot: requestedSlot
+      });
+
+      if (requestedAvailable) {
+        const initialState = createWizardState({
+          mode: bookingMode,
+          searchWindowStart: searchWindow.start,
+          searchWindowEnd: searchWindow.end,
+          requestedSlot,
+          requestedAvailable: true,
+          selectedSlot: requestedSlot,
+          slots: [],
+          details: initialDetails,
+          requiredFields
+        });
+
+        const nextState = await promptNextWizardStep({
+          data: context.node.data,
+          vars: context.vars,
+          saveAs,
+          state: initialState,
+          channel: context.channel,
+          sendReply: context.sendReply,
+          prefix: buildAvailabilityPrefix(context.node.data, context.vars, saveAs, initialState)
+        });
+
+        return {
+          signal: "wait",
+          waitingFor: "message",
+          waitingNodeId: context.node.id,
+          variables: buildRuntimeVariables({
+            vars: context.vars,
+            saveAs,
+            status:
+              nextState.stage === "review"
+                ? "awaiting_confirmation"
+                : nextState.stage === "collect_name"
+                  ? "awaiting_name"
+                  : nextState.stage === "collect_email"
+                    ? "awaiting_email"
+                    : "awaiting_phone",
+            state: nextState
+          })
+        };
+      }
+
+      const alternateSlots = await buildAvailableSlots({
+        userId,
+        connectionId,
+        calendarId,
+        timeZone,
+        windowStart: searchWindow.start,
+        windowEnd: searchWindow.end,
         slotDurationMinutes,
         slotIntervalMinutes,
         maxOptions
       });
 
-      const nextVars = buildPendingVariables(
-        context.vars,
-        saveAs,
-        slots.length > 0 ? "awaiting_selection" : "no_availability",
-        slots
-      );
+      const alternateState = createWizardState({
+        mode: bookingMode,
+        searchWindowStart: searchWindow.start,
+        searchWindowEnd: searchWindow.end,
+        requestedSlot,
+        requestedAvailable: false,
+        selectedSlot: null,
+        slots: alternateSlots,
+        details: initialDetails,
+        requiredFields
+      });
 
-      if (slots.length === 0) {
+      if (!alternateSlots.length) {
+        const failVars = buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "no_availability",
+          state: alternateState,
+          error: "Requested appointment time is unavailable and no alternate slots were found.",
+          clearWizardState: true
+        });
         await context.sendReply({
           type: "text",
-          text: "No free appointment slots were found in that time window."
+          text: buildNoAvailabilityText(
+            context.node.data,
+            failVars,
+            saveAs,
+            alternateState,
+            buildUnavailablePrefix(context.node.data, failVars, saveAs, alternateState)
+          )
         });
         return {
           signal: "continue",
           nextNodeId: getNextNodeId(context.nodes, context.edges, context.node.id, "fail"),
-          variables: {
-            ...nextVars,
-            [`${saveAs}_error`]: "No free appointment slots were found."
-          }
+          variables: failVars
         };
       }
 
-      await context.sendReply({
-        type: "text",
-        text: buildPromptMessage(
-          interpolate(String(context.node.data.promptMessage ?? ""), context.vars),
-          slots
-        )
+      const waitingVars = buildRuntimeVariables({
+        vars: context.vars,
+        saveAs,
+        status: "awaiting_slot_selection",
+        state: alternateState
+      });
+
+      await sendSlotSelectionPrompt({
+        sendReply: context.sendReply,
+        channel: context.channel,
+        data: context.node.data,
+        vars: waitingVars,
+        saveAs,
+        state: alternateState,
+        prefix: buildUnavailablePrefix(context.node.data, waitingVars, saveAs, alternateState)
       });
 
       return {
         signal: "wait",
         waitingFor: "message",
         waitingNodeId: context.node.id,
-        variables: nextVars
+        variables: waitingVars
       };
     } catch (error) {
       const message = (error as Error).message;
@@ -575,16 +1309,13 @@ export const googleCalendarBookingBlock: FlowBlockModule = {
       return {
         signal: "continue",
         nextNodeId: getNextNodeId(context.nodes, context.edges, context.node.id, "fail"),
-        variables: {
-          ...context.vars,
-          [saveAs]: JSON.stringify({ status: "request_failed", error: message }),
-          [`${saveAs}_status`]: "request_failed",
-          [`${saveAs}_available`]: false,
-          [`${saveAs}_requested_available`]: false,
-          [`${saveAs}_slot_count`]: 0,
-          [`${saveAs}_slots`]: [],
-          [`${saveAs}_error`]: message
-        }
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "request_failed",
+          state: null,
+          error: message
+        })
       };
     }
   },
@@ -595,70 +1326,426 @@ export const googleCalendarBookingBlock: FlowBlockModule = {
     }
 
     const saveAs = normalizeVariableName(context.node.data.saveAs, "google_calendar_booking");
-    const bookingMode = getBookingMode(context.node.data.bookingMode);
     const connectionId = String(context.node.data.connectionId ?? "").trim() || null;
     const calendarId = String(context.node.data.calendarId ?? "primary").trim() || "primary";
     const timeZone = String(context.node.data.timeZone ?? "").trim() || null;
-
-    if (bookingMode !== "suggest_slots") {
-      return {
-        signal: "advance",
-        nextHandleId: "fail",
-        variables: {
-          ...context.vars,
-          [`${saveAs}_status`]: "unexpected_wait_state",
-          [`${saveAs}_error`]: "This calendar booking step is not waiting for a slot selection."
-        }
-      };
-    }
-
-    const pendingSlots = readPendingSlots(context.vars, saveAs);
-
-    if (pendingSlots.length === 0) {
-      return {
-        signal: "advance",
-        nextHandleId: "fail",
-        variables: {
-          ...context.vars,
-          [`${saveAs}_status`]: "expired",
-          [`${saveAs}_error`]: "Appointment slot options are no longer available."
-        }
-      };
-    }
-
-    const choice = matchChoiceByMessage(
-      context.message,
-      pendingSlots.map((slot) => ({
-        id: slot.id,
-        label: slot.label
-      }))
+    const slotDurationMinutes = parsePositiveInteger(context.node.data.slotDurationMinutes, 30);
+    const slotIntervalMinutes = parsePositiveInteger(
+      context.node.data.slotIntervalMinutes,
+      slotDurationMinutes
     );
+    const maxOptions = Math.min(parsePositiveInteger(context.node.data.maxOptions, 5), 10);
+    const state = readWizardState(context.vars, saveAs);
 
-    if (!choice) {
-      await context.sendReply({
-        type: "text",
-        text: `Please reply with one of the slot numbers.\n${buildChoicePrompt(
-          pendingSlots.map((slot) => ({
-            id: slot.id,
-            label: slot.label
-          }))
-        )}`
+    if (!state) {
+      return {
+        signal: "advance",
+        nextHandleId: "fail",
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "expired",
+          state: null,
+          error: "The appointment booking session expired. Please start again."
+        })
+      };
+    }
+
+    if (state.stage === "slot_selection") {
+      const choices = buildSlotsChoiceOptions(state.slots);
+      const choice = matchChoiceByMessage(context.message, choices);
+
+      if (!choice) {
+        await sendSlotSelectionPrompt({
+          sendReply: context.sendReply,
+          channel: context.channel,
+          data: context.node.data,
+          vars: context.vars,
+          saveAs,
+          state,
+          prefix: "Please choose one of the available appointment slots."
+        });
+        return {
+          signal: "stay_waiting",
+          variables: buildRuntimeVariables({
+            vars: context.vars,
+            saveAs,
+            status: "awaiting_slot_selection",
+            state
+          })
+        };
+      }
+
+      const selectedSlot = state.slots.find((slot) => slot.id === choice.id) ?? null;
+      if (!selectedSlot) {
+        return {
+          signal: "stay_waiting",
+          variables: buildRuntimeVariables({
+            vars: context.vars,
+            saveAs,
+            status: "awaiting_slot_selection",
+            state
+          })
+        };
+      }
+
+      const slotAvailable = await isSlotAvailable({
+        userId,
+        connectionId,
+        calendarId,
+        timeZone,
+        slot: selectedSlot
+      });
+
+      if (!slotAvailable) {
+        const refreshedSlots = await refreshSelectionWindowSlots({
+          userId,
+          connectionId,
+          calendarId,
+          timeZone,
+          state,
+          slotDurationMinutes,
+          slotIntervalMinutes,
+          maxOptions
+        });
+
+        if (!refreshedSlots.length) {
+          await context.sendReply({
+            type: "text",
+            text: buildNoAvailabilityText(
+              context.node.data,
+              context.vars,
+              saveAs,
+              {
+                ...state,
+                slots: [],
+                selectedSlot: null
+              },
+              "That slot was just taken and no other free slots are left in that window."
+            )
+          });
+          return {
+            signal: "advance",
+            nextHandleId: "fail",
+            variables: buildRuntimeVariables({
+              vars: context.vars,
+              saveAs,
+              status: "no_availability",
+              state: {
+                ...state,
+                slots: [],
+                selectedSlot: null
+              },
+              error: "Selected slot is no longer available.",
+              clearWizardState: true
+            })
+          };
+        }
+
+        const nextState: CalendarWizardState = {
+          ...state,
+          stage: "slot_selection",
+          selectedSlot: null,
+          slots: refreshedSlots
+        };
+        const nextVars = buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "awaiting_slot_selection",
+          state: nextState
+        });
+
+        await sendSlotSelectionPrompt({
+          sendReply: context.sendReply,
+          channel: context.channel,
+          data: context.node.data,
+          vars: nextVars,
+          saveAs,
+          state: nextState,
+          prefix: "That slot was just taken. Please choose a different appointment slot."
+        });
+        return {
+          signal: "stay_waiting",
+          variables: nextVars
+        };
+      }
+
+      const selectedState: CalendarWizardState = {
+        ...state,
+        selectedSlot,
+        collectAllDetails: false
+      };
+
+      const nextState = await promptNextWizardStep({
+        data: context.node.data,
+        vars: context.vars,
+        saveAs,
+        state: selectedState,
+        channel: context.channel,
+        sendReply: context.sendReply
+      });
+
+      return {
+        signal: "stay_waiting",
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status:
+            nextState.stage === "review"
+              ? "awaiting_confirmation"
+              : nextState.stage === "collect_name"
+                ? "awaiting_name"
+                : nextState.stage === "collect_email"
+                  ? "awaiting_email"
+                  : "awaiting_phone",
+          state: nextState
+        })
+      };
+    }
+
+    const detailField = getCurrentFieldForStage(state.stage);
+    if (detailField) {
+      const normalized = normalizeDetailResponse(detailField, context.message, context.node.data);
+      if (!normalized.ok) {
+        await context.sendReply({
+          type: "text",
+          text: normalized.errorText
+        });
+        return {
+          signal: "stay_waiting",
+          variables: buildRuntimeVariables({
+            vars: context.vars,
+            saveAs,
+            status:
+              detailField === "name"
+                ? "awaiting_name"
+                : detailField === "email"
+                  ? "awaiting_email"
+                  : "awaiting_phone",
+            state
+          })
+        };
+      }
+
+      const nextStateBase: CalendarWizardState = {
+        ...state,
+        details: {
+          ...state.details,
+          [detailField]: normalized.value
+        }
+      };
+      const nextState = await promptNextWizardStep({
+        data: context.node.data,
+        vars: context.vars,
+        saveAs,
+        state: nextStateBase,
+        channel: context.channel,
+        sendReply: context.sendReply
+      });
+
+      return {
+        signal: "stay_waiting",
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status:
+            nextState.stage === "review"
+              ? "awaiting_confirmation"
+              : nextState.stage === "collect_name"
+                ? "awaiting_name"
+                : nextState.stage === "collect_email"
+                  ? "awaiting_email"
+                  : "awaiting_phone",
+          state: nextState
+        })
+      };
+    }
+
+    const reviewChoices = buildReviewChoiceOptions(state.requiredFields);
+    const reviewChoice = matchChoiceByMessage(context.message, reviewChoices);
+
+    if (!reviewChoice) {
+      await sendReviewPrompt({
+        sendReply: context.sendReply,
+        channel: context.channel,
+        data: context.node.data,
+        vars: context.vars,
+        saveAs,
+        state,
+        prefix: "Please choose one of the booking actions below."
       });
       return {
         signal: "stay_waiting",
-        variables: context.vars
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "awaiting_confirmation",
+          state
+        })
       };
     }
 
-    const selectedSlot = pendingSlots.find((slot) => slot.id === choice.id) ?? null;
-    if (!selectedSlot) {
+    if (reviewChoice.id === REVIEW_CANCEL_ID) {
+      await context.sendReply({
+        type: "text",
+        text: buildCancellationText(context.node.data, context.vars, saveAs, state)
+      });
+      return {
+        signal: "advance",
+        nextHandleId: "cancelled",
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "cancelled",
+          state,
+          clearWizardState: true
+        })
+      };
+    }
+
+    if (reviewChoice.id === REVIEW_CHANGE_DETAILS_ID) {
+      if (!state.requiredFields.name && !state.requiredFields.email && !state.requiredFields.phone) {
+        await sendReviewPrompt({
+          sendReply: context.sendReply,
+          channel: context.channel,
+          data: context.node.data,
+          vars: context.vars,
+          saveAs,
+          state,
+          prefix: "No editable booking details are enabled for this block."
+        });
+        return {
+          signal: "stay_waiting",
+          variables: buildRuntimeVariables({
+            vars: context.vars,
+            saveAs,
+            status: "awaiting_confirmation",
+            state
+          })
+        };
+      }
+
+      const detailState: CalendarWizardState = {
+        ...state,
+        collectAllDetails: true
+      };
+      const nextState = await promptNextWizardStep({
+        data: context.node.data,
+        vars: context.vars,
+        saveAs,
+        state: detailState,
+        channel: context.channel,
+        sendReply: context.sendReply
+      });
       return {
         signal: "stay_waiting",
-        variables: context.vars
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status:
+            nextState.stage === "collect_name"
+              ? "awaiting_name"
+              : nextState.stage === "collect_email"
+                ? "awaiting_email"
+                : nextState.stage === "collect_phone"
+                  ? "awaiting_phone"
+                  : "awaiting_confirmation",
+          state: nextState
+        })
       };
     }
 
-    const slotAvailable = await isSlotAvailable({
+    if (reviewChoice.id === REVIEW_CHANGE_TIME_ID) {
+      const slots = await refreshSelectionWindowSlots({
+        userId,
+        connectionId,
+        calendarId,
+        timeZone,
+        state,
+        slotDurationMinutes,
+        slotIntervalMinutes,
+        maxOptions
+      });
+
+      if (!slots.length) {
+        await context.sendReply({
+          type: "text",
+          text: buildNoAvailabilityText(
+            context.node.data,
+            context.vars,
+            saveAs,
+            {
+              ...state,
+              slots: [],
+              selectedSlot: null
+            },
+            "No other free appointment slots are available right now."
+          )
+        });
+        return {
+          signal: "advance",
+          nextHandleId: "fail",
+          variables: buildRuntimeVariables({
+            vars: context.vars,
+            saveAs,
+            status: "no_availability",
+            state: {
+              ...state,
+              slots: [],
+              selectedSlot: null
+            },
+            error: "No alternate appointment slots are available.",
+            clearWizardState: true
+          })
+        };
+      }
+
+      const nextState: CalendarWizardState = {
+        ...state,
+        stage: "slot_selection",
+        selectedSlot: null,
+        slots,
+        collectAllDetails: false
+      };
+      const nextVars = buildRuntimeVariables({
+        vars: context.vars,
+        saveAs,
+        status: "awaiting_slot_selection",
+        state: nextState
+      });
+
+      await sendSlotSelectionPrompt({
+        sendReply: context.sendReply,
+        channel: context.channel,
+        data: context.node.data,
+        vars: nextVars,
+        saveAs,
+        state: nextState,
+        prefix: "Please choose a different appointment slot."
+      });
+      return {
+        signal: "stay_waiting",
+        variables: nextVars
+      };
+    }
+
+    const selectedSlot = state.selectedSlot;
+    if (!selectedSlot) {
+      return {
+        signal: "advance",
+        nextHandleId: "fail",
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "request_failed",
+          state,
+          error: "No appointment slot is selected.",
+          clearWizardState: true
+        })
+      };
+    }
+
+    const selectedSlotStillAvailable = await isSlotAvailable({
       userId,
       connectionId,
       calendarId,
@@ -666,116 +1753,138 @@ export const googleCalendarBookingBlock: FlowBlockModule = {
       slot: selectedSlot
     });
 
-    if (!slotAvailable) {
-      const refreshedSlots = await buildAvailableSlots({
+    if (!selectedSlotStillAvailable) {
+      const refreshedSlots = await refreshSelectionWindowSlots({
         userId,
         connectionId,
         calendarId,
         timeZone,
-        windowStart: interpolate(String(context.node.data.windowStart ?? ""), context.vars).trim(),
-        windowEnd: interpolate(String(context.node.data.windowEnd ?? ""), context.vars).trim(),
-        slotDurationMinutes: parsePositiveInteger(context.node.data.slotDurationMinutes, 30),
-        slotIntervalMinutes: parsePositiveInteger(
-          context.node.data.slotIntervalMinutes,
-          parsePositiveInteger(context.node.data.slotDurationMinutes, 30)
-        ),
-        maxOptions: Math.min(parsePositiveInteger(context.node.data.maxOptions, 5), 10)
+        state,
+        slotDurationMinutes,
+        slotIntervalMinutes,
+        maxOptions
       });
 
-      if (refreshedSlots.length === 0) {
+      if (!refreshedSlots.length) {
         await context.sendReply({
           type: "text",
-          text: "That slot is no longer available and no other free slots remain in that time window."
+          text: buildNoAvailabilityText(
+            context.node.data,
+            context.vars,
+            saveAs,
+            {
+              ...state,
+              selectedSlot: null,
+              slots: []
+            },
+            "That slot was just taken and no other slots are available now."
+          )
         });
         return {
           signal: "advance",
           nextHandleId: "fail",
-          variables: {
-            ...buildPendingVariables(context.vars, saveAs, "no_availability", []),
-            [`${saveAs}_error`]: "Selected slot is no longer available."
-          }
+          variables: buildRuntimeVariables({
+            vars: context.vars,
+            saveAs,
+            status: "no_availability",
+            state: {
+              ...state,
+              selectedSlot: null,
+              slots: []
+            },
+            error: "Selected slot is no longer available.",
+            clearWizardState: true
+          })
         };
       }
 
-      await context.sendReply({
-        type: "text",
-        text: `That slot was just taken. Please choose another free slot.\n${buildChoicePrompt(
-          refreshedSlots.map((slot) => ({
-            id: slot.id,
-            label: slot.label
-          }))
-        )}`
+      const nextState: CalendarWizardState = {
+        ...state,
+        stage: "slot_selection",
+        selectedSlot: null,
+        slots: refreshedSlots,
+        collectAllDetails: false
+      };
+      const nextVars = buildRuntimeVariables({
+        vars: context.vars,
+        saveAs,
+        status: "awaiting_slot_selection",
+        state: nextState
+      });
+      await sendSlotSelectionPrompt({
+        sendReply: context.sendReply,
+        channel: context.channel,
+        data: context.node.data,
+        vars: nextVars,
+        saveAs,
+        state: nextState,
+        prefix: "That slot was just booked by someone else. Please choose a different time."
       });
       return {
         signal: "stay_waiting",
-        variables: buildPendingVariables(
-          context.vars,
-          saveAs,
-          "awaiting_selection",
-          refreshedSlots
-        )
+        variables: nextVars
       };
     }
 
-    const varsWithSelection = buildMessageVars(context.vars, saveAs, selectedSlot);
+    if (state.mode === "check_only") {
+      return {
+        signal: "advance",
+        nextHandleId: "success",
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "confirmed_available",
+          state,
+          clearWizardState: true
+        })
+      };
+    }
 
     try {
+      const messageVars = buildMessageVars(context.vars, saveAs, state);
       const event = await createGoogleCalendarEvent({
         userId,
         connectionId,
         calendarId,
         summary:
-          interpolate(String(context.node.data.bookingTitle ?? ""), varsWithSelection).trim() ||
-          "Appointment",
+          interpolate(String(context.node.data.bookingTitle ?? ""), messageVars).trim() || "Appointment",
         description:
-          interpolate(String(context.node.data.bookingDescription ?? ""), varsWithSelection).trim() ||
-          null,
-        location:
-          interpolate(String(context.node.data.location ?? ""), varsWithSelection).trim() || null,
+          interpolate(String(context.node.data.bookingDescription ?? ""), messageVars).trim() || null,
+        location: interpolate(String(context.node.data.location ?? ""), messageVars).trim() || null,
         startTime: selectedSlot.start,
         endTime: selectedSlot.end,
         timeZone,
-        attendeeEmail:
-          interpolate(String(context.node.data.attendeeEmail ?? ""), varsWithSelection).trim() ||
-          null,
-        attendeeName:
-          interpolate(String(context.node.data.attendeeName ?? ""), varsWithSelection).trim() ||
-          null,
-        sendUpdates:
-          (String(context.node.data.sendUpdates ?? "all").trim() as
-            | "all"
-            | "externalOnly"
-            | "none") || "all"
+        attendeeEmail: resolveAttendeeEmail(context.node.data, context.vars, saveAs, state),
+        attendeeName: resolveAttendeeName(context.node.data, context.vars, saveAs, state),
+        sendUpdates: sanitizeSendUpdates(context.node.data.sendUpdates)
       });
 
-      const successVars = {
-        ...buildPendingVariables(context.vars, saveAs, "booked", pendingSlots),
-        ...buildSelectedSlotVariables(saveAs, selectedSlot),
-        [saveAs]: JSON.stringify(event),
-        [`${saveAs}_event_id`]: event.id,
-        [`${saveAs}_event_status`]: event.status,
-        [`${saveAs}_event_link`]: event.htmlLink ?? "",
-        [`${saveAs}_error`]: ""
-      };
+      const successVars = buildRuntimeVariables({
+        vars: context.vars,
+        saveAs,
+        status: "booked",
+        state,
+        event,
+        clearWizardState: true
+      });
 
-      const confirmationMessage = interpolate(
-        String(
-          context.node.data.confirmationMessage ??
-            "Your appointment is booked for {{selected_slot_label}}."
-        ),
-        buildMessageVars(successVars, saveAs, selectedSlot, {
-          event_id: event.id,
-          event_status: event.status,
-          event_link: event.htmlLink ?? ""
-        })
-      ).trim();
+      const confirmationText =
+        interpolate(
+          String(
+            context.node.data.confirmationMessage ??
+              "Your appointment is booked for {{selected_slot_label}}."
+          ),
+          buildMessageVars(successVars, saveAs, state, {
+            event_id: event.id,
+            event_status: event.status,
+            event_link: event.htmlLink ?? ""
+          })
+        ).trim() || "Your appointment is booked.";
 
-      if (confirmationMessage) {
-        await context.sendReply({
-          type: "text",
-          text: confirmationMessage
-        });
-      }
+      await context.sendReply({
+        type: "text",
+        text: confirmationText
+      });
 
       return {
         signal: "advance",
@@ -791,13 +1900,14 @@ export const googleCalendarBookingBlock: FlowBlockModule = {
       return {
         signal: "advance",
         nextHandleId: "fail",
-        variables: {
-          ...context.vars,
-          ...buildSelectedSlotVariables(saveAs, selectedSlot),
-          [saveAs]: JSON.stringify({ status: "request_failed", error: message }),
-          [`${saveAs}_status`]: "request_failed",
-          [`${saveAs}_error`]: message
-        }
+        variables: buildRuntimeVariables({
+          vars: context.vars,
+          saveAs,
+          status: "request_failed",
+          state,
+          error: message,
+          clearWizardState: true
+        })
       };
     }
   }

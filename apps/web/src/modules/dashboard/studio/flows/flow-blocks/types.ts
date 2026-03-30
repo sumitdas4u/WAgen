@@ -214,6 +214,8 @@ export interface GoogleCalendarBookingData {
   timeZone: string;
   windowStart: string;
   windowEnd: string;
+  alternateWindowStart: string;
+  alternateWindowEnd: string;
   requestedStart: string;
   requestedEnd: string;
   slotDurationMinutes: string;
@@ -222,6 +224,17 @@ export interface GoogleCalendarBookingData {
   promptMessage: string;
   availabilityMessage: string;
   unavailableMessage: string;
+  reviewMessage: string;
+  noAvailabilityMessage: string;
+  requireName: boolean;
+  requireEmail: boolean;
+  requirePhone: boolean;
+  namePrompt: string;
+  emailPrompt: string;
+  phonePrompt: string;
+  invalidEmailMessage: string;
+  invalidPhoneMessage: string;
+  cancellationMessage: string;
   bookingTitle: string;
   bookingDescription: string;
   confirmationMessage: string;

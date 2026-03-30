@@ -98,7 +98,12 @@ function getNodeHandleSpec(nodeType: string, data: AnyNodeData): NodeHandleSpec 
     case "googleSheetsUpdateRow":
     case "googleSheetsFetchRow":
     case "googleSheetsFetchRows":
-      return toSpec(["success", "fail"], ["in"]);
+      return toSpec(
+        data.kind === "googleCalendarBooking"
+          ? ["success", "cancelled", "fail"]
+          : ["success", "fail"],
+        ["in"]
+      );
     case "requestIntervention":
       return toSpec([], ["in"]);
     case "aiReply":
@@ -144,13 +149,20 @@ function getHandleLabel(node: FlowNode, handleId: string): string | null {
       return handleId === "success" ? "Success" : handleId === "fail" ? "Failed" : null;
     case "aiAgent":
     case "apiRequest":
-    case "googleCalendarBooking":
     case "googleSheets":
     case "googleSheetsAddRow":
     case "googleSheetsUpdateRow":
     case "googleSheetsFetchRow":
     case "googleSheetsFetchRows":
       return handleId === "success" ? "Success" : handleId === "fail" ? "Failed" : null;
+    case "googleCalendarBooking":
+      if (handleId === "success") {
+        return "Success";
+      }
+      if (handleId === "cancelled") {
+        return "Cancelled";
+      }
+      return handleId === "fail" ? "Failed" : null;
     case "aiReply":
       return handleId === "out" ? "Continue" : null;
     default:
@@ -420,6 +432,37 @@ function validateNodeData(
       if (Number.isNaN(Number(node.data.slotDurationMinutes)) || Number(node.data.slotDurationMinutes) <= 0) {
         pushNodeError(errors, node, `${describeNode(node)} needs a valid slot duration in minutes.`);
       }
+      if (!node.data.promptMessage.trim()) {
+        pushNodeError(errors, node, `${describeNode(node)} needs a slot prompt message.`);
+      }
+      if (!node.data.reviewMessage.trim()) {
+        pushNodeError(errors, node, `${describeNode(node)} needs a review message.`);
+      }
+      if (!node.data.noAvailabilityMessage.trim()) {
+        pushNodeError(errors, node, `${describeNode(node)} needs a no-availability message.`);
+      }
+      if (!node.data.cancellationMessage.trim()) {
+        pushNodeError(errors, node, `${describeNode(node)} needs a cancellation message.`);
+      }
+      if (node.data.requireName && !node.data.namePrompt.trim()) {
+        pushNodeError(errors, node, `${describeNode(node)} needs a name prompt.`);
+      }
+      if (node.data.requireEmail) {
+        if (!node.data.emailPrompt.trim()) {
+          pushNodeError(errors, node, `${describeNode(node)} needs an email prompt.`);
+        }
+        if (!node.data.invalidEmailMessage.trim()) {
+          pushNodeError(errors, node, `${describeNode(node)} needs an invalid-email message.`);
+        }
+      }
+      if (node.data.requirePhone) {
+        if (!node.data.phonePrompt.trim()) {
+          pushNodeError(errors, node, `${describeNode(node)} needs a phone prompt.`);
+        }
+        if (!node.data.invalidPhoneMessage.trim()) {
+          pushNodeError(errors, node, `${describeNode(node)} needs an invalid-phone message.`);
+        }
+      }
       const bookingMode = node.data.bookingMode ?? "suggest_slots";
       if (bookingMode === "suggest_slots") {
         if (!node.data.windowStart.trim()) {
@@ -450,6 +493,20 @@ function validateNodeData(
         if (!node.data.requestedStart.trim()) {
           pushNodeError(errors, node, `${describeNode(node)} needs a requested start date-time.`);
         }
+        if (!node.data.alternateWindowStart.trim()) {
+          pushNodeError(
+            errors,
+            node,
+            `${describeNode(node)} needs an alternate window start date-time.`
+          );
+        }
+        if (!node.data.alternateWindowEnd.trim()) {
+          pushNodeError(
+            errors,
+            node,
+            `${describeNode(node)} needs an alternate window end date-time.`
+          );
+        }
         if (
           node.data.requestedStart.trim() &&
           node.data.requestedEnd.trim() &&
@@ -459,9 +516,25 @@ function validateNodeData(
         ) {
           pushNodeError(errors, node, `${describeNode(node)} needs a requested end that is after the start.`);
         }
+        if (
+          node.data.alternateWindowStart.trim() &&
+          node.data.alternateWindowEnd.trim() &&
+          !Number.isNaN(Date.parse(node.data.alternateWindowStart)) &&
+          !Number.isNaN(Date.parse(node.data.alternateWindowEnd)) &&
+          Date.parse(node.data.alternateWindowStart) >= Date.parse(node.data.alternateWindowEnd)
+        ) {
+          pushNodeError(
+            errors,
+            node,
+            `${describeNode(node)} needs an alternate window end that is after the start.`
+          );
+        }
         if (bookingMode === "book_if_available" && !node.data.bookingTitle.trim()) {
           pushNodeError(errors, node, `${describeNode(node)} needs a booking title.`);
         }
+      }
+      if (bookingMode !== "check_only" && !node.data.confirmationMessage.trim()) {
+        pushNodeError(errors, node, `${describeNode(node)} needs a confirmation message.`);
       }
       break;
     case "googleSheets": {
