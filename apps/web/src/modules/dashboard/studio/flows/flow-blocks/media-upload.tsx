@@ -11,10 +11,10 @@ const ACCEPT: Record<MediaType, string> = {
 };
 
 const MAX_BYTES: Record<MediaType, number> = {
-  image: 10 * 1024 * 1024,   // 10 MB
-  video: 50 * 1024 * 1024,   // 50 MB
-  document: 20 * 1024 * 1024, // 20 MB
-  audio: 20 * 1024 * 1024    // 20 MB
+  image: 10 * 1024 * 1024,
+  video: 50 * 1024 * 1024,
+  document: 20 * 1024 * 1024,
+  audio: 20 * 1024 * 1024
 };
 
 interface MediaUploadProps {
@@ -41,37 +41,38 @@ export function MediaUpload({ mediaType, onUrl, currentUrl }: MediaUploadProps) 
     try {
       const url = await uploadFlowMedia(file);
       onUrl(url);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload failed");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Upload failed");
       setFileName(null);
     } finally {
       setUploading(false);
     }
   };
 
-  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-    // Reset so same file can be re-selected
-    e.target.value = "";
+  const onInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      void handleFile(file);
+    }
+    // Reset so the same file can be selected again.
+    event.target.value = "";
   };
 
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+  const onDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (file) {
+      void handleFile(file);
+    }
   };
 
-  // Derive display name from current URL if no local fileName
-  const displayName =
-    fileName ??
-    (currentUrl ? decodeURIComponent(currentUrl.split("/").pop() ?? "") : null);
+  const displayName = fileName ?? (currentUrl ? decodeURIComponent(currentUrl.split("/").pop() ?? "") : null);
 
   return (
     <div
       className={`fn-media-upload nodrag${uploading ? " uploading" : ""}`}
       onDrop={onDrop}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(event) => event.preventDefault()}
       onClick={() => !uploading && inputRef.current?.click()}
     >
       <input
@@ -85,14 +86,12 @@ export function MediaUpload({ mediaType, onUrl, currentUrl }: MediaUploadProps) 
         <span className="fn-upload-status uploading">Uploading...</span>
       ) : displayName ? (
         <span className="fn-upload-status done" title={displayName}>
-          {displayName.length > 28 ? `${displayName.slice(0, 26)}…` : displayName}
+          {displayName.length > 28 ? `${displayName.slice(0, 26)}...` : displayName}
         </span>
       ) : (
-        <span className="fn-upload-status idle">
-          Upload {mediaType}
-        </span>
+        <span className="fn-upload-status idle">Upload {mediaType}</span>
       )}
-      {error && <span className="fn-upload-error">{error}</span>}
+      {error ? <span className="fn-upload-error">{error}</span> : null}
     </div>
   );
 }
