@@ -2,8 +2,13 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
+import {
+  encodeFlowLocationInput,
+  formatFlowLocationSummary
+} from "./flow-input-codec.js";
 import { processIncomingMessage } from "./message-router-service.js";
 import { getUserPlanEntitlements } from "./billing-service.js";
+import { summarizeFlowMessage, type FlowMessagePayload } from "./outbound-message-types.js";
 
 interface MetaConnectionRow {
   id: string;
@@ -88,6 +93,13 @@ interface WebhookMessage {
   text?: { body?: string };
   image?: { caption?: string };
   document?: { caption?: string };
+  location?: {
+    latitude?: number;
+    longitude?: number;
+    name?: string;
+    address?: string;
+    url?: string;
+  };
   button?: { text?: string; payload?: string };
   interactive?: {
     button_reply?: { title?: string; id?: string };
@@ -132,6 +144,7 @@ type WebhookMessageTask = {
   from: string;
   senderName: string | null;
   text: string;
+  flowText?: string | null;
 };
 
 function mapConnection(row: MetaConnectionRow): MetaConnection {
@@ -1262,6 +1275,34 @@ async function listDisconnectTargetConnections(userId: string, connectionId?: st
   return result.rows;
 }
 
+async function listConnectionsByWabaIds(userId: string, wabaIds: string[]): Promise<MetaConnectionRow[]> {
+  if (wabaIds.length === 0) {
+    return [];
+  }
+
+  const result = await pool.query<MetaConnectionRow>(
+    `SELECT id,
+            user_id,
+            meta_business_id,
+            waba_id,
+            phone_number_id,
+            display_phone_number,
+            linked_number,
+            access_token_encrypted,
+            token_expires_at::text,
+            subscription_status,
+            status,
+            metadata_json,
+            created_at::text,
+            updated_at::text
+     FROM whatsapp_business_connections
+     WHERE user_id = $1
+       AND waba_id = ANY($2::text[])`,
+    [userId, wabaIds]
+  );
+  return result.rows;
+}
+
 async function unsubscribeWebhookSubscription(row: MetaConnectionRow): Promise<void> {
   const accessToken = decryptToken(row.access_token_encrypted);
   await graphDelete<{ success?: boolean }>(`/${row.waba_id}/subscribed_apps`, accessToken);
@@ -1277,13 +1318,32 @@ export async function disconnectMetaBusinessConnection(
   connectionId?: string,
   options?: { purgeConnectionData?: boolean }
 ): Promise<boolean> {
-  const rows = await listDisconnectTargetConnections(userId, connectionId);
+  const requestedRows = await listDisconnectTargetConnections(userId, connectionId);
+  if (requestedRows.length === 0) {
+    return false;
+  }
+
+  const targetWabaIds = Array.from(new Set(requestedRows.map((row) => row.waba_id).filter(Boolean)));
+  const rows = connectionId
+    ? await listConnectionsByWabaIds(userId, targetWabaIds)
+    : requestedRows;
   if (rows.length === 0) {
     return false;
   }
 
-  // Best-effort remote cleanup before local deletion.
+  const unsubRowsByWaba = new Map<string, MetaConnectionRow>();
+  const revokeRowsByToken = new Map<string, MetaConnectionRow>();
   for (const row of rows) {
+    if (!unsubRowsByWaba.has(row.waba_id)) {
+      unsubRowsByWaba.set(row.waba_id, row);
+    }
+    if (!revokeRowsByToken.has(row.access_token_encrypted)) {
+      revokeRowsByToken.set(row.access_token_encrypted, row);
+    }
+  }
+
+  // Best-effort remote cleanup before local deletion.
+  for (const row of unsubRowsByWaba.values()) {
     try {
       await unsubscribeWebhookSubscription(row);
     } catch (error) {
@@ -1291,6 +1351,9 @@ export async function disconnectMetaBusinessConnection(
         `[MetaDisconnect] webhook unsubscribe failed user=${userId} wabaId=${row.waba_id}: ${(error as Error).message}`
       );
     }
+  }
+
+  for (const row of revokeRowsByToken.values()) {
     try {
       await revokeMetaAccess(row);
     } catch (error) {
@@ -1363,12 +1426,20 @@ export async function disconnectMetaBusinessConnection(
       }
     }
 
-    await client.query(
-      `DELETE FROM whatsapp_business_connections
-       WHERE user_id = $1
-         AND ($2::uuid IS NULL OR id = $2::uuid)`,
-      [userId, connectionId ?? null]
-    );
+    if (connectionId) {
+      await client.query(
+        `DELETE FROM whatsapp_business_connections
+         WHERE user_id = $1
+           AND waba_id = ANY($2::text[])`,
+        [userId, targetWabaIds]
+      );
+    } else {
+      await client.query(
+        `DELETE FROM whatsapp_business_connections
+         WHERE user_id = $1`,
+        [userId]
+      );
+    }
 
     await client.query("COMMIT");
   } catch (error) {
@@ -1400,6 +1471,285 @@ export async function sendMetaTextMessage(input: {
   };
 }
 
+async function resolveMetaSendConnectionRow(input: {
+  userId: string;
+  phoneNumberId?: string;
+  linkedNumber?: string | null;
+}): Promise<MetaConnectionRow> {
+  const row =
+    (input.phoneNumberId
+      ? await getConnectionRowByPhoneNumberId(input.phoneNumberId)
+      : null) ??
+    (input.linkedNumber
+      ? await getConnectionRowByUserAndLinkedNumber(input.userId, input.linkedNumber)
+      : null) ??
+    (await getLatestConnectionRowByUserId(input.userId));
+
+  if (!row || row.user_id !== input.userId) {
+    throw new Error("No connected WhatsApp Business API number found.");
+  }
+
+  let resolvedRow = row;
+  if (resolvedRow.subscription_status !== "active" || resolvedRow.status !== "connected") {
+    try {
+      resolvedRow = await refreshConnectionStatusFromMeta(resolvedRow, { forceRefresh: true });
+    } catch (error) {
+      console.warn(
+        `[MetaSend] pre-send status refresh failed user=${input.userId} phoneNumberId=${resolvedRow.phone_number_id}: ${(error as Error).message}`
+      );
+    }
+  }
+
+  return resolvedRow;
+}
+
+function truncateMetaText(value: string, maxLength: number): string {
+  return value.trim().slice(0, maxLength);
+}
+
+function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Record<string, unknown> {
+  switch (payload.type) {
+    case "text":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: {
+          body: payload.text.trim()
+        }
+      };
+
+    case "media":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: payload.mediaType,
+        [payload.mediaType]: {
+          link: payload.url.trim(),
+          ...(payload.caption?.trim()
+            ? {
+                caption: truncateMetaText(payload.caption, 1024)
+              }
+            : {})
+        }
+      };
+
+    case "text_buttons":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "button",
+          body: {
+            text: truncateMetaText(payload.text || "Please choose an option.", 1024)
+          },
+          ...(payload.footer?.trim()
+            ? {
+                footer: {
+                  text: truncateMetaText(payload.footer, 60)
+                }
+              }
+            : {}),
+          action: {
+            buttons: payload.buttons.slice(0, 3).map((button) => ({
+              type: "reply",
+              reply: {
+                id: button.id.trim().slice(0, 256),
+                title: truncateMetaText(button.label || "Option", 20)
+              }
+            }))
+          }
+        }
+      };
+
+    case "media_buttons":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "button",
+          header: {
+            type: payload.mediaType,
+            [payload.mediaType]: {
+              link: payload.url.trim()
+            }
+          },
+          body: {
+            text: truncateMetaText(payload.caption || "Please choose an option.", 1024)
+          },
+          action: {
+            buttons: payload.buttons.slice(0, 3).map((button) => ({
+              type: "reply",
+              reply: {
+                id: button.id.trim().slice(0, 256),
+                title: truncateMetaText(button.label || "Option", 20)
+              }
+            }))
+          }
+        }
+      };
+
+    case "list":
+      let remainingRows = 10;
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "list",
+          body: {
+            text: truncateMetaText(payload.text || "Please choose an option.", 1024)
+          },
+          action: {
+            button: truncateMetaText(payload.buttonLabel || "View options", 20),
+            sections: payload.sections
+              .map((section) => {
+                const rows = section.rows
+                  .slice(0, remainingRows)
+                  .map((row) => ({
+                    id: row.id.trim().slice(0, 200),
+                    title: truncateMetaText(row.title || "Option", 24),
+                    ...(row.description?.trim()
+                      ? {
+                          description: truncateMetaText(row.description, 72)
+                        }
+                      : {})
+                  }));
+                remainingRows -= rows.length;
+                return {
+                  title: truncateMetaText(section.title || "Options", 24),
+                  rows
+                };
+              })
+              .filter((section) => section.rows.length > 0)
+          }
+        }
+      };
+
+    case "template":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "template",
+        template: {
+          name: payload.templateName.trim(),
+          language: {
+            code: payload.language.trim() || "en"
+          }
+        }
+      };
+
+    case "product":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "product",
+          ...(payload.bodyText?.trim()
+            ? {
+                body: {
+                  text: truncateMetaText(payload.bodyText, 1024)
+                }
+              }
+            : {}),
+          action: {
+            catalog_id: payload.catalogId.trim(),
+            product_retailer_id: payload.productId.trim()
+          }
+        }
+      };
+
+    case "product_list":
+      let remainingProducts = 30;
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "product_list",
+          ...(payload.bodyText?.trim()
+            ? {
+                body: {
+                  text: truncateMetaText(payload.bodyText, 1024)
+                }
+              }
+            : {}),
+          action: {
+            catalog_id: payload.catalogId.trim(),
+            sections: payload.sections
+              .map((section) => {
+                const productItems = section.productIds
+                  .slice(0, remainingProducts)
+                  .map((productId) => ({
+                    product_retailer_id: productId.trim()
+                  }))
+                  .filter((item) => item.product_retailer_id);
+                remainingProducts -= productItems.length;
+                return {
+                  title: truncateMetaText(section.title || "Products", 24),
+                  product_items: productItems
+                };
+              })
+              .filter((section) => section.product_items.length > 0)
+          }
+        }
+      };
+
+    case "location_share":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "location",
+        location: {
+          latitude: payload.latitude,
+          longitude: payload.longitude,
+          ...(payload.name?.trim() ? { name: payload.name.trim() } : {}),
+          ...(payload.address?.trim() ? { address: payload.address.trim() } : {})
+        }
+      };
+
+    case "contact_share": {
+      const vcard = [
+        "BEGIN:VCARD",
+        "VERSION:3.0",
+        `FN:${payload.name.trim()}`,
+        ...(payload.org?.trim() ? [`ORG:${payload.org.trim()}`] : []),
+        `TEL;type=CELL;type=VOICE;waid=${payload.phone.replace(/\D/g, "")}:+${payload.phone.replace(/\D/g, "")}`,
+        "END:VCARD"
+      ].join("\n");
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "contacts",
+        contacts: [
+          {
+            name: { formatted_name: payload.name.trim(), first_name: payload.name.trim() },
+            phones: [{ phone: payload.phone.trim(), type: "CELL", wa_id: payload.phone.replace(/\D/g, "") }],
+            ...(payload.org?.trim() ? { org: { company: payload.org.trim() } } : {})
+          }
+        ]
+      };
+    }
+
+    case "poll":
+      // Meta WA API doesn't support native polls — send as text fallback
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: {
+          body: truncateMetaText(
+            `${payload.question.trim()}\n\n${payload.options.map((opt, i) => `${i + 1}. ${opt}`).join("\n")}`,
+            4096
+          )
+        }
+      };
+  }
+}
+
 export async function sendMetaTextDirect(input: {
   userId: string;
   to: string;
@@ -1416,29 +1766,7 @@ export async function sendMetaTextDirect(input: {
     throw new Error("Message text is required.");
   }
 
-  const row =
-    (input.phoneNumberId
-      ? await getConnectionRowByPhoneNumberId(input.phoneNumberId)
-      : null) ??
-    (input.linkedNumber
-      ? await getConnectionRowByUserAndLinkedNumber(input.userId, input.linkedNumber)
-      : null) ??
-    (await getLatestConnectionRowByUserId(input.userId));
-  if (!row || row.user_id !== input.userId) {
-    throw new Error("No connected WhatsApp Business API number found.");
-  }
-
-  let resolvedRow = row;
-  if (resolvedRow.subscription_status !== "active" || resolvedRow.status !== "connected") {
-    try {
-      resolvedRow = await refreshConnectionStatusFromMeta(resolvedRow, { forceRefresh: true });
-    } catch (error) {
-      console.warn(
-        `[MetaSend] pre-send status refresh failed user=${input.userId} phoneNumberId=${resolvedRow.phone_number_id}: ${(error as Error).message}`
-      );
-    }
-  }
-
+  const resolvedRow = await resolveMetaSendConnectionRow(input);
   const accessToken = decryptToken(resolvedRow.access_token_encrypted);
   const response = await graphPost<{ messages?: Array<{ id?: string }> }>(
     `/${resolvedRow.phone_number_id}/messages`,
@@ -1461,22 +1789,55 @@ export async function sendMetaTextDirect(input: {
   };
 }
 
-function extractMessageText(message: WebhookMessage): string | null {
+export async function sendMetaFlowMessageDirect(input: {
+  userId: string;
+  to: string;
+  payload: FlowMessagePayload;
+  phoneNumberId?: string;
+  linkedNumber?: string | null;
+}): Promise<{ messageId: string | null; connection: MetaConnection; to: string; summaryText: string }> {
+  const normalizedTo = normalizePhoneDigits(input.to);
+  if (!normalizedTo) {
+    throw new Error("Recipient phone must contain 8 to 15 digits.");
+  }
+
+  const resolvedRow = await resolveMetaSendConnectionRow(input);
+  const accessToken = decryptToken(resolvedRow.access_token_encrypted);
+  const summaryText = summarizeFlowMessage(input.payload);
+  if (!summaryText) {
+    throw new Error("Flow message is empty.");
+  }
+
+  const response = await graphPost<{ messages?: Array<{ id?: string }> }>(
+    `/${resolvedRow.phone_number_id}/messages`,
+    accessToken,
+    buildMetaFlowRequestBody(normalizedTo, input.payload)
+  );
+
+  return {
+    messageId: response.messages?.[0]?.id ?? null,
+    connection: mapConnection(resolvedRow),
+    to: normalizedTo,
+    summaryText
+  };
+}
+
+function extractMessageInput(message: WebhookMessage): { text: string; flowText?: string | null } | null {
   const directText = message.text?.body?.trim();
   if (directText) {
-    return directText;
+    return { text: directText, flowText: directText };
   }
 
   const buttonText = message.button?.text?.trim();
   if (buttonText) {
-    return buttonText;
+    return { text: buttonText, flowText: buttonText };
   }
 
   const interactiveButton = message.interactive?.button_reply;
   if (interactiveButton) {
     const line = [interactiveButton.title, interactiveButton.id].filter(Boolean).join(" ").trim();
     if (line) {
-      return line;
+      return { text: line, flowText: line };
     }
   }
 
@@ -1484,13 +1845,30 @@ function extractMessageText(message: WebhookMessage): string | null {
   if (interactiveList) {
     const line = [interactiveList.title, interactiveList.description, interactiveList.id].filter(Boolean).join(" ").trim();
     if (line) {
-      return line;
+      return { text: line, flowText: line };
     }
+  }
+
+  const latitude = Number(message.location?.latitude);
+  const longitude = Number(message.location?.longitude);
+  if (!Number.isNaN(latitude) && !Number.isNaN(longitude)) {
+    const locationPayload = {
+      latitude,
+      longitude,
+      ...(message.location?.name?.trim() ? { name: message.location.name.trim() } : {}),
+      ...(message.location?.address?.trim() ? { address: message.location.address.trim() } : {}),
+      ...(message.location?.url?.trim() ? { url: message.location.url.trim() } : {}),
+      source: "native" as const
+    };
+    return {
+      text: formatFlowLocationSummary(locationPayload),
+      flowText: encodeFlowLocationInput(locationPayload)
+    };
   }
 
   const mediaCaption = message.image?.caption?.trim() || message.document?.caption?.trim();
   if (mediaCaption) {
-    return mediaCaption;
+    return { text: mediaCaption, flowText: mediaCaption };
   }
 
   return null;
@@ -1518,8 +1896,8 @@ function buildWebhookTasks(payload: WebhookPayload): WebhookMessageTask[] {
 
       for (const message of messages) {
         const from = normalizePhoneDigits(message.from);
-        const text = extractMessageText(message);
-        if (!from || !text) {
+        const extracted = extractMessageInput(message);
+        if (!from || !extracted?.text) {
           continue;
         }
 
@@ -1531,7 +1909,8 @@ function buildWebhookTasks(payload: WebhookPayload): WebhookMessageTask[] {
           displayPhoneNumber,
           from,
           senderName,
-          text
+          text: extracted.text,
+          flowText: extracted.flowText ?? extracted.text
         });
       }
     }
@@ -1598,6 +1977,7 @@ async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
     channelLinkedNumber,
     customerIdentifier: task.from,
     messageText: task.text,
+    flowMessageText: task.flowText ?? task.text,
     senderName: task.senderName ?? undefined,
     shouldAutoReply: true,
     sendReply: async ({ text }) => {

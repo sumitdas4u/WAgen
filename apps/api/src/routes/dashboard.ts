@@ -17,14 +17,17 @@ const UsageQuerySchema = z.object({
 
 function buildDashboardFeatureFlags(): Record<string, boolean> {
   const envFeatureFlags = (env as { DASHBOARD_FEATURE_FLAGS?: Record<string, boolean> }).DASHBOARD_FEATURE_FLAGS ?? {};
+  const contactsEnabled = envFeatureFlags["dashboard.contacts"] ?? envFeatureFlags["dashboard.leads"] ?? true;
   const defaults: Record<string, boolean> = {
     "dashboard.inbox": true,
-    "dashboard.leads": true,
+    "dashboard.contacts": contactsEnabled,
+    "dashboard.leads": contactsEnabled,
     "dashboard.billing": env.DASHBOARD_BILLING_CENTER,
     "dashboard.agents": true,
     "dashboard.settings.web": true,
     "dashboard.settings.qr": true,
     "dashboard.settings.api": true,
+    "dashboard.studio.flows": true,
     "dashboard.studio.knowledge": true,
     "dashboard.studio.personality": true,
     "dashboard.studio.review": true,

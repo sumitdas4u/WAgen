@@ -42,6 +42,23 @@ function hasTemplatePattern(text: string): boolean {
   return directOptionPattern.test(text) || promptPattern.test(text);
 }
 
+function isLowSignalReply(text: string): boolean {
+  if (!text) {
+    return true;
+  }
+
+  if (/^\d{1,2}$/.test(text)) {
+    return true;
+  }
+
+  const tokens = text.split(" ").filter(Boolean);
+  if (text.length <= 3 && tokens.length <= 2) {
+    return true;
+  }
+
+  return false;
+}
+
 function parseTimeMs(value: string): number {
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) ? ms : 0;
@@ -106,8 +123,13 @@ export async function detectExternalBotLoop(
     signals.push("bot_lexicon");
   }
 
-  if (hasTemplatePattern(inboundText)) {
+  const hasTemplateLikeText = hasTemplatePattern(inboundText);
+  if (hasTemplateLikeText) {
     signals.push("template_pattern");
+  }
+
+  if (!hasLexicon && !hasTemplateLikeText && isLowSignalReply(normalizedInbound)) {
+    return { flagged: false, signals: [] };
   }
 
   const previousOutbound = [...rows]
@@ -138,4 +160,3 @@ export async function detectExternalBotLoop(
   const flagged = uniqueSignals.length >= 2 && hasStrongSignal;
   return { flagged, signals: uniqueSignals };
 }
-

@@ -14,9 +14,12 @@ import { knowledgeRoutes } from "./routes/knowledge.js";
 import { whatsappRoutes } from "./routes/whatsapp.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { conversationRoutes } from "./routes/conversations.js";
+import { flowRoutes } from "./routes/flows.js";
 import { billingRoutes } from "./routes/billing.js";
 import { agentRoutes } from "./routes/agents.js";
 import { metaRoutes } from "./routes/meta.js";
+import { googleCalendarRoutes } from "./routes/google-calendar.js";
+import { googleSheetsRoutes } from "./routes/google-sheets.js";
 import { aiReviewRoutes } from "./routes/ai-review.js";
 import { sdkRoutes } from "./routes/sdk.js";
 import { workspaceRoutes } from "./routes/workspace.js";
@@ -142,10 +145,13 @@ export async function buildApp() {
   await workspaceRoutes(app);
   await workspaceBillingRoutes(app);
   await metaRoutes(app);
+  await googleCalendarRoutes(app);
+  await googleSheetsRoutes(app);
   await agentRoutes(app);
   await aiReviewRoutes(app);
   await sdkRoutes(app);
   await conversationRoutes(app);
+  await flowRoutes(app);
   await registerRealtimeRoutes(app);
   await registerWidgetChatGatewayRoutes(app);
 

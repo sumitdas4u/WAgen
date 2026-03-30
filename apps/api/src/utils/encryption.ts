@@ -29,3 +29,15 @@ export function decryptJsonPayload<T>(encryptedPayload: string, secret: string):
   );
   return JSON.parse(decrypted) as T;
 }
+
+export function encryptTextPayload(value: string, secret: string): string {
+  return encryptJsonPayload({ value }, secret);
+}
+
+export function decryptTextPayload(encryptedPayload: string, secret: string): string {
+  const parsed = decryptJsonPayload<{ value?: unknown }>(encryptedPayload, secret);
+  if (typeof parsed?.value !== "string") {
+    throw new Error("Invalid encrypted text payload");
+  }
+  return parsed.value;
+}

@@ -7,13 +7,15 @@ import { useDashboardShell } from "../../../shared/dashboard/shell-context";
 import { DashboardIcon } from "../../../shared/dashboard/icons";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import {
+  assignInboxFlow,
   sendManualConversationMessage,
   updateConversationAiMode
 } from "./api";
 import {
   buildInboxConversationsQueryOptions,
   useInboxConversationsQuery,
-  useInboxMessagesQuery
+  useInboxMessagesQuery,
+  useInboxPublishedFlowsQuery
 } from "./queries";
 
 type LeadStageFilter = "all" | "hot" | "warm" | "cold";
@@ -437,13 +439,14 @@ export function Component() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const params = useParams();
-  const { token, bootstrap } = useDashboardShell();
+  const { token, bootstrap, loading } = useDashboardShell();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileConversationOpen, setIsMobileConversationOpen] = useState(false);
   const [isDesktopFilterPanelOpen, setIsDesktopFilterPanelOpen] = useState(true);
   const [isDesktopLeadPanelOpen, setIsDesktopLeadPanelOpen] = useState(true);
   const [chatAiMenuOpen, setChatAiMenuOpen] = useState(false);
+  const [flowMenuOpen, setFlowMenuOpen] = useState(false);
   const [chatAiTimers, setChatAiTimers] = useState<Record<string, ChatAiTimedAction>>({});
   const [manualComposeConversationId, setManualComposeConversationId] = useState<string | null>(null);
   const [agentReplyText, setAgentReplyText] = useState("");
@@ -470,6 +473,7 @@ export function Component() {
 
   const conversationsQuery = useInboxConversationsQuery(token, { folder: "all", search });
   const messagesQuery = useInboxMessagesQuery(token, selectedConversationId);
+  const publishedFlowsQuery = useInboxPublishedFlowsQuery(token);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") {
@@ -503,17 +507,19 @@ export function Component() {
   }, [isMobileViewport]);
 
   useEffect(() => {
-    if (!chatAiMenuOpen) {
+    if (!chatAiMenuOpen && !flowMenuOpen) {
       return;
     }
     const closeOnOutside = (event: MouseEvent) => {
       if (chatAiMenuRef.current && event.target instanceof Node && !chatAiMenuRef.current.contains(event.target)) {
         setChatAiMenuOpen(false);
+        setFlowMenuOpen(false);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setChatAiMenuOpen(false);
+        setFlowMenuOpen(false);
       }
     };
     window.addEventListener("mousedown", closeOnOutside);
@@ -522,10 +528,11 @@ export function Component() {
       window.removeEventListener("mousedown", closeOnOutside);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [chatAiMenuOpen]);
+  }, [chatAiMenuOpen, flowMenuOpen]);
 
   useEffect(() => {
     setChatAiMenuOpen(false);
+    setFlowMenuOpen(false);
     setAgentReplyText("");
     setManualComposeConversationId(null);
   }, [selectedConversationId]);
@@ -651,6 +658,25 @@ export function Component() {
     onError: (mutationError) => setError((mutationError as Error).message)
   });
 
+  const assignFlowMutation = useMutation({
+    mutationFn: async ({ conversationId, flowId, flowName }: { conversationId: string; flowId: string; flowName: string }) => {
+      await assignInboxFlow(token, conversationId, flowId);
+      return { flowName };
+    },
+    onSuccess: async ({ flowName }) => {
+      setFlowMenuOpen(false);
+      setChatAiMenuOpen(false);
+      setManualComposeConversationId(null);
+      setAgentReplyText("");
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      if (selectedConversationId) {
+        await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
+      }
+      setInfo(`Assigned flow "${flowName}".`);
+    },
+    onError: (mutationError) => setError((mutationError as Error).message)
+  });
+
   const sendMessageMutation = useMutation({
     mutationFn: async (text: string) => {
       if (!selectedConversationId) {
@@ -686,6 +712,7 @@ export function Component() {
     return () => window.clearInterval(timer);
   }, [chatAiTimers, toggleMutation]);
 
+  const publishedFlows = publishedFlowsQuery.data ?? [];
   const selectedConversationMessages = messagesQuery.data ?? [];
   const selectedConversationLabel = selectedConversation ? getConversationDisplayName(selectedConversation) : "Select a conversation";
   const selectedConversationStage = selectedConversation ? normalizeStage(selectedConversation.stage) : "cold";
@@ -799,7 +826,47 @@ export function Component() {
     }
   };
 
+  const hasConfiguredAgentProfile = Boolean(bootstrap?.agentSummary.hasConfiguredProfile);
+  const websiteChannelEnabled = Boolean(bootstrap?.channelSummary.website.enabled);
+  const qrChannelStatus = bootstrap?.channelSummary.whatsapp.status ?? "disconnected";
+  const apiChannelConnected = Boolean(bootstrap?.channelSummary.metaApi.connected);
   const isAnyChannelConnected = Boolean(bootstrap?.channelSummary.anyConnected);
+  const isInboxStatusLoading = loading && !bootstrap;
+  const waitingStateDescription = hasConfiguredAgentProfile
+    ? "No live channel is connected yet. Conversations will appear here as soon as your agent comes online."
+    : "No agent found yet. Create or activate an agent workflow, then connect a channel to start receiving chats.";
+  const waitingStatusItems = [
+    {
+      label: hasConfiguredAgentProfile ? "Agent ready" : "No agent configured",
+      tone: hasConfiguredAgentProfile ? "connected" : "not_connected"
+    },
+    {
+      label: websiteChannelEnabled ? "Website connected" : "Website offline",
+      tone: websiteChannelEnabled ? "connected" : "not_connected"
+    },
+    {
+      label:
+        qrChannelStatus === "connected"
+          ? "WhatsApp QR connected"
+          : qrChannelStatus === "waiting_scan"
+            ? "WhatsApp QR waiting for scan"
+            : qrChannelStatus === "connecting"
+              ? "WhatsApp QR connecting"
+              : "WhatsApp QR offline",
+      tone:
+        qrChannelStatus === "connected"
+          ? "connected"
+          : qrChannelStatus === "waiting_scan"
+            ? "waiting_scan"
+            : qrChannelStatus === "connecting"
+              ? "connecting"
+              : "not_connected"
+    },
+    {
+      label: apiChannelConnected ? "WhatsApp API connected" : "WhatsApp API offline",
+      tone: apiChannelConnected ? "connected" : "not_connected"
+    }
+  ];
   const showConversationListPane = !isMobileViewport || !isMobileConversationOpen;
   const showConversationDetailPane = !isMobileViewport || isMobileConversationOpen;
   const showFilterPane = !isMobileViewport && isDesktopFilterPanelOpen;
@@ -837,60 +904,53 @@ export function Component() {
         </div>
       )}
 
-      {!isAnyChannelConnected ? (
+      {isInboxStatusLoading ? (
+        <section className="clone-chat-setup clone-chat-waiting">
+          <h2>Checking inbox status</h2>
+          <p>Looking for a connected agent and active channel.</p>
+        </section>
+      ) : !isAnyChannelConnected ? (
         <section className="clone-chat-setup">
-          <h2>Go Live</h2>
-          <p>Connect your channels and go live.</p>
-          <div className="clone-setup-grid">
-            <article className="clone-setup-panel">
-              <div className="clone-setup-head">
-                <span className="clone-setup-icon">
-                  <DashboardIcon name="knowledge" />
+          <h2>Waiting for agent to connect</h2>
+          <p>{waitingStateDescription}</p>
+          <article className="clone-setup-panel inbox-waiting-panel">
+            <div className="clone-setup-head">
+              <span className="clone-setup-icon">
+                <DashboardIcon name="agents" />
+              </span>
+              <div>
+                <h3>{hasConfiguredAgentProfile ? "Inbox is standing by" : "Agent setup required"}</h3>
+                <p>
+                  {hasConfiguredAgentProfile
+                    ? "Your workflow is ready. As soon as one channel connects, new chats will start showing here."
+                    : "There is no active workflow attached to this workspace yet."}
+                </p>
+              </div>
+            </div>
+            <div className="inbox-waiting-status">
+              {waitingStatusItems.map((item) => (
+                <span key={item.label} className={`status-badge status-${item.tone}`}>
+                  {item.label}
                 </span>
-                <div>
-                  <h3>Connect to Website</h3>
-                  <p>Customize your chatbot appearance, get integration code and go live.</p>
-                </div>
-              </div>
-              <div className="clone-hero-actions">
-                <button type="button" className="primary-btn" onClick={() => navigate("/dashboard/settings/web")}>
-                  Setup
-                </button>
-              </div>
-            </article>
-            <article className="clone-setup-panel">
-              <div className="clone-setup-head">
-                <span className="clone-setup-icon">
-                  <DashboardIcon name="chats" />
-                </span>
-                <div>
-                  <h3>Connect to WhatsApp</h3>
-                  <p>Configure your chatbot settings, get login QR code and go live.</p>
-                </div>
-              </div>
-              <div className="clone-hero-actions">
-                <button type="button" className="primary-btn" onClick={() => navigate("/onboarding/qr")}>
-                  Setup
-                </button>
-              </div>
-            </article>
-            <article className="clone-setup-panel">
-              <div className="clone-setup-head">
-                <span className="clone-setup-icon">
-                  <DashboardIcon name="settings" />
-                </span>
-                <div>
-                  <h3>Connect to WACA</h3>
-                  <p>Configure your chatbot settings, login Facebook and go live.</p>
-                </div>
-              </div>
-              <div className="clone-hero-actions">
-                <button type="button" className="primary-btn" onClick={() => navigate("/dashboard/settings/api")}>
-                  Setup
-                </button>
-              </div>
-            </article>
-          </div>
+              ))}
+            </div>
+            <div className="clone-hero-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => navigate(hasConfiguredAgentProfile ? "/dashboard/settings/api" : "/dashboard/agents")}
+              >
+                {hasConfiguredAgentProfile ? "Open channel settings" : "Open AI Agents"}
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => navigate(hasConfiguredAgentProfile ? "/dashboard/agents" : "/dashboard/settings/api")}
+              >
+                {hasConfiguredAgentProfile ? "Open AI Agents" : "Open channel settings"}
+              </button>
+            </div>
+          </article>
         </section>
       ) : (
         <section className={workbenchClassName}>
@@ -1227,12 +1287,54 @@ export function Component() {
                       <button
                         className="ghost-btn"
                         type="button"
+                        disabled={assignFlowMutation.isPending}
+                        onClick={() => {
+                          setFlowMenuOpen((current) => !current);
+                          setChatAiMenuOpen(false);
+                        }}
+                      >
+                        {assignFlowMutation.isPending ? "Assigning..." : "Assign flow"}
+                      </button>
+                      {flowMenuOpen ? (
+                        <div className="chat-ai-menu">
+                          {publishedFlowsQuery.isLoading ? (
+                            <button type="button" disabled>
+                              Loading flows...
+                            </button>
+                          ) : publishedFlows.length === 0 ? (
+                            <button type="button" disabled>
+                              No published flows
+                            </button>
+                          ) : (
+                            publishedFlows.map((flow) => (
+                              <button
+                                key={flow.id}
+                                type="button"
+                                onClick={() =>
+                                  assignFlowMutation.mutate({
+                                    conversationId: selectedConversation.id,
+                                    flowId: flow.id,
+                                    flowName: flow.name
+                                  })
+                                }
+                              >
+                                {flow.name}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      ) : null}
+                      <button
+                        className="ghost-btn"
+                        type="button"
                         disabled={toggleMutation.isPending}
                         onClick={() => {
                           if (selectedConversation.ai_paused || selectedConversation.manual_takeover) {
+                            setFlowMenuOpen(false);
                             setChatAiMenuOpen((current) => !current);
                             return;
                           }
+                          setFlowMenuOpen(false);
                           toggleMutation.mutate({
                             conversationId: selectedConversation.id,
                             paused: true,
@@ -1252,13 +1354,14 @@ export function Component() {
                             <button
                               key={option.label}
                               type="button"
-                              onClick={() =>
+                              onClick={() => {
+                                setChatAiMenuOpen(false);
                                 toggleMutation.mutate({
                                   conversationId: selectedConversation.id,
                                   paused: false,
                                   durationMinutes: option.minutes
-                                })
-                              }
+                                });
+                              }}
                             >
                               {option.label}
                             </button>

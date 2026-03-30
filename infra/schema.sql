@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT,
   firebase_uid TEXT UNIQUE,
+  google_auth_sub TEXT UNIQUE,
   business_type TEXT,
   subscription_plan TEXT NOT NULL DEFAULT 'trial',
   business_basics JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
 CREATE INDEX IF NOT EXISTS knowledge_user_id_idx ON knowledge_base(user_id);
 CREATE INDEX IF NOT EXISTS knowledge_embedding_idx ON knowledge_base USING ivfflat (embedding_vector vector_cosine_ops) WITH (lists = 100);
 CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique_idx ON users(firebase_uid) WHERE firebase_uid IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS users_google_auth_sub_unique_idx ON users(google_auth_sub) WHERE google_auth_sub IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -65,6 +67,43 @@ CREATE TABLE IF NOT EXISTS conversations (
 
 CREATE INDEX IF NOT EXISTS conversations_user_idx ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS conversations_user_kind_stage_idx ON conversations(user_id, lead_kind, stage, last_message_at DESC);
+
+CREATE TABLE IF NOT EXISTS flows (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'Untitled Flow',
+  channel VARCHAR(10) NOT NULL DEFAULT 'api',
+  nodes JSONB NOT NULL DEFAULT '[]',
+  edges JSONB NOT NULL DEFAULT '[]',
+  triggers JSONB NOT NULL DEFAULT '[]',
+  variables JSONB NOT NULL DEFAULT '{}',
+  published BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_flows_user_id ON flows(user_id);
+CREATE INDEX IF NOT EXISTS idx_flows_published ON flows(user_id, published) WHERE published = TRUE;
+
+CREATE TABLE IF NOT EXISTS flow_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  flow_id UUID NOT NULL REFERENCES flows(id) ON DELETE CASCADE,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  current_node_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active','waiting','completed','failed','ai_mode')),
+  variables JSONB NOT NULL DEFAULT '{}',
+  waiting_for TEXT
+    CHECK (waiting_for IN ('button','message','location','payment','ai_reply')),
+  waiting_node_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_flow_sessions_conversation
+  ON flow_sessions(conversation_id, status)
+  WHERE status IN ('active','waiting','ai_mode');
+CREATE INDEX IF NOT EXISTS idx_flow_sessions_flow_id ON flow_sessions(flow_id);
 
 CREATE TABLE IF NOT EXISTS conversation_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -157,6 +196,44 @@ CREATE INDEX IF NOT EXISTS whatsapp_business_connections_user_idx
 CREATE INDEX IF NOT EXISTS whatsapp_business_connections_lookup_idx
   ON whatsapp_business_connections(phone_number_id, status);
 
+CREATE TABLE IF NOT EXISTS google_sheets_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  google_email TEXT NOT NULL,
+  google_account_id TEXT,
+  display_name TEXT,
+  access_token_encrypted TEXT NOT NULL,
+  refresh_token_encrypted TEXT NOT NULL,
+  token_expires_at TIMESTAMPTZ,
+  granted_scopes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  status TEXT NOT NULL DEFAULT 'connected',
+  metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS google_sheets_connections_user_idx
+  ON google_sheets_connections(user_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS google_calendar_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  google_email TEXT NOT NULL,
+  google_account_id TEXT,
+  display_name TEXT,
+  access_token_encrypted TEXT NOT NULL,
+  refresh_token_encrypted TEXT NOT NULL,
+  token_expires_at TIMESTAMPTZ,
+  granted_scopes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  status TEXT NOT NULL DEFAULT 'connected',
+  metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS google_calendar_connections_user_idx
+  ON google_calendar_connections(user_id, status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS user_subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -222,6 +299,16 @@ CREATE TRIGGER conversations_touch_updated_at
 BEFORE UPDATE ON conversations
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
+DROP TRIGGER IF EXISTS flows_touch_updated_at ON flows;
+CREATE TRIGGER flows_touch_updated_at
+BEFORE UPDATE ON flows
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+DROP TRIGGER IF EXISTS flow_sessions_touch_updated_at ON flow_sessions;
+CREATE TRIGGER flow_sessions_touch_updated_at
+BEFORE UPDATE ON flow_sessions
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
 DROP TRIGGER IF EXISTS whatsapp_sessions_touch_updated_at ON whatsapp_sessions;
 CREATE TRIGGER whatsapp_sessions_touch_updated_at
 BEFORE UPDATE ON whatsapp_sessions
@@ -240,4 +327,14 @@ FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 DROP TRIGGER IF EXISTS whatsapp_business_connections_touch_updated_at ON whatsapp_business_connections;
 CREATE TRIGGER whatsapp_business_connections_touch_updated_at
 BEFORE UPDATE ON whatsapp_business_connections
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+DROP TRIGGER IF EXISTS google_sheets_connections_touch_updated_at ON google_sheets_connections;
+CREATE TRIGGER google_sheets_connections_touch_updated_at
+BEFORE UPDATE ON google_sheets_connections
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+DROP TRIGGER IF EXISTS google_calendar_connections_touch_updated_at ON google_calendar_connections;
+CREATE TRIGGER google_calendar_connections_touch_updated_at
+BEFORE UPDATE ON google_calendar_connections
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

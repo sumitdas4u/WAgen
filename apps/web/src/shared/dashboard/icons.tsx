@@ -28,6 +28,15 @@ export function DashboardIcon({ name }: { name: DashboardIconName }) {
           <path d="M3.5 8h13M7 12h2.5" />
         </svg>
       );
+    case "flows":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
+          <rect x="3.5" y="5" width="4" height="4" rx="1" />
+          <rect x="12.5" y="3.5" width="4" height="4" rx="1" />
+          <rect x="12.5" y="12.5" width="4" height="4" rx="1" />
+          <path d="M7.5 7h3.4M10.9 7V5.5M10.9 7v7M10.9 14.5h1.6" />
+        </svg>
+      );
     case "knowledge":
       return (
         <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">

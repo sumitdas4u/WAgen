@@ -6,6 +6,7 @@ import { ensureWorkspaceForUser } from "./workspace-billing-service.js";
 interface UserRow extends User {
   password_hash: string | null;
   firebase_uid: string | null;
+  google_auth_sub: string | null;
 }
 
 export interface UserAuthIdentity {
@@ -14,6 +15,7 @@ export interface UserAuthIdentity {
   email: string;
   password_hash: string | null;
   firebase_uid: string | null;
+  google_auth_sub: string | null;
 }
 
 function toPublicUser(row: UserRow): User {
@@ -74,10 +76,31 @@ export async function createUserFromFirebase(input: {
   return user;
 }
 
+export async function createUserFromGoogleAuth(input: {
+  name: string;
+  email: string;
+  googleAuthSub: string;
+  businessType?: string;
+}): Promise<User> {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const result = await pool.query<User>(
+    `INSERT INTO users (name, email, password_hash, google_auth_sub, business_type)
+     VALUES ($1, $2, NULL, $3, $4)
+     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active`,
+    [input.name.trim(), normalizedEmail, input.googleAuthSub, input.businessType ?? null]
+  );
+
+  const user = result.rows[0];
+  if (user) {
+    await ensureWorkspaceForUser(user.id);
+  }
+  return user;
+}
+
 export async function authenticateUser(email: string, password: string): Promise<User | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active
      FROM users
      WHERE email = $1`,
     [normalizedEmail]
@@ -115,7 +138,7 @@ export async function userEmailExists(email: string): Promise<boolean> {
 export async function getUserAuthIdentityByEmail(email: string): Promise<UserAuthIdentity | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<UserAuthIdentity>(
-    `SELECT id, name, email, password_hash, firebase_uid
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub
      FROM users
      WHERE email = $1
      LIMIT 1`,
@@ -127,7 +150,7 @@ export async function getUserAuthIdentityByEmail(email: string): Promise<UserAut
 
 export async function getUserAuthIdentityById(userId: string): Promise<UserAuthIdentity | null> {
   const result = await pool.query<UserAuthIdentity>(
-    `SELECT id, name, email, password_hash, firebase_uid
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub
      FROM users
      WHERE id = $1
      LIMIT 1`,
@@ -150,7 +173,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 
 export async function getUserByFirebaseUid(firebaseUid: string): Promise<User | null> {
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active
      FROM users
      WHERE firebase_uid = $1
      LIMIT 1`,
@@ -177,6 +200,28 @@ export async function setUserFirebaseUidAndDisableLegacyPassword(userId: string,
          password_hash = NULL
      WHERE id = $2`,
     [firebaseUid, userId]
+  );
+}
+
+export async function getUserByGoogleAuthSub(googleAuthSub: string): Promise<User | null> {
+  const result = await pool.query<UserRow>(
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active
+     FROM users
+     WHERE google_auth_sub = $1
+     LIMIT 1`,
+    [googleAuthSub]
+  );
+
+  const row = result.rows[0];
+  return row ? toPublicUser(row) : null;
+}
+
+export async function setUserGoogleAuthSub(userId: string, googleAuthSub: string): Promise<void> {
+  await pool.query(
+    `UPDATE users
+     SET google_auth_sub = $1
+     WHERE id = $2`,
+    [googleAuthSub, userId]
   );
 }
 

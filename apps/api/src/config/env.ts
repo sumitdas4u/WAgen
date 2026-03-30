@@ -38,6 +38,7 @@ const BaseEnvSchema = z.object({
   CREDIT_RENEWAL_CRON_ENABLED: z.enum(["true", "false"]).default("true"),
   CREDIT_RENEWAL_CRON_INTERVAL_SECONDS: z.coerce.number().int().positive().default(86400),
   DASHBOARD_BILLING_CENTER: z.enum(["true", "false"]).default("true"),
+  DASHBOARD_FEATURE_FLAGS: z.string().default("{}"),
   BILLING_GST_RATE_PERCENT: z.coerce.number().min(0).max(100).default(18),
   RECHARGE_PRICE_PER_1000_CREDITS_INR: z.coerce.number().positive().default(5000),
   AUTO_RECHARGE_CRON_ENABLED: z.enum(["true", "false"]).default("true"),
@@ -53,6 +54,14 @@ const BaseEnvSchema = z.object({
   META_GRAPH_VERSION: z.string().default("v19.0"),
   META_STATUS_SYNC_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
   META_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  GOOGLE_SHEETS_CLIENT_ID: z.string().optional(),
+  GOOGLE_SHEETS_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_SHEETS_OAUTH_REDIRECT_URI: z.string().optional(),
+  GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  GOOGLE_CALENDAR_CLIENT_ID: z.string().optional(),
+  GOOGLE_CALENDAR_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: z.string().optional(),
+  GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   WA_SESSION_ENCRYPTION_KEY: z.string().optional(),
   USD_TO_INR: z.coerce.number().positive().default(83),
   OPENAI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(220),
@@ -104,11 +113,61 @@ const EnvSchema = BaseEnvSchema.superRefine((data, ctx) => {
     });
   }
 
+  if (
+    data.GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY &&
+    data.GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY.length < 32
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY must be at least 32 characters"
+    });
+  }
+
+  if (
+    data.GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY &&
+    data.GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY.length < 32
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY must be at least 32 characters"
+    });
+  }
+
   const metaConfigured = Boolean(data.META_APP_ID || data.META_APP_SECRET || data.META_EMBEDDED_SIGNUP_CONFIG_ID);
   if (metaConfigured && !data.META_TOKEN_ENCRYPTION_KEY) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "META_TOKEN_ENCRYPTION_KEY is required when Meta integration is configured"
+    });
+  }
+
+  const googleConfigured = Boolean(
+    data.GOOGLE_SHEETS_CLIENT_ID ||
+      data.GOOGLE_SHEETS_CLIENT_SECRET ||
+      data.GOOGLE_SHEETS_OAUTH_REDIRECT_URI
+  );
+  if (googleConfigured && !data.GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY is required when Google Sheets integration is configured"
+    });
+  }
+
+  const googleCalendarConfigured = Boolean(
+    data.GOOGLE_CALENDAR_CLIENT_ID ||
+      data.GOOGLE_CALENDAR_CLIENT_SECRET ||
+      data.GOOGLE_CALENDAR_OAUTH_REDIRECT_URI
+  );
+  if (
+    googleCalendarConfigured &&
+    !data.GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY &&
+    !data.GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY or GOOGLE_SHEETS_TOKEN_ENCRYPTION_KEY is required when Google Calendar integration is configured"
     });
   }
 
@@ -127,6 +186,25 @@ if (!parsed.success) {
   throw new Error(`Invalid environment configuration: ${issues}`);
 }
 
+function parseDashboardFeatureFlags(raw: string): Record<string, boolean> {
+  try {
+    const parsedValue = JSON.parse(raw) as unknown;
+    if (!parsedValue || typeof parsedValue !== "object" || Array.isArray(parsedValue)) {
+      return {};
+    }
+
+    const next: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(parsedValue)) {
+      if (typeof value === "boolean") {
+        next[key] = value;
+      }
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
 export const env = {
   ...parsed.data,
   OPENAI_LOG_USAGE: parsed.data.OPENAI_LOG_USAGE === "true",
@@ -135,6 +213,7 @@ export const env = {
   AUTO_RECONNECT: parsed.data.AUTO_RECONNECT === "true",
   CREDIT_RENEWAL_CRON_ENABLED: parsed.data.CREDIT_RENEWAL_CRON_ENABLED === "true",
   DASHBOARD_BILLING_CENTER: parsed.data.DASHBOARD_BILLING_CENTER === "true",
+  DASHBOARD_FEATURE_FLAGS: parseDashboardFeatureFlags(parsed.data.DASHBOARD_FEATURE_FLAGS),
   AUTO_RECHARGE_CRON_ENABLED: parsed.data.AUTO_RECHARGE_CRON_ENABLED === "true",
   METRICS_ENABLED: parsed.data.METRICS_ENABLED === "true"
 };

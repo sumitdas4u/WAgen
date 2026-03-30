@@ -1,0 +1,805 @@
+import { pool } from "../db/pool.js";
+import {
+  formatFlowLocationValue,
+  parseFlowLocationInput
+} from "./flow-input-codec.js";
+import { setConversationManualAndPaused } from "./conversation-service.js";
+import {
+  buildButtonOptions,
+  buildChoicePrompt,
+  buildListSections,
+  flattenListChoices,
+  getNextNode,
+  matchChoiceByMessage
+} from "./flow-blocks/helpers.js";
+import { getFlowBlockModule } from "./flow-blocks/registry.js";
+import {
+  resolveFlowOutputChannel,
+  type FlowChannelType,
+  type FlowEdge,
+  type FlowNode,
+  type FlowOutputChannel,
+  type FlowStepResult,
+  type FlowVariables,
+  type FlowWaitResumeResult,
+  type SendReplyFn
+} from "./flow-blocks/types.js";
+import {
+  createFlowSession,
+  getActiveFlowSession,
+  getPublishedFlowsForUser,
+  updateFlowSession,
+  type FlowRow,
+  type FlowSessionRow,
+  type FlowTrigger
+} from "./flow-service.js";
+
+export type FlowHandleResult =
+  | { result: "handled" }
+  | { result: "use_ai" }
+  | { result: "not_matched" }
+  | { result: "failed" };
+
+interface FlowExecutionOptions {
+  userId?: string | null;
+  channelType: FlowChannelType;
+}
+
+const MAX_STEPS = 20;
+
+function isFlowCompatibleWithChannel(
+  flow: FlowRow,
+  channelType: FlowChannelType
+): boolean {
+  return flow.channel === channelType;
+}
+
+async function markFlowSessionFailed(sessionId: string | null | undefined): Promise<void> {
+  if (!sessionId) {
+    return;
+  }
+
+  try {
+    await updateFlowSession(sessionId, {
+      status: "failed",
+      waiting_for: null,
+      waiting_node_id: null
+    });
+  } catch (error) {
+    console.warn("[FlowEngine] Failed to mark session as failed:", error);
+  }
+}
+
+function getFlowGraph(flow: FlowRow): {
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  startNode: FlowNode | null;
+} {
+  const nodes = (Array.isArray(flow.nodes) ? flow.nodes : []) as FlowNode[];
+  const edges = (Array.isArray(flow.edges) ? flow.edges : []) as FlowEdge[];
+  return {
+    nodes,
+    edges,
+    startNode: nodes.find((node) => node.type === "flowStart") ?? null
+  };
+}
+
+function getEffectiveTriggers(flow: FlowRow): { type: string; value: string }[] {
+  const flowLevel = Array.isArray(flow.triggers) ? flow.triggers : [];
+  const { nodes } = getFlowGraph(flow);
+  const startNode = nodes.find((node) => node.type === "flowStart");
+  const nodeTriggers = Array.isArray(startNode?.data?.triggers)
+    ? (startNode.data.triggers as Array<{ id?: string; type: string; value: string }>)
+    : [];
+
+  const merged = [...flowLevel];
+  for (const trigger of nodeTriggers) {
+    if (
+      !merged.some(
+        (candidate) =>
+          candidate.type === trigger.type && candidate.value === trigger.value
+      )
+    ) {
+      merged.push({
+        id: trigger.id ?? trigger.type,
+        type: trigger.type as FlowTrigger["type"],
+        value: trigger.value
+      });
+    }
+  }
+
+  return merged;
+}
+
+function matchesTemplateReply(message: string, triggerValue: string): boolean {
+  const normalizedMessage = message.toLowerCase().trim();
+  const normalizedTrigger = triggerValue.trim().toLowerCase();
+  if (!normalizedTrigger) {
+    return false;
+  }
+
+  return (
+    normalizedMessage === normalizedTrigger ||
+    normalizedMessage.startsWith(`${normalizedTrigger} `) ||
+    normalizedMessage.endsWith(` ${normalizedTrigger}`) ||
+    normalizedMessage.includes(` ${normalizedTrigger} `)
+  );
+}
+
+function matchesChannelStartTrigger(params: {
+  channelType: FlowChannelType;
+  isFirstInboundMessage: boolean;
+  lowerMessage: string;
+  trigger: { type: string; value: string };
+}): boolean {
+  const { channelType, isFirstInboundMessage, lowerMessage, trigger } = params;
+  if (!isFirstInboundMessage) {
+    return false;
+  }
+
+  if (trigger.type === "qr_start" && channelType !== "qr") {
+    return false;
+  }
+  if (trigger.type === "website_start" && channelType !== "web") {
+    return false;
+  }
+
+  const expected = trigger.value.trim().toLowerCase();
+  if (!expected) {
+    return true;
+  }
+
+  return lowerMessage.startsWith(expected);
+}
+
+function matchingFlow(params: {
+  message: string;
+  flows: FlowRow[];
+  channelType: FlowChannelType;
+  isFirstInboundMessage: boolean;
+}): FlowRow | null {
+  const { message, flows, channelType, isFirstInboundMessage } = params;
+  const lower = message.toLowerCase().trim();
+
+  const byKeyword = flows.find((flow) =>
+    getEffectiveTriggers(flow).some(
+      (trigger) =>
+        trigger.type === "keyword" &&
+        trigger.value &&
+        lower.includes(trigger.value.toLowerCase())
+    )
+  );
+  if (byKeyword) {
+    return byKeyword;
+  }
+
+  const byTemplateReply = flows.find((flow) =>
+    getEffectiveTriggers(flow).some(
+      (trigger) =>
+        trigger.type === "template_reply" &&
+        matchesTemplateReply(message, trigger.value)
+    )
+  );
+  if (byTemplateReply) {
+    return byTemplateReply;
+  }
+
+  const byChannelStart = flows.find((flow) =>
+    getEffectiveTriggers(flow).some(
+      (trigger) =>
+        (trigger.type === "qr_start" || trigger.type === "website_start") &&
+        matchesChannelStartTrigger({
+          channelType,
+          isFirstInboundMessage,
+          lowerMessage: lower,
+          trigger
+        })
+    )
+  );
+  if (byChannelStart) {
+    return byChannelStart;
+  }
+
+  const anyMessageFlow = flows.find((flow) =>
+    getEffectiveTriggers(flow).some((trigger) => trigger.type === "any_message")
+  );
+  if (anyMessageFlow) {
+    return anyMessageFlow;
+  }
+
+  return flows.find((flow) => getEffectiveTriggers(flow).length === 0) ?? null;
+}
+
+async function executeFlowNode(params: {
+  node: FlowNode;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  vars: FlowVariables;
+  sendReply: SendReplyFn;
+  channel: FlowOutputChannel;
+  userId?: string | null;
+}): Promise<FlowStepResult> {
+  const blockModule = getFlowBlockModule(params.node.type);
+  if (!blockModule) {
+    console.warn(`[FlowEngine] Unknown block type: ${params.node.type}`);
+    return {
+      signal: "end",
+      variables: params.vars
+    };
+  }
+
+  return blockModule.execute({
+    node: params.node,
+    nodes: params.nodes,
+    edges: params.edges,
+    vars: params.vars,
+    sendReply: params.sendReply,
+    channel: params.channel,
+    userId: params.userId
+  });
+}
+
+async function fallbackResumeWait(params: {
+  session: FlowSessionRow;
+  waitNode: FlowNode;
+  message: string;
+  sendReply: SendReplyFn;
+  vars: FlowVariables;
+}): Promise<FlowWaitResumeResult> {
+  const { session, waitNode, message, sendReply, vars } = params;
+
+  if (session.waiting_for === "button") {
+    const choices =
+      waitNode.type === "list"
+        ? flattenListChoices(buildListSections(waitNode.data.sections, vars))
+        : buildButtonOptions(waitNode.data.buttons, vars).map((button) => ({
+            id: button.id,
+            label: button.label
+          }));
+
+    const choice = matchChoiceByMessage(message, choices);
+    if (!choice) {
+      await sendReply({
+        type: "text",
+        text: `Please choose one of:\n${buildChoicePrompt(choices)}`
+      });
+      return {
+        signal: "stay_waiting",
+        variables: vars
+      };
+    }
+
+    return {
+      signal: "advance",
+      nextHandleId: choice.id,
+      variables: vars
+    };
+  }
+
+  if (session.waiting_for === "message") {
+    const variableName =
+      String(waitNode.data.variableName ?? "answer").trim() || "answer";
+    return {
+      signal: "advance",
+      nextHandleId: "out",
+      variables: {
+        ...vars,
+        [variableName]: message
+      }
+    };
+  }
+
+  if (session.waiting_for === "location") {
+    const variableName =
+      String(waitNode.data.variableName ?? "location").trim() || "location";
+    const location = parseFlowLocationInput(message);
+    if (!location) {
+      await sendReply({
+        type: "text",
+        text: "Please share your WhatsApp location so I can continue."
+      });
+      return {
+        signal: "stay_waiting",
+        variables: vars
+      };
+    }
+
+    return {
+      signal: "advance",
+      nextHandleId: "out",
+      variables: {
+        ...vars,
+        [variableName]: formatFlowLocationValue(location),
+        [`${variableName}_latitude`]: location.latitude,
+        [`${variableName}_longitude`]: location.longitude,
+        ...(location.name ? { [`${variableName}_name`]: location.name } : {}),
+        ...(location.address ? { [`${variableName}_address`]: location.address } : {}),
+        ...(location.url ? { [`${variableName}_url`]: location.url } : {}),
+        [`${variableName}_source`]: location.source ?? "native",
+        [`${variableName}_payload`]: location
+      }
+    };
+  }
+
+  if (session.waiting_for === "payment") {
+    return {
+      signal: "advance",
+      nextHandleId: message.toLowerCase().includes("paid") ? "success" : "fail",
+      variables: vars
+    };
+  }
+
+  return {
+    signal: "stay_waiting",
+    variables: vars
+  };
+}
+
+async function runChain(
+  startNode: FlowNode,
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+  session: FlowSessionRow,
+  vars: FlowVariables,
+  sendReply: SendReplyFn,
+  options: FlowExecutionOptions
+): Promise<FlowHandleResult> {
+  let node: FlowNode | null = startNode;
+  let currentVars = vars;
+  let steps = 0;
+  const channel = resolveFlowOutputChannel(options.channelType);
+
+  while (node && steps < MAX_STEPS) {
+    steps += 1;
+    const result = await executeFlowNode({
+      node,
+      nodes,
+      edges,
+      vars: currentVars,
+      sendReply,
+      channel,
+      userId: options.userId
+    });
+    currentVars = result.variables;
+
+    if (result.signal === "wait") {
+      await updateFlowSession(session.id, {
+        current_node_id: node.id,
+        variables: currentVars,
+        status: "waiting",
+        waiting_for: result.waitingFor ?? null,
+        waiting_node_id: result.waitingNodeId ?? node.id
+      });
+      return { result: "handled" };
+    }
+
+    if (result.signal === "use_ai") {
+      const mode = String(node.data.mode ?? "one_shot");
+      if (mode === "ongoing") {
+        await updateFlowSession(session.id, {
+          current_node_id: node.id,
+          variables: currentVars,
+          status: "ai_mode",
+          waiting_for: null,
+          waiting_node_id: null
+        });
+      } else {
+        await updateFlowSession(session.id, {
+          current_node_id: node.id,
+          variables: currentVars,
+          status: "waiting",
+          waiting_for: "ai_reply",
+          waiting_node_id: result.afterAiNodeId ?? null
+        });
+      }
+      return { result: "use_ai" };
+    }
+
+    if (result.signal === "end") {
+      if (result.handoffToHuman && options.userId) {
+        await setConversationManualAndPaused(options.userId, session.conversation_id);
+      }
+      await updateFlowSession(session.id, {
+        status: "completed",
+        variables: currentVars,
+        waiting_for: null,
+        waiting_node_id: null
+      });
+      return { result: "handled" };
+    }
+
+    if (!result.nextNodeId) {
+      await updateFlowSession(session.id, {
+        status: "completed",
+        variables: currentVars,
+        waiting_for: null,
+        waiting_node_id: null
+      });
+      return { result: "handled" };
+    }
+
+    node = nodes.find((candidate) => candidate.id === result.nextNodeId) ?? null;
+  }
+
+  await updateFlowSession(session.id, {
+    status: "completed",
+    variables: currentVars
+  });
+  return { result: "handled" };
+}
+
+async function resumeWaiting(
+  session: FlowSessionRow,
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+  message: string,
+  sendReply: SendReplyFn,
+  options: FlowExecutionOptions
+): Promise<FlowHandleResult> {
+  if (session.waiting_for === "ai_reply") {
+    if (!session.waiting_node_id) {
+      await updateFlowSession(session.id, { status: "completed" });
+      return { result: "handled" };
+    }
+
+    const nextNode = nodes.find((node) => node.id === session.waiting_node_id);
+    if (!nextNode) {
+      await updateFlowSession(session.id, { status: "completed" });
+      return { result: "handled" };
+    }
+
+    await updateFlowSession(session.id, {
+      status: "active",
+      waiting_for: null,
+      waiting_node_id: null
+    });
+    return runChain(nextNode, nodes, edges, session, session.variables, sendReply, options);
+  }
+
+  const waitNode = nodes.find((node) => node.id === session.waiting_node_id);
+  if (!waitNode) {
+    await updateFlowSession(session.id, { status: "completed" });
+    return { result: "handled" };
+  }
+
+  const blockModule = getFlowBlockModule(waitNode.type);
+  const channel = resolveFlowOutputChannel(options.channelType);
+  const resumeResult = blockModule?.resumeWait
+    ? await blockModule.resumeWait({
+        node: waitNode,
+        nodes,
+        edges,
+        vars: session.variables,
+        message,
+        sendReply,
+        channel,
+        userId: options.userId
+      })
+    : await fallbackResumeWait({
+        session,
+        waitNode,
+        message,
+        sendReply,
+        vars: session.variables
+      });
+
+  if (resumeResult.signal === "stay_waiting") {
+    await updateFlowSession(session.id, {
+      variables: resumeResult.variables,
+      status: "waiting",
+      waiting_for: session.waiting_for,
+      waiting_node_id: session.waiting_node_id
+    });
+    return { result: "handled" };
+  }
+
+  const nextNode = resumeResult.nextHandleId
+    ? getNextNode(nodes, edges, waitNode.id, resumeResult.nextHandleId)
+    : null;
+
+  if (!nextNode) {
+    if (resumeResult.nextHandleId && session.waiting_for === "button") {
+      console.warn(
+        `[FlowEngine] Missing next edge for choice conversation=${session.conversation_id} node=${waitNode.id} handle=${resumeResult.nextHandleId}`
+      );
+      await sendReply({
+        type: "text",
+        text: "That option is not connected yet in the flow. Please choose another option."
+      });
+      await updateFlowSession(session.id, {
+        variables: resumeResult.variables,
+        status: "waiting",
+        waiting_for: session.waiting_for,
+        waiting_node_id: session.waiting_node_id
+      });
+      return { result: "handled" };
+    }
+
+    await updateFlowSession(session.id, {
+      status: "completed",
+      variables: resumeResult.variables,
+      waiting_for: null,
+      waiting_node_id: null
+    });
+    return { result: "handled" };
+  }
+
+  await updateFlowSession(session.id, {
+    current_node_id: nextNode.id,
+    variables: resumeResult.variables,
+    status: "active",
+    waiting_for: null,
+    waiting_node_id: null
+  });
+
+  return runChain(
+    nextNode,
+    nodes,
+    edges,
+    { ...session, variables: resumeResult.variables },
+    resumeResult.variables,
+    sendReply,
+    options
+  );
+}
+
+async function isFirstInboundMessage(conversationId: string): Promise<boolean> {
+  const result = await pool.query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total
+     FROM conversation_messages
+     WHERE conversation_id = $1
+       AND direction = 'inbound'`,
+    [conversationId]
+  );
+
+  return Number(result.rows[0]?.total ?? 0) <= 1;
+}
+
+async function loadConversationExecutionContext(conversationId: string): Promise<{
+  userId: string | null;
+  channelType: FlowChannelType;
+}> {
+  const result = await pool.query<{
+    user_id: string;
+    channel_type: FlowChannelType | null;
+  }>(
+    `SELECT user_id, channel_type
+     FROM conversations
+     WHERE id = $1
+     LIMIT 1`,
+    [conversationId]
+  );
+
+  return {
+    userId: result.rows[0]?.user_id ?? null,
+    channelType: result.rows[0]?.channel_type ?? "web"
+  };
+}
+
+export async function advanceFlowAfterAiReply(
+  conversationId: string,
+  sendReply: SendReplyFn
+): Promise<void> {
+  let sessionId: string | null = null;
+
+  try {
+    const session = await getActiveFlowSession(conversationId);
+    if (!session || session.waiting_for !== "ai_reply") {
+      return;
+    }
+    sessionId = session.id;
+
+    const flowResult = await pool.query<FlowRow>(
+      "SELECT * FROM flows WHERE id = $1 LIMIT 1",
+      [session.flow_id]
+    );
+    const flow = flowResult.rows[0];
+    if (!flow) {
+      return;
+    }
+
+    const { nodes, edges } = getFlowGraph(flow);
+    if (!session.waiting_node_id) {
+      await updateFlowSession(session.id, { status: "completed" });
+      return;
+    }
+
+    const nextNode = nodes.find((node) => node.id === session.waiting_node_id);
+    if (!nextNode) {
+      await updateFlowSession(session.id, { status: "completed" });
+      return;
+    }
+
+    const executionContext = await loadConversationExecutionContext(conversationId);
+    await updateFlowSession(session.id, {
+      status: "active",
+      waiting_for: null,
+      waiting_node_id: null
+    });
+    await runChain(nextNode, nodes, edges, session, session.variables, sendReply, {
+      userId: executionContext.userId,
+      channelType: executionContext.channelType
+    });
+  } catch (error) {
+    await markFlowSessionFailed(sessionId);
+    console.warn("[FlowEngine] advanceFlowAfterAiReply error:", error);
+  }
+}
+
+export async function startFlowForConversation(input: {
+  userId: string;
+  flowId: string;
+  conversationId: string;
+  sendReply: SendReplyFn;
+}): Promise<FlowSessionRow> {
+  const flowResult = await pool.query<FlowRow>(
+    "SELECT * FROM flows WHERE id = $1 AND user_id = $2 LIMIT 1",
+    [input.flowId, input.userId]
+  );
+  const flow = flowResult.rows[0];
+  if (!flow) {
+    throw new Error("Flow not found.");
+  }
+
+  const { nodes, edges, startNode } = getFlowGraph(flow);
+  if (!startNode) {
+    throw new Error("Flow start node is missing.");
+  }
+
+  await pool.query(
+    `UPDATE flow_sessions
+     SET status = 'completed'
+     WHERE conversation_id = $1
+       AND status IN ('active', 'waiting', 'ai_mode')`,
+    [input.conversationId]
+  );
+
+  await pool.query(
+    `UPDATE conversations
+     SET manual_takeover = FALSE,
+         ai_paused = FALSE
+     WHERE id = $1
+       AND user_id = $2`,
+    [input.conversationId, input.userId]
+  );
+
+  const executionContext = await loadConversationExecutionContext(input.conversationId);
+  if (!isFlowCompatibleWithChannel(flow, executionContext.channelType)) {
+    throw new Error(
+      `Flow channel "${flow.channel}" does not match conversation channel "${executionContext.channelType}".`
+    );
+  }
+
+  const session = await createFlowSession(flow.id, input.conversationId);
+
+  try {
+    await runChain(startNode, nodes, edges, session, {}, input.sendReply, {
+      userId: input.userId,
+      channelType: executionContext.channelType
+    });
+    return session;
+  } catch (error) {
+    await updateFlowSession(session.id, { status: "failed" });
+    throw error;
+  }
+}
+
+export async function handleFlowMessage(input: {
+  userId: string;
+  conversationId: string;
+  channelType: FlowChannelType;
+  message: string;
+  sendReply: SendReplyFn;
+}): Promise<FlowHandleResult> {
+  let sessionIdToFail: string | null = null;
+
+  try {
+    const { userId, conversationId, channelType, message, sendReply } = input;
+
+    const existingSession = await getActiveFlowSession(conversationId);
+    if (existingSession) {
+      sessionIdToFail = existingSession.id;
+      const flowResult = await pool.query<FlowRow>(
+        "SELECT * FROM flows WHERE id = $1 LIMIT 1",
+        [existingSession.flow_id]
+      );
+      const flow = flowResult.rows[0];
+      if (!flow) {
+        await markFlowSessionFailed(existingSession.id);
+        return { result: "failed" };
+      }
+
+      if (!isFlowCompatibleWithChannel(flow, channelType)) {
+        await markFlowSessionFailed(existingSession.id);
+        return { result: "failed" };
+      }
+
+      const { nodes, edges, startNode } = getFlowGraph(flow);
+
+      try {
+        if (existingSession.status === "ai_mode") {
+          return { result: "use_ai" };
+        }
+
+        if (existingSession.status === "waiting" && existingSession.waiting_node_id) {
+          return await resumeWaiting(existingSession, nodes, edges, message, sendReply, {
+            userId,
+            channelType
+          });
+        }
+
+        const currentNode =
+          (existingSession.current_node_id
+            ? nodes.find((node) => node.id === existingSession.current_node_id)
+            : null) ?? startNode;
+
+        if (!currentNode) {
+          await updateFlowSession(existingSession.id, { status: "completed" });
+          return { result: "not_matched" };
+        }
+
+        return await runChain(
+          currentNode,
+          nodes,
+          edges,
+          existingSession,
+          existingSession.variables,
+          sendReply,
+          {
+            userId,
+            channelType
+          }
+        );
+      } catch (error) {
+        await markFlowSessionFailed(existingSession.id);
+        console.warn(
+          `[FlowEngine] Existing session failed conversation=${conversationId} session=${existingSession.id}:`,
+          error
+        );
+        return { result: "failed" };
+      }
+    }
+
+    const flows = await getPublishedFlowsForUser(userId, channelType);
+    const matchedFlow = matchingFlow({
+      message,
+      flows,
+      channelType,
+      isFirstInboundMessage: await isFirstInboundMessage(conversationId)
+    });
+
+    if (!matchedFlow) {
+      const fallbackFlow = flows.find((flow) => {
+        const { startNode } = getFlowGraph(flow);
+        return startNode?.data?.fallbackUseAi === true;
+      });
+      return fallbackFlow ? { result: "use_ai" } : { result: "not_matched" };
+    }
+
+    const { nodes, edges, startNode } = getFlowGraph(matchedFlow);
+    if (!startNode) {
+      return { result: "not_matched" };
+    }
+
+    const session = await createFlowSession(matchedFlow.id, conversationId);
+    sessionIdToFail = session.id;
+
+    try {
+      return await runChain(startNode, nodes, edges, session, {}, sendReply, {
+        userId,
+        channelType
+      });
+    } catch (error) {
+      await markFlowSessionFailed(session.id);
+      console.warn(
+        `[FlowEngine] New session failed conversation=${conversationId} session=${session.id}:`,
+        error
+      );
+      return { result: "failed" };
+    }
+  } catch (error) {
+    await markFlowSessionFailed(sessionIdToFail);
+    console.warn("[FlowEngine] Unhandled error:", error);
+    return { result: "failed" };
+  }
+}

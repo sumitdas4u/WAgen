@@ -1,5 +1,6 @@
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
+import { handleFlowMessage, advanceFlowAfterAiReply } from "./flow-engine-service.js";
 import { buildSalesReply } from "./ai-reply-service.js";
 import { resolveAgentProfileForChannel } from "./agent-profile-service.js";
 import { isAgentSenderPhone } from "./agent-loop-guard-service.js";
@@ -12,6 +13,9 @@ import {
   trackOutboundMessage
 } from "./conversation-service.js";
 import { detectExternalBotLoop } from "./external-bot-detector-service.js";
+import { sendConversationFlowMessage } from "./channel-outbound-service.js";
+import { getActiveFlowSession } from "./flow-service.js";
+import type { FlowMessagePayload } from "./outbound-message-types.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
 import { evaluateConversationCredit } from "./workspace-billing-service.js";
@@ -24,6 +28,7 @@ export interface ProcessIncomingMessageInput {
   channelLinkedNumber?: string | null;
   customerIdentifier: string;
   messageText: string;
+  flowMessageText?: string | null;
   senderName?: string;
   shouldAutoReply?: boolean;
   sendReply?: (payload: { text: string }) => Promise<void>;
@@ -45,7 +50,8 @@ export interface ProcessIncomingMessageResult {
     | "external_bot_detected"
     | "cooldown"
     | "missing_channel_adapter"
-    | "insufficient_credits";
+    | "insufficient_credits"
+    | "flow_error";
 }
 
 function normalizePhoneCandidate(value: string): string | null {
@@ -60,10 +66,53 @@ function isBotLoopProtectedChannel(channelType: UnifiedChannelType): boolean {
   return channelType === "api" || channelType === "qr";
 }
 
+async function getLatestConversationState(
+  conversationId: string,
+  fallback: { score: number; stage: string }
+): Promise<{ score: number; stage: string }> {
+  const refreshed = await pool.query<{ score: number; stage: string }>(
+    `SELECT score, stage
+     FROM conversations
+     WHERE id = $1
+     LIMIT 1`,
+    [conversationId]
+  );
+  return refreshed.rows[0] ?? fallback;
+}
+
+async function trackAndBroadcastOutbound(params: {
+  userId: string;
+  conversationId: string;
+  customerIdentifier: string;
+  text: string;
+  fallback: { score: number; stage: string };
+  usage?: {
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    aiModel?: string | null;
+    retrievalChunks?: number | null;
+    markAsAiReply?: boolean;
+  };
+}): Promise<{ score: number; stage: string }> {
+  await trackOutboundMessage(params.conversationId, params.text, params.usage);
+  const latest = await getLatestConversationState(params.conversationId, params.fallback);
+  realtimeHub.broadcast(params.userId, "conversation.updated", {
+    conversationId: params.conversationId,
+    phoneNumber: params.customerIdentifier,
+    direction: "outbound",
+    message: params.text,
+    score: latest.score,
+    stage: latest.stage
+  });
+  return latest;
+}
+
 export async function processIncomingMessage(
   input: ProcessIncomingMessageInput
 ): Promise<ProcessIncomingMessageResult> {
   const normalizedMessage = input.messageText.trim();
+  const normalizedFlowMessage = input.flowMessageText?.trim() || normalizedMessage;
   if (!normalizedMessage) {
     throw new Error("Message text is required.");
   }
@@ -123,17 +172,20 @@ export async function processIncomingMessage(
   }
 
   if (isBotLoopProtectedChannel(input.channelType)) {
-    const detection = await detectExternalBotLoop(conversation.id, normalizedMessage);
-    if (detection.flagged) {
-      console.log(`[Router] External bot detected - marking conversation as manual+paused (conversation=${conversation.id})`);
-      await setConversationManualAndPaused(input.userId, conversation.id);
-      return {
-        conversationId: conversation.id,
-        stage: conversation.stage,
-        score: conversation.score,
-        autoReplySent: false,
-        reason: "external_bot_detected"
-      };
+    const activeFlowSession = await getActiveFlowSession(conversation.id);
+    if (!activeFlowSession) {
+      const detection = await detectExternalBotLoop(conversation.id, normalizedMessage);
+      if (detection.flagged) {
+        console.log(`[Router] External bot detected - marking conversation as manual+paused (conversation=${conversation.id})`);
+        await setConversationManualAndPaused(input.userId, conversation.id);
+        return {
+          conversationId: conversation.id,
+          stage: conversation.stage,
+          score: conversation.score,
+          autoReplySent: false,
+          reason: "external_bot_detected"
+        };
+      }
     }
   }
 
@@ -173,7 +225,120 @@ export async function processIncomingMessage(
     };
   }
 
-  if (!user.ai_active) {
+  if (!input.sendReply) {
+    return {
+      conversationId: conversation.id,
+      stage: conversation.stage,
+      score: conversation.score,
+      autoReplySent: false,
+      reason: "missing_channel_adapter"
+    };
+  }
+
+  let latestConversationState = {
+    score: conversation.score,
+    stage: conversation.stage
+  };
+  const sendTrackedFlowReply = async (payload: FlowMessagePayload) => {
+    const delivered = await sendConversationFlowMessage({
+      userId: input.userId,
+      conversationId: conversation.id,
+      payload
+    });
+    latestConversationState = await getLatestConversationState(conversation.id, latestConversationState);
+    realtimeHub.broadcast(input.userId, "conversation.updated", {
+      conversationId: conversation.id,
+      phoneNumber: input.customerIdentifier,
+      direction: "outbound",
+      message: delivered.summaryText,
+      score: latestConversationState.score,
+      stage: latestConversationState.stage
+    });
+  };
+
+  // ── Credits gate — applies to ALL replies (flow + AI) ───────────────────────
+  const creditDecision = await evaluateConversationCredit({
+    userId: input.userId,
+    customerIdentifier: input.customerIdentifier,
+    channelType: input.channelType
+  });
+  if (!creditDecision.allowed) {
+    const pausedMessage = creditDecision.blockMessage ?? "Replies paused. Please upgrade your plan.";
+    await input.sendReply({ text: pausedMessage });
+    latestConversationState = await trackAndBroadcastOutbound({
+      userId: input.userId,
+      conversationId: conversation.id,
+      customerIdentifier: input.customerIdentifier,
+      text: pausedMessage,
+      fallback: latestConversationState
+    });
+    return {
+      conversationId: conversation.id,
+      stage: latestConversationState.stage,
+      score: latestConversationState.score,
+      autoReplySent: true,
+      reason: "insufficient_credits"
+    };
+  }
+
+  // ── Flow engine — WhatsApp only (qr + api), not web ─────────────────────────
+  // Web chat uses AI directly — flow nodes like buttons/media don't translate.
+  const flowResult: import("./flow-engine-service.js").FlowHandleResult =
+    await handleFlowMessage({
+      userId: input.userId,
+      conversationId: conversation.id,
+      channelType: input.channelType,
+      message: normalizedFlowMessage,
+      sendReply: sendTrackedFlowReply
+    });
+
+  if (flowResult.result === "handled") {
+    return {
+      conversationId: conversation.id,
+      stage: latestConversationState.stage,
+      score: latestConversationState.score,
+      autoReplySent: true,
+      reason: "sent"
+    };
+  }
+
+  if (flowResult.result === "failed") {
+    const fallbackText = "Sorry, I hit a problem continuing this flow. Please reply again.";
+
+    try {
+      await input.sendReply({ text: fallbackText });
+      latestConversationState = await trackAndBroadcastOutbound({
+        userId: input.userId,
+        conversationId: conversation.id,
+        customerIdentifier: input.customerIdentifier,
+        text: fallbackText,
+        fallback: latestConversationState
+      });
+      return {
+        conversationId: conversation.id,
+        stage: latestConversationState.stage,
+        score: latestConversationState.score,
+        autoReplySent: true,
+        reason: "sent"
+      };
+    } catch (error) {
+      console.warn(
+        `[Router] flow fallback reply failed user=${input.userId} conversation=${conversation.id}`,
+        error
+      );
+      return {
+        conversationId: conversation.id,
+        stage: latestConversationState.stage,
+        score: latestConversationState.score,
+        autoReplySent: false,
+        reason: "flow_error"
+      };
+    }
+  }
+
+  // ── AI-only gates (flow bypasses these) ─────────────────────────────────────
+  const aiRequestedByFlow = flowResult.result === "use_ai";
+  if (!aiRequestedByFlow && !user.ai_active) {
     console.log(`[Router] AI not active for user (userId=${input.userId})`);
     return {
       conversationId: conversation.id,
@@ -184,7 +349,7 @@ export async function processIncomingMessage(
     };
   }
 
-  if (conversation.last_ai_reply_at) {
+  if (!aiRequestedByFlow && conversation.last_ai_reply_at) {
     const elapsedSeconds = (Date.now() - new Date(conversation.last_ai_reply_at).getTime()) / 1000;
     if (elapsedSeconds < env.CONTACT_COOLDOWN_SECONDS) {
       console.log(`[Router] Cooldown active - only ${Math.round(elapsedSeconds)}s elapsed, need ${env.CONTACT_COOLDOWN_SECONDS}s (conversation=${conversation.id})`);
@@ -196,44 +361,6 @@ export async function processIncomingMessage(
         reason: "cooldown"
       };
     }
-  }
-
-  if (!input.sendReply) {
-    return {
-      conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
-      autoReplySent: false,
-      reason: "missing_channel_adapter"
-    };
-  }
-
-  const creditDecision = await evaluateConversationCredit({
-    userId: input.userId,
-    customerIdentifier: input.customerIdentifier,
-    channelType: input.channelType
-  });
-  if (!creditDecision.allowed) {
-    const pausedMessage = creditDecision.blockMessage ?? "AI paused. Please upgrade plan.";
-    await input.sendReply({ text: pausedMessage });
-    await trackOutboundMessage(conversation.id, pausedMessage);
-
-    realtimeHub.broadcast(input.userId, "conversation.updated", {
-      conversationId: conversation.id,
-      phoneNumber: input.customerIdentifier,
-      direction: "outbound",
-      message: pausedMessage,
-      score: conversation.score,
-      stage: conversation.stage
-    });
-
-    return {
-      conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
-      autoReplySent: true,
-      reason: "insufficient_credits"
-    };
   }
 
   const historyLimit = Math.max(16, Math.min(40, env.PROMPT_HISTORY_LIMIT * 4));
@@ -264,13 +391,26 @@ export async function processIncomingMessage(
   });
 
   await input.sendReply({ text: reply.text });
-  await trackOutboundMessage(conversation.id, reply.text, {
-    promptTokens: reply.usage?.promptTokens,
-    completionTokens: reply.usage?.completionTokens,
-    totalTokens: reply.usage?.totalTokens,
-    aiModel: reply.model,
-    retrievalChunks: reply.retrievalChunks
+  latestConversationState = await trackAndBroadcastOutbound({
+    userId: input.userId,
+    conversationId: conversation.id,
+    customerIdentifier: input.customerIdentifier,
+    text: reply.text,
+    fallback: latestConversationState,
+    usage: {
+      promptTokens: reply.usage?.promptTokens,
+      completionTokens: reply.usage?.completionTokens,
+      totalTokens: reply.usage?.totalTokens,
+      aiModel: reply.model,
+      retrievalChunks: reply.retrievalChunks,
+      markAsAiReply: true
+    }
   });
+
+  // If flow is in one-shot aiReply mode, advance to the next node after AI replied
+  if (flowResult.result === "use_ai") {
+    await advanceFlowAfterAiReply(conversation.id, sendTrackedFlowReply);
+  }
 
   try {
     const failureResult = await queueAiFailureForReview({
@@ -289,28 +429,10 @@ export async function processIncomingMessage(
     );
   }
 
-  const refreshed = await pool.query<{ score: number; stage: string }>(
-    `SELECT score, stage
-     FROM conversations
-     WHERE id = $1
-     LIMIT 1`,
-    [conversation.id]
-  );
-  const latest = refreshed.rows[0] ?? { score: conversation.score, stage: conversation.stage };
-
-  realtimeHub.broadcast(input.userId, "conversation.updated", {
-    conversationId: conversation.id,
-    phoneNumber: input.customerIdentifier,
-    direction: "outbound",
-    message: reply.text,
-    score: latest.score,
-    stage: latest.stage
-  });
-
   return {
     conversationId: conversation.id,
-    stage: latest.stage,
-    score: latest.score,
+    stage: latestConversationState.stage,
+    score: latestConversationState.score,
     autoReplySent: true,
     reason: "sent"
   };

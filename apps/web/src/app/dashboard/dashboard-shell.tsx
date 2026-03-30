@@ -52,7 +52,7 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     label: "Chat Bot",
     icon: "knowledge",
     title: "Chat Bot",
-    defaultModuleIds: ["studio-knowledge", "studio-personality", "studio-review", "studio-test", "agents"]
+    defaultModuleIds: ["studio-flows", "studio-knowledge", "studio-personality", "studio-review", "studio-test", "agents"]
   },
   {
     id: "settings",
@@ -64,6 +64,7 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
 ];
 
 const STUDIO_MENU_ITEMS: StudioNavItem[] = [
+  { moduleId: "studio-flows", label: "Flows", icon: "flows", to: "/dashboard/studio/flows" },
   { moduleId: "studio-knowledge", label: "Knowledge Base", icon: "knowledge", to: "/dashboard/studio/knowledge" },
   {
     moduleId: "studio-personality",
@@ -81,6 +82,7 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   leads: { label: "Leads", subtitle: "Priority Queue" },
   billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
+  "studio-flows": { label: "Flows", subtitle: "Build chatbot workflows visually" },
   "studio-personality": { label: "Chatbot Personality", subtitle: "Tune voice, identity, and behavior" },
   "studio-review": {
     label: "AI Review Center",
@@ -258,13 +260,16 @@ function DashboardShellLayout() {
   const showAgentOffBanner = Boolean(bootstrap && !bootstrap.userSummary.aiActive && hasConfiguredAgentProfile);
 
   const sectionMeta = SECTION_META[currentModuleId] ?? SECTION_META.inbox;
-  const dashboardHeaderTitle =
-    currentModuleId === "inbox" ? (isAnyChannelConnected ? "Chats" : "Go Live") : sectionMeta.label;
+  const dashboardHeaderTitle = currentModuleId === "inbox" ? "Chats" : sectionMeta.label;
   const dashboardHeaderSubtitle =
     currentModuleId === "inbox"
-      ? isAnyChannelConnected
-        ? "Live Inbox"
-        : "Connect your channels and launch chatbot automation."
+      ? loading
+        ? "Checking channel status."
+        : isAnyChannelConnected
+          ? "Live Inbox"
+          : hasConfiguredAgentProfile
+            ? "Waiting for agent to connect."
+            : "No agent found yet. Create one to start receiving chats."
       : sectionMeta.subtitle;
 
   const isStudioSection = visibleStudioItems.some((item) => item.moduleId === currentModuleId);

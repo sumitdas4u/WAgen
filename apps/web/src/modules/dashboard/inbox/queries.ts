@@ -1,6 +1,6 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
-import { fetchInboxConversations, fetchInboxMessages } from "./api";
+import { fetchInboxConversations, fetchInboxMessages, fetchInboxPublishedFlows } from "./api";
 
 export function buildInboxConversationsQueryOptions(
   token: string,
@@ -29,4 +29,15 @@ export function buildInboxMessagesQueryOptions(token: string, conversationId: st
 
 export function useInboxMessagesQuery(token: string, conversationId: string | null) {
   return useQuery(buildInboxMessagesQueryOptions(token, conversationId));
+}
+
+export function buildInboxPublishedFlowsQueryOptions(token: string) {
+  return queryOptions({
+    queryKey: dashboardQueryKeys.inboxPublishedFlows,
+    queryFn: () => fetchInboxPublishedFlows(token)
+  });
+}
+
+export function useInboxPublishedFlowsQuery(token: string) {
+  return useQuery(buildInboxPublishedFlowsQueryOptions(token));
 }

@@ -29,7 +29,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      APP_BASE_URL: http://localhost:8080
+      APP_BASE_URL: ${APP_BASE_URL:-https://wagenai.com}
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/typo
       REDIS_URL: redis://redis:6379
       METRICS_ENABLED: "true"
@@ -37,6 +37,8 @@ services:
       PG_POOL_MAX: 20
       PG_POOL_IDLE_TIMEOUT_MS: 30000
       PG_POOL_CONNECTION_TIMEOUT_MS: 5000
+      GOOGLE_SHEETS_OAUTH_REDIRECT_URI: ${GOOGLE_SHEETS_OAUTH_REDIRECT_URI:-https://wagenai.com/api/google/sheets/connect/callback}
+      GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: ${GOOGLE_CALENDAR_OAUTH_REDIRECT_URI:-https://wagenai.com/api/google/calendar/connect/callback}
     depends_on:
       postgres:
         condition: service_healthy

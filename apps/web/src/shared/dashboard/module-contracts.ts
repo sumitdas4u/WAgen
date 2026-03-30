@@ -12,6 +12,7 @@ export type DashboardIconName =
   | "chats"
   | "leads"
   | "billing"
+  | "flows"
   | "knowledge"
   | "test"
   | "agents"

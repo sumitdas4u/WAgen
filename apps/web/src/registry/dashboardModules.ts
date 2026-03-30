@@ -24,7 +24,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     icon: "leads",
     section: "main",
     lazyRoute: () => import("../modules/dashboard/leads/route"),
-    legacyAliases: ["leads"],
     featureFlag: "dashboard.leads",
     prefetchStrategy: "code+data",
     requiresAuth: true
@@ -54,6 +53,20 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     lazyRoute: () => import("../modules/dashboard/agents/route"),
     legacyAliases: ["bot_agents"],
     featureFlag: "dashboard.agents",
+    prefetchStrategy: "code+data",
+    requiresAuth: true
+  },
+  {
+    id: "studio-flows",
+    path: "studio/flows",
+    navTo: "/dashboard/studio/flows",
+    navLabel: "Flows",
+    subtitle: "Visual bot builder",
+    icon: "flows",
+    section: "studio",
+    lazyRoute: () => import("../modules/dashboard/studio/flows/route"),
+    legacyAliases: ["bot_flows", "flow_builder"],
+    featureFlag: "dashboard.studio.flows",
     prefetchStrategy: "code+data",
     requiresAuth: true
   },

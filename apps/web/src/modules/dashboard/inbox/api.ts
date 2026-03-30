@@ -1,6 +1,9 @@
 import {
+  assignFlowToConversation,
   fetchConversationMessages,
   fetchConversations,
+  fetchPublishedFlows,
+  type PublishedFlowSummary,
   sendConversationManualMessage,
   setConversationPaused,
   setManualTakeover,
@@ -18,6 +21,10 @@ export async function fetchInboxMessages(token: string, conversationId: string):
   return response.messages;
 }
 
+export function fetchInboxPublishedFlows(token: string): Promise<PublishedFlowSummary[]> {
+  return fetchPublishedFlows(token);
+}
+
 export function updateConversationAiMode(
   token: string,
   conversationId: string,
@@ -31,4 +38,8 @@ export function updateConversationAiMode(
 
 export function sendManualConversationMessage(token: string, conversationId: string, text: string) {
   return sendConversationManualMessage(token, conversationId, text, { lockToManual: false });
+}
+
+export function assignInboxFlow(token: string, conversationId: string, flowId: string) {
+  return assignFlowToConversation(token, flowId, conversationId);
 }

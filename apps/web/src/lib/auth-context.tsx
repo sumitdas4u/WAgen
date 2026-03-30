@@ -11,12 +11,19 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut,
   updateProfile
 } from "firebase/auth";
-import { createFirebaseSession, fetchMe, migrateLegacyPasswordUser, type AuthResponse, type User } from "./api";
-import { firebaseAuth, googleProvider } from "./firebase";
+import {
+  buildGoogleAuthStartUrl,
+  createFirebaseSession,
+  fetchMe,
+  migrateLegacyPasswordUser,
+  type AuthResponse,
+  type GoogleAuthPopupPayload,
+  type User
+} from "./api";
+import { firebaseAuth } from "./firebase";
 
 const PENDING_SIGNUP_BUSINESS_TYPE_KEY = "typo_signup_business_type";
 
@@ -31,7 +38,10 @@ interface AuthContextValue {
     businessType: string;
   }) => Promise<{ emailVerificationRequired: boolean }>;
   loginWithPassword: (payload: { email: string; password: string }) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: (payload?: {
+    mode?: "login" | "signup";
+    businessType?: string;
+  }) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
@@ -40,6 +50,66 @@ interface AuthContextValue {
 const TOKEN_KEY = "typo_token";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function runGoogleAuthPopup(input?: {
+  mode?: "login" | "signup";
+  businessType?: string;
+}): Promise<AuthResponse> {
+  return new Promise((resolve, reject) => {
+    const popup = window.open(
+      buildGoogleAuthStartUrl(input),
+      "wagenGoogleAuth",
+      "popup=yes,width=560,height=760"
+    );
+
+    if (!popup) {
+      reject(new Error("Popup was blocked. Allow popups and try again."));
+      return;
+    }
+
+    let finished = false;
+    let popupClosedTimer = 0;
+
+    const cleanup = () => {
+      finished = true;
+      window.removeEventListener("message", onMessage);
+      if (popupClosedTimer) {
+        window.clearInterval(popupClosedTimer);
+      }
+    };
+
+    const onMessage = (event: MessageEvent<GoogleAuthPopupPayload>) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      const payload = event.data;
+      if (payload?.type !== "wagen-google-auth") {
+        return;
+      }
+
+      cleanup();
+
+      if (payload.status !== "success" || !payload.token || !payload.user) {
+        reject(new Error(payload.message || "Google login failed."));
+        return;
+      }
+
+      resolve({
+        token: payload.token,
+        user: payload.user
+      });
+    };
+
+    window.addEventListener("message", onMessage);
+    popupClosedTimer = window.setInterval(() => {
+      if (!finished && popup.closed) {
+        cleanup();
+        reject(new Error("Google login was closed before completion."));
+      }
+    }, 400);
+  });
+}
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
@@ -178,13 +248,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setAuthenticatedState(response);
         localStorage.removeItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY);
       },
-      loginWithGoogle: async () => {
-        const credentials = await signInWithPopup(firebaseAuth, googleProvider);
-        const idToken = await credentials.user.getIdToken();
-        const response = await createFirebaseSession({
-          idToken,
-          name: credentials.user.displayName ?? undefined
-        });
+      loginWithGoogle: async (payload) => {
+        const response = await runGoogleAuthPopup(payload);
         setAuthenticatedState(response);
         localStorage.removeItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY);
       },

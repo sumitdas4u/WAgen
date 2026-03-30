@@ -5,6 +5,10 @@ import type {
   MessageUpsertType,
   ConnectionState
 } from "@whiskeysockets/baileys";
+import { getKeyAuthor } from "@whiskeysockets/baileys/lib/Utils/generics.js";
+import { getAggregateVotesInPollMessage } from "@whiskeysockets/baileys/lib/Utils/messages.js";
+import { decryptPollVote } from "@whiskeysockets/baileys/lib/Utils/process-message.js";
+import { jidNormalizedUser } from "@whiskeysockets/baileys/lib/WABinary/jid-utils.js";
 import { env } from "../config/env.js";
 import { clearAuthStateCache, useDbAuthState } from "./baileys-auth-state.js";
 import {
@@ -14,11 +18,25 @@ import {
   resetWhatsAppAuthState,
   updateWhatsAppStatus
 } from "./whatsapp-session-store.js";
+import {
+  encodeFlowLocationInput,
+  encodeFlowPollInput,
+  formatFlowLocationSummary,
+  formatFlowPollSummary,
+  type CapturedPollInput
+} from "./flow-input-codec.js";
 import { realtimeHub } from "./realtime-hub.js";
-import { getMessageText, randomInt, wait } from "../utils/index.js";
+import {
+  extractMessageLocationPayload,
+  getMessageText,
+  randomInt,
+  unwrapMessageContent,
+  wait
+} from "../utils/index.js";
 import { reconcileConversationPhone } from "./conversation-service.js";
 import { extractInboundMediaText } from "./inbound-media-service.js";
 import { processIncomingMessage } from "./message-router-service.js";
+import { summarizeFlowMessage, type FlowMessagePayload } from "./outbound-message-types.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
@@ -35,9 +53,179 @@ interface QueuedInboundMessage {
   remoteJid: string;
   phoneNumber: string;
   text: string;
+  flowText?: string | null;
   senderName?: string;
   shouldAutoReply: boolean;
   channelLinkedNumber: string | null;
+}
+
+interface ExtractedInboundText {
+  displayText: string;
+  flowText?: string | null;
+}
+
+function getPollCreationContent(
+  message: baileys.proto.IMessage | undefined
+): {
+  message: baileys.proto.IMessage;
+  question: string;
+  allowMultiple: boolean;
+  encKey: Uint8Array | null;
+} | null {
+  if (!message) {
+    return null;
+  }
+
+  const poll =
+    message.pollCreationMessage ??
+    message.pollCreationMessageV2 ??
+    message.pollCreationMessageV3;
+
+  if (!poll) {
+    return null;
+  }
+
+  return {
+    message,
+    question: String(poll.name ?? "").trim(),
+    allowMultiple: Number(poll.selectableOptionsCount ?? 1) > 1,
+    encKey: poll.encKey ?? null
+  };
+}
+
+function buildQrFlowMessageContent(payload: FlowMessagePayload): Record<string, unknown> {
+  switch (payload.type) {
+    case "text":
+      return { text: payload.text };
+
+    case "media":
+      if (payload.mediaType === "image") {
+        return {
+          image: { url: payload.url },
+          caption: payload.caption || ""
+        };
+      }
+      if (payload.mediaType === "video") {
+        return {
+          video: { url: payload.url },
+          caption: payload.caption || ""
+        };
+      }
+      if (payload.mediaType === "audio") {
+        return {
+          audio: { url: payload.url },
+          mimetype: "audio/mp4"
+        };
+      }
+      return {
+        document: { url: payload.url },
+        caption: payload.caption || "",
+        fileName: "document"
+      };
+
+    case "text_buttons":
+      return {
+        text: payload.text || "Please choose an option.",
+        footer: payload.footer || "",
+        buttons: payload.buttons.slice(0, 3).map((button) => ({
+          buttonId: button.id,
+          buttonText: { displayText: button.label },
+          type: 1
+        })),
+        headerType: 1
+      };
+
+    case "media_buttons": {
+      const base = {
+        caption: payload.caption || "Please choose an option.",
+        footer: "",
+        buttons: payload.buttons.slice(0, 3).map((button) => ({
+          buttonId: button.id,
+          buttonText: { displayText: button.label },
+          type: 1
+        }))
+      };
+
+      if (payload.mediaType === "image") {
+        return { ...base, image: { url: payload.url } };
+      }
+      if (payload.mediaType === "video") {
+        return { ...base, video: { url: payload.url } };
+      }
+      return {
+        ...base,
+        document: { url: payload.url },
+        fileName: "document"
+      };
+    }
+
+    case "list":
+      let remainingRows = 10;
+      return {
+        text: payload.text || "Please choose an option.",
+        footer: "",
+        buttonText: payload.buttonLabel || "View options",
+        sections: payload.sections
+          .map((section) => {
+            const rows = section.rows
+              .slice(0, remainingRows)
+              .map((row) => ({
+                title: row.title,
+                description: row.description || "",
+                rowId: row.id
+              }));
+            remainingRows -= rows.length;
+            return {
+              title: section.title,
+              rows
+            };
+          })
+          .filter((section) => section.rows.length > 0)
+      };
+
+    case "location_share":
+      return {
+        location: {
+          degreesLatitude: payload.latitude,
+          degreesLongitude: payload.longitude,
+          name: payload.name || "",
+          address: payload.address || ""
+        }
+      };
+
+    case "contact_share": {
+      const vcard = [
+        "BEGIN:VCARD",
+        "VERSION:3.0",
+        `FN:${payload.name.trim()}`,
+        ...(payload.org?.trim() ? [`ORG:${payload.org.trim()}`] : []),
+        `TEL;type=CELL;type=VOICE;waid=${payload.phone.replace(/\D/g, "")}:+${payload.phone.replace(/\D/g, "")}`,
+        "END:VCARD"
+      ].join("\n");
+      return {
+        contacts: {
+          contacts: [
+            {
+              displayName: payload.name.trim(),
+              vcard
+            }
+          ]
+        }
+      };
+    }
+
+    case "poll":
+      return {
+        poll: {
+          name: payload.question.trim(),
+          values: payload.options.slice(0, 12),
+          selectableCount: payload.allowMultiple ? payload.options.length : 1
+        }
+      };
+
+    default:
+      return { text: summarizeFlowMessage(payload) };
+  }
 }
 
 function isDirectChatJid(jid: string): boolean {
@@ -231,6 +419,8 @@ class WhatsAppSessionManager {
   private readonly reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly reconnectAttempts = new Map<string, number>();
   private readonly phoneAliasMapByUser = new Map<string, Map<string, string>>();
+  private readonly phoneChatJidByUser = new Map<string, Map<string, string>>();
+  private readonly recentOutboundMessagesByUser = new Map<string, Map<string, baileys.proto.IMessage>>();
   private readonly messageQueues = new Map<string, QueuedInboundMessage[]>();
   private readonly processingUsers = new Set<string>();
   private connectionSeq = 0;
@@ -265,7 +455,8 @@ class WhatsAppSessionManager {
         version,
         auth: state,
         printQRInTerminal: false,
-        browser: ["WAgen", "Chrome", "1.0.0"]
+        browser: ["WAgen", "Chrome", "1.0.0"],
+        getMessage: async (key) => this.getRecentOutboundMessage(userId, key)
       }) as WASocket;
       const connectionId = ++this.connectionSeq;
 
@@ -314,6 +505,8 @@ class WhatsAppSessionManager {
               this.reconnectAttempts.delete(duplicateUserId);
               this.clearUserQueues(duplicateUserId);
               this.clearPhoneAliasMap(duplicateUserId);
+              this.clearPhoneChatJidMap(duplicateUserId);
+              this.clearRecentOutboundMessages(duplicateUserId);
 
               const duplicateRuntime = this.sessions.get(duplicateUserId);
               if (duplicateRuntime) {
@@ -364,6 +557,8 @@ class WhatsAppSessionManager {
 
           this.sessions.delete(userId);
           this.clearUserQueues(userId);
+          this.clearPhoneChatJidMap(userId);
+          this.clearRecentOutboundMessages(userId);
           this.clearReconnectTimer(userId);
           if (shouldReconnect) {
             const attempts = (this.reconnectAttempts.get(userId) ?? 0) + 1;
@@ -446,13 +641,42 @@ class WhatsAppSessionManager {
       throw new Error("WhatsApp QR session is not connected.");
     }
 
-    const to = `${input.phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+    const to = this.resolveOutboundChatJid(input.userId, input.phoneNumber);
     const message = input.text.trim();
     if (!message) {
       throw new Error("Message text is required.");
     }
 
-    await runtime.socket.sendMessage(to, { text: message });
+    await this.sendAndRememberMessage(input.userId, runtime.socket, to, { text: message });
+  }
+
+  async sendRawMessage(input: {
+    userId: string;
+    phoneNumber: string;
+    content: Record<string, unknown>;
+  }): Promise<WAMessage | undefined> {
+    const runtime = this.sessions.get(input.userId);
+    if (!runtime || runtime.status !== "connected") {
+      throw new Error("WhatsApp QR session is not connected.");
+    }
+
+    const to = this.resolveOutboundChatJid(input.userId, input.phoneNumber);
+    return this.sendAndRememberMessage(input.userId, runtime.socket, to, input.content);
+  }
+
+  async sendFlowMessage(input: { userId: string; phoneNumber: string; payload: FlowMessagePayload }): Promise<void> {
+    const runtime = this.sessions.get(input.userId);
+    if (!runtime || runtime.status !== "connected") {
+      throw new Error("WhatsApp QR session is not connected.");
+    }
+
+    const to = this.resolveOutboundChatJid(input.userId, input.phoneNumber);
+    await this.sendAndRememberMessage(
+      input.userId,
+      runtime.socket,
+      to,
+      buildQrFlowMessageContent(input.payload) as never
+    );
   }
 
   private queueKey(userId: string, jid: string): string {
@@ -471,6 +695,225 @@ class WhatsAppSessionManager {
 
   private clearPhoneAliasMap(userId: string): void {
     this.phoneAliasMapByUser.delete(userId);
+  }
+
+  private getPhoneChatJidMap(userId: string): Map<string, string> {
+    const existing = this.phoneChatJidByUser.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const created = new Map<string, string>();
+    this.phoneChatJidByUser.set(userId, created);
+    return created;
+  }
+
+  private clearPhoneChatJidMap(userId: string): void {
+    this.phoneChatJidByUser.delete(userId);
+  }
+
+  private rememberPhoneChatJid(userId: string, phoneNumber: string, jid: string): void {
+    const digits = normalizePhoneDigits(phoneNumber, 15);
+    if (!digits || !isDirectChatJid(jid)) {
+      return;
+    }
+
+    this.getPhoneChatJidMap(userId).set(digits, jid);
+  }
+
+  private resolveOutboundChatJid(userId: string, phoneNumber: string): string {
+    const digits = normalizePhoneDigits(phoneNumber, 15);
+    if (!digits) {
+      throw new Error("Valid phone number is required.");
+    }
+
+    return this.getPhoneChatJidMap(userId).get(digits) ?? `${digits}@s.whatsapp.net`;
+  }
+
+  private getRecentOutboundMessageMap(userId: string): Map<string, baileys.proto.IMessage> {
+    const existing = this.recentOutboundMessagesByUser.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const created = new Map<string, baileys.proto.IMessage>();
+    this.recentOutboundMessagesByUser.set(userId, created);
+    return created;
+  }
+
+  private clearRecentOutboundMessages(userId: string): void {
+    this.recentOutboundMessagesByUser.delete(userId);
+  }
+
+  private getMessageCacheKeys(key: { remoteJid?: string | null; id?: string | null }): string[] {
+    const id = key.id?.trim();
+    if (!id) {
+      return [];
+    }
+
+    const cacheKeys = new Set<string>([id]);
+    const remoteJid = key.remoteJid?.trim();
+    if (remoteJid) {
+      cacheKeys.add(`${remoteJid}:${id}`);
+    }
+
+    return [...cacheKeys];
+  }
+
+  private rememberOutboundMessage(userId: string, message: WAMessage): void {
+    if (!message.message) {
+      return;
+    }
+
+    const cache = this.getRecentOutboundMessageMap(userId);
+    for (const key of this.getMessageCacheKeys(message.key)) {
+      cache.set(key, message.message);
+    }
+
+    while (cache.size > 512) {
+      const oldestKey = cache.keys().next().value;
+      if (!oldestKey) {
+        break;
+      }
+      cache.delete(oldestKey);
+    }
+  }
+
+  private getRecentOutboundMessage(
+    userId: string,
+    key: { remoteJid?: string | null; id?: string | null }
+  ): baileys.proto.IMessage | undefined {
+    const cache = this.recentOutboundMessagesByUser.get(userId);
+    if (!cache) {
+      return undefined;
+    }
+
+    for (const cacheKey of this.getMessageCacheKeys(key)) {
+      const found = cache.get(cacheKey);
+      if (found) {
+        return found;
+      }
+    }
+
+    return undefined;
+  }
+
+  private extractPollVoteText(userId: string, runtime: SessionRuntime, message: WAMessage): ExtractedInboundText | null {
+    const content = message.message ? unwrapMessageContent(message.message) : null;
+    const pollUpdate = content?.pollUpdateMessage;
+    const creationKey = pollUpdate?.pollCreationMessageKey;
+    const vote = pollUpdate?.vote;
+    if (!creationKey?.id || !vote?.encPayload || !vote?.encIv) {
+      return null;
+    }
+
+    const pollCreationMessage = getPollCreationContent(
+      this.getRecentOutboundMessage(userId, {
+        remoteJid: creationKey.remoteJid ?? message.key.remoteJid ?? null,
+        id: creationKey.id
+      })
+    );
+    if (!pollCreationMessage?.encKey) {
+      return {
+        displayText: "[Poll] Vote received",
+        flowText: null
+      };
+    }
+
+    try {
+      const meId = jidNormalizedUser(runtime.socket.user?.id);
+      const pollCreatorJid = getKeyAuthor(creationKey, meId);
+      const voterJid = getKeyAuthor(message.key, meId);
+      const decryptedVote = decryptPollVote(vote, {
+        pollCreatorJid,
+        pollMsgId: creationKey.id,
+        pollEncKey: pollCreationMessage.encKey,
+        voterJid
+      });
+
+      const selectedOptions = getAggregateVotesInPollMessage(
+        {
+          message: pollCreationMessage.message,
+          pollUpdates: [
+            {
+              pollUpdateMessageKey: message.key,
+              vote: decryptedVote
+            }
+          ]
+        },
+        meId
+      )
+        .filter((entry) => entry.voters.length > 0 && entry.name && entry.name !== "Unknown")
+        .map((entry) => entry.name);
+
+      if (!selectedOptions.length) {
+        return {
+          displayText: "[Poll] Vote received",
+          flowText: null
+        };
+      }
+
+      const payload: CapturedPollInput = {
+        ...(pollCreationMessage.question ? { question: pollCreationMessage.question } : {}),
+        selectedOptions,
+        allowMultiple: pollCreationMessage.allowMultiple,
+        source: "native"
+      };
+
+      return {
+        displayText: formatFlowPollSummary(payload),
+        flowText: encodeFlowPollInput(payload)
+      };
+    } catch (error) {
+      console.warn(
+        `[WA] poll vote decode failed user=${userId} message=${message.key.id ?? "unknown"}`,
+        error
+      );
+      return {
+        displayText: "[Poll] Vote received",
+        flowText: null
+      };
+    }
+  }
+
+  private extractInboundText(userId: string, runtime: SessionRuntime | undefined, message: WAMessage): ExtractedInboundText | null {
+    const locationPayload = extractMessageLocationPayload(message);
+    if (locationPayload) {
+      return {
+        displayText: formatFlowLocationSummary(locationPayload),
+        flowText: encodeFlowLocationInput(locationPayload)
+      };
+    }
+
+    if (runtime) {
+      const pollPayload = this.extractPollVoteText(userId, runtime, message);
+      if (pollPayload) {
+        return pollPayload;
+      }
+    }
+
+    const plainText = getMessageText(message);
+    if (!plainText) {
+      return null;
+    }
+
+    return {
+      displayText: plainText,
+      flowText: plainText
+    };
+  }
+
+  private async sendAndRememberMessage(
+    userId: string,
+    socket: WASocket,
+    jid: string,
+    content: Record<string, unknown>
+  ): Promise<WAMessage | undefined> {
+    const sent = await socket.sendMessage(jid, content as never);
+    if (sent) {
+      this.rememberOutboundMessage(userId, sent);
+    }
+    return sent;
   }
 
   private lookupPhoneAlias(userId: string, aliasCandidate: unknown): string | null {
@@ -521,6 +964,8 @@ class WhatsAppSessionManager {
 
     this.clearUserQueues(userId);
     this.clearPhoneAliasMap(userId);
+    this.clearPhoneChatJidMap(userId);
+    this.clearRecentOutboundMessages(userId);
     clearAuthStateCache(userId);
     await resetWhatsAppAuthState(userId);
     await updateWhatsAppStatus(userId, "disconnected");
@@ -627,6 +1072,7 @@ class WhatsAppSessionManager {
       channelLinkedNumber: job.channelLinkedNumber,
       customerIdentifier: job.phoneNumber,
       messageText: job.text,
+      flowMessageText: job.flowText ?? job.text,
       senderName: job.senderName,
       shouldAutoReply: job.shouldAutoReply,
       sendReply: async ({ text }) => {
@@ -649,7 +1095,7 @@ class WhatsAppSessionManager {
             console.warn(`[WA] typing presence failed user=${job.userId} jid=${job.remoteJid}`, presenceError);
           }
 
-          await runtime.socket.sendMessage(job.remoteJid, { text });
+          await this.sendAndRememberMessage(job.userId, runtime.socket, job.remoteJid, { text });
         } finally {
           if (composingSet) {
             try {
@@ -691,7 +1137,9 @@ class WhatsAppSessionManager {
     }
 
     const runtime = this.sessions.get(userId);
-    let text = getMessageText(message);
+    const extracted = this.extractInboundText(userId, runtime, message);
+    let text = extracted?.displayText ?? "";
+    let flowText = extracted?.flowText ?? text;
     const mediaContext = runtime ? await extractInboundMediaText(runtime.socket, message) : null;
     if (mediaContext) {
       text = text ? `${text}\n${mediaContext}` : mediaContext;
@@ -723,6 +1171,7 @@ class WhatsAppSessionManager {
     for (const aliasCandidate of aliasCandidates) {
       this.rememberPhoneAlias(userId, aliasCandidate, phoneNumber);
     }
+    this.rememberPhoneChatJid(userId, phoneNumber, remoteJid);
 
     const fallbackPhoneFromRemote = extractPhoneFromJidCandidate(remoteJid, 15);
     if (fallbackPhoneFromRemote && fallbackPhoneFromRemote !== phoneNumber) {
@@ -742,6 +1191,7 @@ class WhatsAppSessionManager {
       remoteJid,
       phoneNumber,
       text,
+      flowText,
       senderName,
       shouldAutoReply,
       channelLinkedNumber

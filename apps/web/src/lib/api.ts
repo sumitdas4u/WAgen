@@ -43,6 +43,184 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return response.json() as Promise<T>;
 }
 
+export interface GoogleSheetsConnection {
+  id: string;
+  userId: string;
+  googleEmail: string;
+  googleAccountId: string | null;
+  displayName: string | null;
+  tokenExpiresAt: string | null;
+  grantedScopes: string[];
+  status: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GoogleSheetsConfig {
+  configured: boolean;
+  redirectUri: string | null;
+  scopes: string[];
+}
+
+export interface GoogleSheetsStatus {
+  configured: boolean;
+  connected: boolean;
+  connection: GoogleSheetsConnection | null;
+}
+
+export interface GoogleSpreadsheetSummary {
+  id: string;
+  name: string;
+  modifiedTime: string | null;
+}
+
+export interface GoogleSheetSummary {
+  sheetId: number;
+  title: string;
+  rowCount: number | null;
+  columnCount: number | null;
+}
+
+export interface GoogleCalendarConnection {
+  id: string;
+  userId: string;
+  googleEmail: string;
+  googleAccountId: string | null;
+  displayName: string | null;
+  tokenExpiresAt: string | null;
+  grantedScopes: string[];
+  status: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GoogleCalendarConfig {
+  configured: boolean;
+  redirectUri: string | null;
+  scopes: string[];
+}
+
+export interface GoogleCalendarStatus {
+  configured: boolean;
+  connected: boolean;
+  connection: GoogleCalendarConnection | null;
+}
+
+export interface GoogleCalendarSummary {
+  id: string;
+  summary: string;
+  primary: boolean;
+  timeZone: string | null;
+  accessRole: string | null;
+}
+
+export function fetchGoogleSheetsConfig(token: string) {
+  return apiRequest<GoogleSheetsConfig>("/api/google/sheets/config", { token });
+}
+
+export function fetchGoogleSheetsStatus(token: string) {
+  return apiRequest<GoogleSheetsStatus>("/api/google/sheets/status", { token });
+}
+
+export function startGoogleSheetsConnect(token: string) {
+  return apiRequest<{ url: string }>("/api/google/sheets/connect/start", { token });
+}
+
+export function disconnectGoogleSheets(token: string, payload?: { connectionId?: string }) {
+  return apiRequest<{ ok: boolean }>("/api/google/sheets/disconnect", {
+    token,
+    method: "POST",
+    body: JSON.stringify(payload ?? {})
+  });
+}
+
+export function fetchGoogleSpreadsheets(
+  token: string,
+  options?: { connectionId?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (options?.connectionId) {
+    params.set("connectionId", options.connectionId);
+  }
+  const query = params.toString();
+  return apiRequest<{ spreadsheets: GoogleSpreadsheetSummary[] }>(
+    query ? `/api/google/sheets/spreadsheets?${query}` : "/api/google/sheets/spreadsheets",
+    { token }
+  );
+}
+
+export function fetchGoogleSpreadsheetSheets(
+  token: string,
+  spreadsheetId: string,
+  options?: { connectionId?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (options?.connectionId) {
+    params.set("connectionId", options.connectionId);
+  }
+  const query = params.toString();
+  const basePath = `/api/google/sheets/spreadsheets/${encodeURIComponent(spreadsheetId)}/sheets`;
+  return apiRequest<{ sheets: GoogleSheetSummary[] }>(query ? `${basePath}?${query}` : basePath, {
+    token
+  });
+}
+
+export function fetchGoogleSheetColumns(
+  token: string,
+  spreadsheetId: string,
+  sheetTitle: string,
+  options?: { connectionId?: string | null }
+) {
+  const params = new URLSearchParams({ sheetTitle });
+  if (options?.connectionId) {
+    params.set("connectionId", options.connectionId);
+  }
+  return apiRequest<{ columns: string[] }>(
+    `/api/google/sheets/spreadsheets/${encodeURIComponent(spreadsheetId)}/columns?${params.toString()}`,
+    { token }
+  );
+}
+
+export function fetchGoogleCalendarConfig(token: string) {
+  return apiRequest<GoogleCalendarConfig>("/api/google/calendar/config", { token });
+}
+
+export function fetchGoogleCalendarStatus(token: string) {
+  return apiRequest<GoogleCalendarStatus>("/api/google/calendar/status", { token });
+}
+
+export function startGoogleCalendarConnect(token: string) {
+  return apiRequest<{ url: string }>("/api/google/calendar/connect/start", { token });
+}
+
+export function disconnectGoogleCalendar(
+  token: string,
+  payload?: { connectionId?: string }
+) {
+  return apiRequest<{ ok: boolean }>("/api/google/calendar/disconnect", {
+    token,
+    method: "POST",
+    body: JSON.stringify(payload ?? {})
+  });
+}
+
+export function fetchGoogleCalendars(
+  token: string,
+  options?: { connectionId?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (options?.connectionId) {
+    params.set("connectionId", options.connectionId);
+  }
+  const query = params.toString();
+  return apiRequest<{ calendars: GoogleCalendarSummary[] }>(
+    query ? `/api/google/calendar/calendars?${query}` : "/api/google/calendar/calendars",
+    { token }
+  );
+}
+
 export interface User {
   id: string;
   name: string;
@@ -64,6 +242,14 @@ export interface FirebaseSessionPayload {
   idToken: string;
   name?: string;
   businessType?: string;
+}
+
+export interface GoogleAuthPopupPayload {
+  type?: string;
+  status?: "success" | "error";
+  message?: string;
+  token?: string | null;
+  user?: User | null;
 }
 
 export function signup(payload: {
@@ -90,6 +276,21 @@ export function createFirebaseSession(payload: FirebaseSessionPayload) {
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export function buildGoogleAuthStartUrl(options?: {
+  mode?: "login" | "signup";
+  businessType?: string;
+}) {
+  const params = new URLSearchParams();
+  if (options?.mode) {
+    params.set("mode", options.mode);
+  }
+  if (options?.businessType?.trim()) {
+    params.set("businessType", options.businessType.trim());
+  }
+  const query = params.toString();
+  return `${API_URL}/api/auth/google/start${query ? `?${query}` : ""}`;
 }
 
 export function migrateLegacyPasswordUser(payload: { email: string; password: string }) {
@@ -669,6 +870,34 @@ export interface WorkspaceBillingInvoice {
   createdAt: string;
 }
 
+async function downloadBinaryFile(
+  path: string,
+  token: string,
+  options?: { method?: "GET" | "POST"; body?: BodyInit | null }
+): Promise<{ blob: Blob; filename: string }> {
+  const hasJsonBody =
+    options?.body !== undefined && options?.body !== null && !(options.body instanceof FormData);
+  const response = await fetch(`${API_URL}${path}`, {
+    method: options?.method ?? "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(hasJsonBody ? { "Content-Type": "application/json" } : {})
+    },
+    body: options?.body ?? null
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error((payload as { error?: string }).error || `Request failed: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("content-disposition") ?? "";
+  const match = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+  const filename = match?.[1] ?? "download.bin";
+  return { blob, filename };
+}
+
 export function fetchWorkspaceBillingOverview(token: string) {
   return apiRequest<{ overview: WorkspaceBillingOverview }>("/api/workspace/billing/overview", { token });
 }
@@ -787,21 +1016,7 @@ export function fetchWorkspaceBillingInvoices(token: string, options?: { limit?:
 }
 
 export async function downloadWorkspaceBillingInvoice(token: string, invoiceId: string): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch(`${API_URL}/api/workspace/billing/invoices/${invoiceId}/download`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || `Request failed: ${response.status}`);
-  }
-  const blob = await response.blob();
-  const contentDisposition = response.headers.get("content-disposition") ?? "";
-  const match = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
-  const filename = match?.[1] ?? "invoice.pdf";
-  return { blob, filename };
+  return downloadBinaryFile(`/api/workspace/billing/invoices/${invoiceId}/download`, token);
 }
 
 export function connectWhatsApp(token: string, options?: { resetAuth?: boolean }) {
@@ -1286,6 +1501,103 @@ export interface LeadConversation extends Conversation {
   summary_updated_at: string | null;
 }
 
+export type ContactType = "lead" | "feedback" | "complaint" | "other";
+export type ContactSourceType = "manual" | "import" | "web" | "qr" | "api";
+
+export interface ContactRecord {
+  id: string;
+  display_name: string | null;
+  phone_number: string;
+  email: string | null;
+  contact_type: ContactType;
+  tags: string[];
+  order_date: string | null;
+  source_type: ContactSourceType;
+  source_id: string | null;
+  source_url: string | null;
+  linked_conversation_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContactImportResult {
+  ok: boolean;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: Array<{ row: number; message: string }>;
+}
+
+export function fetchContacts(
+  token: string,
+  options?: { q?: string; type?: ContactType; source?: ContactSourceType; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.q) {
+    params.set("q", options.q);
+  }
+  if (options?.type) {
+    params.set("type", options.type);
+  }
+  if (options?.source) {
+    params.set("source", options.source);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/contacts?${query}` : "/api/contacts";
+  return apiRequest<{ contacts: ContactRecord[] }>(path, { token });
+}
+
+export function createContact(
+  token: string,
+  payload: {
+    name: string;
+    phone: string;
+    email?: string;
+    type?: ContactType;
+    tags?: string[];
+    orderDate?: string;
+    sourceId?: string;
+    sourceUrl?: string;
+  }
+) {
+  return apiRequest<{ contact: ContactRecord }>("/api/contacts", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function importContactsWorkbook(token: string, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<ContactImportResult>("/api/contacts/import", {
+    method: "POST",
+    token,
+    body: form,
+    timeoutMs: 120_000
+  });
+}
+
+export function downloadContactsTemplate(token: string): Promise<{ blob: Blob; filename: string }> {
+  return downloadBinaryFile("/api/contacts/template", token);
+}
+
+export function exportContactsWorkbook(
+  token: string,
+  payload: {
+    ids?: string[];
+    filters?: { q?: string; type?: ContactType; source?: ContactSourceType; limit?: number };
+  }
+): Promise<{ blob: Blob; filename: string }> {
+  return downloadBinaryFile("/api/contacts/export", token, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function fetchLeadConversations(
   token: string,
   options?: {
@@ -1384,6 +1696,23 @@ export function assignConversationAgent(
     method: "PATCH",
     token,
     body: JSON.stringify({ agentProfileId })
+  });
+}
+
+export interface PublishedFlowSummary {
+  id: string;
+  name: string;
+}
+
+export function fetchPublishedFlows(token: string) {
+  return apiRequest<PublishedFlowSummary[]>("/api/flows/published", { token });
+}
+
+export function assignFlowToConversation(token: string, flowId: string, conversationId: string) {
+  return apiRequest<{ sessionId: string; flowId: string; flowName: string }>(`/api/flows/${flowId}/assign`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ conversationId })
   });
 }
 

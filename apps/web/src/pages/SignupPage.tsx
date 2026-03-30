@@ -20,6 +20,9 @@ function mapAuthError(message: string): string {
   if (normalized.includes("auth/popup-closed-by-user")) {
     return "Google login was closed before completion.";
   }
+  if (normalized.includes("popup was blocked")) {
+    return "Popup was blocked. Allow popups and try again.";
+  }
   if (normalized.includes("auth/too-many-requests")) {
     return "Too many attempts. Please try again in a few minutes.";
   }
@@ -92,7 +95,10 @@ export function SignupPage() {
     setInfo(null);
     setLoading(true);
     try {
-      await loginWithGoogle();
+      await loginWithGoogle({
+        mode,
+        businessType: mode === "signup" ? businessType : undefined
+      });
       navigate(selectedPlan ? `/purchase?plan=${selectedPlan}` : "/dashboard", { replace: true });
     } catch (submitError) {
       setError(mapAuthError((submitError as Error).message));
