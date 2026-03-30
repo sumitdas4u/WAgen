@@ -8,7 +8,7 @@ import { appRoutes } from "./router";
 
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockApiRequest = vi.hoisted(() => vi.fn());
-const mockLeadsPrefetchData = vi.hoisted(() => vi.fn());
+const mockContactsPrefetchData = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: mockUseAuth
@@ -27,9 +27,9 @@ vi.mock("../components/dashboard-billing-center", () => ({
   DashboardBillingCenter: () => <div>Billing module</div>
 }));
 
-vi.mock("../modules/dashboard/leads/route", () => ({
-  Component: () => <div>Leads module</div>,
-  prefetchData: mockLeadsPrefetchData
+vi.mock("../modules/dashboard/contacts/route", () => ({
+  Component: () => <div>Contacts module</div>,
+  prefetchData: mockContactsPrefetchData
 }));
 
 vi.mock("../modules/dashboard/studio/knowledge/route", () => ({
@@ -58,6 +58,7 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
     },
     featureFlags: {
       "dashboard.inbox": true,
+      "dashboard.contacts": true,
       "dashboard.leads": true,
       "dashboard.billing": true,
       "dashboard.agents": true,
@@ -103,7 +104,11 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
   };
 }
 
-function renderRoute(initialEntry: string, bootstrap = createBootstrap()) {
+function renderRoute(
+  initialEntry: string,
+  bootstrap = createBootstrap(),
+  apiImplementation?: (path: string, options: unknown) => Promise<unknown>
+) {
   mockUseAuth.mockReturnValue({
     token: "test-token",
     loading: false,
@@ -118,7 +123,11 @@ function renderRoute(initialEntry: string, bootstrap = createBootstrap()) {
       }
     }
   });
-  mockApiRequest.mockResolvedValue(bootstrap);
+  if (apiImplementation) {
+    mockApiRequest.mockImplementation(apiImplementation);
+  } else {
+    mockApiRequest.mockResolvedValue(bootstrap);
+  }
 
   const router = createMemoryRouter(appRoutes, {
     initialEntries: [initialEntry],
@@ -155,6 +164,33 @@ describe("dashboard router", () => {
     expect(await screen.findByText("Knowledge module")).toBeInTheDocument();
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/dashboard/studio/knowledge");
+    });
+  });
+
+  it("redirects legacy leads paths to contacts", async () => {
+    const { router } = renderRoute("/dashboard?tab=leads");
+
+    expect(await screen.findByText("Contacts module")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/dashboard/leads");
+    });
+  });
+
+  it("renders the contacts module on /dashboard/leads", async () => {
+    const { router } = renderRoute("/dashboard/leads");
+
+    expect(await screen.findByText("Contacts module")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/dashboard/leads");
+    });
+  });
+
+  it("redirects /dashboard/contacts to /dashboard/leads", async () => {
+    const { router } = renderRoute("/dashboard/contacts");
+
+    expect(await screen.findByText("Contacts module")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/dashboard/leads");
     });
   });
 
@@ -240,11 +276,11 @@ describe("dashboard router", () => {
     renderRoute("/dashboard/billing");
 
     await screen.findByText("Billing module");
-    await user.hover(screen.getAllByRole("link", { name: /Leads/i })[0]);
+    await user.hover(screen.getAllByRole("link", { name: /Contacts/i })[0]);
 
     await waitFor(() => {
-      expect(mockLeadsPrefetchData).toHaveBeenCalledTimes(1);
-      expect(mockLeadsPrefetchData).toHaveBeenCalledWith(
+      expect(mockContactsPrefetchData).toHaveBeenCalledTimes(1);
+      expect(mockContactsPrefetchData).toHaveBeenCalledWith(
         expect.objectContaining({
           token: "test-token",
           bootstrap: expect.any(Object),
@@ -252,5 +288,49 @@ describe("dashboard router", () => {
         })
       );
     });
+  });
+
+  it("shows a waiting inbox state instead of the go-live setup when channels are offline", async () => {
+    const bootstrap = createBootstrap({
+      agentSummary: {
+        configuredProfiles: 0,
+        activeProfiles: 0,
+        hasConfiguredProfile: false,
+        hasActiveProfile: false
+      },
+      channelSummary: {
+        website: {
+          enabled: false
+        },
+        whatsapp: {
+          status: "disconnected",
+          phoneNumber: null,
+          hasQr: false,
+          qr: null
+        },
+        metaApi: {
+          connected: false,
+          connection: null
+        },
+        anyConnected: false
+      }
+    });
+
+    renderRoute("/dashboard/inbox", bootstrap, async (path) => {
+      if (path === "/api/dashboard/bootstrap") {
+        return bootstrap;
+      }
+      if (path === "/api/conversations") {
+        return { conversations: [] };
+      }
+      throw new Error(`Unhandled path in test: ${path}`);
+    });
+
+    expect(await screen.findByRole("heading", { name: "Chats" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Waiting for agent to connect" })).toBeInTheDocument();
+    expect(
+      screen.getByText("No agent found yet. Create or activate an agent workflow, then connect a channel to start receiving chats.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Connect to Website")).not.toBeInTheDocument();
   });
 });

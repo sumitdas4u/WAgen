@@ -79,6 +79,8 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_API_URL: ""
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     depends_on:
       api:
         condition: service_started

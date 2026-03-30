@@ -3,6 +3,7 @@ dist
 .env
 .env.*
 !.env.example
+!infra/.env.production.example
 coverage
 apps/api/uploads
 *.log

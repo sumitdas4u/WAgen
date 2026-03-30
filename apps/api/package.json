@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "lint": "tsc --noEmit",
     "db:migrate": "tsx src/scripts/migrate.ts",
+    "meta:unsubscribe:all": "tsx src/scripts/meta-unsubscribe-all.ts",
     "billing:renew-credits": "tsx src/scripts/credit-renewal.ts",
     "billing:smoke": "tsx src/scripts/smoke-workspace-billing.ts",
     "billing:dashboard:smoke": "tsx src/scripts/smoke-dashboard-billing-center.ts",

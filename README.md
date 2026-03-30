@@ -447,3 +447,71 @@ With this, a new engineer should be able to:
 - Understand all moving parts (API, web, landing, Postgres, Redis, WhatsApp, Meta).
 - Run the stack locally.
 - Reason about how lead conversations flow from inbound WhatsApp to RAG-powered AI replies, and where to hook in for customization (prompts, safety rules, billing, and agent profiles).
+
+## Flow Module (Active Development)
+
+The **Flow Module** is the next major feature being built — it turns the existing visual flow builder UI into a fully functional message automation engine.
+
+### Current State
+
+The visual flow builder UI lives at `apps/web/src/modules/dashboard/studio/flows/route.tsx` (1200+ lines). It supports:
+- 21 node types across 6 categories (Triggers, Send, Ask, Utilities, Actions, AI)
+- 6 trigger types (keyword, any_message, webhook, template_reply, qr_start, website_start)
+- ReactFlow-based drag-and-drop canvas
+- Node config panels, snapshots, test mode, analytics display
+
+**What doesn't exist yet**: backend persistence (no DB tables, no API), execution engine, and trigger integration with the inbound message pipeline.
+
+### What's Being Built
+
+See **[docs/FLOW_MODULE.md](docs/FLOW_MODULE.md)** for the complete development plan, including:
+- Database schema (`flows`, `flow_sessions` tables)
+- Flow execution engine architecture
+- API routes (`/api/flows`)
+- Integration point in `message-router-service.ts`
+- Node-by-node execution contract
+- Frontend wiring (API persistence instead of local state)
+
+### Node Type Reference
+
+| Category | Node | Description |
+|---|---|---|
+| Triggers | `start` | Entry point with trigger config |
+| Triggers | `end` | Terminal node with closing message |
+| Send Message | `send_text` | Send plain text (supports `{{variables}}`) |
+| Send Message | `send_media` | Send image/video/document |
+| Send Message | `send_voice` | Send voice note |
+| Send Message | `send_template` | Send WhatsApp approved template |
+| Ask Questions | `ask_text` | Collect free-text input → variable |
+| Ask Questions | `ask_number` | Collect numeric input → variable |
+| Ask Questions | `ask_phone` | Collect phone number → variable |
+| Ask Questions | `ask_email` | Collect email → variable |
+| Ask Questions | `ask_form` | Collect multiple fields |
+| Ask Questions | `ask_location` | Collect location/city |
+| Ask Questions | `ask_list_option` | List picker (up to 10 options) |
+| Ask Questions | `ask_button_option` | Button picker (up to 3 buttons) |
+| Utilities | `wait_node` | Delay execution (seconds/minutes/hours) |
+| Utilities | `condition_node` | If/else branching on variables |
+| Utilities | `set_variable` | Set a conversation variable |
+| Actions | `assign_agent` | Hand off to human agent queue |
+| Actions | `webhook_node` | Call external HTTP endpoint |
+| AI | `ai_reply` | Knowledge-base-grounded reply (premium) |
+| AI | `ai_intent` | Route by detected intent (premium) |
+
+## Roadmap
+
+- [x] Multi-channel WhatsApp (QR + Meta Cloud API + Web Widget)
+- [x] AI reply pipeline (RAG + GPT-4o-mini)
+- [x] Lead scoring & stage tracking (cold → warm → hot)
+- [x] CRM contacts (import/export/tagging)
+- [x] Agent profiles (per-channel personality & objective)
+- [x] Billing (Razorpay subscriptions + credit system)
+- [x] Real-time inbox (WebSocket)
+- [x] AI review queue
+- [x] Flow Builder UI (ReactFlow visual editor — all 21 nodes)
+- [ ] **Flow execution engine (backend)** ← active development
+- [ ] Flow DB persistence + API (`/api/flows`)
+- [ ] Flow analytics (started / completed / drop-off per node)
+- [ ] Broadcast campaigns (push to contact lists)
+- [ ] Multi-user workspaces (team collaboration)
+- [ ] WhatsApp catalog integration
