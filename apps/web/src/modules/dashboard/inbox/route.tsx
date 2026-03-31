@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Conversation, ConversationMessage } from "../../../lib/api";
-import { API_URL } from "../../../lib/api";
 import { normalizeMessage, renderMessage } from "./message-renderer";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
