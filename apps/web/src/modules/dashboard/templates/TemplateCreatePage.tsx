@@ -330,12 +330,11 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated }: Pro
               }}
             />
           )}
-          {["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat) && connectionId && (
+          {["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat) && (
             <div style={{ marginTop: "12px" }}>
               <MediaUploader
-                token={token}
-                connectionId={connectionId}
-                onUploaded={(handle) => setHeaderHandle(handle)}
+                mediaType={headerFormat as "IMAGE" | "VIDEO" | "DOCUMENT"}
+                onUploaded={(url) => setHeaderHandle(url)}
               />
             </div>
           )}

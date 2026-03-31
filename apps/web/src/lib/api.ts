@@ -1665,6 +1665,8 @@ export interface ConversationMessage {
   ai_model: string | null;
   retrieval_chunks: number | null;
   media_url: string | null;
+  message_type: string;
+  message_content: Record<string, unknown> | null;
   created_at: string;
 }
 

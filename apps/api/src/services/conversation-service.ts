@@ -5,6 +5,28 @@ import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-co
 import { openAIService } from "./openai-service.js";
 import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
 import { extractCapturedProfileDetails, reconcileContactPhone, syncConversationContact } from "./contacts-service.js";
+import type { FlowMessagePayload } from "./outbound-message-types.js";
+
+function payloadToMessageType(payload: FlowMessagePayload): string {
+  switch (payload.type) {
+    case "text": return "text";
+    case "media":
+      if (payload.mediaType === "image") return "image";
+      if (payload.mediaType === "video") return "video";
+      if (payload.mediaType === "audio") return "audio";
+      return "file";
+    case "text_buttons": return "buttons";
+    case "media_buttons": return "buttons";
+    case "list": return "list";
+    case "template": return "template";
+    case "product": return "template";
+    case "product_list": return "list";
+    case "location_share": return "location";
+    case "contact_share": return "contact";
+    case "poll": return "poll";
+    default: return "text";
+  }
+}
 
 function scoreMessageBase(text: string): number {
   const normalized = text.toLowerCase();
@@ -552,8 +574,12 @@ export async function trackOutboundMessage(
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
   },
-  mediaUrl?: string | null
+  mediaUrl?: string | null,
+  payload?: FlowMessagePayload | null
 ): Promise<void> {
+  const msgType = payload ? payloadToMessageType(payload) : "text";
+  const msgContent = payload ? JSON.stringify(payload) : null;
+
   await pool.query(
     `INSERT INTO conversation_messages (
        conversation_id,
@@ -564,9 +590,11 @@ export async function trackOutboundMessage(
        total_tokens,
        ai_model,
        retrieval_chunks,
-       media_url
+       media_url,
+       message_type,
+       message_content
      )
-     VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8)`,
+     VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
     [
       conversationId,
       message,
@@ -575,7 +603,9 @@ export async function trackOutboundMessage(
       usage?.totalTokens ?? null,
       usage?.aiModel ?? null,
       usage?.retrievalChunks ?? null,
-      mediaUrl ?? null
+      mediaUrl ?? null,
+      msgType,
+      msgContent
     ]
   );
 
@@ -1015,6 +1045,8 @@ export interface ConversationMessage {
   ai_model: string | null;
   retrieval_chunks: number | null;
   media_url: string | null;
+  message_type: string;
+  message_content: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -1054,6 +1086,8 @@ export async function listConversationMessages(conversationId: string): Promise<
        ai_model,
        retrieval_chunks,
        media_url,
+       message_type,
+       message_content,
        created_at
      FROM conversation_messages
      WHERE conversation_id = $1

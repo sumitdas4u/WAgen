@@ -1,41 +1,57 @@
 import { useRef, useState } from "react";
-import { useUploadMediaMutation } from "./queries";
+import { uploadFlowMedia } from "../../../lib/supabase";
 
-const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const ACCEPTED_EXT = ".jpg,.jpeg,.png,.webp";
-const MAX_BYTES = 5 * 1024 * 1024;
+type MediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
 
 interface Props {
-  token: string;
-  connectionId: string;
-  onUploaded: (handle: string) => void;
+  mediaType: MediaType;
+  onUploaded: (url: string) => void;
 }
 
-export function MediaUploader({ token, connectionId, onUploaded }: Props) {
+const CONFIG: Record<MediaType, { accept: string; exts: string; maxMb: number; icon: string; label: string }> = {
+  IMAGE:    { accept: "image/jpeg,image/png,image/webp,image/gif", exts: ".jpg,.jpeg,.png,.webp,.gif", maxMb: 5,  icon: "🖼️", label: "Image"    },
+  VIDEO:    { accept: "video/mp4,video/3gpp,video/quicktime",      exts: ".mp4,.3gp,.mov",           maxMb: 16, icon: "🎬", label: "Video"    },
+  DOCUMENT: { accept: "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain", exts: ".pdf,.doc,.docx,.xls,.xlsx,.txt", maxMb: 10, icon: "📄", label: "Document" }
+};
+
+export function MediaUploader({ mediaType, onUploaded }: Props) {
+  const cfg = CONFIG[mediaType];
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploaded, setUploaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const uploadMutation = useUploadMediaMutation(token);
 
-  function handleFile(file: File) {
+  async function handleFile(file: File) {
     setError(null);
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      setError("Unsupported file type. Use JPEG, PNG, or WebP.");
+    setUploaded(false);
+
+    const maxBytes = cfg.maxMb * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setError(`File exceeds ${cfg.maxMb}MB limit.`);
       return;
     }
-    if (file.size > MAX_BYTES) {
-      setError("File exceeds 5MB limit.");
-      return;
+
+    // Preview
+    if (mediaType === "IMAGE") {
+      setPreview(URL.createObjectURL(file));
+      setPreviewName(null);
+    } else {
+      setPreview(null);
+      setPreviewName(file.name);
     }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    uploadMutation.mutate(
-      { connectionId, file },
-      {
-        onSuccess: (handle) => onUploaded(handle),
-        onError: (err) => setError((err as Error).message)
-      }
-    );
+
+    setUploading(true);
+    try {
+      const url = await uploadFlowMedia(file);
+      onUploaded(url);
+      setUploaded(true);
+    } catch (err) {
+      setError((err as Error).message || "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -56,7 +72,11 @@ export function MediaUploader({ token, connectionId, onUploaded }: Props) {
           cursor: "pointer",
           background: "#fafafa",
           position: "relative",
-          overflow: "hidden"
+          overflow: "hidden",
+          minHeight: "96px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
         }}
       >
         {preview ? (
@@ -65,23 +85,29 @@ export function MediaUploader({ token, connectionId, onUploaded }: Props) {
             alt="Header preview"
             style={{ maxHeight: "120px", borderRadius: "6px", objectFit: "contain" }}
           />
+        ) : previewName ? (
+          <div style={{ fontSize: "13px", color: "#333", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+            <span style={{ fontSize: "28px" }}>{cfg.icon}</span>
+            <span>{previewName}</span>
+          </div>
         ) : (
-          <>
-            <div style={{ fontSize: "24px", marginBottom: "8px" }}>🖼️</div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+            <div style={{ fontSize: "28px" }}>{cfg.icon}</div>
             <div style={{ fontSize: "13px", color: "#555" }}>
               Drag & drop or <strong>click to upload</strong>
             </div>
-            <div style={{ fontSize: "11px", color: "#aaa", marginTop: "4px" }}>
-              JPEG, PNG, WebP — max 5MB
+            <div style={{ fontSize: "11px", color: "#aaa" }}>
+              {cfg.label} — max {cfg.maxMb}MB ({cfg.exts})
             </div>
-          </>
+          </div>
         )}
-        {uploadMutation.isPending && (
+
+        {uploading && (
           <div
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(255,255,255,0.8)",
+              background: "rgba(255,255,255,0.85)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -94,17 +120,20 @@ export function MediaUploader({ token, connectionId, onUploaded }: Props) {
           </div>
         )}
       </div>
+
       <input
         ref={inputRef}
         type="file"
-        accept={ACCEPTED_EXT}
+        accept={cfg.accept}
         style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) handleFile(file);
+          e.target.value = "";
         }}
       />
-      {uploadMutation.isSuccess && (
+
+      {uploaded && (
         <div style={{ marginTop: "6px", fontSize: "12px", color: "#16a34a", fontWeight: 600 }}>
           ✓ Uploaded successfully
         </div>

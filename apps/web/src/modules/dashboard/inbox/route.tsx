@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Conversation, ConversationMessage } from "../../../lib/api";
 import { API_URL } from "../../../lib/api";
+import { normalizeMessage, renderMessage } from "./message-renderer";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
@@ -96,7 +97,6 @@ const CHAT_AI_DURATION_OPTIONS: Array<{ label: string; minutes: number | null }>
 
 const QUICK_EMOJIS = ["👍", "😊", "🙏", "✅", "🔥", "💯", "👋", "😄", "❤️", "🎉", "⚡", "📞", "📧", "💬", "🏷️", "🔔"];
 
-const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff)(\?.*)?$/i;
 
 
 // ─── Utility functions ───────────────────────────────────────────────────────
@@ -198,123 +198,6 @@ function getMessagePreview(text: string | null): string {
   return text.slice(0, 80);
 }
 
-// ─── WhatsApp text formatter ─────────────────────────────────────────────────
-
-function parseWhatsAppText(text: string): JSX.Element {
-  // Parses *bold*, _italic_, ~strikethrough~, `code`, URLs and line breaks
-  const lines = text.split("\n");
-  const result: JSX.Element[] = [];
-  lines.forEach((line, li) => {
-    const segments: JSX.Element[] = [];
-    // tokenize: bold, italic, strikethrough, code, url, plain
-    const tokenRe = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`|https?:\/\/[^\s<>"]+|[^*_~`\n]+)/g;
-    let m: RegExpExecArray | null;
-    let si = 0;
-    while ((m = tokenRe.exec(line)) !== null) {
-      const tok = m[0];
-      if (tok.startsWith("*") && tok.endsWith("*") && tok.length > 2) {
-        segments.push(<strong key={`${li}-${si}`}>{tok.slice(1, -1)}</strong>);
-      } else if (tok.startsWith("_") && tok.endsWith("_") && tok.length > 2) {
-        segments.push(<em key={`${li}-${si}`}>{tok.slice(1, -1)}</em>);
-      } else if (tok.startsWith("~") && tok.endsWith("~") && tok.length > 2) {
-        segments.push(<s key={`${li}-${si}`}>{tok.slice(1, -1)}</s>);
-      } else if (tok.startsWith("`") && tok.endsWith("`") && tok.length > 2) {
-        segments.push(<code key={`${li}-${si}`} className="message-inline-code">{tok.slice(1, -1)}</code>);
-      } else if (/^https?:\/\//.test(tok)) {
-        if (IMAGE_EXTENSIONS.test(tok)) {
-          segments.push(
-            <a key={`${li}-${si}`} href={tok} target="_blank" rel="noopener noreferrer" className="message-media-link">
-              <img className="message-rich-image" src={tok} alt="Image" loading="lazy" />
-            </a>
-          );
-        } else {
-          segments.push(<a key={`${li}-${si}`} href={tok} target="_blank" rel="noopener noreferrer" className="message-rich-link">{tok}</a>);
-        }
-      } else {
-        segments.push(<span key={`${li}-${si}`}>{tok}</span>);
-      }
-      si++;
-    }
-    result.push(<span key={`line-${li}`} className="message-line">{segments.length > 0 ? segments : line}</span>);
-    if (li < lines.length - 1) result.push(<br key={`br-${li}`} />);
-  });
-  return <>{result}</>;
-}
-
-// ─── Media image with fallback ───────────────────────────────────────────────
-
-function MediaAttachment({ mediaUrl }: { mediaUrl: string }) {
-  const resolvedUrl = mediaUrl.startsWith("/") ? `${API_URL}${mediaUrl}` : mediaUrl;
-  const isKnownImage = IMAGE_EXTENSIONS.test(mediaUrl) || /image\//.test(mediaUrl);
-  // For /api/media/ URLs we always try image first (stored uploads), fallback to file link on error
-  const tryAsImage = isKnownImage || /\/api\/media\//.test(mediaUrl);
-  const [imgFailed, setImgFailed] = useState(false);
-
-  if (tryAsImage && !imgFailed) {
-    return (
-      <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="message-media-link">
-        <img
-          className="message-rich-image"
-          src={resolvedUrl}
-          alt="Attachment"
-          loading="lazy"
-          onError={() => setImgFailed(true)}
-        />
-      </a>
-    );
-  }
-  return (
-    <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="message-file-link">
-      📎 Attachment
-    </a>
-  );
-}
-
-// ─── Rich message renderer ────────────────────────────────────────────────────
-
-function renderMessageContent(text: string, mediaUrl: string | null): JSX.Element {
-  const trimmed = text?.trim() ?? "";
-  const nodes: JSX.Element[] = [];
-
-  // Media attachment
-  if (mediaUrl) {
-    nodes.push(<MediaAttachment key="media" mediaUrl={mediaUrl} />);
-  }
-
-  // Inbound image patterns from WhatsApp media extraction
-  if (trimmed === "[Image received with no readable text]") {
-    if (!mediaUrl) {
-      nodes.push(
-        <span key="img-placeholder" className="message-rich-media-extract">
-          <span className="message-media-icon">📷</span>
-          <span>Image received</span>
-        </span>
-      );
-    }
-    return <>{nodes}</>;
-  }
-
-  if (trimmed.startsWith("[Extracted image text]:")) {
-    const content = trimmed.slice("[Extracted image text]:".length).trim();
-    nodes.push(
-      <span key="img-extract" className="message-rich-media-extract">
-        <span className="message-media-icon">📷</span>
-        <span>{content || "Image"}</span>
-      </span>
-    );
-    return <>{nodes}</>;
-  }
-
-  // Skip redundant "📎 Attachment" / "📷 Photo" text when media is already shown
-  if (mediaUrl && (trimmed === "📎 Attachment" || trimmed === "📷 Photo" || trimmed === "")) {
-    return <>{nodes}</>;
-  }
-
-  if (!trimmed) return <>{nodes}</>;
-
-  nodes.push(<span key="text">{parseWhatsAppText(trimmed)}</span>);
-  return <>{nodes}</>;
-}
 
 // ─── Filter logic ─────────────────────────────────────────────────────────────
 
@@ -1158,7 +1041,7 @@ export function Component() {
                           )}
                           <div className={`bubble ${msg.direction}${isAi ? " ai-bubble" : ""}`}>
                             <div className="bubble-content">
-                              {renderMessageContent(msg.message_text, msg.media_url ?? null)}
+                              {renderMessage(normalizeMessage(msg))}
                             </div>
                             <div className="bubble-meta">
                               {isAi && <span className="bubble-ai-badge">AI</span>}

@@ -52,7 +52,7 @@ export async function sendConversationFlowMessage(input: {
   }
 
   if (input.track !== false) {
-    await trackOutboundMessage(conversation.id, summaryText, undefined, input.mediaUrl ?? null);
+    await trackOutboundMessage(conversation.id, summaryText, undefined, input.mediaUrl ?? null, input.payload);
   }
 
   return {

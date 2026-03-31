@@ -103,7 +103,13 @@ export function AIGeneratorPanel({ token, onClose, onUse }: Props) {
 
       <button
         type="button"
-        onClick={() => generateMutation.mutate({ prompt, style })}
+        onClick={() =>
+          generateMutation.mutate({ prompt, style }, {
+            onSuccess: (data) => {
+              if (data) onUse(data);
+            }
+          })
+        }
         disabled={prompt.trim().length < 5 || generateMutation.isPending}
         style={{
           padding: "12px",
@@ -132,62 +138,6 @@ export function AIGeneratorPanel({ token, onClose, onUse }: Props) {
           }}
         >
           {(generateMutation.error as Error).message}
-        </div>
-      )}
-
-      {generateMutation.isSuccess && generateMutation.data && (
-        <div
-          style={{
-            padding: "16px",
-            borderRadius: "10px",
-            border: "2px solid #25d366",
-            background: "#f0fdf4"
-          }}
-        >
-          <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "8px", color: "#166534" }}>
-            Template generated!
-          </div>
-          <div style={{ fontSize: "13px", color: "#555", marginBottom: "12px" }}>
-            <strong>Name:</strong> {generateMutation.data.suggestedName}
-            {" · "}
-            <strong>Category:</strong> {generateMutation.data.suggestedCategory}
-          </div>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              type="button"
-              onClick={() => {
-                if (generateMutation.data) onUse(generateMutation.data);
-              }}
-              style={{
-                padding: "10px 18px",
-                borderRadius: "8px",
-                background: "#25d366",
-                color: "#fff",
-                border: "none",
-                fontWeight: 700,
-                fontSize: "14px",
-                cursor: "pointer"
-              }}
-            >
-              Use this template
-            </button>
-            <button
-              type="button"
-              onClick={() => generateMutation.mutate({ prompt, style })}
-              style={{
-                padding: "10px 18px",
-                borderRadius: "8px",
-                background: "#fff",
-                color: "#333",
-                border: "1.5px solid #ddd",
-                fontWeight: 600,
-                fontSize: "14px",
-                cursor: "pointer"
-              }}
-            >
-              Regenerate
-            </button>
-          </div>
         </div>
       )}
     </div>
