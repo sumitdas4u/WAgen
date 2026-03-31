@@ -9,3 +9,11 @@ dev.log
 api-prod.log
 web-prod.log
 npm-debug.log*
+
+# Large binary / generated files that must not enter the build context
+tmp/
+tools/
+*.pdf
+*.exe
+*.sql
+**/*.tsbuildinfo
