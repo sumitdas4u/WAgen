@@ -944,7 +944,7 @@ export function Component() {
                           <span>Score {selectedConversation.score}</span>
                           <span className={`clone-thread-stage ${selectedConversationStage}`}>{selectedConversation.stage}</span>
                           <span className={selectedConversation.ai_paused || selectedConversation.manual_takeover ? "chat-flag paused" : "chat-flag live"}>
-                            {selectedConversation.ai_paused || selectedConversation.manual_takeover ? "Human" : "AI Live"}
+                            {selectedConversation.manual_takeover ? "Manual" : selectedConversation.ai_paused ? "Paused" : "AI Live"}
                           </span>
                         </div>
                       )}
@@ -1023,13 +1023,32 @@ export function Component() {
                       <span className="messages-loading-dots"><span /><span /><span /></span>
                       <p>Loading conversation...</p>
                     </div>
+                  ) : messagesQuery.isError ? (
+                    <p className="empty-note" style={{ color: "#c0392b" }}>
+                      Could not load messages. Please try again.
+                    </p>
                   ) : selectedConversationMessages.length === 0 ? (
                     <p className="empty-note">No messages in this chat yet.</p>
                   ) : (
                     selectedConversationMessages.map((msg, idx) => {
                       const prevMsg = idx > 0 ? selectedConversationMessages[idx - 1] : null;
                       const showDate = !prevMsg || !isSameDay(prevMsg.created_at, msg.created_at);
-                      const isAi = msg.direction === "outbound" && Boolean(msg.ai_model);
+
+                      // Identify sender type:
+                      // - AI: outbound + ai_model is set
+                      // - Manual/agent: outbound + no ai_model + sender_name is set
+                      // - Flow: outbound + no ai_model + no sender_name
+                      const isOutbound = msg.direction === "outbound";
+                      const isAi = isOutbound && Boolean(msg.ai_model);
+                      const isFlow = isOutbound && !isAi && !msg.sender_name;
+                      const isManual = isOutbound && !isAi && Boolean(msg.sender_name);
+
+                      const bubbleClass = [
+                        "bubble",
+                        msg.direction,
+                        isAi ? "ai-bubble" : "",
+                        isFlow ? "flow-bubble" : ""
+                      ].filter(Boolean).join(" ");
 
                       return (
                         <div key={msg.id}>
@@ -1038,17 +1057,18 @@ export function Component() {
                               <span>{formatDateLabel(msg.created_at)}</span>
                             </div>
                           )}
-                          <div className={`bubble ${msg.direction}${isAi ? " ai-bubble" : ""}`}>
+                          <div className={bubbleClass}>
                             <div className="bubble-content">
                               {renderMessage(normalizeMessage(msg))}
                             </div>
                             <div className="bubble-meta">
                               {isAi && <span className="bubble-ai-badge">AI</span>}
-                              {msg.direction === "outbound" && msg.sender_name && !isAi && (
+                              {isFlow && <span className="bubble-flow-badge">Flow</span>}
+                              {isManual && msg.sender_name && (
                                 <span className="bubble-sender">{msg.sender_name}</span>
                               )}
                               <time title={formatDateTime(msg.created_at)}>{formatMessageTime(msg.created_at)}</time>
-                              {msg.direction === "outbound" && msg.total_tokens ? (
+                              {isOutbound && msg.total_tokens ? (
                                 <span className="token-meta">{msg.total_tokens} tokens</span>
                               ) : null}
                             </div>

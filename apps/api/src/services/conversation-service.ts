@@ -573,6 +573,7 @@ export async function trackOutboundMessage(
     aiModel?: string | null;
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
+    senderName?: string | null;
   },
   mediaUrl?: string | null,
   payload?: FlowMessagePayload | null
@@ -580,34 +581,65 @@ export async function trackOutboundMessage(
   const msgType = payload ? payloadToMessageType(payload) : "text";
   const msgContent = payload ? JSON.stringify(payload) : null;
 
-  await pool.query(
-    `INSERT INTO conversation_messages (
-       conversation_id,
-       direction,
-       message_text,
-       prompt_tokens,
-       completion_tokens,
-       total_tokens,
-       ai_model,
-       retrieval_chunks,
-       media_url,
-       message_type,
-       message_content
-     )
-     VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
-    [
-      conversationId,
-      message,
-      usage?.promptTokens ?? null,
-      usage?.completionTokens ?? null,
-      usage?.totalTokens ?? null,
-      usage?.aiModel ?? null,
-      usage?.retrievalChunks ?? null,
-      mediaUrl ?? null,
-      msgType,
-      msgContent
-    ]
-  );
+  // Try with new columns; fall back if migration not yet applied.
+  try {
+    await pool.query(
+      `INSERT INTO conversation_messages (
+         conversation_id,
+         direction,
+         sender_name,
+         message_text,
+         prompt_tokens,
+         completion_tokens,
+         total_tokens,
+         ai_model,
+         retrieval_chunks,
+         media_url,
+         message_type,
+         message_content
+       )
+       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
+      [
+        conversationId,
+        usage?.senderName ?? null,
+        message,
+        usage?.promptTokens ?? null,
+        usage?.completionTokens ?? null,
+        usage?.totalTokens ?? null,
+        usage?.aiModel ?? null,
+        usage?.retrievalChunks ?? null,
+        mediaUrl ?? null,
+        msgType,
+        msgContent
+      ]
+    );
+  } catch {
+    // Fallback without new columns
+    await pool.query(
+      `INSERT INTO conversation_messages (
+         conversation_id,
+         direction,
+         sender_name,
+         message_text,
+         prompt_tokens,
+         completion_tokens,
+         total_tokens,
+         ai_model,
+         retrieval_chunks
+       )
+       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        conversationId,
+        usage?.senderName ?? null,
+        message,
+        usage?.promptTokens ?? null,
+        usage?.completionTokens ?? null,
+        usage?.totalTokens ?? null,
+        usage?.aiModel ?? null,
+        usage?.retrievalChunks ?? null
+      ]
+    );
+  }
 
   const retrievalDelta = scoreFromRetrievalChunks(usage?.retrievalChunks);
   const markAsAiReply = usage?.markAsAiReply ?? false;
@@ -1074,28 +1106,53 @@ export async function listRecentConversationMessages(
 }
 
 export async function listConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
-  const result = await pool.query<ConversationMessage>(
-    `SELECT
-       id,
-       direction,
-       sender_name,
-       message_text,
-       prompt_tokens,
-       completion_tokens,
-       total_tokens,
-       ai_model,
-       retrieval_chunks,
-       media_url,
-       message_type,
-       message_content,
-       created_at
-     FROM conversation_messages
-     WHERE conversation_id = $1
-     ORDER BY created_at ASC`,
-    [conversationId]
-  );
-
-  return result.rows;
+  // Try with all columns first; fall back gracefully if new columns don't exist yet (pre-migration).
+  try {
+    const result = await pool.query<ConversationMessage>(
+      `SELECT
+         id,
+         direction,
+         sender_name,
+         message_text,
+         prompt_tokens,
+         completion_tokens,
+         total_tokens,
+         ai_model,
+         retrieval_chunks,
+         media_url,
+         message_type,
+         message_content,
+         created_at
+       FROM conversation_messages
+       WHERE conversation_id = $1
+       ORDER BY created_at ASC`,
+      [conversationId]
+    );
+    return result.rows;
+  } catch {
+    // Migration not yet applied — return without new columns.
+    const result = await pool.query<ConversationMessage>(
+      `SELECT
+         id,
+         direction,
+         sender_name,
+         message_text,
+         prompt_tokens,
+         completion_tokens,
+         total_tokens,
+         ai_model,
+         retrieval_chunks,
+         NULL::text          AS media_url,
+         'text'::text        AS message_type,
+         NULL::jsonb         AS message_content,
+         created_at
+       FROM conversation_messages
+       WHERE conversation_id = $1
+       ORDER BY created_at ASC`,
+      [conversationId]
+    );
+    return result.rows;
+  }
 }
 
 export async function setManualTakeover(userId: string, conversationId: string, enabled: boolean): Promise<void> {

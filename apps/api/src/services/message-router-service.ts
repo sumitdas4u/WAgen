@@ -149,60 +149,6 @@ export async function processIncomingMessage(
     };
   }
 
-  if (conversation.manual_takeover) {
-    console.log(`[Router] Conversation in manual takeover - no auto reply (conversation=${conversation.id})`);
-    return {
-      conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
-      autoReplySent: false,
-      reason: "manual_takeover"
-    };
-  }
-
-  if (conversation.ai_paused) {
-    console.log(`[Router] AI paused for conversation - no auto reply (conversation=${conversation.id})`);
-    return {
-      conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
-      autoReplySent: false,
-      reason: "conversation_paused"
-    };
-  }
-
-  if (isBotLoopProtectedChannel(input.channelType)) {
-    const activeFlowSession = await getActiveFlowSession(conversation.id);
-    if (!activeFlowSession) {
-      const detection = await detectExternalBotLoop(conversation.id, normalizedMessage);
-      if (detection.flagged) {
-        console.log(`[Router] External bot detected - marking conversation as manual+paused (conversation=${conversation.id})`);
-        await setConversationManualAndPaused(input.userId, conversation.id);
-        return {
-          conversationId: conversation.id,
-          stage: conversation.stage,
-          score: conversation.score,
-          autoReplySent: false,
-          reason: "external_bot_detected"
-        };
-      }
-    }
-  }
-
-  try {
-    await queueNegativeFeedbackForReview({
-      userId: input.userId,
-      conversationId: conversation.id,
-      customerPhone: input.customerIdentifier,
-      feedbackText: normalizedMessage
-    });
-  } catch (error) {
-    console.warn(
-      `[Router] negative-feedback queue failed user=${input.userId} conversation=${conversation.id}`,
-      error
-    );
-  }
-
   if (!input.shouldAutoReply) {
     return {
       conversationId: conversation.id,
@@ -256,7 +202,7 @@ export async function processIncomingMessage(
     });
   };
 
-  // ── Credits gate — applies to ALL replies (flow + AI) ───────────────────────
+  // ── Credits gate ─────────────────────────────────────────────────────────────
   const creditDecision = await evaluateConversationCredit({
     userId: input.userId,
     customerIdentifier: input.customerIdentifier,
@@ -281,8 +227,42 @@ export async function processIncomingMessage(
     };
   }
 
-  // ── Flow engine — WhatsApp only (qr + api), not web ─────────────────────────
-  // Web chat uses AI directly — flow nodes like buttons/media don't translate.
+  // ── Bot-loop detection (before flow runs) ────────────────────────────────────
+  if (isBotLoopProtectedChannel(input.channelType)) {
+    const activeFlowSession = await getActiveFlowSession(conversation.id);
+    if (!activeFlowSession) {
+      const detection = await detectExternalBotLoop(conversation.id, normalizedMessage);
+      if (detection.flagged) {
+        console.log(`[Router] External bot detected - marking conversation as manual+paused (conversation=${conversation.id})`);
+        await setConversationManualAndPaused(input.userId, conversation.id);
+        return {
+          conversationId: conversation.id,
+          stage: conversation.stage,
+          score: conversation.score,
+          autoReplySent: false,
+          reason: "external_bot_detected"
+        };
+      }
+    }
+  }
+
+  try {
+    await queueNegativeFeedbackForReview({
+      userId: input.userId,
+      conversationId: conversation.id,
+      customerPhone: input.customerIdentifier,
+      feedbackText: normalizedMessage
+    });
+  } catch (error) {
+    console.warn(
+      `[Router] negative-feedback queue failed user=${input.userId} conversation=${conversation.id}`,
+      error
+    );
+  }
+
+  // ── Flow engine runs regardless of manual_takeover/ai_paused ─────────────────
+  // A flow assigned to this conversation always gets to respond.
+  // manual_takeover only blocks the AI fallback below.
   const flowResult: import("./flow-engine-service.js").FlowHandleResult =
     await handleFlowMessage({
       userId: input.userId,
@@ -304,7 +284,6 @@ export async function processIncomingMessage(
 
   if (flowResult.result === "failed") {
     const fallbackText = "Sorry, I hit a problem continuing this flow. Please reply again.";
-
     try {
       await input.sendReply({ text: fallbackText });
       latestConversationState = await trackAndBroadcastOutbound({
@@ -336,10 +315,35 @@ export async function processIncomingMessage(
     }
   }
 
-  // ── AI-only gates (flow bypasses these) ─────────────────────────────────────
+  // ── AI gates — only runs when no flow handled the message ────────────────────
+  // Manual-takeover / ai_paused → agent is handling; skip AI.
+  if (conversation.manual_takeover) {
+    console.log(`[Router] Manual takeover — skipping AI reply (conversation=${conversation.id})`);
+    return {
+      conversationId: conversation.id,
+      stage: conversation.stage,
+      score: conversation.score,
+      autoReplySent: false,
+      reason: "manual_takeover"
+    };
+  }
+
+  if (conversation.ai_paused) {
+    console.log(`[Router] AI paused — skipping AI reply (conversation=${conversation.id})`);
+    return {
+      conversationId: conversation.id,
+      stage: conversation.stage,
+      score: conversation.score,
+      autoReplySent: false,
+      reason: "conversation_paused"
+    };
+  }
+
+  // AI only replies when explicitly requested by flow OR an AI agent is assigned.
   const aiRequestedByFlow = flowResult.result === "use_ai";
-  if (!aiRequestedByFlow && !user.ai_active) {
-    console.log(`[Router] AI not active for user (userId=${input.userId})`);
+  const hasAssignedAgent = Boolean(conversation.assigned_agent_profile_id);
+  if (!aiRequestedByFlow && !hasAssignedAgent && !user.ai_active) {
+    console.log(`[Router] No AI agent assigned and ai_active=false — skipping AI reply (userId=${input.userId})`);
     return {
       conversationId: conversation.id,
       stage: conversation.stage,

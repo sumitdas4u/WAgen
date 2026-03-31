@@ -201,13 +201,21 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       }
 
       try {
+        // Look up the agent's display name so it appears in the chat bubble.
+        const userRow = await pool.query<{ name: string }>(
+          `SELECT name FROM users WHERE id = $1 LIMIT 1`,
+          [request.authUser.userId]
+        );
+        const senderName = userRow.rows[0]?.name?.trim() || request.authUser.email.split("@")[0] || "Agent";
+
         const delivered = await sendManualConversationMessage({
           userId: request.authUser.userId,
           conversationId: params.conversationId,
           text,
           lockToManual: parsed.data.lockToManual,
           mediaUrl,
-          mediaMimeType
+          mediaMimeType,
+          senderName
         });
         return { ok: true, delivered };
       } catch (error) {

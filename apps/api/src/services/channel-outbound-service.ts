@@ -11,6 +11,7 @@ export async function sendConversationFlowMessage(input: {
   track?: boolean;
   mediaUrl?: string | null;
   displayText?: string;
+  senderName?: string | null;
 }): Promise<{
   conversationId: string;
   channelType: "web" | "qr" | "api";
@@ -52,7 +53,13 @@ export async function sendConversationFlowMessage(input: {
   }
 
   if (input.track !== false) {
-    await trackOutboundMessage(conversation.id, summaryText, undefined, input.mediaUrl ?? null, input.payload);
+    await trackOutboundMessage(
+      conversation.id,
+      summaryText,
+      { senderName: input.senderName ?? null },
+      input.mediaUrl ?? null,
+      input.payload
+    );
   }
 
   return {
@@ -70,6 +77,7 @@ export async function sendManualConversationMessage(input: {
   lockToManual?: boolean;
   mediaUrl?: string | null;
   mediaMimeType?: string | null;
+  senderName?: string | null;
 }): Promise<{ conversationId: string; channelType: "web" | "qr" | "api"; delivered: boolean }> {
   const message = input.text.trim();
   if (!message && !input.mediaUrl) {
@@ -108,7 +116,8 @@ export async function sendManualConversationMessage(input: {
     conversationId: input.conversationId,
     payload,
     mediaUrl: input.mediaUrl ?? null,
-    displayText
+    displayText,
+    senderName: input.senderName ?? null
   });
 
   if (input.lockToManual !== false) {
