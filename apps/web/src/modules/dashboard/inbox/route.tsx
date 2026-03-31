@@ -6,12 +6,11 @@ import { API_URL } from "../../../lib/api";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
-import { DashboardIcon } from "../../../shared/dashboard/icons";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import {
   assignInboxFlow,
   sendManualConversationMessage,
-  uploadInboxMedia,
+
   updateConversationAiMode
 } from "./api";
 import {
@@ -98,7 +97,7 @@ const CHAT_AI_DURATION_OPTIONS: Array<{ label: string; minutes: number | null }>
 const QUICK_EMOJIS = ["👍", "😊", "🙏", "✅", "🔥", "💯", "👋", "😄", "❤️", "🎉", "⚡", "📞", "📧", "💬", "🏷️", "🔔"];
 
 const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff)(\?.*)?$/i;
-const URL_PATTERN = /(https?:\/\/[^\s<>"]+)/g;
+
 
 // ─── Utility functions ───────────────────────────────────────────────────────
 
@@ -579,21 +578,9 @@ export function Component() {
   );
 
   const hasConfiguredAgentProfile = Boolean(bootstrap?.agentSummary.hasConfiguredProfile);
-  const websiteChannelEnabled = Boolean(bootstrap?.channelSummary.website.enabled);
-  const qrChannelStatus = bootstrap?.channelSummary.whatsapp.status ?? "disconnected";
-  const apiChannelConnected = Boolean(bootstrap?.channelSummary.metaApi.connected);
   const isAnyChannelConnected = Boolean(bootstrap?.channelSummary.anyConnected);
   const isInboxStatusLoading = loading && !bootstrap;
 
-  const waitingStatusItems = [
-    { label: hasConfiguredAgentProfile ? "Agent ready" : "No agent configured", tone: hasConfiguredAgentProfile ? "connected" : "not_connected" },
-    { label: websiteChannelEnabled ? "Website connected" : "Website offline", tone: websiteChannelEnabled ? "connected" : "not_connected" },
-    {
-      label: qrChannelStatus === "connected" ? "WhatsApp QR connected" : qrChannelStatus === "waiting_scan" ? "WhatsApp QR waiting for scan" : qrChannelStatus === "connecting" ? "WhatsApp QR connecting" : "WhatsApp QR offline",
-      tone: qrChannelStatus === "connected" ? "connected" : qrChannelStatus === "waiting_scan" ? "waiting_scan" : qrChannelStatus === "connecting" ? "connecting" : "not_connected"
-    },
-    { label: apiChannelConnected ? "WhatsApp API connected" : "WhatsApp API offline", tone: apiChannelConnected ? "connected" : "not_connected" }
-  ];
 
   const showConversationListPane = !isMobileViewport || !isMobileConversationOpen;
   const showConversationDetailPane = !isMobileViewport || isMobileConversationOpen;
@@ -698,7 +685,7 @@ export function Component() {
       }
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [chatAiTimers]); // eslint-disable-line
+  }, [chatAiTimers]);
 
   // Navigate to first conversation when filter changes
   useEffect(() => {

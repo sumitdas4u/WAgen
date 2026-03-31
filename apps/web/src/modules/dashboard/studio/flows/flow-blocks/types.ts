@@ -379,5 +379,6 @@ export interface StudioFlowBlockDefinition<TData extends AnyNodeData = AnyNodeDa
   channels?: FlowChannel[];
   catalog: StudioFlowBlockCatalogItem;
   createDefaultData(): TData;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   NodeComponent: ComponentType<NodeProps<any>>;
 }

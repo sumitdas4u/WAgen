@@ -89,7 +89,7 @@ export const studioBlockSections = Array.from(
 
 export const studioBlockNodeTypes = Object.fromEntries(
   studioFlowBlocks.map((block) => [block.kind, block.NodeComponent])
-) as Record<string, ComponentType<NodeProps<any>>>;
+) as Record<string, ComponentType<NodeProps<unknown>>>;
 
 export function isStudioFlowBlockKind(value: string): value is FlowBlockKind {
   return blockRegistry.has(value as FlowBlockKind);

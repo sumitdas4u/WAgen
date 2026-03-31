@@ -7,8 +7,7 @@ import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import {
   completeMetaSignup,
   deactivateMetaChannel,
-  fetchSettingsMetaStatus,
-  toggleWebsiteAgent
+  fetchSettingsMetaStatus
 } from "../api";
 import { useSettingsMetaConfigQuery, useSettingsMetaStatusQuery } from "../queries";
 

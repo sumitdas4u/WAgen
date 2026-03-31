@@ -253,6 +253,7 @@ function FlowNodeEditorSurface({ node }: { node: FlowNode }) {
         id: node.id,
         data: node.data,
         selected: true
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)}
     />
   );
@@ -1016,7 +1017,10 @@ function FlowsPage() {
 
 // â”€â”€â”€ Exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export async function prefetch(_ctx: DashboardModulePrefetchContext) {
+export async function prefetch(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _ctx: DashboardModulePrefetchContext
+): Promise<Record<string, never>> {
   return {};
 }
 

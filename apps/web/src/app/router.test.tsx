@@ -205,6 +205,7 @@ describe("dashboard router", () => {
   });
 
   it("normalizes legacy bootstrap payloads that omit dashboard summaries", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { agentSummary: _agentSummary, channelSummary: _channelSummary, ...legacyBootstrap } = createBootstrap();
 
     renderRoute("/dashboard/billing", legacyBootstrap as DashboardBootstrapResponse);

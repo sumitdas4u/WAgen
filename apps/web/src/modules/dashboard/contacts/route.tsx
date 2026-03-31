@@ -9,7 +9,6 @@ import {
   downloadContactsTemplate,
   exportContactsWorkbook,
   type ContactImportResult,
-  type ContactRecord,
   type ContactSourceType,
   type ContactType,
   uploadContactsWorkbook

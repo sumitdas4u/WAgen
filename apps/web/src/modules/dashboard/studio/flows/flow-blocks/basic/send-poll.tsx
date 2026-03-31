@@ -1,5 +1,4 @@
 import { Handle, Position, type NodeProps } from "reactflow";
-import { uid } from "../editor-shared";
 import { NodeHeader, useNodePatch } from "../editor-shared";
 import type { SendPollData, StudioFlowBlockDefinition } from "../types";
 
