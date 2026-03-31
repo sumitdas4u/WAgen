@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PoolClient } from "pg";
-import { pool } from "../db/pool.js";
+import type { Pool as PgPool, PoolClient } from "pg";
 
 export interface MigrationPlanItem {
   id: string;
@@ -140,10 +139,13 @@ function isMainModule(): boolean {
   return fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 }
 
-export async function runMigrations(options?: { closePool?: boolean; silent?: boolean }): Promise<void> {
+export async function runMigrations(options?: { closePool?: boolean; silent?: boolean; pool?: PgPool }): Promise<void> {
   const closePool = options?.closePool ?? false;
   const silent = options?.silent ?? false;
-  const client = await pool.connect();
+  // Dynamically import the shared pool so env.ts validation only runs when
+  // the app pool is actually needed (not when migrations run standalone).
+  const poolToUse = options?.pool ?? (await import("../db/pool.js")).pool;
+  const client = await poolToUse.connect();
 
   let advisoryLockAcquired = false;
 
@@ -193,15 +195,34 @@ export async function runMigrations(options?: { closePool?: boolean; silent?: bo
     } finally {
       client.release();
       if (closePool) {
-        await pool.end();
+        await poolToUse.end();
       }
     }
   }
 }
 
 if (isMainModule()) {
-  runMigrations({ closePool: true }).catch((error) => {
+  // When run as a standalone script (npm run db:migrate), create a minimal
+  // pool using only DATABASE_URL — bypasses full env validation so migrations
+  // don't require JWT_SECRET or other app-level secrets.
+  const { config } = await import("dotenv");
+  config();
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    console.error("DATABASE_URL is required to run migrations");
+    process.exit(1);
+  }
+
+  const { Pool } = await import("pg");
+  const standalonePool = new Pool({ connectionString: databaseUrl });
+
+  try {
+    await runMigrations({ pool: standalonePool });
+  } catch (error) {
     console.error("Migration failed", error);
     process.exit(1);
-  });
+  } finally {
+    await standalonePool.end();
+  }
 }

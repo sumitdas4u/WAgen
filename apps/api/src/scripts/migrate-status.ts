@@ -1,5 +1,16 @@
-import { pool } from "../db/pool.js";
+import { config } from "dotenv";
+import { Pool } from "pg";
 import { buildMigrationPlan } from "./migrate.js";
+
+config();
+
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error("DATABASE_URL is required");
+  process.exit(1);
+}
+
+const pool = new Pool({ connectionString: databaseUrl });
 
 async function showMigrationStatus(): Promise<void> {
   const client = await pool.connect();
