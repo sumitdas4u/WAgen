@@ -198,40 +198,99 @@ function getMessagePreview(text: string | null): string {
   return text.slice(0, 80);
 }
 
+// ─── WhatsApp text formatter ─────────────────────────────────────────────────
+
+function parseWhatsAppText(text: string): JSX.Element {
+  // Parses *bold*, _italic_, ~strikethrough~, `code`, URLs and line breaks
+  const lines = text.split("\n");
+  const result: JSX.Element[] = [];
+  lines.forEach((line, li) => {
+    const segments: JSX.Element[] = [];
+    // tokenize: bold, italic, strikethrough, code, url, plain
+    const tokenRe = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`|https?:\/\/[^\s<>"]+|[^*_~`\n]+)/g;
+    let m: RegExpExecArray | null;
+    let si = 0;
+    while ((m = tokenRe.exec(line)) !== null) {
+      const tok = m[0];
+      if (tok.startsWith("*") && tok.endsWith("*") && tok.length > 2) {
+        segments.push(<strong key={`${li}-${si}`}>{tok.slice(1, -1)}</strong>);
+      } else if (tok.startsWith("_") && tok.endsWith("_") && tok.length > 2) {
+        segments.push(<em key={`${li}-${si}`}>{tok.slice(1, -1)}</em>);
+      } else if (tok.startsWith("~") && tok.endsWith("~") && tok.length > 2) {
+        segments.push(<s key={`${li}-${si}`}>{tok.slice(1, -1)}</s>);
+      } else if (tok.startsWith("`") && tok.endsWith("`") && tok.length > 2) {
+        segments.push(<code key={`${li}-${si}`} className="message-inline-code">{tok.slice(1, -1)}</code>);
+      } else if (/^https?:\/\//.test(tok)) {
+        if (IMAGE_EXTENSIONS.test(tok)) {
+          segments.push(
+            <a key={`${li}-${si}`} href={tok} target="_blank" rel="noopener noreferrer" className="message-media-link">
+              <img className="message-rich-image" src={tok} alt="Image" loading="lazy" />
+            </a>
+          );
+        } else {
+          segments.push(<a key={`${li}-${si}`} href={tok} target="_blank" rel="noopener noreferrer" className="message-rich-link">{tok}</a>);
+        }
+      } else {
+        segments.push(<span key={`${li}-${si}`}>{tok}</span>);
+      }
+      si++;
+    }
+    result.push(<span key={`line-${li}`} className="message-line">{segments.length > 0 ? segments : line}</span>);
+    if (li < lines.length - 1) result.push(<br key={`br-${li}`} />);
+  });
+  return <>{result}</>;
+}
+
+// ─── Media image with fallback ───────────────────────────────────────────────
+
+function MediaAttachment({ mediaUrl }: { mediaUrl: string }) {
+  const resolvedUrl = mediaUrl.startsWith("/") ? `${API_URL}${mediaUrl}` : mediaUrl;
+  const isKnownImage = IMAGE_EXTENSIONS.test(mediaUrl) || /image\//.test(mediaUrl);
+  // For /api/media/ URLs we always try image first (stored uploads), fallback to file link on error
+  const tryAsImage = isKnownImage || /\/api\/media\//.test(mediaUrl);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  if (tryAsImage && !imgFailed) {
+    return (
+      <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="message-media-link">
+        <img
+          className="message-rich-image"
+          src={resolvedUrl}
+          alt="Attachment"
+          loading="lazy"
+          onError={() => setImgFailed(true)}
+        />
+      </a>
+    );
+  }
+  return (
+    <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="message-file-link">
+      📎 Attachment
+    </a>
+  );
+}
+
 // ─── Rich message renderer ────────────────────────────────────────────────────
 
 function renderMessageContent(text: string, mediaUrl: string | null): JSX.Element {
+  const trimmed = text?.trim() ?? "";
   const nodes: JSX.Element[] = [];
 
-  // Media attachment (uploaded file)
+  // Media attachment
   if (mediaUrl) {
-    const resolvedUrl = mediaUrl.startsWith("/") ? `${API_URL}${mediaUrl}` : mediaUrl;
-    const isImage = IMAGE_EXTENSIONS.test(mediaUrl) || /image\//.test(mediaUrl);
-    if (isImage) {
-      nodes.push(
-        <a key="media-link" href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="message-media-link">
-          <img key="media-img" className="message-rich-image" src={resolvedUrl} alt="Attachment" loading="lazy" />
-        </a>
-      );
-    } else {
-      nodes.push(
-        <a key="media-file" href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="message-file-link">
-          📎 {mediaUrl.split("/").pop() ?? "Attachment"}
-        </a>
-      );
-    }
+    nodes.push(<MediaAttachment key="media" mediaUrl={mediaUrl} />);
   }
-
-  const trimmed = text?.trim() ?? "";
 
   // Inbound image patterns from WhatsApp media extraction
   if (trimmed === "[Image received with no readable text]") {
-    nodes.push(
-      <span key="img-placeholder" className="message-rich-media-extract">
-        <span className="message-media-icon">📷</span>
-        <span>Image received</span>
-      </span>
-    );
+    if (!mediaUrl) {
+      nodes.push(
+        <span key="img-placeholder" className="message-rich-media-extract">
+          <span className="message-media-icon">📷</span>
+          <span>Image received</span>
+        </span>
+      );
+    }
     return <>{nodes}</>;
   }
 
@@ -246,48 +305,14 @@ function renderMessageContent(text: string, mediaUrl: string | null): JSX.Elemen
     return <>{nodes}</>;
   }
 
+  // Skip redundant "📎 Attachment" / "📷 Photo" text when media is already shown
+  if (mediaUrl && (trimmed === "📎 Attachment" || trimmed === "📷 Photo" || trimmed === "")) {
+    return <>{nodes}</>;
+  }
+
   if (!trimmed) return <>{nodes}</>;
 
-  // Regular text with URL detection
-  const lines = trimmed.split("\n");
-  lines.forEach((line, li) => {
-    const parts: JSX.Element[] = [];
-    let lastIdx = 0;
-    let match: RegExpExecArray | null;
-    URL_PATTERN.lastIndex = 0;
-    while ((match = URL_PATTERN.exec(line)) !== null) {
-      if (match.index > lastIdx) {
-        parts.push(<span key={`t${li}-${lastIdx}`}>{line.slice(lastIdx, match.index)}</span>);
-      }
-      const url = match[0];
-      if (IMAGE_EXTENSIONS.test(url)) {
-        parts.push(
-          <a key={`u${li}-${match.index}`} href={url} target="_blank" rel="noopener noreferrer" className="message-media-link">
-            <img className="message-rich-image" src={url} alt="Image" loading="lazy" />
-          </a>
-        );
-      } else {
-        parts.push(
-          <a key={`u${li}-${match.index}`} href={url} target="_blank" rel="noopener noreferrer" className="message-rich-link">
-            {url}
-          </a>
-        );
-      }
-      lastIdx = match.index + match[0].length;
-    }
-    if (lastIdx < line.length) {
-      parts.push(<span key={`t${li}-end`}>{line.slice(lastIdx)}</span>);
-    }
-    nodes.push(
-      <span key={`line-${li}`} className="message-line">
-        {parts.length > 0 ? parts : line}
-      </span>
-    );
-    if (li < lines.length - 1) {
-      nodes.push(<br key={`br-${li}`} />);
-    }
-  });
-
+  nodes.push(<span key="text">{parseWhatsAppText(trimmed)}</span>);
   return <>{nodes}</>;
 }
 
@@ -440,7 +465,7 @@ export function Component() {
   const [chatAiTimers, setChatAiTimers] = useState<Record<string, ChatAiTimedAction>>({});
   const [manualComposeConversationId, setManualComposeConversationId] = useState<string | null>(null);
   const [agentReplyText, setAgentReplyText] = useState("");
-  const [showAiSuggestions, setShowAiSuggestions] = useState(true);
+  const [showAiSuggestions, setShowAiSuggestions] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -720,9 +745,9 @@ export function Component() {
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ text, mediaUrl }: { text: string; mediaUrl?: string | null }) => {
+    mutationFn: async ({ text, mediaUrl, mediaMimeType }: { text: string; mediaUrl?: string | null; mediaMimeType?: string | null }) => {
       if (!selectedConversationId) throw new Error("No conversation selected.");
-      await sendManualConversationMessage(token, selectedConversationId, text, mediaUrl);
+      await sendManualConversationMessage(token, selectedConversationId, text, mediaUrl, mediaMimeType);
     },
     onSuccess: async () => {
       setAgentReplyText("");
@@ -817,16 +842,18 @@ export function Component() {
     if (sendMessageMutation.isPending || uploadMutation.isPending) return;
 
     let mediaUrl: string | null = null;
+    let mediaMimeType: string | null = null;
     if (attachedFiles.length > 0) {
       try {
         const result = await uploadMutation.mutateAsync(attachedFiles[0].file);
         mediaUrl = result.url;
+        mediaMimeType = result.mimeType;
       } catch (err) {
         setError((err as Error).message);
         return;
       }
     }
-    sendMessageMutation.mutate({ text, mediaUrl });
+    sendMessageMutation.mutate({ text, mediaUrl, mediaMimeType });
   }, [agentReplyText, attachedFiles, sendMessageMutation, uploadMutation]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1183,18 +1210,18 @@ export function Component() {
                 {selectedConversation && (
                   <div className="inbox-compose-stack">
                     {/* AI suggestions panel — only in manual mode */}
-                    {showManualComposer && (
-                      <div className={`inbox-reply-assist${showAiSuggestions ? "" : " collapsed"}`}>
-                        <div className="inbox-reply-assist-head">
-                          <div className="inbox-reply-assist-copy">
-                            <strong>AI Suggested Replies</strong>
-                            <span>{getLeadIntentLabel(selectedConversation)} — {getLeadSuggestedAction(selectedConversation)}</span>
+                    {showManualComposer && replySuggestions.length > 0 && (
+                      showAiSuggestions ? (
+                        <div className="inbox-reply-assist">
+                          <div className="inbox-reply-assist-head">
+                            <div className="inbox-reply-assist-copy">
+                              <strong>AI Suggested Replies</strong>
+                              <span>{getLeadIntentLabel(selectedConversation)} — {getLeadSuggestedAction(selectedConversation)}</span>
+                            </div>
+                            <button type="button" className="inbox-reply-assist-toggle" onClick={() => setShowAiSuggestions(false)} title="Close suggestions">
+                              ✕
+                            </button>
                           </div>
-                          <button type="button" className="inbox-reply-assist-toggle" onClick={() => setShowAiSuggestions((v) => !v)} title={showAiSuggestions ? "Hide suggestions" : "Show suggestions"}>
-                            {showAiSuggestions ? "▲" : "▼"}
-                          </button>
-                        </div>
-                        {showAiSuggestions && (
                           <div className="inbox-suggestion-strip">
                             {replySuggestions.map((s) => (
                               <button key={s} type="button" onClick={() => { setManualComposeConversationId(selectedConversation.id); setAgentReplyText(s); textareaRef.current?.focus(); }}>
@@ -1202,8 +1229,12 @@ export function Component() {
                               </button>
                             ))}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <button type="button" className="inbox-reply-assist-show-btn" onClick={() => setShowAiSuggestions(true)}>
+                          💡 AI Suggestions
+                        </button>
+                      )
                     )}
 
                     {showManualComposer ? (

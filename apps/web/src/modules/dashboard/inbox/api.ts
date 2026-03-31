@@ -41,9 +41,10 @@ export function sendManualConversationMessage(
   token: string,
   conversationId: string,
   text: string,
-  mediaUrl?: string | null
+  mediaUrl?: string | null,
+  mediaMimeType?: string | null
 ) {
-  return sendConversationManualMessage(token, conversationId, text, { lockToManual: false, mediaUrl });
+  return sendConversationManualMessage(token, conversationId, text, { lockToManual: false, mediaUrl, mediaMimeType });
 }
 
 export function uploadInboxMedia(token: string, conversationId: string, file: File) {

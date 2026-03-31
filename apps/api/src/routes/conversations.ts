@@ -23,6 +23,7 @@ const AssignAgentSchema = z.object({
 const ManualMessageSchema = z.object({
   text: z.string().trim().max(4000).optional().default(""),
   mediaUrl: z.string().optional(),
+  mediaMimeType: z.string().optional(),
   lockToManual: z.boolean().optional()
 });
 
@@ -194,6 +195,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
       const text = parsed.data.text ?? "";
       const mediaUrl = parsed.data.mediaUrl ?? null;
+      const mediaMimeType = parsed.data.mediaMimeType ?? null;
       if (!text && !mediaUrl) {
         return reply.status(400).send({ error: "text or mediaUrl is required" });
       }
@@ -204,7 +206,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           conversationId: params.conversationId,
           text,
           lockToManual: parsed.data.lockToManual,
-          mediaUrl
+          mediaUrl,
+          mediaMimeType
         });
         return { ok: true, delivered };
       } catch (error) {
@@ -254,7 +257,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       );
 
       const mediaId = result.rows[0].id;
-      return { mediaId, url: `/api/media/${mediaId}` };
+      return { mediaId, url: `/api/media/${mediaId}`, mimeType: file.mimetype };
     }
   );
 

@@ -1721,7 +1721,7 @@ export function sendConversationManualMessage(
   token: string,
   conversationId: string,
   text: string,
-  options?: { lockToManual?: boolean; mediaUrl?: string | null }
+  options?: { lockToManual?: boolean; mediaUrl?: string | null; mediaMimeType?: string | null }
 ) {
   return apiRequest<{
     ok: boolean;
@@ -1736,6 +1736,7 @@ export function sendConversationManualMessage(
     body: JSON.stringify({
       text,
       mediaUrl: options?.mediaUrl ?? undefined,
+      mediaMimeType: options?.mediaMimeType ?? undefined,
       lockToManual: options?.lockToManual
     })
   });
@@ -1745,7 +1746,7 @@ export async function uploadConversationMedia(
   token: string,
   conversationId: string,
   file: File
-): Promise<{ mediaId: string; url: string }> {
+): Promise<{ mediaId: string; url: string; mimeType: string }> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch(`${API_URL}/api/conversations/${conversationId}/upload`, {
@@ -1757,7 +1758,7 @@ export async function uploadConversationMedia(
     const err = await response.json().catch(() => ({ error: "Upload failed" }));
     throw new Error((err as { error?: string }).error ?? "Upload failed");
   }
-  return response.json() as Promise<{ mediaId: string; url: string }>;
+  return response.json() as Promise<{ mediaId: string; url: string; mimeType: string }>;
 }
 
 export interface AiReviewQueueItem {

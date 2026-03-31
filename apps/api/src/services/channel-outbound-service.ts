@@ -10,6 +10,7 @@ export async function sendConversationFlowMessage(input: {
   payload: FlowMessagePayload;
   track?: boolean;
   mediaUrl?: string | null;
+  displayText?: string;
 }): Promise<{
   conversationId: string;
   channelType: "web" | "qr" | "api";
@@ -21,7 +22,7 @@ export async function sendConversationFlowMessage(input: {
     throw new Error("Conversation not found.");
   }
 
-  const summaryText = summarizeFlowMessage(input.payload);
+  const summaryText = input.displayText ?? summarizeFlowMessage(input.payload);
   if (!summaryText) {
     throw new Error("Message text is required.");
   }
@@ -68,22 +69,46 @@ export async function sendManualConversationMessage(input: {
   text: string;
   lockToManual?: boolean;
   mediaUrl?: string | null;
+  mediaMimeType?: string | null;
 }): Promise<{ conversationId: string; channelType: "web" | "qr" | "api"; delivered: boolean }> {
   const message = input.text.trim();
   if (!message && !input.mediaUrl) {
     throw new Error("Message text or media is required.");
   }
 
-  const displayText = message || (input.mediaUrl ? "📷 Photo" : "");
+  const isImage = input.mediaMimeType ? input.mediaMimeType.startsWith("image/") : false;
+  const isVideo = input.mediaMimeType ? input.mediaMimeType.startsWith("video/") : false;
+  const isAudio = input.mediaMimeType ? input.mediaMimeType.startsWith("audio/") : false;
+
+  let payload: Parameters<typeof sendConversationFlowMessage>[0]["payload"];
+
+  if (input.mediaUrl) {
+    const absoluteUrl = input.mediaUrl.startsWith("/")
+      ? `${process.env.APP_BASE_URL ?? ""}${input.mediaUrl}`
+      : input.mediaUrl;
+
+    if (isImage) {
+      payload = { type: "media", mediaType: "image", url: absoluteUrl, caption: message || undefined };
+    } else if (isVideo) {
+      payload = { type: "media", mediaType: "video", url: absoluteUrl, caption: message || undefined };
+    } else if (isAudio) {
+      payload = { type: "media", mediaType: "audio", url: absoluteUrl };
+    } else {
+      // document / other file
+      payload = { type: "media", mediaType: "document", url: absoluteUrl, caption: message || undefined };
+    }
+  } else {
+    payload = { type: "text", text: message };
+  }
+
+  const displayText = message || (input.mediaUrl ? "📎 Attachment" : "");
 
   const delivered = await sendConversationFlowMessage({
     userId: input.userId,
     conversationId: input.conversationId,
-    payload: {
-      type: "text",
-      text: displayText
-    },
-    mediaUrl: input.mediaUrl ?? null
+    payload,
+    mediaUrl: input.mediaUrl ?? null,
+    displayText
   });
 
   if (input.lockToManual !== false) {
