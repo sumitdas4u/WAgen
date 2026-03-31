@@ -20,9 +20,31 @@ export interface FlowRow {
   updated_at: string;
 }
 
-export async function listFlows(userId: string): Promise<FlowRow[]> {
-  const res = await pool.query<FlowRow>(
-    `SELECT id, user_id, name, channel, nodes, edges, triggers, variables, published, created_at, updated_at
+export interface FlowSummaryRow {
+  id: string;
+  user_id: string;
+  name: string;
+  channel: "web" | "qr" | "api";
+  published: boolean;
+  created_at: string;
+  updated_at: string;
+  node_count: number;
+  edge_count: number;
+  trigger_count: number;
+}
+
+export async function listFlowSummaries(userId: string): Promise<FlowSummaryRow[]> {
+  const res = await pool.query<FlowSummaryRow>(
+    `SELECT id,
+            user_id,
+            name,
+            channel,
+            published,
+            created_at,
+            updated_at,
+            COALESCE(jsonb_array_length(nodes::jsonb), 0) AS node_count,
+            COALESCE(jsonb_array_length(edges::jsonb), 0) AS edge_count,
+            COALESCE(jsonb_array_length(triggers::jsonb), 0) AS trigger_count
      FROM flows
      WHERE user_id = $1
      ORDER BY updated_at DESC`,

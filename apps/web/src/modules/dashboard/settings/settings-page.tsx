@@ -599,6 +599,7 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
         }}
         onSelectSetupWeb={() => navigate("/dashboard/settings/web")}
         onSelectSetupApi={() => navigate("/dashboard/settings/api")}
+        onSelectSetupTemplates={() => navigate("/dashboard/settings/templates")}
         onNavigateToQrSetup={() => navigate("/onboarding/qr")}
         onUpdateWidgetSetupDraft={setWidgetSetupDraft}
         onWidgetQuestionChange={(index, value) => {

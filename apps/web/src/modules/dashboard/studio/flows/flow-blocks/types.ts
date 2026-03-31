@@ -337,9 +337,22 @@ export interface FlowDoc {
   channel: FlowChannel;
   published: boolean;
   createdAt: string;
+  updatedAt: string;
   nodes: FlowNode[];
   edges: FlowEdge[];
   triggers: Trigger[];
+}
+
+export interface FlowSummary {
+  id: string;
+  name: string;
+  channel: FlowChannel;
+  published: boolean;
+  createdAt: string;
+  updatedAt: string;
+  nodeCount: number;
+  edgeCount: number;
+  triggerCount: number;
 }
 
 export type StudioFlowBlockSection =

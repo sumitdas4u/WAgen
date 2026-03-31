@@ -177,5 +177,30 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     featureFlag: "dashboard.settings.api",
     prefetchStrategy: "code+data",
     requiresAuth: true
+  },
+  {
+    id: "settings-templates",
+    path: "settings/templates",
+    navTo: "/dashboard/settings/templates",
+    navLabel: "Templates",
+    subtitle: "WhatsApp message templates",
+    icon: "templates",
+    section: "settings",
+    lazyRoute: () => import("../modules/dashboard/settings/templates/route"),
+    featureFlag: "dashboard.templates",
+    prefetchStrategy: "code+data",
+    requiresAuth: true
+  },
+  {
+    id: "settings-contact-fields",
+    path: "settings/contact-fields",
+    navTo: "/dashboard/settings/contact-fields",
+    navLabel: "Contact Fields",
+    subtitle: "Custom contact fields",
+    icon: "leads",
+    section: "settings",
+    lazyRoute: () => import("../modules/dashboard/settings/contact-fields/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
   }
 ];

@@ -9,6 +9,7 @@ export async function sendConversationFlowMessage(input: {
   conversationId: string;
   payload: FlowMessagePayload;
   track?: boolean;
+  mediaUrl?: string | null;
 }): Promise<{
   conversationId: string;
   channelType: "web" | "qr" | "api";
@@ -50,7 +51,7 @@ export async function sendConversationFlowMessage(input: {
   }
 
   if (input.track !== false) {
-    await trackOutboundMessage(conversation.id, summaryText);
+    await trackOutboundMessage(conversation.id, summaryText, undefined, input.mediaUrl ?? null);
   }
 
   return {
@@ -66,19 +67,23 @@ export async function sendManualConversationMessage(input: {
   conversationId: string;
   text: string;
   lockToManual?: boolean;
+  mediaUrl?: string | null;
 }): Promise<{ conversationId: string; channelType: "web" | "qr" | "api"; delivered: boolean }> {
   const message = input.text.trim();
-  if (!message) {
-    throw new Error("Message text is required.");
+  if (!message && !input.mediaUrl) {
+    throw new Error("Message text or media is required.");
   }
+
+  const displayText = message || (input.mediaUrl ? "📷 Photo" : "");
 
   const delivered = await sendConversationFlowMessage({
     userId: input.userId,
     conversationId: input.conversationId,
     payload: {
       type: "text",
-      text: message
-    }
+      text: displayText
+    },
+    mediaUrl: input.mediaUrl ?? null
   });
 
   if (input.lockToManual !== false) {

@@ -4,7 +4,7 @@ import {
   deleteFlow,
   getFlow,
   getPublishedFlowsForUser,
-  listFlows,
+  listFlowSummaries,
   publishFlow,
   updateFlow
 } from "../services/flow-service.js";
@@ -13,10 +13,41 @@ import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
 
 export async function flowRoutes(app: FastifyInstance) {
+  const serializeFlow = (flow: Awaited<ReturnType<typeof getFlow>>) => {
+    if (!flow) {
+      return null;
+    }
+    return {
+      id: flow.id,
+      name: flow.name,
+      channel: flow.channel,
+      published: flow.published,
+      createdAt: flow.created_at,
+      updatedAt: flow.updated_at,
+      nodes: flow.nodes,
+      edges: flow.edges,
+      triggers: flow.triggers
+    };
+  };
+
+  const serializeFlowSummary = (
+    flow: Awaited<ReturnType<typeof listFlowSummaries>>[number]
+  ) => ({
+    id: flow.id,
+    name: flow.name,
+    channel: flow.channel,
+    published: flow.published,
+    createdAt: flow.created_at,
+    updatedAt: flow.updated_at,
+    nodeCount: Number(flow.node_count ?? 0),
+    edgeCount: Number(flow.edge_count ?? 0),
+    triggerCount: Number(flow.trigger_count ?? 0)
+  });
+
   app.get("/api/flows", { preHandler: app.requireAuth }, async (req, reply) => {
     const userId = req.authUser!.userId;
-    const flows = await listFlows(userId);
-    return reply.send(flows);
+    const flows = await listFlowSummaries(userId);
+    return reply.send(flows.map(serializeFlowSummary));
   });
 
   app.get<{ Params: { id: string } }>(
@@ -26,7 +57,7 @@ export async function flowRoutes(app: FastifyInstance) {
       const userId = req.authUser!.userId;
       const flow = await getFlow(userId, req.params.id);
       if (!flow) return reply.status(404).send({ error: "Flow not found" });
-      return reply.send(flow);
+      return reply.send(serializeFlow(flow));
     }
   );
 
@@ -36,7 +67,7 @@ export async function flowRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const flow = await createFlow(userId, req.body as Parameters<typeof createFlow>[1]);
-      return reply.status(201).send(flow);
+      return reply.status(201).send(serializeFlow(flow));
     }
   );
 
@@ -47,7 +78,7 @@ export async function flowRoutes(app: FastifyInstance) {
       const userId = req.authUser!.userId;
       const flow = await updateFlow(userId, req.params.id, req.body as Parameters<typeof updateFlow>[2]);
       if (!flow) return reply.status(404).send({ error: "Flow not found" });
-      return reply.send(flow);
+      return reply.send(serializeFlow(flow));
     }
   );
 
@@ -70,7 +101,7 @@ export async function flowRoutes(app: FastifyInstance) {
       const published = req.body?.published ?? true;
       const flow = await publishFlow(userId, req.params.id, published);
       if (!flow) return reply.status(404).send({ error: "Flow not found" });
-      return reply.send(flow);
+      return reply.send(serializeFlow(flow));
     }
   );
 

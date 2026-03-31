@@ -25,6 +25,7 @@ import { sdkRoutes } from "./routes/sdk.js";
 import { workspaceRoutes } from "./routes/workspace.js";
 import { workspaceBillingRoutes } from "./routes/workspace-billing.js";
 import { contactRoutes } from "./routes/contacts.js";
+import { contactFieldRoutes } from "./routes/contact-fields.js";
 import { templateRoutes } from "./routes/templates.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
@@ -57,8 +58,18 @@ export async function buildApp() {
     defaultLabels: { service: "wagen-api" }
   });
 
+  const allowedOrigins = new Set(
+    [env.APP_BASE_URL, "http://localhost:8080", "http://localhost:4000", "http://localhost:5173"]
+      .filter(Boolean)
+  );
   await app.register(cors, {
-    origin: env.APP_BASE_URL,
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.has(origin)) {
+        cb(null, true);
+      } else {
+        cb(new Error("Not allowed by CORS"), false);
+      }
+    },
     credentials: true
   });
 
@@ -155,6 +166,7 @@ export async function buildApp() {
   await sdkRoutes(app);
   await conversationRoutes(app);
   await contactRoutes(app);
+  await contactFieldRoutes(app);
   await flowRoutes(app);
   await registerRealtimeRoutes(app);
   await registerWidgetChatGatewayRoutes(app);

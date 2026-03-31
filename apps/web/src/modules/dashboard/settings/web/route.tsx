@@ -1,9 +1,9 @@
-import { SettingsPage } from "../settings-page";
 import type { DashboardModulePrefetchContext } from "../../../../shared/dashboard/module-contracts";
 import { prefetchSettingsModuleData } from "../queries";
+import { WebChannelPage } from "./WebChannelPage";
 
 export function Component() {
-  return <SettingsPage submenu="setup_web" />;
+  return <WebChannelPage />;
 }
 
 export async function prefetchData({ token, queryClient }: DashboardModulePrefetchContext) {

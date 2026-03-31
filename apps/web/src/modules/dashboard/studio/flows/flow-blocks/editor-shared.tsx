@@ -27,17 +27,21 @@ export function NodeHeader(props: {
   const { icon, title, onDelete } = props;
   return (
     <div className="fn-node-header">
-      <span className="fn-node-header-icon">{icon}</span>
-      <span style={{ flex: 1, fontSize: "0.82rem" }}>{title}</span>
+      <span className="fn-node-header-icon-wrap">
+        <span className="fn-node-header-icon">{icon}</span>
+      </span>
+      <span className="fn-node-header-title">{title}</span>
       <button
-        className="fn-icon-btn nodrag"
+        className="fn-icon-btn fn-delete-btn nodrag"
         onClick={(event) => {
           event.stopPropagation();
           onDelete();
         }}
         title="Delete"
       >
-        x
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+          <path d="M1 1L10 10M10 1L1 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
       </button>
     </div>
   );

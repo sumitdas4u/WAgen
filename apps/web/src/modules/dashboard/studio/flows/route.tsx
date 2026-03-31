@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -10,6 +10,7 @@ import ReactFlow, {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useStoreApi,
   type Connection
 } from "reactflow";
 import type { DashboardModulePrefetchContext } from "../../../../shared/dashboard/module-contracts";
@@ -18,6 +19,7 @@ import { apiRequest } from "../../../../lib/api";
 import {
   createDefaultBlockData,
   getPaletteBlocksForChannel,
+  getStudioFlowBlock,
   isStudioFlowBlockKind,
   studioBlockNodeTypes
 } from "./flow-blocks/registry";
@@ -28,12 +30,14 @@ import type {
   FlowChannel,
   FlowDoc,
   FlowNode,
-  FlowStartData
+  FlowStartData,
+  FlowSummary,
+  StudioFlowBlockSection
 } from "./flow-blocks/types";
 import "reactflow/dist/style.css";
 import "./flows.css";
 
-// ─── Channel meta ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Channel meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const CHANNEL_META: Record<FlowChannel, { label: string; badge: string; color: string }> = {
   web: { label: "Web Widget", badge: "WEB", color: "#3b82f6" },
@@ -41,14 +45,30 @@ const CHANNEL_META: Record<FlowChannel, { label: string; badge: string; color: s
   api: { label: "WhatsApp API", badge: "API", color: "#8b5cf6" }
 };
 
-// ─── API helpers ──────────────────────────────────────────────────────────────
+const BLOCK_SECTION_META: Record<
+  StudioFlowBlockSection,
+  { icon: string; color: string; label: string }
+> = {
+  Triggers: { icon: "▶", color: "#0f766e", label: "Triggers" },
+  Messages: { icon: "✉", color: "#1d4ed8", label: "Messages" },
+  Collect: { icon: "✎", color: "#7c3aed", label: "Collect" },
+  Logic: { icon: "◇", color: "#c2410c", label: "Logic" },
+  Actions: { icon: "⚙", color: "#155e75", label: "Actions" },
+  Commerce: { icon: "₹", color: "#166534", label: "Commerce" }
+};
+
+// â”€â”€â”€ API helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function apiFetch<T>(path: string, token: string, opts?: RequestInit): Promise<T> {
   return apiRequest<T>(path, { token, ...opts });
 }
 
-async function apiListFlows(token: string): Promise<FlowDoc[]> {
-  return apiFetch<FlowDoc[]>("/api/flows", token);
+async function apiListFlows(token: string): Promise<FlowSummary[]> {
+  return apiFetch<FlowSummary[]>("/api/flows", token);
+}
+
+async function apiGetFlow(token: string, id: string): Promise<FlowDoc> {
+  return apiFetch<FlowDoc>(`/api/flows/${id}`, token);
 }
 
 async function apiCreateFlow(
@@ -102,7 +122,33 @@ async function apiPublishFlow(
   });
 }
 
-// ─── Blocks panel (channel-filtered) ─────────────────────────────────────────
+function summarizeFlow(flow: FlowDoc): FlowSummary {
+  return {
+    id: flow.id,
+    name: flow.name,
+    channel: flow.channel,
+    published: flow.published,
+    createdAt: flow.createdAt,
+    updatedAt: flow.updatedAt,
+    nodeCount: (flow.nodes as unknown[]).length,
+    edgeCount: flow.edges.length,
+    triggerCount: flow.triggers.length
+  };
+}
+
+function formatFlowDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric"
+  }).format(date);
+}
+
+// â”€â”€â”€ Blocks panel (channel-filtered) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function BlocksPanel({ channel }: { channel: FlowChannel }) {
   const [search, setSearch] = useState("");
@@ -137,9 +183,18 @@ function BlocksPanel({ channel }: { channel: FlowChannel }) {
         {sections.map((section) => {
           const items = filtered.filter((block) => block.catalog.section === section);
           if (!items.length) return null;
+          const meta = BLOCK_SECTION_META[section];
           return (
             <div key={section}>
-              <div className="fn-block-section-title">{section}</div>
+              <div className="fn-block-section-title">
+                <span
+                  className="fn-block-section-icon"
+                  style={{ background: `${meta.color}14`, color: meta.color }}
+                >
+                  {meta.icon}
+                </span>
+                <span>{meta.label}</span>
+              </div>
               {items.map((block) => (
                 <button
                   key={block.kind}
@@ -147,7 +202,12 @@ function BlocksPanel({ channel }: { channel: FlowChannel }) {
                   draggable
                   onDragStart={(e) => onDragStart(e, block.kind)}
                 >
-                  <span className="fn-block-icon">{block.catalog.icon}</span>
+                  <span
+                    className="fn-block-icon"
+                    style={{ background: `${meta.color}14`, color: meta.color }}
+                  >
+                    {block.catalog.icon}
+                  </span>
                   <div className="fn-block-info">
                     <span className="fn-block-name">{block.catalog.name}</span>
                     <span className="fn-block-desc">{block.catalog.desc}</span>
@@ -162,7 +222,95 @@ function BlocksPanel({ channel }: { channel: FlowChannel }) {
   );
 }
 
-// ─── Flow editor ──────────────────────────────────────────────────────────────
+function FlowNodeEditorSurface({ node }: { node: FlowNode }) {
+  const store = useStoreApi();
+  const NodeComponent = studioBlockNodeTypes[String(node.type)];
+
+  useEffect(() => {
+    const previousOnError = store.getState().onError;
+
+    store.setState({
+      onError: (code, message) => {
+        if (code === "010") {
+          return;
+        }
+        previousOnError?.(code, message);
+      }
+    });
+
+    return () => {
+      store.setState({ onError: previousOnError });
+    };
+  }, [store]);
+
+  if (!NodeComponent) {
+    return null;
+  }
+
+  return (
+    <NodeComponent
+      {...({
+        id: node.id,
+        data: node.data,
+        selected: true
+      } as any)}
+    />
+  );
+}
+
+function FlowNodeEditorPanel(props: {
+  node: FlowNode | null;
+  saveStatus: "saved" | "dirty" | "saving";
+  onClose: () => void;
+  onSaveAndClose: () => Promise<void>;
+}) {
+  const block = props.node ? getStudioFlowBlock(props.node.data.kind) : null;
+
+  return (
+    <aside className={`fn-right-panel${props.node ? " open" : ""}`}>
+      {props.node && block ? (
+        <>
+          <div className="fn-right-head">
+            <div className="fn-right-head-copy">
+              <h3>{block.catalog.name}</h3>
+              <p>{block.catalog.desc}</p>
+            </div>
+            <button className="fn-icon-btn" onClick={props.onClose} title="Close">
+              x
+            </button>
+          </div>
+          <div className="fn-right-body">
+            <FlowNodeEditorSurface node={props.node} />
+          </div>
+          <div className="fn-right-foot">
+            <span className={`fn-save-status ${props.saveStatus}`}>
+              {props.saveStatus === "saved"
+                ? "Saved"
+                : props.saveStatus === "saving"
+                  ? "Saving..."
+                  : "Unsaved changes"}
+            </span>
+            <div className="fn-right-foot-actions">
+              <button className="fn-btn" onClick={props.onClose}>
+                Close
+              </button>
+              <button className="fn-btn fn-btn-primary" onClick={props.onSaveAndClose}>
+                Save & Close
+              </button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="fn-right-empty">
+          <h3>Block Config</h3>
+          <p>Click any node on the canvas to open its configuration here.</p>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+// â”€â”€â”€ Flow editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface FlowEditorInnerProps {
   flow: FlowDoc;
@@ -177,6 +325,7 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
   const [flowName, setFlowName] = useState(flow.name);
   const [live, setLive] = useState(flow.published);
   const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "saving">("saved");
+  const [isBlocksOpen, setIsBlocksOpen] = useState(true);
   const [validationNotice, setValidationNotice] = useState<string | null>(null);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -191,8 +340,29 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
     [edges, flow.channel, nodes]
   );
   const visibleErrors = validation.errors.slice(0, 5);
-  const visibleWarnings = validation.warnings.slice(0, 3);
-
+  const visibleWarnings = validation.warnings.slice(0, 5);
+  const selectedNode = useMemo(
+    () => (nodes as FlowNode[]).find((node) => node.selected) ?? null,
+    [nodes]
+  );
+  const validationSummary = useMemo(() => {
+    if (validation.errors.length > 0) {
+      return {
+        tone: "error" as const,
+        label: `${validation.errors.length} issue${validation.errors.length === 1 ? "" : "s"} to fix`
+      };
+    }
+    if (validation.warnings.length > 0) {
+      return {
+        tone: "warning" as const,
+        label: `${validation.warnings.length} warning${validation.warnings.length === 1 ? "" : "s"}`
+      };
+    }
+    return {
+      tone: "ok" as const,
+      label: "Ready to publish"
+    };
+  }, [validation.errors.length, validation.warnings.length]);
   useEffect(() => {
     if (isInitial.current) {
       isInitial.current = false;
@@ -284,104 +454,114 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
     event.dataTransfer.dropEffect = "move";
   }, []);
 
+  const closeNodeEditor = useCallback(() => {
+    setNodes((current) =>
+      current.map((node) => (node.selected ? { ...node, selected: false } : node))
+    );
+  }, [setNodes]);
+
   const saveNow = async () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveStatus("saving");
     const saved = await persistToApi();
     setSaveStatus(saved ? "saved" : "dirty");
+    return saved;
   };
 
   return (
     <div className="fn-root">
       <div className="fn-topbar">
         <button className="fn-btn fn-btn-back" onClick={onBack}>
-          ← Flows
+          Back to Flows
         </button>
-        <span
-          className="fn-channel-badge"
-          style={{ background: channelMeta.color + "18", color: channelMeta.color, border: `1px solid ${channelMeta.color}40` }}
-        >
-          {channelMeta.badge}
+        <div className="fn-topbar-channel">
+          <span
+            className="fn-channel-badge"
+            style={{
+              background: channelMeta.color + "18",
+              color: channelMeta.color,
+              border: `1px solid ${channelMeta.color}40`
+            }}
+          >
+            {channelMeta.badge}
+          </span>
+          <div className="fn-topbar-channel-copy">
+            <strong>{channelMeta.label}</strong>
+            <span>Channel</span>
+          </div>
+        </div>
+        <div className="fn-topbar-name-wrap">
+          <input
+            className="fn-topbar-name-input"
+            aria-label="Flow name"
+            value={flowName}
+            onChange={(event) => setFlowName(event.target.value)}
+            placeholder="Flow name"
+          />
+        </div>
+        <span className={`fn-topbar-pill ${saveStatus}`}>
+          {saveStatus === "saved"
+            ? "Saved"
+            : saveStatus === "saving"
+              ? "Saving..."
+              : "Unsaved"}
         </span>
-        <input
-          className="fn-topbar-name nodrag"
-          value={flowName}
-          onChange={(e) => setFlowName(e.target.value)}
-        />
-        <span className="fn-topbar-sep" />
-        <span className={`fn-save-status ${saveStatus}`}>
-          {saveStatus === "saved" ? "Saved" : saveStatus === "saving" ? "Saving..." : "Unsaved changes"}
+        <span className={`fn-topbar-pill ${validationSummary.tone}`}>
+          {validationSummary.label}
         </span>
-        <button className="fn-btn" onClick={saveNow} disabled={saveStatus !== "dirty"}>
-          Save
-        </button>
-        <div className="fn-toggle-wrap">
-          {live && <span className="fn-live-dot" />}
+        <div className="fn-topbar-live">
           <span>{live ? "Live" : "Draft"}</span>
           <label className="fn-toggle">
             <input
               type="checkbox"
               checked={live}
-              onChange={(e) => {
-                if (e.target.checked && validation.errors.length > 0) {
-                  setValidationNotice(
-                    `Fix ${validation.errors.length} issue(s) before publishing this flow.`
-                  );
+              onChange={(event) => {
+                if (event.target.checked && validation.errors.length > 0) {
+                  setValidationNotice(`Fix ${validation.errors.length} issue(s) before publishing this flow.`);
                   return;
                 }
                 setValidationNotice(null);
-                setLive(e.target.checked);
+                setLive(event.target.checked);
               }}
             />
             <span className="fn-toggle-slider" />
           </label>
         </div>
+        <span className="fn-topbar-sep" />
+        <button className="fn-btn fn-btn-ghost" onClick={() => setIsBlocksOpen((current) => !current)}>
+          {isBlocksOpen ? "Hide Block Rail" : "Show Block Rail"}
+        </button>
+        <button className="fn-btn" onClick={saveNow} disabled={saveStatus !== "dirty"}>
+          Save Now
+        </button>
       </div>
 
       {(validationNotice || validation.errors.length > 0 || validation.warnings.length > 0) && (
         <div className="fn-editor-alerts">
-          {validationNotice && (
+          {validationNotice ? (
             <div className="fn-banner fn-banner-error">{validationNotice}</div>
+          ) : (
+            <div
+              className={`fn-banner ${
+                validation.errors.length > 0 ? "fn-banner-error" : "fn-banner-warning"
+              }`}
+            >
+              {validation.errors.length > 0
+                ? visibleErrors[0]?.message ?? "Fix the remaining flow issues before publishing."
+                : visibleWarnings[0]?.message ?? "Review the remaining warnings."}
+            </div>
           )}
-          {validation.errors.length > 0 ? (
-            <div className="fn-validation-card fn-validation-card-error">
-              <div className="fn-validation-title">
-                {validation.errors.length} issue(s) blocking publish
-              </div>
-              <ul className="fn-validation-list">
-                {visibleErrors.map((issue) => (
-                  <li key={issue.id}>{issue.message}</li>
-                ))}
-              </ul>
-              {validation.errors.length > visibleErrors.length && (
-                <div className="fn-validation-more">
-                  + {validation.errors.length - visibleErrors.length} more issue(s)
-                </div>
-              )}
-            </div>
-          ) : validation.warnings.length > 0 ? (
-            <div className="fn-validation-card fn-validation-card-warning">
-              <div className="fn-validation-title">
-                {validation.warnings.length} warning(s) to review
-              </div>
-              <ul className="fn-validation-list">
-                {visibleWarnings.map((issue) => (
-                  <li key={issue.id}>{issue.message}</li>
-                ))}
-              </ul>
-              {validation.warnings.length > visibleWarnings.length && (
-                <div className="fn-validation-more">
-                  + {validation.warnings.length - visibleWarnings.length} more warning(s)
-                </div>
-              )}
-            </div>
-          ) : null}
         </div>
       )}
 
       <div className="fn-shell">
-        <BlocksPanel channel={flow.channel} />
+        {isBlocksOpen ? <BlocksPanel channel={flow.channel} /> : null}
         <div className="fn-canvas" ref={wrapperRef}>
+          {!isBlocksOpen ? (
+            <button className="fn-blocks-open-fab" onClick={() => setIsBlocksOpen(true)}>
+              + Add Block
+            </button>
+          ) : null}
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -390,6 +570,7 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
             onConnect={onConnect}
             onDrop={onDrop}
             onDragOver={onDragOver}
+            onPaneClick={closeNodeEditor}
             nodeTypes={studioBlockNodeTypes}
             fitView
             deleteKeyCode="Delete"
@@ -400,12 +581,30 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
             <MiniMap nodeStrokeWidth={2} pannable zoomable />
           </ReactFlow>
         </div>
+        <FlowNodeEditorPanel
+          node={selectedNode}
+          saveStatus={saveStatus}
+          onClose={closeNodeEditor}
+          onSaveAndClose={async () => {
+            const saved = await saveNow();
+            if (saved) {
+              closeNodeEditor();
+            }
+          }}
+        />
       </div>
     </div>
   );
 }
 
 function FlowEditor(props: FlowEditorInnerProps) {
+  useEffect(() => {
+    document.body.classList.add("flow-builder-mode");
+    return () => {
+      document.body.classList.remove("flow-builder-mode");
+    };
+  }, []);
+
   return (
     <FlowEditorContext.Provider value={{ token: props.token }}>
       <ReactFlowProvider>
@@ -415,7 +614,7 @@ function FlowEditor(props: FlowEditorInnerProps) {
   );
 }
 
-// ─── Create flow modal ────────────────────────────────────────────────────────
+// â”€â”€â”€ Create flow modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const CHANNELS: FlowChannel[] = ["web", "qr", "api"];
 
@@ -438,12 +637,12 @@ function CreateFlowModal(props: {
         {step === "channel" ? (
           <>
             <div className="fn-modal-head">
-              <h3>New Flow — Choose Channel</h3>
+              <h3>New Flow - Choose Channel</h3>
               <button className="fn-icon-btn" onClick={props.onClose}>x</button>
             </div>
             <div className="fn-modal-body">
               <p style={{ fontSize: "0.8rem", color: "var(--text-3)", marginBottom: "1rem" }}>
-                Blocks and capabilities differ by channel. Choose once — it cannot be changed later.
+                Blocks and capabilities differ by channel. Choose once - it cannot be changed later.
               </p>
               <div className="fn-channel-grid">
                 {CHANNELS.map((ch) => {
@@ -469,14 +668,14 @@ function CreateFlowModal(props: {
             </div>
             <div className="fn-modal-foot">
               <button className="fn-btn fn-btn-primary" style={{ width: "100%" }} onClick={() => setStep("name")}>
-                Next →
+                Next
               </button>
             </div>
           </>
         ) : (
           <>
             <div className="fn-modal-head">
-              <h3>New Flow — Name It</h3>
+              <h3>New Flow - Name It</h3>
               <button className="fn-icon-btn" onClick={props.onClose}>x</button>
             </div>
             <div className="fn-modal-body">
@@ -504,7 +703,7 @@ function CreateFlowModal(props: {
             </div>
             <div className="fn-modal-foot" style={{ display: "flex", gap: "0.5rem" }}>
               <button className="fn-btn" onClick={() => setStep("channel")}>
-                ← Back
+                Back
               </button>
               <button
                 className="fn-btn fn-btn-primary"
@@ -522,7 +721,7 @@ function CreateFlowModal(props: {
   );
 }
 
-// ─── Flow list page ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Flow list page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const CHANNEL_TABS: { key: FlowChannel | "all"; label: string }[] = [
   { key: "all", label: "All" },
@@ -533,12 +732,15 @@ const CHANNEL_TABS: { key: FlowChannel | "all"; label: string }[] = [
 
 function FlowsPage() {
   const { token } = useDashboardShell();
-  const [flows, setFlows] = useState<FlowDoc[]>([]);
+  const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FlowChannel | "all">("all");
+  const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
   const [editingFlow, setEditingFlow] = useState<FlowDoc | null>(null);
+  const [editingFlowLoading, setEditingFlowLoading] = useState(false);
+  const [editingFlowError, setEditingFlowError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
@@ -549,8 +751,46 @@ function FlowsPage() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  useEffect(() => {
+    if (!editingFlowId) {
+      setEditingFlow(null);
+      setEditingFlowError(null);
+      setEditingFlowLoading(false);
+      return;
+    }
+
+    if (editingFlow?.id === editingFlowId) {
+      return;
+    }
+
+    let cancelled = false;
+    setEditingFlowLoading(true);
+    setEditingFlowError(null);
+
+    apiGetFlow(token, editingFlowId)
+      .then((flow) => {
+        if (!cancelled) {
+          setEditingFlow(flow);
+        }
+      })
+      .catch((fetchError) => {
+        if (!cancelled) {
+          setEditingFlowError(String(fetchError));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setEditingFlowLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editingFlow?.id, editingFlowId, token]);
+
   const handleChange = useCallback((updated: FlowDoc) => {
-    setFlows((cur) => cur.map((f) => (f.id === updated.id ? updated : f)));
+    setFlows((cur) => cur.map((f) => (f.id === updated.id ? summarizeFlow(updated) : f)));
     setEditingFlow((cur) => (cur?.id === updated.id ? updated : cur));
   }, []);
 
@@ -558,7 +798,8 @@ function FlowsPage() {
     setShowCreateModal(false);
     try {
       const created = await apiCreateFlow(token, name, channel);
-      setFlows((cur) => [created, ...cur]);
+      setFlows((cur) => [summarizeFlow(created), ...cur]);
+      setEditingFlowId(created.id);
       setEditingFlow(created);
     } catch (e) {
       console.error("Failed to create flow", e);
@@ -571,43 +812,87 @@ function FlowsPage() {
     try {
       await apiDeleteFlow(token, id);
       setFlows((cur) => cur.filter((f) => f.id !== id));
+      if (editingFlowId === id) {
+        setEditingFlowId(null);
+        setEditingFlow(null);
+        setEditingFlowError(null);
+      }
     } catch (e) {
       console.error("Failed to delete flow", e);
     }
   };
 
-  const handleTogglePublish = async (flow: FlowDoc, e: React.MouseEvent) => {
+  const handleTogglePublish = async (flow: FlowSummary, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!flow.published) {
-      const validation = validateFlow(flow.channel, flow.nodes as FlowNode[], flow.edges);
-      if (validation.errors.length > 0) {
-        setListNotice(`"${flow.name}" cannot go live yet: ${validation.errors[0]?.message}`);
+      try {
+        const detail = await apiGetFlow(token, flow.id);
+        const validation = validateFlow(detail.channel, detail.nodes as FlowNode[], detail.edges);
+        if (validation.errors.length > 0) {
+          setListNotice(`"${flow.name}" cannot go live yet: ${validation.errors[0]?.message}`);
+          return;
+        }
+      } catch (fetchError) {
+        setListNotice(`Could not load "${flow.name}" before publishing: ${String(fetchError)}`);
         return;
       }
     }
     try {
       const updated = await apiPublishFlow(token, flow.id, !flow.published);
-      setFlows((cur) => cur.map((f) => (f.id === flow.id ? updated : f)));
+      setFlows((cur) => cur.map((f) => (f.id === flow.id ? summarizeFlow(updated) : f)));
+      setEditingFlow((cur) => (cur?.id === updated.id ? updated : cur));
       setListNotice(null);
     } catch (e) {
       console.error("Failed to toggle publish", e);
     }
   };
 
-  // ── Editor view
-  if (editingFlow) {
+  // â”€â”€ Editor view
+  if (editingFlowId && editingFlowLoading) {
+    return (
+      <div className="fn-page-center" style={{ color: "var(--text-3)", fontSize: "0.85rem" }}>
+        Loading flow details...
+      </div>
+    );
+  }
+
+  if (editingFlowId && editingFlowError) {
+    return (
+      <div className="fn-page-center" style={{ flexDirection: "column", gap: "0.75rem" }}>
+        <div style={{ color: "#9f1239", fontSize: "0.85rem" }}>
+          Failed to load flow details: {editingFlowError}
+        </div>
+        <button
+          className="fn-btn"
+          onClick={() => {
+            setEditingFlowId(null);
+            setEditingFlow(null);
+            setEditingFlowError(null);
+          }}
+        >
+          Back to Flows
+        </button>
+      </div>
+    );
+  }
+
+  if (editingFlowId && editingFlow) {
     return (
       <FlowEditor
         key={editingFlow.id}
         flow={editingFlow}
         token={token}
         onChange={handleChange}
-        onBack={() => setEditingFlow(null)}
+        onBack={() => {
+          setEditingFlowId(null);
+          setEditingFlow(null);
+          setEditingFlowError(null);
+        }}
       />
     );
   }
 
-  // ── List view
+  // â”€â”€ List view
   const filtered = activeTab === "all" ? flows : flows.filter((f) => f.channel === activeTab);
 
   if (loading) {
@@ -691,7 +976,7 @@ function FlowsPage() {
                 </div>
                 <div className="fn-flow-card-name">{flow.name}</div>
                 <div className="fn-flow-card-meta">
-                  {(flow.nodes as unknown[]).length} nodes
+                  {flow.nodeCount} nodes · {flow.edgeCount} links · Updated {formatFlowDate(flow.updatedAt)}
                 </div>
                 <div className="fn-flow-card-actions">
                   <button
@@ -704,7 +989,11 @@ function FlowsPage() {
                   <button
                     className="fn-btn fn-btn-primary"
                     style={{ flex: 1 }}
-                    onClick={() => setEditingFlow(flow)}
+                    onClick={() => {
+                      setEditingFlow(null);
+                      setEditingFlowError(null);
+                      setEditingFlowId(flow.id);
+                    }}
                   >
                     Edit
                   </button>
@@ -725,7 +1014,7 @@ function FlowsPage() {
   );
 }
 
-// ─── Exports ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function prefetch(_ctx: DashboardModulePrefetchContext) {
   return {};
@@ -738,3 +1027,4 @@ export function Component() {
 
   return <FlowsPage />;
 }
+

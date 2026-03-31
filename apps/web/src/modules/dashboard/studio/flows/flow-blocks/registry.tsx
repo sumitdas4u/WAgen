@@ -95,6 +95,10 @@ export function isStudioFlowBlockKind(value: string): value is FlowBlockKind {
   return blockRegistry.has(value as FlowBlockKind);
 }
 
+export function getStudioFlowBlock(kind: FlowBlockKind) {
+  return blockRegistry.get(kind);
+}
+
 export function createDefaultBlockData(kind: FlowBlockKind): AnyNodeData {
   const block = blockRegistry.get(kind);
   if (!block) {

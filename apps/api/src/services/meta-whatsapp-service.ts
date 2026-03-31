@@ -297,7 +297,7 @@ export async function graphPostMedia(
   formData.append("messaging_product", "whatsapp");
   formData.append(
     "file",
-    new Blob([fileBuffer], { type: mimeType }),
+    new Blob([new Uint8Array(fileBuffer)], { type: mimeType }),
     `upload.${mimeType.split("/")[1] ?? "bin"}`
   );
 

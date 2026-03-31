@@ -25,6 +25,13 @@ type StudioNavItem = {
   to: string;
 };
 
+type SettingsNavItem = {
+  moduleId: string;
+  label: string;
+  icon: DashboardIconName;
+  to: string;
+};
+
 const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   {
     id: "conversations",
@@ -66,7 +73,7 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     label: "Settings",
     icon: "settings",
     title: "Settings",
-    defaultModuleIds: ["settings-web", "settings-qr", "settings-api"]
+    defaultModuleIds: ["settings-web", "settings-qr", "settings-api", "settings-templates", "settings-contact-fields"]
   }
 ];
 
@@ -82,6 +89,14 @@ const STUDIO_MENU_ITEMS: StudioNavItem[] = [
   { moduleId: "studio-review", label: "AI Review Center", icon: "unanswered", to: "/dashboard/studio/review" },
   { moduleId: "studio-test", label: "Test chatbot", icon: "test", to: "/dashboard/studio/test" },
   { moduleId: "agents", label: "AI Agents", icon: "agents", to: "/dashboard/agents" }
+];
+
+const SETTINGS_MENU_ITEMS: SettingsNavItem[] = [
+  { moduleId: "settings-templates", label: "WhatsApp Templates", icon: "templates", to: "/dashboard/settings/templates" },
+  { moduleId: "settings-web", label: "Web Channel", icon: "settings", to: "/dashboard/settings/web" },
+  { moduleId: "settings-api", label: "WhatsApp API Channel", icon: "settings", to: "/dashboard/settings/api" },
+  { moduleId: "settings-qr", label: "WhatsApp QR", icon: "chats", to: "/dashboard/settings/qr" },
+  { moduleId: "settings-contact-fields", label: "Contact Fields", icon: "leads", to: "/dashboard/settings/contact-fields" }
 ];
 
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
@@ -100,7 +115,9 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   agents: { label: "AI Agents", subtitle: "Single workflow shared across all channels" },
   "settings-web": { label: "Settings", subtitle: "Configure QR and Business API channels" },
   "settings-qr": { label: "Settings", subtitle: "Configure QR and Business API channels" },
-  "settings-api": { label: "Settings", subtitle: "Configure QR and Business API channels" }
+  "settings-api": { label: "Settings", subtitle: "Configure QR and Business API channels" },
+  "settings-templates": { label: "Settings", subtitle: "Manage WhatsApp message templates" },
+  "settings-contact-fields": { label: "Settings", subtitle: "Manage contact fields" }
 };
 
 function DashboardShellLayout() {
@@ -285,41 +302,43 @@ function DashboardShellLayout() {
       : sectionMeta.subtitle;
 
   const isStudioSection = visibleStudioItems.some((item) => item.moduleId === currentModuleId);
+  const isSettingsSection = currentModuleId.startsWith("settings-");
+  const visibleSettingsItems = SETTINGS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const showBillingActions = isModuleEnabled("billing");
   const showTestAction = isModuleEnabled("studio-test");
 
+  const renderSubSidebar = (title: string, items: Array<{ moduleId: string; label: string; icon: DashboardIconName; to: string }>) => (
+    <section className="chatbot-studio-shell dashboard-flat-studio">
+      <aside className="chatbot-studio-sidebar dashboard-flat-studio-sidebar">
+        <h2>{title}</h2>
+        <nav className="chatbot-studio-menu dashboard-flat-studio-menu">
+          {items.map((item) => (
+            <NavLink
+              key={item.moduleId}
+              to={item.to}
+              className={({ isActive }) => (isActive ? "active" : "")}
+              onMouseEnter={() => { void handleModulePrefetch(item.moduleId); }}
+              onFocus={() => { void handleModulePrefetch(item.moduleId); }}
+            >
+              <span><DashboardIcon name={item.icon} /></span>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+      <div className="chatbot-studio-content">
+        <Outlet />
+      </div>
+    </section>
+  );
+
   const renderOutlet = () => {
     if (isStudioSection) {
-      return (
-        <section className="chatbot-studio-shell dashboard-flat-studio">
-          <aside className="chatbot-studio-sidebar dashboard-flat-studio-sidebar">
-            <h2>AI Agents</h2>
-            <nav className="chatbot-studio-menu dashboard-flat-studio-menu">
-              {visibleStudioItems.map((item) => (
-                <NavLink
-                  key={item.moduleId}
-                  to={item.to}
-                  className={({ isActive }) => (isActive ? "active" : "")}
-                  onMouseEnter={() => {
-                    void handleModulePrefetch(item.moduleId);
-                  }}
-                  onFocus={() => {
-                    void handleModulePrefetch(item.moduleId);
-                  }}
-                >
-                  <span>
-                    <DashboardIcon name={item.icon} />
-                  </span>
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-          </aside>
-          <div className="chatbot-studio-content">
-            <Outlet />
-          </div>
-        </section>
-      );
+      return renderSubSidebar("AI Agents", visibleStudioItems);
+    }
+
+    if (isSettingsSection) {
+      return renderSubSidebar("Settings", visibleSettingsItems);
     }
 
     return <Outlet />;

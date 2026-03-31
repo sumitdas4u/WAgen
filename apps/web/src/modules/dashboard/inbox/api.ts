@@ -5,6 +5,7 @@ import {
   fetchPublishedFlows,
   type PublishedFlowSummary,
   sendConversationManualMessage,
+  uploadConversationMedia,
   setConversationPaused,
   setManualTakeover,
   type Conversation,
@@ -36,8 +37,17 @@ export function updateConversationAiMode(
   ]);
 }
 
-export function sendManualConversationMessage(token: string, conversationId: string, text: string) {
-  return sendConversationManualMessage(token, conversationId, text, { lockToManual: false });
+export function sendManualConversationMessage(
+  token: string,
+  conversationId: string,
+  text: string,
+  mediaUrl?: string | null
+) {
+  return sendConversationManualMessage(token, conversationId, text, { lockToManual: false, mediaUrl });
+}
+
+export function uploadInboxMedia(token: string, conversationId: string, file: File) {
+  return uploadConversationMedia(token, conversationId, file);
 }
 
 export function assignInboxFlow(token: string, conversationId: string, flowId: string) {

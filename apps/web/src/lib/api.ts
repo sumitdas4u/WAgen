@@ -1664,6 +1664,7 @@ export interface ConversationMessage {
   total_tokens: number | null;
   ai_model: string | null;
   retrieval_chunks: number | null;
+  media_url: string | null;
   created_at: string;
 }
 
@@ -1720,7 +1721,7 @@ export function sendConversationManualMessage(
   token: string,
   conversationId: string,
   text: string,
-  options?: { lockToManual?: boolean }
+  options?: { lockToManual?: boolean; mediaUrl?: string | null }
 ) {
   return apiRequest<{
     ok: boolean;
@@ -1734,9 +1735,29 @@ export function sendConversationManualMessage(
     token,
     body: JSON.stringify({
       text,
+      mediaUrl: options?.mediaUrl ?? undefined,
       lockToManual: options?.lockToManual
     })
   });
+}
+
+export async function uploadConversationMedia(
+  token: string,
+  conversationId: string,
+  file: File
+): Promise<{ mediaId: string; url: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_URL}/api/conversations/${conversationId}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "Upload failed" }));
+    throw new Error((err as { error?: string }).error ?? "Upload failed");
+  }
+  return response.json() as Promise<{ mediaId: string; url: string }>;
 }
 
 export interface AiReviewQueueItem {
@@ -1888,4 +1909,51 @@ export function uploadTemplateMedia(token: string, connectionId: string, file: F
     `/api/meta/templates/upload-media?connectionId=${encodeURIComponent(connectionId)}`,
     { method: "POST", token, body: form }
   );
+}
+
+
+// ── Contact Fields ────────────────────────────────────────────────────────────
+
+export type ContactFieldType = "TEXT" | "MULTI_TEXT" | "NUMBER" | "SWITCH" | "DATE";
+
+export interface ContactField {
+  id: string;
+  label: string;
+  name: string;
+  field_type: ContactFieldType;
+  is_active: boolean;
+  is_mandatory: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+export function listContactFields(token: string) {
+  return apiRequest<{ fields: ContactField[] }>("/api/contact-fields", { token });
+}
+
+export function createContactField(
+  token: string,
+  payload: { label: string; name: string; field_type: ContactFieldType; is_active?: boolean; is_mandatory?: boolean }
+) {
+  return apiRequest<{ field: ContactField }>("/api/contact-fields", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateContactField(
+  token: string,
+  fieldId: string,
+  patch: { label?: string; is_active?: boolean; is_mandatory?: boolean }
+) {
+  return apiRequest<{ field: ContactField }>(`/api/contact-fields/${fieldId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteContactField(token: string, fieldId: string) {
+  return apiRequest<void>(`/api/contact-fields/${fieldId}`, { method: "DELETE", token });
 }

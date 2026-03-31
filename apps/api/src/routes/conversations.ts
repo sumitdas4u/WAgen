@@ -21,7 +21,8 @@ const AssignAgentSchema = z.object({
 });
 
 const ManualMessageSchema = z.object({
-  text: z.string().trim().min(1).max(4000),
+  text: z.string().trim().max(4000).optional().default(""),
+  mediaUrl: z.string().optional(),
   lockToManual: z.boolean().optional()
 });
 
@@ -191,12 +192,19 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         return reply.status(400).send({ error: "Invalid message payload" });
       }
 
+      const text = parsed.data.text ?? "";
+      const mediaUrl = parsed.data.mediaUrl ?? null;
+      if (!text && !mediaUrl) {
+        return reply.status(400).send({ error: "text or mediaUrl is required" });
+      }
+
       try {
         const delivered = await sendManualConversationMessage({
           userId: request.authUser.userId,
           conversationId: params.conversationId,
-          text: parsed.data.text,
-          lockToManual: parsed.data.lockToManual
+          text,
+          lockToManual: parsed.data.lockToManual,
+          mediaUrl
         });
         return { ok: true, delivered };
       } catch (error) {
@@ -206,6 +214,67 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         }
         return reply.status(400).send({ error: message });
       }
+    }
+  );
+
+  fastify.post(
+    "/api/conversations/:conversationId/upload",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [params.conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+
+      const file = await request.file();
+      if (!file) {
+        return reply.status(400).send({ error: "No file provided" });
+      }
+
+      const chunks: Buffer[] = [];
+      for await (const chunk of file.file) {
+        chunks.push(chunk as Buffer);
+      }
+      const buffer = Buffer.concat(chunks);
+
+      if (buffer.length > 10 * 1024 * 1024) {
+        return reply.status(400).send({ error: "File too large. Maximum 10 MB." });
+      }
+
+      const base64Data = buffer.toString("base64");
+      const result = await pool.query<{ id: string }>(
+        `INSERT INTO media_uploads (user_id, mime_type, filename, data, size_bytes)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [request.authUser.userId, file.mimetype, file.filename, base64Data, buffer.length]
+      );
+
+      const mediaId = result.rows[0].id;
+      return { mediaId, url: `/api/media/${mediaId}` };
+    }
+  );
+
+  fastify.get(
+    "/api/media/:mediaId",
+    async (request, reply) => {
+      const params = request.params as { mediaId: string };
+      const result = await pool.query<{ mime_type: string; filename: string | null; data: string }>(
+        `SELECT mime_type, filename, data FROM media_uploads WHERE id = $1`,
+        [params.mediaId]
+      );
+      if ((result.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Media not found" });
+      }
+      const row = result.rows[0];
+      const buffer = Buffer.from(row.data, "base64");
+      reply.header("Content-Type", row.mime_type);
+      reply.header("Content-Disposition", `inline; filename="${row.filename ?? "attachment"}"`);
+      reply.header("Cache-Control", "public, max-age=86400");
+      return reply.send(buffer);
     }
   );
 }

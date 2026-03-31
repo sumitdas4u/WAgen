@@ -81,7 +81,8 @@ interface SettingsTabProps {
   onRefreshMetaApiStatus: () => void;
   onDeleteAccountConfirmTextChange: (value: string) => void;
   onDeleteAccount: () => void;
-  renderNavIcon: (name: "knowledge" | "chats" | "settings") => ReactNode;
+  onSelectSetupTemplates: () => void;
+  renderNavIcon: (name: "knowledge" | "chats" | "settings" | "templates") => ReactNode;
 }
 
 export function SettingsTab(props: SettingsTabProps) {
@@ -140,6 +141,7 @@ export function SettingsTab(props: SettingsTabProps) {
     onRefreshMetaApiStatus,
     onDeleteAccountConfirmTextChange,
     onDeleteAccount,
+    onSelectSetupTemplates,
     renderNavIcon
   } = props;
 
@@ -221,6 +223,21 @@ export function SettingsTab(props: SettingsTabProps) {
           <footer className="go-live-card-footer">
             <button type="button" className="ghost-btn" onClick={onSelectSetupApi}>
               Setup
+            </button>
+          </footer>
+        </article>
+
+        <article className="go-live-card">
+          <div className="go-live-card-body">
+            <div className="go-live-card-head">
+              <span className="go-live-icon">{renderNavIcon("templates")}</span>
+            </div>
+            <h3>WhatsApp Templates</h3>
+            <p>Create and manage pre-approved WhatsApp message templates for broadcasts.</p>
+          </div>
+          <footer className="go-live-card-footer">
+            <button type="button" className="ghost-btn" onClick={onSelectSetupTemplates}>
+              Manage
             </button>
           </footer>
         </article>

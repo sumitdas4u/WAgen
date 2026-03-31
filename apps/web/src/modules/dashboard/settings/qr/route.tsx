@@ -1,11 +1,5 @@
-import { SettingsPage } from "../settings-page";
-import type { DashboardModulePrefetchContext } from "../../../../shared/dashboard/module-contracts";
-import { prefetchSettingsModuleData } from "../queries";
+import { QrChannelPage } from "./QrChannelPage";
 
 export function Component() {
-  return <SettingsPage submenu="setup_qr" />;
-}
-
-export async function prefetchData({ token, queryClient }: DashboardModulePrefetchContext) {
-  await prefetchSettingsModuleData(queryClient, token);
+  return <QrChannelPage />;
 }

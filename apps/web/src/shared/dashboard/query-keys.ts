@@ -8,6 +8,7 @@ const dashboardReviewRoot = ["dashboard", "studio", "review"] as const;
 const dashboardKnowledgeRoot = ["dashboard", "studio", "knowledge"] as const;
 const dashboardBillingRoot = ["dashboard", "billing"] as const;
 const dashboardTemplatesRoot = ["dashboard", "templates"] as const;
+const dashboardContactFieldsRoot = ["dashboard", "contact-fields"] as const;
 
 export const dashboardQueryKeys = {
   bootstrap: dashboardBootstrapRoot,
@@ -34,5 +35,7 @@ export const dashboardQueryKeys = {
     [...dashboardKnowledgeRoot, "chunks", sourceType, sourceName] as const,
   billingRoot: dashboardBillingRoot,
   templatesRoot: dashboardTemplatesRoot,
-  templates: [...dashboardTemplatesRoot, "list"] as const
+  templates: [...dashboardTemplatesRoot, "list"] as const,
+  contactFieldsRoot: dashboardContactFieldsRoot,
+  contactFields: [...dashboardContactFieldsRoot, "list"] as const
 };

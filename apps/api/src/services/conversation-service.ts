@@ -551,7 +551,8 @@ export async function trackOutboundMessage(
     aiModel?: string | null;
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
-  }
+  },
+  mediaUrl?: string | null
 ): Promise<void> {
   await pool.query(
     `INSERT INTO conversation_messages (
@@ -562,9 +563,10 @@ export async function trackOutboundMessage(
        completion_tokens,
        total_tokens,
        ai_model,
-       retrieval_chunks
+       retrieval_chunks,
+       media_url
      )
-     VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7)`,
+     VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8)`,
     [
       conversationId,
       message,
@@ -572,7 +574,8 @@ export async function trackOutboundMessage(
       usage?.completionTokens ?? null,
       usage?.totalTokens ?? null,
       usage?.aiModel ?? null,
-      usage?.retrievalChunks ?? null
+      usage?.retrievalChunks ?? null,
+      mediaUrl ?? null
     ]
   );
 
@@ -1011,6 +1014,7 @@ export interface ConversationMessage {
   total_tokens: number | null;
   ai_model: string | null;
   retrieval_chunks: number | null;
+  media_url: string | null;
   created_at: string;
 }
 
@@ -1049,6 +1053,7 @@ export async function listConversationMessages(conversationId: string): Promise<
        total_tokens,
        ai_model,
        retrieval_chunks,
+       media_url,
        created_at
      FROM conversation_messages
      WHERE conversation_id = $1
