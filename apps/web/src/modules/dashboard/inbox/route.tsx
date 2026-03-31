@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Conversation, ConversationMessage } from "../../../lib/api";
 import { API_URL } from "../../../lib/api";
+import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
 import { DashboardIcon } from "../../../shared/dashboard/icons";
@@ -760,8 +761,7 @@ export function Component() {
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedConversationId) throw new Error("No conversation selected.");
-      return uploadInboxMedia(token, selectedConversationId, file);
+      return uploadInboxMediaToSupabase(file);
     }
   });
 

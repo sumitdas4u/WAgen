@@ -25,3 +25,22 @@ export async function uploadFlowMedia(file: File): Promise<string> {
   const { data } = supabase.storage.from(FLOW_MEDIA_BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
+
+/** Upload a chat/inbox media file to Supabase, return public URL + mimeType. */
+export async function uploadInboxMedia(file: File): Promise<{ url: string; mimeType: string }> {
+  if (!supabase) {
+    throw new Error("Supabase not configured.");
+  }
+
+  const ext = file.name.split(".").pop() ?? "bin";
+  const path = `inbox/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(FLOW_MEDIA_BUCKET)
+    .upload(path, file, { upsert: false, contentType: file.type });
+
+  if (error) throw new Error(error.message);
+
+  const { data } = supabase.storage.from(FLOW_MEDIA_BUCKET).getPublicUrl(path);
+  return { url: data.publicUrl, mimeType: file.type };
+}
