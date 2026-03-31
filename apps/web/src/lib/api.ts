@@ -1786,3 +1786,106 @@ export function resolveAiReviewQueueItem(
     body: JSON.stringify(payload)
   });
 }
+
+// ─── Message Templates ────────────────────────────────────────────────────────
+
+export type TemplateStatus = "PENDING" | "APPROVED" | "REJECTED" | "PAUSED" | "DISABLED";
+export type TemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION";
+export type TemplateStyle = "normal" | "poetic" | "exciting" | "funny";
+
+export interface TemplateComponentButton {
+  type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER" | "COPY_CODE" | "FLOW";
+  text: string;
+  url?: string;
+  phone_number?: string;
+  example?: string[];
+}
+
+export interface TemplateComponent {
+  type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS";
+  format?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "LOCATION";
+  text?: string;
+  buttons?: TemplateComponentButton[];
+  example?: Record<string, unknown>;
+}
+
+export interface MessageTemplate {
+  id: string;
+  userId: string;
+  connectionId: string;
+  templateId: string | null;
+  name: string;
+  category: TemplateCategory;
+  language: string;
+  status: TemplateStatus;
+  qualityScore: string | null;
+  components: TemplateComponent[];
+  metaRejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTemplatePayload {
+  connectionId: string;
+  name: string;
+  category: TemplateCategory;
+  language: string;
+  components: TemplateComponent[];
+}
+
+export interface GeneratedTemplate {
+  suggestedName: string;
+  suggestedCategory: TemplateCategory;
+  components: TemplateComponent[];
+}
+
+export function fetchTemplates(token: string, options?: { connectionId?: string; status?: TemplateStatus }) {
+  const params = new URLSearchParams();
+  if (options?.connectionId) params.set("connectionId", options.connectionId);
+  if (options?.status) params.set("status", options.status);
+  const query = params.toString();
+  const path = query ? `/api/meta/templates?${query}` : "/api/meta/templates";
+  return apiRequest<{ templates: MessageTemplate[] }>(path, { token });
+}
+
+export function createMessageTemplate(token: string, payload: CreateTemplatePayload) {
+  return apiRequest<{ template: MessageTemplate }>("/api/meta/templates", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function syncMessageTemplates(token: string) {
+  return apiRequest<{ ok: boolean; templates: MessageTemplate[] }>("/api/meta/templates/sync", {
+    method: "POST",
+    token
+  });
+}
+
+export function deleteMessageTemplate(token: string, templateId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/meta/templates/${templateId}`, {
+    method: "DELETE",
+    token
+  });
+}
+
+export function generateAITemplate(
+  token: string,
+  payload: { prompt: string; style: TemplateStyle }
+) {
+  return apiRequest<{ generated: GeneratedTemplate }>("/api/meta/templates/ai-generate", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function uploadTemplateMedia(token: string, connectionId: string, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<{ handle: string }>(
+    `/api/meta/templates/upload-media?connectionId=${encodeURIComponent(connectionId)}`,
+    { method: "POST", token, body: form }
+  );
+}

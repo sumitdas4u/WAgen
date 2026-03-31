@@ -79,6 +79,14 @@ export function DashboardIcon({ name }: { name: DashboardIconName }) {
           <circle cx="10" cy="10" r="7" />
         </svg>
       );
+    case "templates":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
+          <rect x="3" y="4" width="14" height="3" rx="1" />
+          <rect x="3" y="9" width="9" height="2" rx="1" />
+          <rect x="3" y="13" width="7" height="2" rx="1" />
+        </svg>
+      );
     case "logout":
       return (
         <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
