@@ -121,7 +121,7 @@ jobs:
             docker compose -f infra/docker-compose.full.yml up -d postgres redis
             docker compose -f infra/docker-compose.full.yml build api web
             docker compose -f infra/docker-compose.full.yml run --rm api node apps/api/dist/scripts/migrate.js
-            docker compose -f infra/docker-compose.full.yml up -d api web
+            docker compose -f infra/docker-compose.full.yml up -d --wait --wait-timeout 120 api web
             curl -fsS http://localhost:4000/api/health >/dev/null
 
   deploy_production:
@@ -156,5 +156,5 @@ jobs:
             docker compose -f infra/docker-compose.full.yml up -d postgres redis
             docker compose -f infra/docker-compose.full.yml build api web
             docker compose -f infra/docker-compose.full.yml run --rm api node apps/api/dist/scripts/migrate.js
-            docker compose -f infra/docker-compose.full.yml up -d api web
+            docker compose -f infra/docker-compose.full.yml up -d --wait --wait-timeout 120 api web
             curl -fsS http://localhost:4000/api/health >/dev/null
