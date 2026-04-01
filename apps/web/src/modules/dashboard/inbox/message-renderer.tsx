@@ -101,9 +101,9 @@ function detectTypeFromText(text: string, mediaUrl: string | null, storedType: s
   }
 
   const t = text?.trim() ?? "";
-  if (t.startsWith("[IMAGE]") || t.startsWith("[Extracted image text]:") || t === "[Image received with no readable text]" || t === "[Image received; text extraction unavailable]") return "image";
-  if (t.startsWith("[VIDEO]")) return "video";
-  if (t.startsWith("[AUDIO]")) return "audio";
+  if (t.startsWith("[IMAGE]") || t.startsWith("[Extracted image text]:") || t === "[Image received]" || t === "[Image received with no readable text]" || t === "[Image received; text extraction unavailable]") return "image";
+  if (t.startsWith("[VIDEO]") || t === "[Video received]") return "video";
+  if (t.startsWith("[AUDIO]") || t === "[Audio message received]") return "audio";
   if (t.startsWith("[DOCUMENT]") || t.startsWith("[Extracted document text]:") || t.startsWith("[Document received") || t.startsWith("[PDF received")) return "file";
   if (t.startsWith("[LOCATION]")) return "location";
   if (t.startsWith("[CONTACT]")) return "contact";
@@ -255,7 +255,13 @@ function contentFromText(
       let caption: string | undefined;
       if (text.startsWith("[Extracted image text]:")) {
         caption = text.slice("[Extracted image text]:".length).trim() || undefined;
-      } else if (text === "[Image received with no readable text]") {
+      } else if (
+        text === "[Image received]" ||
+        text === "[Video received]" ||
+        text === "[Audio message received]" ||
+        text === "[Image received with no readable text]" ||
+        text === "[Image received; text extraction unavailable]"
+      ) {
         caption = undefined;
       } else {
         // e.g. "[IMAGE]\ncaption text"

@@ -893,10 +893,34 @@ class WhatsAppSessionManager {
       }
     }
 
-    // List response: displayText = clean label only; flowText includes rowId for routing.
+    // Interactive / list / button responses: displayText = clean label; flowText includes ID for routing.
     if (message.message) {
       const content = unwrapMessageContent(message.message);
 
+      // Modern WhatsApp: interactiveResponseMessage (list + button selections)
+      if (content.interactiveResponseMessage) {
+        const label = content.interactiveResponseMessage.body?.text?.trim() ?? "";
+        const paramsJson = content.interactiveResponseMessage.nativeFlowResponseMessage?.paramsJson;
+        let flowId = "";
+        if (typeof paramsJson === "string" && paramsJson.trim()) {
+          try {
+            const parsed = JSON.parse(paramsJson) as Record<string, unknown>;
+            const idVal =
+              parsed["id"] ?? parsed["selectedId"] ?? parsed["selected_id"] ??
+              parsed["selectedRowId"] ?? parsed["selected_row_id"] ??
+              parsed["selectedButtonId"] ?? parsed["selected_button_id"] ?? "";
+            flowId = String(idVal).trim();
+          } catch { /* ignore */ }
+        }
+        if (label || flowId) {
+          return {
+            displayText: label || flowId,
+            flowText: [label, flowId].filter(Boolean).join(" ")
+          };
+        }
+      }
+
+      // Legacy list response
       if (content.listResponseMessage) {
         const label = content.listResponseMessage.title?.trim() ?? "";
         const rowId = content.listResponseMessage.singleSelectReply?.selectedRowId?.trim() ?? "";
@@ -908,9 +932,22 @@ class WhatsAppSessionManager {
         }
       }
 
+      // Legacy buttons response
       if (content.buttonsResponseMessage) {
         const label = content.buttonsResponseMessage.selectedDisplayText?.trim() ?? "";
         const btnId = content.buttonsResponseMessage.selectedButtonId?.trim() ?? "";
+        if (label || btnId) {
+          return {
+            displayText: label || btnId,
+            flowText: [label, btnId].filter(Boolean).join(" ")
+          };
+        }
+      }
+
+      // Template button reply
+      if (content.templateButtonReplyMessage) {
+        const label = content.templateButtonReplyMessage.selectedDisplayText?.trim() ?? "";
+        const btnId = content.templateButtonReplyMessage.selectedId?.trim() ?? "";
         if (label || btnId) {
           return {
             displayText: label || btnId,
@@ -1173,7 +1210,12 @@ class WhatsAppSessionManager {
     if (runtime) {
       const mediaResult = await extractInboundMediaText(runtime.socket, message, userId);
       if (mediaResult.text) {
-        text = text ? `${text}\n${mediaResult.text}` : mediaResult.text;
+        // Replace generic getMessageText fallbacks with the richer extracted text.
+        const isGenericFallback =
+          text === "[Image received]" ||
+          text === "[Video received]" ||
+          text === "[Audio message received]";
+        text = isGenericFallback ? mediaResult.text : (text ? `${text}\n${mediaResult.text}` : mediaResult.text);
       }
       inboundMediaUrl = mediaResult.mediaUrl;
     }

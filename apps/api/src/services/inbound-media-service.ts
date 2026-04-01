@@ -99,12 +99,19 @@ export async function extractInboundMediaText(
 
   const content = unwrapMessageContent(message.message);
   const hasImage = Boolean(content.imageMessage);
+  const hasVideo = Boolean(content.videoMessage);
+  const hasAudio = Boolean(content.audioMessage);
   const document = content.documentMessage;
-  if (!hasImage && !document) {
+  if (!hasImage && !hasVideo && !hasAudio && !document) {
     return { text: null, mediaUrl: null };
   }
 
-  const mimeType = content.imageMessage?.mimetype || document?.mimetype || "application/octet-stream";
+  const mimeType =
+    content.imageMessage?.mimetype ??
+    content.videoMessage?.mimetype ??
+    content.audioMessage?.mimetype ??
+    document?.mimetype ??
+    "application/octet-stream";
   const media = await withTimeout(
     downloadMediaBuffer(socket, message),
     env.INBOUND_MEDIA_TIMEOUT_MS,
@@ -119,6 +126,20 @@ export async function extractInboundMediaText(
       text: `[Media attached but too large to parse automatically (${Math.round(media.length / (1024 * 1024))}MB)].`,
       mediaUrl: null
     };
+  }
+
+  if (hasVideo) {
+    const mediaUrl = userId
+      ? await storeMediaInUploads(userId, media, mimeType, "inbound-video")
+      : null;
+    return { text: "[Video received]", mediaUrl };
+  }
+
+  if (hasAudio) {
+    const mediaUrl = userId
+      ? await storeMediaInUploads(userId, media, mimeType, "inbound-audio")
+      : null;
+    return { text: "[Audio message received]", mediaUrl };
   }
 
   if (hasImage || mimeType.startsWith("image/")) {
