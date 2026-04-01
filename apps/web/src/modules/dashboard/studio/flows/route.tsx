@@ -2,16 +2,20 @@
 import ReactFlow, {
   Background,
   BackgroundVariant,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
   MarkerType,
   MiniMap,
   ReactFlowProvider,
   addEdge,
+  getBezierPath,
   useEdgesState,
   useNodesState,
   useReactFlow,
   useStoreApi,
-  type Connection
+  type Connection,
+  type EdgeProps
 } from "reactflow";
 import type { DashboardModulePrefetchContext } from "../../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
@@ -36,6 +40,35 @@ import type {
 } from "./flow-blocks/types";
 import "reactflow/dist/style.css";
 import "./flows.css";
+
+// ─── Custom edge with delete button ───────────────────────────────────────────
+
+function ButtonEdge({
+  id, sourceX, sourceY, targetX, targetY,
+  sourcePosition, targetPosition, style, markerEnd
+}: EdgeProps) {
+  const { setEdges } = useReactFlow();
+  const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      <EdgeLabelRenderer>
+        <button
+          className="fn-edge-delete-btn nodrag nopan"
+          style={{ top: labelY, left: labelX }}
+          title="Delete connection"
+          onClick={() => setEdges((eds) => eds.filter((e) => e.id !== id))}
+        >
+          ×
+        </button>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+const EDGE_TYPES = { buttonEdge: ButtonEdge };
+
 
 // â”€â”€â”€ Channel meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -426,6 +459,7 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
         addEdge(
           {
             ...connection,
+            type: "buttonEdge",
             markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 }
           },
           cur
@@ -573,9 +607,10 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
             onDragOver={onDragOver}
             onPaneClick={closeNodeEditor}
             nodeTypes={studioBlockNodeTypes}
+            edgeTypes={EDGE_TYPES}
             fitView
             deleteKeyCode="Delete"
-            defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
+            defaultEdgeOptions={{ type: "buttonEdge", markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
           >
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#c8d6e8" />
             <Controls />

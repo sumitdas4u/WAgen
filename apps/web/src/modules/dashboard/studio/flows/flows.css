@@ -934,6 +934,7 @@ body.flow-builder-mode .chatbot-studio-content {
 .fn-node-googleSheetsFetchRow .fn-node-header { background: #fff7ed; color: #c2410c; border-bottom: 1px solid #fed7aa; }
 .fn-node-googleSheetsFetchRows .fn-node-header { background: #f8fafc; color: #334155; border-bottom: 1px solid #cbd5e1; }
 .fn-node-googleCalendarBooking .fn-node-header { background: #eef6ff; color: #1d4ed8; border-bottom: 1px solid #bfdbfe; }
+.fn-node-googleSheets          .fn-node-header { background: #eefbf3; color: #166534; border-bottom: 1px solid #bbf7d0; }
 
 /* Left color bar */
 .fn-node-flowStart          { border-left: 3.5px solid var(--fn-teal);   }
@@ -955,6 +956,7 @@ body.flow-builder-mode .chatbot-studio-content {
 .fn-node-googleSheetsFetchRow { border-left: 3.5px solid var(--fn-orange); }
 .fn-node-googleSheetsFetchRows { border-left: 3.5px solid var(--fn-slate); }
 .fn-node-googleCalendarBooking { border-left: 3.5px solid var(--fn-blue); }
+.fn-node-googleSheets          { border-left: 3.5px solid var(--fn-green); }
 .fn-node-aiReply            { border-left: 3.5px solid var(--fn-violet); }
 .fn-node-aiReply            .fn-node-header { background: var(--fn-violet-bg); color: #5b21b6; border-bottom: 1px solid var(--fn-violet-bdr); }
 
@@ -1056,26 +1058,61 @@ body.flow-builder-mode .chatbot-studio-content {
 .fn-chip-add:hover { border-color: var(--fn-teal); color: var(--fn-teal); }
 
 /* ── Handles ───────────────────────────────────────────── */
+/* Always visible — no hover required */
+.react-flow__handle { opacity: 1 !important; }
+
 .fn-handle-in {
-  width: 13px !important; height: 13px !important;
+  width: 14px !important; height: 14px !important;
   background: #3b82f6 !important;
   border: 2.5px solid #fff !important;
-  box-shadow: 0 0 0 1.5px rgba(59,130,246,.35) !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.4) !important;
   left: -7px !important;
-  transition: box-shadow .15s !important;
+  transition: box-shadow .15s, transform .12s !important;
 }
+.fn-handle-in:hover { transform: scale(1.3) !important; box-shadow: 0 0 0 3px rgba(59,130,246,.5) !important; }
+
 .fn-handle-out {
-  width: 13px !important; height: 13px !important;
+  width: 14px !important; height: 14px !important;
   background: #14b8a6 !important;
   border: 2.5px solid #fff !important;
-  box-shadow: 0 0 0 1.5px rgba(20,184,166,.35) !important;
+  box-shadow: 0 0 0 2px rgba(20,184,166,.4) !important;
   right: -7px !important;
-  transition: box-shadow .15s !important;
+  transition: box-shadow .15s, transform .12s !important;
 }
-.fn-handle-true  { background: #10b981 !important; box-shadow: 0 0 0 1.5px rgba(16,185,129,.35) !important; }
-.fn-handle-false { background: #ef4444 !important; box-shadow: 0 0 0 1.5px rgba(239,68,68,.35) !important; }
-.fn-handle-success { background: #10b981 !important; box-shadow: 0 0 0 1.5px rgba(16,185,129,.35) !important; }
-.fn-handle-fail  { background: #ef4444 !important; box-shadow: 0 0 0 1.5px rgba(239,68,68,.35) !important; }
+.fn-handle-out:hover { transform: scale(1.3) !important; box-shadow: 0 0 0 3px rgba(20,184,166,.5) !important; }
+
+.fn-handle-true    { background: #10b981 !important; box-shadow: 0 0 0 2px rgba(16,185,129,.4) !important; }
+.fn-handle-false   { background: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,.4) !important; }
+.fn-handle-success { background: #10b981 !important; box-shadow: 0 0 0 2px rgba(16,185,129,.4) !important; }
+.fn-handle-fail    { background: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,.4) !important; }
+
+/* ── Edge delete button ─────────────────────────────────── */
+.fn-edge-delete-btn {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: all;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  color: #94a3b8;
+  font-size: 10px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s, color .12s, border-color .12s, transform .12s;
+}
+.react-flow__edge:hover .fn-edge-delete-btn,
+.react-flow__edge.selected .fn-edge-delete-btn {
+  opacity: 1;
+}
+.fn-edge-delete-btn:hover {
+  color: #ef4444;
+  border-color: #fca5a5;
+  background: #fff1f2;
+  transform: translate(-50%, -50%) scale(1.15);
+}
 
 /* ── Condition node ────────────────────────────────────── */
 .fn-cond-outputs { display: flex; flex-direction: column; gap: 0.26rem; padding-top: 0.24rem; }
