@@ -53,11 +53,16 @@ export async function sendConversationFlowMessage(input: {
   }
 
   if (input.track !== false) {
+    // If no explicit mediaUrl, pull it from the payload itself (media / media_buttons blocks).
+    const payloadMediaUrl =
+      input.payload.type === "media" ? input.payload.url :
+      input.payload.type === "media_buttons" ? input.payload.url :
+      null;
     await trackOutboundMessage(
       conversation.id,
       summaryText,
       { senderName: input.senderName ?? null },
-      input.mediaUrl ?? null,
+      input.mediaUrl ?? payloadMediaUrl ?? null,
       input.payload
     );
   }

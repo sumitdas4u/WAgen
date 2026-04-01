@@ -893,6 +893,33 @@ class WhatsAppSessionManager {
       }
     }
 
+    // List response: displayText = clean label only; flowText includes rowId for routing.
+    if (message.message) {
+      const content = unwrapMessageContent(message.message);
+
+      if (content.listResponseMessage) {
+        const label = content.listResponseMessage.title?.trim() ?? "";
+        const rowId = content.listResponseMessage.singleSelectReply?.selectedRowId?.trim() ?? "";
+        if (label || rowId) {
+          return {
+            displayText: label || rowId,
+            flowText: [label, rowId].filter(Boolean).join(" ")
+          };
+        }
+      }
+
+      if (content.buttonsResponseMessage) {
+        const label = content.buttonsResponseMessage.selectedDisplayText?.trim() ?? "";
+        const btnId = content.buttonsResponseMessage.selectedButtonId?.trim() ?? "";
+        if (label || btnId) {
+          return {
+            displayText: label || btnId,
+            flowText: [label, btnId].filter(Boolean).join(" ")
+          };
+        }
+      }
+    }
+
     const plainText = getMessageText(message);
     if (!plainText) {
       return null;
