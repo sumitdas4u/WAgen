@@ -5,6 +5,7 @@ import {
   completeGoogleCalendarOAuthCallback,
   disconnectGoogleCalendarConnection,
   getGoogleCalendarConfig,
+  getGoogleCalendarConnectionInfo,
   getGoogleCalendarStatus,
   listGoogleCalendars,
   renderGoogleCalendarOauthPopupPage
@@ -137,6 +138,18 @@ export async function googleCalendarRoutes(app: FastifyInstance): Promise<void> 
         connectionId: parsed.data.connectionId
       });
       return { calendars };
+    }
+  );
+
+  // Get connection info by ID — lets any user see who owns a stored connectionId
+  app.get(
+    "/api/google/calendar/connections/:id",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      const id = (request.params as { id?: string }).id ?? "";
+      if (!id) return reply.status(400).send({ error: "Missing connection id" });
+      const connection = await getGoogleCalendarConnectionInfo(id);
+      return { connection };
     }
   );
 }

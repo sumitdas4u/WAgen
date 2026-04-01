@@ -5,6 +5,7 @@ import {
   completeGoogleSheetsOAuthCallback,
   disconnectGoogleSheetsConnection,
   getGoogleSheetsConfig,
+  getGoogleSheetsConnectionInfo,
   getGoogleSheetsStatus,
   listGoogleSheetColumns,
   listGoogleSheetsSpreadsheets,
@@ -187,6 +188,18 @@ export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
         sheetTitle: parsed.data.sheetTitle
       });
       return { columns };
+    }
+  );
+
+  // Get connection info by ID — lets any user see who owns a stored connectionId
+  app.get(
+    "/api/google/sheets/connections/:id",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      const id = (request.params as { id?: string }).id ?? "";
+      if (!id) return reply.status(400).send({ error: "Missing connection id" });
+      const connection = await getGoogleSheetsConnectionInfo(id);
+      return { connection };
     }
   );
 }

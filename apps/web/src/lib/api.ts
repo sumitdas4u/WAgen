@@ -183,6 +183,20 @@ export function fetchGoogleSheetColumns(
   );
 }
 
+export function fetchGoogleSheetsConnectionById(token: string, connectionId: string) {
+  return apiRequest<{ connection: { id: string; googleEmail: string; displayName: string | null; status: string } | null }>(
+    `/api/google/sheets/connections/${encodeURIComponent(connectionId)}`,
+    { token }
+  );
+}
+
+export function fetchGoogleCalendarConnectionById(token: string, connectionId: string) {
+  return apiRequest<{ connection: { id: string; googleEmail: string; displayName: string | null; status: string } | null }>(
+    `/api/google/calendar/connections/${encodeURIComponent(connectionId)}`,
+    { token }
+  );
+}
+
 export function fetchGoogleCalendarConfig(token: string) {
   return apiRequest<GoogleCalendarConfig>("/api/google/calendar/config", { token });
 }

@@ -237,25 +237,29 @@ async function getConnectionRowByUserId(
   userId: string
 ): Promise<GoogleCalendarConnectionRow | null> {
   const result = await pool.query<GoogleCalendarConnectionRow>(
-    `SELECT id,
-            user_id,
-            google_email,
-            google_account_id,
-            display_name,
-            access_token_encrypted,
-            refresh_token_encrypted,
-            token_expires_at,
-            granted_scopes,
-            status,
-            metadata_json,
-            created_at,
-            updated_at
+    `SELECT id, user_id, google_email, google_account_id, display_name,
+            access_token_encrypted, refresh_token_encrypted, token_expires_at,
+            granted_scopes, status, metadata_json, created_at, updated_at
        FROM google_calendar_connections
       WHERE user_id = $1
       LIMIT 1`,
     [userId]
   );
+  return result.rows[0] ?? null;
+}
 
+async function getConnectionRowById(
+  id: string
+): Promise<GoogleCalendarConnectionRow | null> {
+  const result = await pool.query<GoogleCalendarConnectionRow>(
+    `SELECT id, user_id, google_email, google_account_id, display_name,
+            access_token_encrypted, refresh_token_encrypted, token_expires_at,
+            granted_scopes, status, metadata_json, created_at, updated_at
+       FROM google_calendar_connections
+      WHERE id = $1
+      LIMIT 1`,
+    [id]
+  );
   return result.rows[0] ?? null;
 }
 
@@ -516,12 +520,14 @@ async function resolveAuthorizedAccess(input: {
 }): Promise<{ row: GoogleCalendarConnectionRow; accessToken: string }> {
   ensureGoogleCalendarConfigured();
 
-  const row = await getConnectionRowByUserId(input.userId);
+  // Look up by connectionId first (supports each user connecting their own account).
+  // Fall back to userId so existing flows without a stored connectionId still work.
+  const row = input.connectionId
+    ? (await getConnectionRowById(input.connectionId) ?? await getConnectionRowByUserId(input.userId))
+    : await getConnectionRowByUserId(input.userId);
+
   if (!row) {
     throw new Error("Google Calendar is not connected. Connect your Google account first.");
-  }
-  if (input.connectionId && row.id !== input.connectionId) {
-    throw new Error("The selected Google Calendar connection is no longer available.");
   }
   if (row.status !== "connected" && row.status !== "error") {
     throw new Error("Google Calendar connection is not active.");
@@ -547,6 +553,14 @@ export function getGoogleCalendarConfig(): GoogleCalendarConfig {
     redirectUri: isGoogleCalendarConfigured() ? getGoogleCalendarRedirectUri() : null,
     scopes: [...GOOGLE_CALENDAR_SCOPES]
   };
+}
+
+export async function getGoogleCalendarConnectionInfo(
+  connectionId: string
+): Promise<{ id: string; googleEmail: string; displayName: string | null; status: string } | null> {
+  const row = await getConnectionRowById(connectionId);
+  if (!row) return null;
+  return { id: row.id, googleEmail: row.google_email, displayName: row.display_name, status: row.status };
 }
 
 export async function getGoogleCalendarStatus(

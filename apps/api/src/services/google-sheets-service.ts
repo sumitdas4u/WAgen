@@ -313,25 +313,29 @@ async function getConnectionRowByUserId(
   userId: string
 ): Promise<GoogleSheetsConnectionRow | null> {
   const result = await pool.query<GoogleSheetsConnectionRow>(
-    `SELECT id,
-            user_id,
-            google_email,
-            google_account_id,
-            display_name,
-            access_token_encrypted,
-            refresh_token_encrypted,
-            token_expires_at,
-            granted_scopes,
-            status,
-            metadata_json,
-            created_at,
-            updated_at
+    `SELECT id, user_id, google_email, google_account_id, display_name,
+            access_token_encrypted, refresh_token_encrypted, token_expires_at,
+            granted_scopes, status, metadata_json, created_at, updated_at
        FROM google_sheets_connections
       WHERE user_id = $1
       LIMIT 1`,
     [userId]
   );
+  return result.rows[0] ?? null;
+}
 
+async function getConnectionRowById(
+  id: string
+): Promise<GoogleSheetsConnectionRow | null> {
+  const result = await pool.query<GoogleSheetsConnectionRow>(
+    `SELECT id, user_id, google_email, google_account_id, display_name,
+            access_token_encrypted, refresh_token_encrypted, token_expires_at,
+            granted_scopes, status, metadata_json, created_at, updated_at
+       FROM google_sheets_connections
+      WHERE id = $1
+      LIMIT 1`,
+    [id]
+  );
   return result.rows[0] ?? null;
 }
 
@@ -583,12 +587,14 @@ async function resolveAuthorizedAccess(params: {
   userId: string;
   connectionId?: string | null;
 }): Promise<{ row: GoogleSheetsConnectionRow; accessToken: string }> {
-  const row = await getConnectionRowByUserId(params.userId);
+  // Look up by connectionId first (supports each user connecting their own account).
+  // Fall back to userId so existing flows without a stored connectionId still work.
+  const row = params.connectionId
+    ? (await getConnectionRowById(params.connectionId) ?? await getConnectionRowByUserId(params.userId))
+    : await getConnectionRowByUserId(params.userId);
+
   if (!row) {
     throw new Error("Google Sheets is not connected. Connect your Google account first.");
-  }
-  if (params.connectionId && row.id !== params.connectionId) {
-    throw new Error("The selected Google Sheets connection is no longer available.");
   }
   if (row.status !== "connected" && row.status !== "error") {
     throw new Error("Google Sheets connection is not active.");
@@ -707,6 +713,14 @@ export function getGoogleSheetsConfig(): GoogleSheetsConfig {
     redirectUri: isGoogleSheetsConfigured() ? getGoogleSheetsRedirectUri() : null,
     scopes: [...GOOGLE_SHEETS_SCOPES]
   };
+}
+
+export async function getGoogleSheetsConnectionInfo(
+  connectionId: string
+): Promise<{ id: string; googleEmail: string; displayName: string | null; status: string } | null> {
+  const row = await getConnectionRowById(connectionId);
+  if (!row) return null;
+  return { id: row.id, googleEmail: row.google_email, displayName: row.display_name, status: row.status };
 }
 
 export async function getGoogleSheetsStatus(userId: string): Promise<GoogleSheetsStatus> {

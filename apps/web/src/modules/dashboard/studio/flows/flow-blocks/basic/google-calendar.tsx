@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from "reactflow";
 import {
   disconnectGoogleCalendar,
   fetchGoogleCalendarConfig,
+  fetchGoogleCalendarConnectionById,
   fetchGoogleCalendars,
   fetchGoogleCalendarStatus,
   startGoogleCalendarConnect,
@@ -39,6 +40,7 @@ function GoogleCalendarBookingNode({
 
   const [config, setConfig] = useState<GoogleCalendarConfig | null>(null);
   const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
+  const [storedConnection, setStoredConnection] = useState<{ id: string; googleEmail: string; displayName: string | null; status: string } | null>(null);
   const [calendars, setCalendars] = useState<GoogleCalendarSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -47,49 +49,40 @@ function GoogleCalendarBookingNode({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+  // Active connection: stored node's connectionId first, then current user's
+  const activeConnectionId = data.connectionId || status?.connection?.id || null;
 
+  useEffect(() => {
+    if (!token) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-
     void Promise.all([fetchGoogleCalendarConfig(token), fetchGoogleCalendarStatus(token)])
       .then(([nextConfig, nextStatus]) => {
-        if (cancelled) {
-          return;
-        }
-        setConfig(nextConfig);
-        setStatus(nextStatus);
-        setStatusMessage(null);
+        if (!cancelled) { setConfig(nextConfig); setStatus(nextStatus); setStatusMessage(null); }
       })
-      .catch((error) => {
-        if (!cancelled) {
-          setStatusMessage((error as Error).message);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .catch((error) => { if (!cancelled) setStatusMessage((error as Error).message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [reloadNonce, token]);
 
+  // Fetch stored connection info (may belong to another user)
   useEffect(() => {
-    const connectionId = status?.connection?.id ?? "";
-    if (connectionId && data.connectionId !== connectionId) {
-      patch({ connectionId });
-    }
+    if (!token || !data.connectionId) { setStoredConnection(null); return; }
+    let cancelled = false;
+    void fetchGoogleCalendarConnectionById(token, data.connectionId)
+      .then((r) => { if (!cancelled) setStoredConnection(r.connection); })
+      .catch(() => { if (!cancelled) setStoredConnection(null); });
+    return () => { cancelled = true; };
+  }, [token, data.connectionId, reloadNonce]);
+
+  // Only auto-set connectionId when the node has none yet (first-time connect)
+  useEffect(() => {
+    const cid = status?.connection?.id ?? "";
+    if (cid && !data.connectionId) patch({ connectionId: cid });
   }, [data.connectionId, patch, status?.connection?.id]);
 
   useEffect(() => {
-    if (!token || !config?.configured || !status?.connected) {
+    if (!token || !config?.configured || !activeConnectionId) {
       setCalendars([]);
       return;
     }
@@ -97,7 +90,7 @@ function GoogleCalendarBookingNode({
     let cancelled = false;
     setCatalogLoading(true);
 
-    void fetchGoogleCalendars(token, { connectionId: status.connection?.id ?? null })
+    void fetchGoogleCalendars(token, { connectionId: activeConnectionId })
       .then((response) => {
         if (!cancelled) {
           setCalendars(response.calendars);
@@ -122,19 +115,16 @@ function GoogleCalendarBookingNode({
   useEffect(() => {
     const listener = (event: MessageEvent) => {
       const payload = event.data as { type?: string; message?: string };
-      if (payload?.type !== "wagen-google-calendar-oauth") {
-        return;
-      }
+      if (payload?.type !== "wagen-google-calendar-oauth") return;
       setOauthLoading(false);
       setStatusMessage(payload.message ?? null);
+      // Clear stored connectionId so the auto-sync picks up the newly connected account
+      patch({ connectionId: "", calendarId: "", calendarSummary: "" });
       setReloadNonce((value) => value + 1);
     };
-
     window.addEventListener("message", listener);
-    return () => {
-      window.removeEventListener("message", listener);
-    };
-  }, []);
+    return () => { window.removeEventListener("message", listener); };
+  }, [patch]);
 
   const connectGoogle = async () => {
     if (!token) {
@@ -190,7 +180,7 @@ function GoogleCalendarBookingNode({
   return (
     <div className={`fn-node fn-node-googleCalendarBooking${selected ? " selected" : ""}`}>
       <Handle type="target" position={Position.Left} id="in" className="fn-handle-in" />
-      <NodeHeader icon="GC" title="Google Calendar Scheduler" onDelete={del} />
+      <NodeHeader icon="📅" title="Google Calendar Scheduler" onDelete={del} />
       <div className="fn-node-body">
         <div className="fn-api-hint" style={{ marginBottom: "0.45rem" }}>
           {isPromptMode
@@ -209,47 +199,30 @@ function GoogleCalendarBookingNode({
             <div className="fn-google-banner fn-google-banner-error">
               Google Calendar is not configured on the server yet.
             </div>
-          ) : status?.connected && status.connection ? (
+          ) : (storedConnection ?? status?.connection) ? (
             <div className="fn-google-banner">
               <div>
-                Connected as <strong>{status.connection.googleEmail}</strong>
+                Using <strong>{storedConnection?.googleEmail ?? status?.connection?.googleEmail}</strong>
+                {storedConnection && storedConnection.id !== status?.connection?.id && (
+                  <span style={{ fontSize: "0.65rem", color: "#6b7280", marginLeft: "0.35rem" }}>(connected by another user)</span>
+                )}
               </div>
               <div className="fn-google-actions">
-                <button
-                  type="button"
-                  className="fn-btn nodrag"
-                  onClick={() => setReloadNonce((value) => value + 1)}
-                  disabled={catalogLoading}
-                >
-                  Refresh
-                </button>
-                <button
-                  type="button"
-                  className="fn-btn nodrag"
-                  onClick={connectGoogle}
-                  disabled={oauthLoading}
-                >
-                  {oauthLoading ? "Opening..." : "Reconnect"}
-                </button>
-                <button
-                  type="button"
-                  className="fn-btn fn-btn-danger nodrag"
-                  onClick={disconnectConnection}
-                  disabled={disconnecting}
-                >
-                  {disconnecting ? "Disconnecting..." : "Disconnect"}
-                </button>
+                <button type="button" className="fn-btn nodrag" onClick={() => setReloadNonce((v) => v + 1)} disabled={catalogLoading}>Refresh</button>
+                {status?.connected ? (
+                  <>
+                    <button type="button" className="fn-btn nodrag" onClick={connectGoogle} disabled={oauthLoading}>{oauthLoading ? "Opening..." : "Use My Account"}</button>
+                    <button type="button" className="fn-btn fn-btn-danger nodrag" onClick={disconnectConnection} disabled={disconnecting}>{disconnecting ? "..." : "Disconnect"}</button>
+                  </>
+                ) : (
+                  <button type="button" className="fn-btn fn-btn-primary nodrag" onClick={connectGoogle} disabled={oauthLoading}>{oauthLoading ? "Opening..." : "Connect My Account"}</button>
+                )}
               </div>
             </div>
           ) : (
             <div className="fn-google-banner fn-google-banner-warning">
               <div>Connect your Google account to use this block.</div>
-              <button
-                type="button"
-                className="fn-btn fn-btn-primary nodrag"
-                onClick={connectGoogle}
-                disabled={oauthLoading}
-              >
+              <button type="button" className="fn-btn fn-btn-primary nodrag" onClick={connectGoogle} disabled={oauthLoading}>
                 {oauthLoading ? "Opening..." : "Connect with Google"}
               </button>
             </div>
@@ -785,7 +758,7 @@ export const googleCalendarBookingStudioBlock: StudioFlowBlockDefinition<GoogleC
   channels: ["web", "qr", "api"],
   catalog: {
     kind: "googleCalendarBooking",
-    icon: "GC",
+    icon: "📅",
     name: "Google Calendar Scheduler",
     desc: "Suggest, confirm, and book appointment slots",
     section: "Actions",

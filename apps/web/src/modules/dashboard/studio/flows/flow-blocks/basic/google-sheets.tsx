@@ -4,6 +4,7 @@ import {
   disconnectGoogleSheets,
   fetchGoogleSheetColumns,
   fetchGoogleSheetsConfig,
+  fetchGoogleSheetsConnectionById,
   fetchGoogleSheetsStatus,
   fetchGoogleSpreadsheets,
   fetchGoogleSpreadsheetSheets,
@@ -40,9 +41,17 @@ const OPERATIONS: { value: GoogleSheetsOperation; label: string; desc: string }[
 
 // ─── Shared hook ───────────────────────────────────────────────────────────────
 
+interface StoredConnectionInfo {
+  id: string;
+  googleEmail: string;
+  displayName: string | null;
+  status: string;
+}
+
 interface GSConnection {
   config: GoogleSheetsConfig | null;
   status: GoogleSheetsStatus | null;
+  storedConnection: StoredConnectionInfo | null;
   spreadsheets: GoogleSpreadsheetSummary[];
   sheets: GoogleSheetSummary[];
   columns: string[];
@@ -51,32 +60,38 @@ interface GSConnection {
   oauthLoading: boolean;
   disconnecting: boolean;
   statusMsg: string | null;
+  activeConnectionId: string | null;
   reload: () => void;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
 }
 
 function useGoogleSheetsConnection(
+  storedConnectionId: string,
   spreadsheetId: string,
   sheetTitle: string,
   onDisconnect: () => void
 ): GSConnection {
   const token = useFlowEditorToken();
-  const [config, setConfig]                 = useState<GoogleSheetsConfig | null>(null);
-  const [status, setStatus]                 = useState<GoogleSheetsStatus | null>(null);
-  const [spreadsheets, setSpreadsheets]     = useState<GoogleSpreadsheetSummary[]>([]);
-  const [sheets, setSheets]                 = useState<GoogleSheetSummary[]>([]);
-  const [columns, setColumns]               = useState<string[]>([]);
-  const [loading, setLoading]               = useState(true);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [oauthLoading, setOauthLoading]     = useState(false);
-  const [disconnecting, setDisconnecting]   = useState(false);
-  const [statusMsg, setStatusMsg]           = useState<string | null>(null);
-  const [nonce, setNonce]                   = useState(0);
+  const [config, setConfig]                       = useState<GoogleSheetsConfig | null>(null);
+  const [status, setStatus]                       = useState<GoogleSheetsStatus | null>(null);
+  const [storedConnection, setStoredConnection]   = useState<StoredConnectionInfo | null>(null);
+  const [spreadsheets, setSpreadsheets]           = useState<GoogleSpreadsheetSummary[]>([]);
+  const [sheets, setSheets]                       = useState<GoogleSheetSummary[]>([]);
+  const [columns, setColumns]                     = useState<string[]>([]);
+  const [loading, setLoading]                     = useState(true);
+  const [catalogLoading, setCatalogLoading]       = useState(false);
+  const [oauthLoading, setOauthLoading]           = useState(false);
+  const [disconnecting, setDisconnecting]         = useState(false);
+  const [statusMsg, setStatusMsg]                 = useState<string | null>(null);
+  const [nonce, setNonce]                         = useState(0);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
-  // config + status
+  // The active connection is: stored connection if set, otherwise current user's connection
+  const activeConnectionId = storedConnectionId || status?.connection?.id || null;
+
+  // config + current user status
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     let cancelled = false;
@@ -88,49 +103,60 @@ function useGoogleSheetsConnection(
     return () => { cancelled = true; };
   }, [nonce, token]);
 
-  // spreadsheets
+  // Fetch stored connection info (shows who set up the node, even if it's a different user)
   useEffect(() => {
-    if (!token || !config?.configured || !status?.connected) { setSpreadsheets([]); return; }
+    if (!token || !storedConnectionId) { setStoredConnection(null); return; }
+    let cancelled = false;
+    void fetchGoogleSheetsConnectionById(token, storedConnectionId)
+      .then((r) => { if (!cancelled) setStoredConnection(r.connection); })
+      .catch(() => { if (!cancelled) setStoredConnection(null); });
+    return () => { cancelled = true; };
+  }, [token, storedConnectionId, nonce]);
+
+  // spreadsheets (use activeConnectionId so any user's connection works)
+  useEffect(() => {
+    if (!token || !config?.configured || !activeConnectionId) { setSpreadsheets([]); return; }
     let cancelled = false;
     setCatalogLoading(true);
-    void fetchGoogleSpreadsheets(token, { connectionId: status.connection?.id ?? null })
+    void fetchGoogleSpreadsheets(token, { connectionId: activeConnectionId })
       .then((r) => { if (!cancelled) setSpreadsheets(r.spreadsheets); })
       .catch((e) => { if (!cancelled) setStatusMsg((e as Error).message); })
       .finally(() => { if (!cancelled) setCatalogLoading(false); });
     return () => { cancelled = true; };
-  }, [config?.configured, status?.connected, status?.connection?.id, token, nonce]);
+  }, [config?.configured, activeConnectionId, token, nonce]);
 
   // sheets
   useEffect(() => {
-    if (!token || !status?.connected || !spreadsheetId) { setSheets([]); setColumns([]); return; }
+    if (!token || !activeConnectionId || !spreadsheetId) { setSheets([]); setColumns([]); return; }
     let cancelled = false;
     setCatalogLoading(true);
-    void fetchGoogleSpreadsheetSheets(token, spreadsheetId, { connectionId: status.connection?.id ?? null })
+    void fetchGoogleSpreadsheetSheets(token, spreadsheetId, { connectionId: activeConnectionId })
       .then((r) => { if (!cancelled) setSheets(r.sheets); })
       .catch((e) => { if (!cancelled) setStatusMsg((e as Error).message); })
       .finally(() => { if (!cancelled) setCatalogLoading(false); });
     return () => { cancelled = true; };
-  }, [spreadsheetId, status?.connected, status?.connection?.id, token, nonce]);
+  }, [spreadsheetId, activeConnectionId, token, nonce]);
 
   // columns
   useEffect(() => {
-    if (!token || !status?.connected || !spreadsheetId || !sheetTitle) { setColumns([]); return; }
+    if (!token || !activeConnectionId || !spreadsheetId || !sheetTitle) { setColumns([]); return; }
     let cancelled = false;
     setCatalogLoading(true);
-    void fetchGoogleSheetColumns(token, spreadsheetId, sheetTitle, { connectionId: status.connection?.id ?? null })
+    void fetchGoogleSheetColumns(token, spreadsheetId, sheetTitle, { connectionId: activeConnectionId })
       .then((r) => { if (!cancelled) setColumns(r.columns); })
       .catch((e) => { if (!cancelled) setStatusMsg((e as Error).message); })
       .finally(() => { if (!cancelled) setCatalogLoading(false); });
     return () => { cancelled = true; };
-  }, [sheetTitle, spreadsheetId, status?.connected, status?.connection?.id, token, nonce]);
+  }, [sheetTitle, spreadsheetId, activeConnectionId, token, nonce]);
 
-  // OAuth popup result
+  // OAuth popup result — clear stored connectionId so auto-sync picks up the newly connected account
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       const p = e.data as { type?: string; message?: string };
       if (p?.type !== "wagen-google-sheets-oauth") return;
       setOauthLoading(false);
       setStatusMsg(p.message ?? null);
+      onDisconnect(); // clears connectionId + spreadsheet selection
       reload();
     };
     window.addEventListener("message", handler);
@@ -159,30 +185,48 @@ function useGoogleSheetsConnection(
   }, [token, status?.connection?.id, onDisconnect, reload]);
 
   return {
-    config, status, spreadsheets, sheets, columns,
+    config, status, storedConnection, spreadsheets, sheets, columns,
     loading, catalogLoading, oauthLoading, disconnecting,
-    statusMsg, reload, connect, disconnect
+    statusMsg, activeConnectionId, reload, connect, disconnect
   };
 }
 
 // ─── Shared sub-components ─────────────────────────────────────────────────────
 
-function ConnectionBanner({ gs }: { gs: GSConnection }) {
-  const { loading, config, status, oauthLoading, disconnecting, catalogLoading, statusMsg, connect, disconnect, reload } = gs;
+function ConnectionBanner({ gs, service = "Sheets" }: { gs: GSConnection; service?: string }) {
+  const { loading, config, status, storedConnection, oauthLoading, disconnecting, catalogLoading, statusMsg, connect, disconnect, reload } = gs;
+
+  // Which account is active: stored (another user's or current user's) or current user's
+  const activeEmail = storedConnection?.googleEmail ?? status?.connection?.googleEmail;
+  const isCurrentUserConnected = !!status?.connected && !!status.connection;
+  const isUsingStoredFromOtherUser = !!storedConnection && storedConnection.id !== status?.connection?.id;
 
   return (
     <div className="fn-google-connection">
       {loading ? (
-        <div className="fn-google-banner">Loading Google Sheets connection...</div>
+        <div className="fn-google-banner">Loading Google {service} connection...</div>
       ) : !config?.configured ? (
-        <div className="fn-google-banner fn-google-banner-error">Google Sheets is not configured on the server yet.</div>
-      ) : status?.connected && status.connection ? (
+        <div className="fn-google-banner fn-google-banner-error">Google {service} is not configured on the server yet.</div>
+      ) : activeEmail ? (
         <div className="fn-google-banner">
-          <div>Connected as <strong>{status.connection.googleEmail}</strong></div>
+          <div>
+            Using <strong>{activeEmail}</strong>
+            {isUsingStoredFromOtherUser && (
+              <span style={{ fontSize: "0.65rem", color: "#6b7280", marginLeft: "0.35rem" }}>(connected by another user)</span>
+            )}
+          </div>
           <div className="fn-google-actions">
             <button type="button" className="fn-btn nodrag" onClick={reload} disabled={catalogLoading}>Refresh</button>
-            <button type="button" className="fn-btn nodrag" onClick={connect} disabled={oauthLoading}>{oauthLoading ? "Opening..." : "Reconnect"}</button>
-            <button type="button" className="fn-btn fn-btn-danger nodrag" onClick={disconnect} disabled={disconnecting}>{disconnecting ? "..." : "Disconnect"}</button>
+            {isCurrentUserConnected ? (
+              <>
+                <button type="button" className="fn-btn nodrag" onClick={connect} disabled={oauthLoading}>{oauthLoading ? "Opening..." : "Use My Account"}</button>
+                <button type="button" className="fn-btn fn-btn-danger nodrag" onClick={disconnect} disabled={disconnecting}>{disconnecting ? "..." : "Disconnect"}</button>
+              </>
+            ) : (
+              <button type="button" className="fn-btn fn-btn-primary nodrag" onClick={connect} disabled={oauthLoading}>
+                {oauthLoading ? "Opening..." : "Connect My Account"}
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -313,15 +357,16 @@ function GoogleSheetsNode({ id, data, selected }: NodeProps<GoogleSheetsData>) {
   const { patch, del } = useNodePatch<GoogleSheetsData>(id);
 
   const gs = useGoogleSheetsConnection(
+    data.connectionId,
     data.spreadsheetId,
     data.sheetTitle,
     () => patch({ connectionId: "", spreadsheetId: "", spreadsheetName: "", sheetTitle: "", rowValues: [], fetchMappings: [] })
   );
 
-  // Sync connection id
+  // Only auto-set connectionId when the node has none yet (first-time connect)
   useEffect(() => {
     const cid = gs.status?.connection?.id ?? "";
-    if (cid && data.connectionId !== cid) patch({ connectionId: cid });
+    if (cid && !data.connectionId) patch({ connectionId: cid });
   }, [data.connectionId, gs.status?.connection?.id, patch]);
 
   const op = data.operation ?? "addRow";
@@ -441,6 +486,7 @@ function LegacyGSNode({ id, data, selected, title, desc }: NodeProps<LegacyData>
   const { patch, del } = useNodePatch<LegacyData>(id);
 
   const gs = useGoogleSheetsConnection(
+    data.connectionId,
     data.spreadsheetId,
     data.sheetTitle,
     () => patch({ connectionId: "", spreadsheetId: "", spreadsheetName: "", sheetTitle: "" } as Partial<LegacyData>)
@@ -448,7 +494,7 @@ function LegacyGSNode({ id, data, selected, title, desc }: NodeProps<LegacyData>
 
   useEffect(() => {
     const cid = gs.status?.connection?.id ?? "";
-    if (cid && data.connectionId !== cid) patch({ connectionId: cid } as Partial<LegacyData>);
+    if (cid && !data.connectionId) patch({ connectionId: cid } as Partial<LegacyData>);
   }, [data.connectionId, gs.status?.connection?.id, patch]);
 
   const rowValues = Array.isArray((data as { rowValues?: FlowKeyValueItem[] }).rowValues)
