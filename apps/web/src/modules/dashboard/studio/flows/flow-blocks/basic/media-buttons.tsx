@@ -93,7 +93,7 @@ function MediaButtonsNode({ id, data, selected }: NodeProps<MediaButtonsData>) {
                 position={Position.Right}
                 id={button.id}
                 className="fn-handle-out"
-                style={{ position: "absolute", right: -7, top: "50%" }}
+                style={{ position: "absolute", right: -8, top: "50%" }}
               />
             </div>
           ))}

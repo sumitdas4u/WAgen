@@ -119,7 +119,7 @@ function ListNode({ id, data, selected }: NodeProps<ListData>) {
                   position={Position.Right}
                   id={row.id}
                   className="fn-handle-out"
-                  style={{ position: "absolute", right: -7, top: "50%" }}
+                  style={{ position: "absolute", right: -8, top: "50%" }}
                 />
               </div>
             ))}

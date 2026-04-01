@@ -47,7 +47,7 @@ function WhatsappPayNode({ id, data, selected }: NodeProps<WhatsappPayData>) {
               position={Position.Right}
               id="success"
               className="fn-handle-out fn-handle-success"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
           <div className="fn-pay-branch">
@@ -58,7 +58,7 @@ function WhatsappPayNode({ id, data, selected }: NodeProps<WhatsappPayData>) {
               position={Position.Right}
               id="fail"
               className="fn-handle-out fn-handle-fail"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
         </div>

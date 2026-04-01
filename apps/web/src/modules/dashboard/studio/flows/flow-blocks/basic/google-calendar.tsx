@@ -722,7 +722,7 @@ function GoogleCalendarBookingNode({
               position={Position.Right}
               id="success"
               className="fn-handle-out fn-handle-success"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
           <div className="fn-api-branch">
@@ -733,7 +733,7 @@ function GoogleCalendarBookingNode({
               position={Position.Right}
               id="cancelled"
               className="fn-handle-out"
-              style={{ position: "absolute", right: -7, background: "#f59e0b", borderColor: "#f59e0b" }}
+              style={{ position: "absolute", right: -8, background: "#f59e0b", borderColor: "#f59e0b" }}
             />
           </div>
           <div className="fn-api-branch">
@@ -744,7 +744,7 @@ function GoogleCalendarBookingNode({
               position={Position.Right}
               id="fail"
               className="fn-handle-out fn-handle-fail"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
         </div>

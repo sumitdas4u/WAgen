@@ -340,12 +340,12 @@ function OutputHandles() {
       <div className="fn-api-branch">
         <span className="fn-cond-dot fn-cond-dot-true" /><span>Success</span>
         <Handle type="source" position={Position.Right} id="success"
-          className="fn-handle-out fn-handle-success" style={{ position: "absolute", right: -7 }} />
+          className="fn-handle-out fn-handle-success" style={{ position: "absolute", right: -8 }} />
       </div>
       <div className="fn-api-branch">
         <span className="fn-cond-dot fn-cond-dot-false" /><span>Fail</span>
         <Handle type="source" position={Position.Right} id="fail"
-          className="fn-handle-out fn-handle-fail" style={{ position: "absolute", right: -7 }} />
+          className="fn-handle-out fn-handle-fail" style={{ position: "absolute", right: -8 }} />
       </div>
     </div>
   );

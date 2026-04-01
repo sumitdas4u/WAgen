@@ -156,7 +156,7 @@ function AiAgentNode({ id, data, selected }: NodeProps<AiAgentData>) {
               position={Position.Right}
               id="success"
               className="fn-handle-out fn-handle-success"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
           <div className="fn-api-branch">
@@ -167,7 +167,7 @@ function AiAgentNode({ id, data, selected }: NodeProps<AiAgentData>) {
               position={Position.Right}
               id="fail"
               className="fn-handle-out fn-handle-fail"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
         </div>

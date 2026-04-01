@@ -59,7 +59,7 @@ function SendTextMenuNode({ id, data, selected }: NodeProps<SendTextMenuData>) {
                 position={Position.Right}
                 id={opt.id}
                 className="fn-handle-out"
-                style={{ position: "absolute", right: -7, top: "50%" }}
+                style={{ position: "absolute", right: -8, top: "50%" }}
               />
             </div>
           ))}

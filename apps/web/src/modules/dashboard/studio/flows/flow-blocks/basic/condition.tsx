@@ -55,7 +55,7 @@ function ConditionNode({ id, data, selected }: NodeProps<ConditionData>) {
               position={Position.Right}
               id="true"
               className="fn-handle-out fn-handle-true"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
           <div className="fn-cond-branch">
@@ -66,7 +66,7 @@ function ConditionNode({ id, data, selected }: NodeProps<ConditionData>) {
               position={Position.Right}
               id="false"
               className="fn-handle-out fn-handle-false"
-              style={{ position: "absolute", right: -7 }}
+              style={{ position: "absolute", right: -8 }}
             />
           </div>
         </div>

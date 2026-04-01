@@ -797,16 +797,16 @@ body.flow-builder-mode .chatbot-studio-content {
 .fn-node-body { padding: 0.55rem 0.72rem 0.5rem; display: flex; flex-direction: column; gap: 0.38rem; }
 
 .fn-canvas .fn-node {
-  min-width: 188px;
-  max-width: 220px;
+  min-width: 210px;
+  max-width: 270px;
   cursor: pointer;
 }
 
 .fn-canvas .fn-node .fn-node-body {
   padding: 0.4rem 0.62rem 0.48rem;
   gap: 0.28rem;
-  max-height: 104px;
-  overflow: hidden;
+  /* overflow must be visible so output handles at the bottom are not clipped */
+  overflow: visible;
 }
 
 .fn-canvas .fn-node .fn-node-label {
@@ -905,6 +905,27 @@ body.flow-builder-mode .chatbot-studio-content {
 
 /* canvas node: hide delete btn (no interaction) */
 .fn-canvas .fn-node .fn-delete-btn { display: none; }
+
+/* ── Canvas node: always show output handle rows ──────── */
+/* These MUST be visible even in compact canvas view — clipping hides handles */
+.fn-canvas .fn-node .fn-api-outputs,
+.fn-canvas .fn-node .fn-cond-outputs {
+  display: flex !important;
+  overflow: visible !important;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-top: 0.22rem;
+}
+.fn-canvas .fn-node .fn-api-branch,
+.fn-canvas .fn-node .fn-cond-branch {
+  overflow: visible !important;
+  position: relative;
+}
+/* Hide most canvas body content but keep output sections */
+.fn-canvas .fn-node .fn-node-body > *:not(.fn-api-outputs):not(.fn-cond-outputs) {
+  max-height: 72px;
+  overflow: hidden;
+}
 
 .fn-right-body .fn-node-header .fn-icon-btn {
   display: none;
@@ -1062,29 +1083,48 @@ body.flow-builder-mode .chatbot-studio-content {
 .react-flow__handle { opacity: 1 !important; }
 
 .fn-handle-in {
-  width: 14px !important; height: 14px !important;
+  width: 16px !important; height: 16px !important;
   background: #3b82f6 !important;
   border: 2.5px solid #fff !important;
-  box-shadow: 0 0 0 2px rgba(59,130,246,.4) !important;
-  left: -7px !important;
+  box-shadow: 0 0 0 2.5px rgba(59,130,246,.45) !important;
+  left: -8px !important;
   transition: box-shadow .15s, transform .12s !important;
+  cursor: crosshair !important;
 }
-.fn-handle-in:hover { transform: scale(1.3) !important; box-shadow: 0 0 0 3px rgba(59,130,246,.5) !important; }
+.fn-handle-in:hover {
+  transform: scale(1.45) !important;
+  box-shadow: 0 0 0 4px rgba(59,130,246,.55) !important;
+}
 
 .fn-handle-out {
-  width: 14px !important; height: 14px !important;
+  width: 16px !important; height: 16px !important;
   background: #14b8a6 !important;
   border: 2.5px solid #fff !important;
-  box-shadow: 0 0 0 2px rgba(20,184,166,.4) !important;
-  right: -7px !important;
+  box-shadow: 0 0 0 2.5px rgba(20,184,166,.45) !important;
+  right: -8px !important;
   transition: box-shadow .15s, transform .12s !important;
+  cursor: crosshair !important;
 }
-.fn-handle-out:hover { transform: scale(1.3) !important; box-shadow: 0 0 0 3px rgba(20,184,166,.5) !important; }
+.fn-handle-out:hover {
+  transform: scale(1.45) !important;
+  box-shadow: 0 0 0 4px rgba(20,184,166,.55) !important;
+}
 
-.fn-handle-true    { background: #10b981 !important; box-shadow: 0 0 0 2px rgba(16,185,129,.4) !important; }
-.fn-handle-false   { background: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,.4) !important; }
-.fn-handle-success { background: #10b981 !important; box-shadow: 0 0 0 2px rgba(16,185,129,.4) !important; }
-.fn-handle-fail    { background: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,.4) !important; }
+/* Coloured output variants */
+.fn-handle-true    { background: #10b981 !important; box-shadow: 0 0 0 2.5px rgba(16,185,129,.45) !important; }
+.fn-handle-false   { background: #ef4444 !important; box-shadow: 0 0 0 2.5px rgba(239,68,68,.45) !important; }
+.fn-handle-success { background: #10b981 !important; box-shadow: 0 0 0 2.5px rgba(16,185,129,.45) !important; }
+.fn-handle-fail    { background: #ef4444 !important; box-shadow: 0 0 0 2.5px rgba(239,68,68,.45) !important; }
+
+/* Pulse on node hover to guide user toward handles */
+.fn-canvas .fn-node:hover .fn-handle-in,
+.fn-canvas .fn-node:hover .fn-handle-out {
+  animation: handle-pulse 1.1s ease-in-out infinite !important;
+}
+@keyframes handle-pulse {
+  0%, 100% { box-shadow: 0 0 0 2.5px rgba(20,184,166,.45); }
+  50%       { box-shadow: 0 0 0 5px rgba(20,184,166,.2); }
+}
 
 /* ── Edge delete button ─────────────────────────────────── */
 .fn-edge-delete-btn {
