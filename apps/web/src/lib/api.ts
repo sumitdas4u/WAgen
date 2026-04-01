@@ -1504,6 +1504,14 @@ export interface LeadConversation extends Conversation {
 export type ContactType = "lead" | "feedback" | "complaint" | "other";
 export type ContactSourceType = "manual" | "import" | "web" | "qr" | "api";
 
+export interface ContactFieldValue {
+  field_id: string;
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  value: string | null;
+}
+
 export interface ContactRecord {
   id: string;
   display_name: string | null;
@@ -1518,6 +1526,7 @@ export interface ContactRecord {
   linked_conversation_id: string | null;
   created_at: string;
   updated_at: string;
+  custom_field_values: ContactFieldValue[];
 }
 
 export interface ContactImportResult {
@@ -1561,6 +1570,7 @@ export function createContact(
     orderDate?: string;
     sourceId?: string;
     sourceUrl?: string;
+    customFields?: Record<string, string>;
   }
 ) {
   return apiRequest<{ contact: ContactRecord }>("/api/contacts", {
@@ -1568,6 +1578,10 @@ export function createContact(
     token,
     body: JSON.stringify(payload)
   });
+}
+
+export function fetchContactByConversation(token: string, conversationId: string) {
+  return apiRequest<{ contact: ContactRecord }>(`/api/contacts/by-conversation/${conversationId}`, { token });
 }
 
 export function importContactsWorkbook(token: string, file: File) {
@@ -1959,4 +1973,74 @@ export function updateContactField(
 
 export function deleteContactField(token: string, fieldId: string) {
   return apiRequest<void>(`/api/contact-fields/${fieldId}`, { method: "DELETE", token });
+}
+
+// ── Contact Segments ──────────────────────────────────────────────────────────
+
+export type SegmentFilterOp =
+  | "is"
+  | "is_not"
+  | "contains"
+  | "not_contains"
+  | "before"
+  | "after"
+  | "is_empty"
+  | "is_not_empty";
+
+export interface SegmentFilter {
+  field: string;
+  op: SegmentFilterOp;
+  value: string;
+}
+
+export interface ContactSegment {
+  id: string;
+  user_id: string;
+  name: string;
+  filters: SegmentFilter[];
+  created_at: string;
+  updated_at: string;
+}
+
+export function listContactSegments(token: string) {
+  return apiRequest<{ segments: ContactSegment[] }>("/api/contact-segments", { token });
+}
+
+export function createContactSegment(
+  token: string,
+  payload: { name: string; filters: SegmentFilter[] }
+) {
+  return apiRequest<{ segment: ContactSegment }>("/api/contact-segments", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateContactSegment(
+  token: string,
+  segmentId: string,
+  patch: { name?: string; filters?: SegmentFilter[] }
+) {
+  return apiRequest<{ segment: ContactSegment }>(`/api/contact-segments/${segmentId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteContactSegment(token: string, segmentId: string) {
+  return apiRequest<void>(`/api/contact-segments/${segmentId}`, { method: "DELETE", token });
+}
+
+export function fetchSegmentContacts(token: string, segmentId: string) {
+  return apiRequest<{ contacts: ContactRecord[] }>(`/api/contact-segments/${segmentId}/contacts`, { token });
+}
+
+export function previewSegmentContacts(token: string, filters: SegmentFilter[]) {
+  return apiRequest<{ contacts: ContactRecord[]; count: number }>("/api/contact-segments/preview", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ filters })
+  });
 }

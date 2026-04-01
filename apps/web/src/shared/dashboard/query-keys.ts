@@ -9,6 +9,7 @@ const dashboardKnowledgeRoot = ["dashboard", "studio", "knowledge"] as const;
 const dashboardBillingRoot = ["dashboard", "billing"] as const;
 const dashboardTemplatesRoot = ["dashboard", "templates"] as const;
 const dashboardContactFieldsRoot = ["dashboard", "contact-fields"] as const;
+const dashboardContactSegmentsRoot = ["dashboard", "contact-segments"] as const;
 
 export const dashboardQueryKeys = {
   bootstrap: dashboardBootstrapRoot,
@@ -37,5 +38,9 @@ export const dashboardQueryKeys = {
   templatesRoot: dashboardTemplatesRoot,
   templates: [...dashboardTemplatesRoot, "list"] as const,
   contactFieldsRoot: dashboardContactFieldsRoot,
-  contactFields: [...dashboardContactFieldsRoot, "list"] as const
+  contactFields: [...dashboardContactFieldsRoot, "list"] as const,
+  contactSegmentsRoot: dashboardContactSegmentsRoot,
+  contactSegments: [...dashboardContactSegmentsRoot, "list"] as const,
+  segmentContacts: (segmentId: string) => [...dashboardContactSegmentsRoot, "contacts", segmentId] as const,
+  contactByConversation: (conversationId: string) => [...dashboardContactFieldsRoot, "by-conversation", conversationId] as const
 };

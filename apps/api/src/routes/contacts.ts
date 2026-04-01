@@ -4,6 +4,7 @@ import {
   createManualContact,
   generateContactsExportWorkbook,
   generateContactsTemplateWorkbook,
+  getContactByConversationId,
   importContactsWorkbook,
   listContacts
 } from "../services/contacts-service.js";
@@ -26,7 +27,8 @@ const CreateContactBodySchema = z.object({
   tags: z.array(z.string().trim().min(1).max(80)).max(24).optional(),
   orderDate: z.string().trim().optional(),
   sourceId: z.string().trim().optional(),
-  sourceUrl: z.string().trim().optional()
+  sourceUrl: z.string().trim().optional(),
+  customFields: z.record(z.string(), z.string()).optional()
 });
 
 const ExportContactsBodySchema = z.object({
@@ -67,7 +69,8 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
           tags: parsed.data.tags,
           orderDate: parsed.data.orderDate,
           sourceId: parsed.data.sourceId,
-          sourceUrl: parsed.data.sourceUrl
+          sourceUrl: parsed.data.sourceUrl,
+          customFields: parsed.data.customFields
         });
         return reply.status(201).send({ contact });
       } catch (error) {
@@ -111,6 +114,17 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
       reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       reply.header("Content-Disposition", `attachment; filename="${filename}"`);
       return reply.send(content);
+    }
+  );
+
+  fastify.get(
+    "/api/contacts/by-conversation/:conversationId",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const contact = await getContactByConversationId(request.authUser.userId, conversationId);
+      if (!contact) return reply.status(404).send({ error: "No contact found." });
+      return { contact };
     }
   );
 

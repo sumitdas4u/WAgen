@@ -5096,6 +5096,334 @@ textarea {
   color: var(--ink);
 }
 
+/* ── Contacts tab bar ──────────────────────────────────────── */
+
+.contacts-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e6edf6;
+  margin-bottom: 1.2rem;
+}
+
+.contacts-tab {
+  padding: 0.65rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #637a99;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.contacts-tab:hover {
+  color: #2d4a78;
+}
+
+.contacts-tab.active {
+  color: #1a3a6e;
+  border-bottom-color: #2557a0;
+}
+
+/* ── Custom field divider in form ──────────────────────────── */
+
+.contacts-form-custom-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.contacts-form-custom-divider span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #8faacb;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.contacts-form-custom-divider::before,
+.contacts-form-custom-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e6edf6;
+}
+
+/* ── Segments list ─────────────────────────────────────────── */
+
+.segments-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 4rem 2rem;
+  color: #637a99;
+  text-align: center;
+}
+
+.segments-empty p {
+  margin: 0;
+  max-width: 400px;
+}
+
+.segments-empty .primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.segments-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.segment-card {
+  border: 1px solid #dde6f2;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.segment-card-expanded {
+  border-color: #b8cde8;
+}
+
+.segment-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+}
+
+.segment-card-info {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.segment-card-info strong {
+  font-size: 0.95rem;
+  color: #162d4b;
+}
+
+.segment-card-info small {
+  font-size: 0.76rem;
+  color: #8faacb;
+}
+
+.segment-card-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.segment-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  background: #edf3fb;
+  color: #3a5a8a;
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.segment-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.segment-card-contacts {
+  border-top: 1px solid #e6edf6;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+}
+
+/* ── Segment modal ─────────────────────────────────────────── */
+
+.segment-modal {
+  max-width: 720px;
+}
+
+.segment-modal-body {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.segment-name-label {
+  display: grid;
+  gap: 0.36rem;
+  color: #4c6280;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.segment-name-label input {
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid #cfd9e7;
+  padding: 0 0.72rem;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.segment-filters-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.segment-filters-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.segment-filters-head strong {
+  font-size: 0.85rem;
+  color: #4c6280;
+  font-weight: 700;
+}
+
+.segment-add-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.segment-add-filter-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.segment-no-filters {
+  color: #8faacb;
+  font-size: 0.84rem;
+  margin: 0;
+  padding: 0.75rem 0;
+}
+
+.segment-filter-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.segment-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.segment-filter-connector {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #8faacb;
+  min-width: 30px;
+  text-align: center;
+}
+
+.segment-filter-field,
+.segment-filter-op,
+.segment-filter-value {
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #cfd9e7;
+  padding: 0 0.6rem;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+
+.segment-filter-field { min-width: 160px; }
+.segment-filter-op { min-width: 140px; }
+.segment-filter-value { min-width: 160px; flex: 1; }
+
+.segment-filter-remove {
+  padding: 0.3rem;
+  color: #e53e3e;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.segment-filter-remove:hover { opacity: 1; }
+
+.segment-preview-btn {
+  font-size: 0.82rem;
+  color: #2557a0;
+  justify-self: start;
+}
+
+.segment-preview-result {
+  border: 1px solid #dde6f2;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.segment-preview-result strong {
+  font-size: 0.84rem;
+  color: #162d4b;
+}
+
+.segment-preview-contact {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.83rem;
+  color: #38526f;
+}
+
+.segment-preview-phone {
+  color: #8faacb;
+  font-size: 0.78rem;
+  margin-left: auto;
+}
+
+.segment-preview-more {
+  font-size: 0.78rem;
+  color: #8faacb;
+  margin: 0;
+}
+
+/* ── Inbox contact panel: divider ──────────────────────────── */
+
+.inbox-detail-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0 0.1rem;
+}
+
+.inbox-detail-divider span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9db3cc;
+  white-space: nowrap;
+}
+
+.inbox-detail-divider::before,
+.inbox-detail-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e6edf6;
+}
+
 .conversation-list,
 .chat-panel,
 .settings-panel {

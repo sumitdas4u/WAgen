@@ -41,6 +41,14 @@ export interface Conversation {
   last_ai_reply_at: string | null;
 }
 
+export interface ContactFieldValue {
+  field_id: string;
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  value: string | null;
+}
+
 export interface Contact {
   id: string;
   user_id: string;
@@ -56,4 +64,5 @@ export interface Contact {
   linked_conversation_id: string | null;
   created_at: string;
   updated_at: string;
+  custom_field_values: ContactFieldValue[];
 }

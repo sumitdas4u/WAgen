@@ -1,7 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Conversation, ConversationMessage } from "../../../lib/api";
+import { fetchContactByConversation } from "../../../lib/api";
 import { normalizeMessage, renderMessage } from "./message-renderer";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
@@ -388,6 +389,13 @@ export function Component() {
   const conversationsQuery = useInboxConversationsQuery(token, { folder: "all", search });
   const messagesQuery = useInboxMessagesQuery(token, selectedConversationId);
   const publishedFlowsQuery = useInboxPublishedFlowsQuery(token);
+  const contactQuery = useQuery({
+    queryKey: selectedConversationId ? dashboardQueryKeys.contactByConversation(selectedConversationId) : ["disabled"],
+    queryFn: () => (selectedConversationId ? fetchContactByConversation(token, selectedConversationId).then((r) => r.contact) : Promise.resolve(null)),
+    enabled: Boolean(selectedConversationId),
+    staleTime: 30_000
+  });
+  const linkedContact = contactQuery.data ?? null;
 
   // ─── Derived data ─────────────────────────────────────────────────────────
   const allConversations = useMemo(() => sortConversationsByRecent(conversationsQuery.data ?? []), [conversationsQuery.data]);
@@ -1236,10 +1244,45 @@ export function Component() {
                         <dl className="inbox-detail-list">
                           <div><dt>Name</dt><dd>{getConversationDisplayName(selectedConversation)}</dd></div>
                           <div><dt>Phone</dt><dd>{formatPhone(selectedConversation.contact_phone || selectedConversation.phone_number)}</dd></div>
-                          <div><dt>Email</dt><dd>{selectedConversation.contact_email || "Not captured yet"}</dd></div>
+                          <div><dt>Email</dt><dd>{selectedConversation.contact_email || linkedContact?.email || "Not captured yet"}</dd></div>
+                          <div><dt>Type</dt><dd>{linkedContact?.contact_type ?? selectedConversation.lead_kind}</dd></div>
+                          {linkedContact?.tags && linkedContact.tags.length > 0 && (
+                            <div>
+                              <dt>Tags</dt>
+                              <dd>
+                                <div className="inbox-tag-cloud" style={{ marginTop: 2 }}>
+                                  {linkedContact.tags.map((tag) => <span key={tag} className="inbox-tag">{tag}</span>)}
+                                </div>
+                              </dd>
+                            </div>
+                          )}
+                          {linkedContact?.order_date && (
+                            <div><dt>Order Date</dt><dd>{new Date(linkedContact.order_date).toLocaleDateString()}</dd></div>
+                          )}
                           <div><dt>Owner</dt><dd>{selectedConversation.assigned_agent_name || "Unassigned"}</dd></div>
                           <div><dt>Last touch</dt><dd>{formatDateTime(selectedConversation.last_message_at)}</dd></div>
                           <div><dt>Connected number</dt><dd>{selectedConversation.channel_linked_number || "Workspace default"}</dd></div>
+                          {linkedContact?.source_type && (
+                            <div><dt>Source</dt><dd>{linkedContact.source_type}</dd></div>
+                          )}
+                          {/* Custom fields */}
+                          {linkedContact?.custom_field_values && linkedContact.custom_field_values.length > 0 && (
+                            <>
+                              <div className="inbox-detail-divider"><span>Custom Fields</span></div>
+                              {linkedContact.custom_field_values.map((fv) => (
+                                <div key={fv.field_id}>
+                                  <dt>{fv.field_label}</dt>
+                                  <dd>
+                                    {fv.field_type === "SWITCH"
+                                      ? (fv.value === "true" ? "Yes" : fv.value === "false" ? "No" : "-")
+                                      : fv.field_type === "DATE" && fv.value
+                                        ? new Date(fv.value).toLocaleDateString()
+                                        : fv.value || "-"}
+                                  </dd>
+                                </div>
+                              ))}
+                            </>
+                          )}
                         </dl>
                       </section>
 

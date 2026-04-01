@@ -32,6 +32,7 @@ export function createManualContact(
     orderDate?: string;
     sourceId?: string;
     sourceUrl?: string;
+    customFields?: Record<string, string>;
   }
 ): Promise<ContactRecord> {
   return createContact(token, payload).then((response) => response.contact);

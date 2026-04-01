@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import * as XLSX from "xlsx";
 import { pool, withTransaction } from "../db/pool.js";
-import type { Contact, ContactSourceType, Conversation, ConversationKind } from "../types/models.js";
+import type { Contact, ContactFieldValue, ContactSourceType, Conversation, ConversationKind } from "../types/models.js";
 
 const CONTACT_TYPE_VALUES = new Set<ConversationKind>(["lead", "feedback", "complaint", "other"]);
 const CONTACT_SOURCE_VALUES = new Set<ContactSourceType>(["manual", "import", "web", "qr", "api"]);
@@ -50,6 +50,7 @@ export interface CreateManualContactInput {
   orderDate?: string | null;
   sourceId?: string | null;
   sourceUrl?: string | null;
+  customFields?: Record<string, string>;
 }
 
 export interface ContactImportError {
@@ -175,6 +176,48 @@ function getContactTypeWeight(value: ConversationKind): number {
       return 2;
     default:
       return 1;
+  }
+}
+
+async function loadFieldValues(db: DbExecutor, contactIds: string[]): Promise<Map<string, ContactFieldValue[]>> {
+  if (contactIds.length === 0) return new Map();
+  const result = await db.query<{ contact_id: string; field_id: string; field_name: string; field_label: string; field_type: string; value: string | null }>(
+    `SELECT cfv.contact_id, cfv.field_id, cf.name AS field_name, cf.label AS field_label, cf.field_type, cfv.value
+     FROM contact_field_values cfv
+     JOIN contact_fields cf ON cf.id = cfv.field_id
+     WHERE cfv.contact_id = ANY($1::uuid[])
+     ORDER BY cf.sort_order ASC, cf.created_at ASC`,
+    [contactIds]
+  );
+  const map = new Map<string, ContactFieldValue[]>();
+  for (const row of result.rows) {
+    if (!map.has(row.contact_id)) map.set(row.contact_id, []);
+    map.get(row.contact_id)!.push({ field_id: row.field_id, field_name: row.field_name, field_label: row.field_label, field_type: row.field_type, value: row.value });
+  }
+  return map;
+}
+
+async function saveFieldValues(db: DbExecutor, contactId: string, customFields: Record<string, string>): Promise<void> {
+  const entries = Object.entries(customFields).filter(([, v]) => v !== undefined && v !== null);
+  if (entries.length === 0) return;
+
+  // Resolve field names to IDs in a single query
+  const names = entries.map(([k]) => k);
+  const fieldRows = await db.query<{ id: string; name: string }>(
+    `SELECT id, name FROM contact_fields WHERE name = ANY($1::text[])`,
+    [names]
+  );
+  const nameToId = new Map(fieldRows.rows.map((r) => [r.name, r.id]));
+
+  for (const [name, value] of entries) {
+    const fieldId = nameToId.get(name);
+    if (!fieldId) continue;
+    await db.query(
+      `INSERT INTO contact_field_values (contact_id, field_id, value)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (contact_id, field_id) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [contactId, fieldId, value ?? null]
+    );
   }
 }
 
@@ -507,7 +550,9 @@ export async function listContacts(userId: string, filters: ContactsListFilters 
     values
   );
 
-  return result.rows;
+  const contacts = result.rows;
+  const fieldValuesMap = await loadFieldValues(pool, contacts.map((c) => c.id));
+  return contacts.map((c) => ({ ...c, custom_field_values: fieldValuesMap.get(c.id) ?? [] }));
 }
 
 export async function createManualContact(userId: string, input: CreateManualContactInput): Promise<Contact> {
@@ -517,7 +562,7 @@ export async function createManualContact(userId: string, input: CreateManualCon
   }
 
   const result = await withTransaction(async (client) => {
-    return upsertContact(
+    const upsertResult = await upsertContact(
       client,
       {
         userId,
@@ -533,9 +578,14 @@ export async function createManualContact(userId: string, input: CreateManualCon
       },
       { rejectOnDuplicate: true }
     );
+    if (input.customFields && Object.keys(input.customFields).length > 0) {
+      await saveFieldValues(client, upsertResult.contact.id, input.customFields);
+    }
+    return upsertResult;
   });
 
-  return result.contact;
+  const fieldValuesMap = await loadFieldValues(pool, [result.contact.id]);
+  return { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
 }
 
 export async function syncConversationContact(input: {
@@ -790,6 +840,34 @@ export async function generateContactsExportWorkbook(input: {
     filename: `contacts-export-${stamp}.xlsx`,
     content
   };
+}
+
+export async function getContactByConversationId(userId: string, conversationId: string): Promise<Contact | null> {
+  const result = await pool.query<Contact>(
+    `SELECT c.*
+     FROM contacts c
+     WHERE c.user_id = $1 AND c.linked_conversation_id = $2
+     LIMIT 1`,
+    [userId, conversationId]
+  );
+  if (!result.rows[0]) {
+    // Fallback: find by phone number of the conversation
+    const conv = await pool.query<{ phone_number: string }>(
+      `SELECT phone_number FROM conversations WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [conversationId, userId]
+    );
+    if (!conv.rows[0]) return null;
+    const byPhone = await pool.query<Contact>(
+      `SELECT c.* FROM contacts c WHERE c.user_id = $1 AND c.phone_number = $2 LIMIT 1`,
+      [userId, conv.rows[0].phone_number]
+    );
+    if (!byPhone.rows[0]) return null;
+    const fieldMap = await loadFieldValues(pool, [byPhone.rows[0].id]);
+    return { ...byPhone.rows[0], custom_field_values: fieldMap.get(byPhone.rows[0].id) ?? [] };
+  }
+  const contact = result.rows[0];
+  const fieldMap = await loadFieldValues(pool, [contact.id]);
+  return { ...contact, custom_field_values: fieldMap.get(contact.id) ?? [] };
 }
 
 export function extractCapturedProfileDetails(message: string): { displayName: string | null; phoneNumber: string | null; email: string | null } {

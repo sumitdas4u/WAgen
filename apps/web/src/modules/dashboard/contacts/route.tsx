@@ -1,6 +1,22 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import type {
+  ContactField,
+  ContactRecord,
+  ContactSegment,
+  SegmentFilter,
+  SegmentFilterOp
+} from "../../../lib/api";
+import {
+  createContactSegment,
+  deleteContactSegment,
+  fetchSegmentContacts,
+  listContactFields,
+  listContactSegments,
+  previewSegmentContacts,
+  updateContactSegment
+} from "../../../lib/api";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
@@ -15,8 +31,11 @@ import {
 } from "./api";
 import { buildContactsQueryOptions, useContactsQuery } from "./queries";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 type ContactTypeFilter = "all" | ContactType;
 type ContactSourceFilter = "all" | ContactSourceType;
+type TabId = "contacts" | "segments";
 
 type ContactFormState = {
   name: string;
@@ -27,6 +46,7 @@ type ContactFormState = {
   orderDate: string;
   sourceId: string;
   sourceUrl: string;
+  customFields: Record<string, string>;
 };
 
 const DEFAULT_FORM_STATE: ContactFormState = {
@@ -37,7 +57,8 @@ const DEFAULT_FORM_STATE: ContactFormState = {
   tags: "",
   orderDate: "",
   sourceId: "",
-  sourceUrl: ""
+  sourceUrl: "",
+  customFields: {}
 };
 
 const CONTACT_TYPE_OPTIONS: Array<{ value: ContactTypeFilter; label: string }> = [
@@ -57,6 +78,30 @@ const CONTACT_SOURCE_OPTIONS: Array<{ value: ContactSourceFilter; label: string 
   { value: "api", label: "WhatsApp API" }
 ];
 
+const SEGMENT_FIELD_OPTIONS: Array<{ value: string; label: string; isDate?: boolean }> = [
+  { value: "display_name", label: "Name" },
+  { value: "phone_number", label: "Phone" },
+  { value: "email", label: "Email" },
+  { value: "contact_type", label: "Type" },
+  { value: "source_type", label: "Source" },
+  { value: "tags", label: "Tags" },
+  { value: "created_at", label: "Created Date", isDate: true },
+  { value: "order_date", label: "Order Date", isDate: true }
+];
+
+const SEGMENT_OP_OPTIONS: Array<{ value: SegmentFilterOp; label: string; onlyDate?: boolean; noValue?: boolean }> = [
+  { value: "is", label: "is" },
+  { value: "is_not", label: "is not" },
+  { value: "contains", label: "contains" },
+  { value: "not_contains", label: "does not contain" },
+  { value: "before", label: "before", onlyDate: true },
+  { value: "after", label: "after", onlyDate: true },
+  { value: "is_empty", label: "is empty", noValue: true },
+  { value: "is_not_empty", label: "is not empty", noValue: true }
+];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function normalizeTags(value: string): string[] {
   return Array.from(
     new Set(
@@ -74,59 +119,27 @@ function formatPhone(value: string): string {
 }
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return "-";
-  }
-  return new Date(timestamp).toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  });
+  if (!Number.isFinite(timestamp)) return "-";
+  return new Date(timestamp).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function formatDateTime(value: string | null | undefined): string {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return "-";
-  }
+  if (!Number.isFinite(timestamp)) return "-";
   return new Date(timestamp).toLocaleString();
 }
 
 function getTypeLabel(value: ContactType): string {
-  switch (value) {
-    case "feedback":
-      return "Feedback";
-    case "complaint":
-      return "Complaint";
-    case "other":
-      return "Other";
-    default:
-      return "Lead";
-  }
+  const map: Record<ContactType, string> = { feedback: "Feedback", complaint: "Complaint", other: "Other", lead: "Lead" };
+  return map[value] ?? "Lead";
 }
 
 function getSourceLabel(value: ContactSourceType): string {
-  switch (value) {
-    case "manual":
-      return "Manual";
-    case "import":
-      return "Import";
-    case "web":
-      return "Website";
-    case "qr":
-      return "WhatsApp QR";
-    case "api":
-      return "WhatsApp API";
-    default:
-      return value;
-  }
+  const map: Record<ContactSourceType, string> = { manual: "Manual", import: "Import", web: "Website", qr: "WhatsApp QR", api: "WhatsApp API" };
+  return map[value] ?? value;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -140,17 +153,14 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function canRenderUrl(value: string | null): boolean {
-  if (!value) {
-    return false;
-  }
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+function renderFieldValue(fieldType: string, value: string | null): string {
+  if (!value) return "-";
+  if (fieldType === "SWITCH") return value === "true" ? "Yes" : "No";
+  if (fieldType === "DATE") return formatDate(value);
+  return value;
 }
+
+// ─── Icons ───────────────────────────────────────────────────────────────────
 
 function FilterIcon() {
   return (
@@ -193,10 +203,277 @@ function PlusIcon() {
   );
 }
 
-export function Component() {
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="14" height="14">
+      <path d="M4 5h12M8 5V3h4v2M6 5l1 11h6l1-11" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+// ─── Segment Filter Builder ───────────────────────────────────────────────────
+
+function SegmentFilterRow({
+  filter,
+  index,
+  customFields,
+  onChange,
+  onRemove
+}: {
+  filter: SegmentFilter;
+  index: number;
+  customFields: ContactField[];
+  onChange: (index: number, updated: SegmentFilter) => void;
+  onRemove: (index: number) => void;
+}) {
+  const allFieldOptions = [
+    ...SEGMENT_FIELD_OPTIONS,
+    ...customFields.filter((f) => f.is_active).map((f) => ({
+      value: `custom:${f.name}`,
+      label: f.label,
+      isDate: f.field_type === "DATE"
+    }))
+  ];
+
+  const selectedFieldOption = allFieldOptions.find((o) => o.value === filter.field);
+  const isDateField = selectedFieldOption?.isDate ?? false;
+
+  const availableOps = SEGMENT_OP_OPTIONS.filter((op) => {
+    if (op.onlyDate && !isDateField) return false;
+    return true;
+  });
+
+  const selectedOp = SEGMENT_OP_OPTIONS.find((o) => o.value === filter.op);
+  const showValue = !selectedOp?.noValue;
+
+  const handleFieldChange = (field: string) => {
+    const newIsDate = allFieldOptions.find((o) => o.value === field)?.isDate ?? false;
+    const currentOpIsDateOnly = SEGMENT_OP_OPTIONS.find((o) => o.value === filter.op)?.onlyDate ?? false;
+    const newOp = currentOpIsDateOnly && !newIsDate ? "is" : filter.op;
+    onChange(index, { ...filter, field, op: newOp as SegmentFilterOp });
+  };
+
+  return (
+    <div className="segment-filter-row">
+      {index > 0 && <span className="segment-filter-connector">AND</span>}
+      <select
+        value={filter.field}
+        onChange={(e) => handleFieldChange(e.target.value)}
+        className="segment-filter-field"
+      >
+        <optgroup label="Standard Fields">
+          {SEGMENT_FIELD_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </optgroup>
+        {customFields.filter((f) => f.is_active).length > 0 && (
+          <optgroup label="Custom Fields">
+            {customFields.filter((f) => f.is_active).map((f) => (
+              <option key={f.id} value={`custom:${f.name}`}>{f.label}</option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+
+      <select
+        value={filter.op}
+        onChange={(e) => onChange(index, { ...filter, op: e.target.value as SegmentFilterOp })}
+        className="segment-filter-op"
+      >
+        {availableOps.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+
+      {showValue && (
+        isDateField ? (
+          <input
+            type="date"
+            value={filter.value}
+            onChange={(e) => onChange(index, { ...filter, value: e.target.value })}
+            className="segment-filter-value"
+          />
+        ) : (
+          <input
+            type="text"
+            value={filter.value}
+            onChange={(e) => onChange(index, { ...filter, value: e.target.value })}
+            placeholder="Value"
+            className="segment-filter-value"
+          />
+        )
+      )}
+
+      <button type="button" className="ghost-btn segment-filter-remove" onClick={() => onRemove(index)}>
+        <TrashIcon />
+      </button>
+    </div>
+  );
+}
+
+// ─── Segment Modal ────────────────────────────────────────────────────────────
+
+function SegmentModal({
+  token,
+  customFields,
+  initial,
+  onClose,
+  onSaved
+}: {
+  token: string;
+  customFields: ContactField[];
+  initial?: ContactSegment;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [filters, setFilters] = useState<SegmentFilter[]>(
+    initial?.filters.length ? initial.filters : [{ field: "created_at", op: "after", value: "" }]
+  );
+  const [previewContacts, setPreviewContacts] = useState<ContactRecord[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const addFilter = () => {
+    setFilters((prev) => [...prev, { field: "display_name", op: "contains", value: "" }]);
+  };
+
+  const updateFilter = (index: number, updated: SegmentFilter) => {
+    setFilters((prev) => prev.map((f, i) => (i === index ? updated : f)));
+    setPreviewContacts(null);
+  };
+
+  const removeFilter = (index: number) => {
+    setFilters((prev) => prev.filter((_, i) => i !== index));
+    setPreviewContacts(null);
+  };
+
+  const handlePreview = async () => {
+    setPreviewLoading(true);
+    setError(null);
+    try {
+      const result = await previewSegmentContacts(token, filters);
+      setPreviewContacts(result.contacts);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) { setError("Segment name is required."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      if (initial) {
+        await updateContactSegment(token, initial.id, { name, filters });
+      } else {
+        await createContactSegment(token, { name, filters });
+      }
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="kb-modal-backdrop" onClick={onClose}>
+      <div className="kb-modal kb-modal-wide segment-modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{initial ? "Edit Segment" : "Create Segment"}</h3>
+
+        <div className="segment-modal-body">
+          <label className="segment-name-label">
+            Segment Name
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. New leads this month"
+              autoFocus
+            />
+          </label>
+
+          <div className="segment-filters-section">
+            <div className="segment-filters-head">
+              <strong>Filters</strong>
+              <button type="button" className="ghost-btn segment-add-filter-btn" onClick={addFilter}>
+                <PlusIcon /> Add Condition
+              </button>
+            </div>
+
+            {filters.length === 0 ? (
+              <p className="segment-no-filters">No filters — segment will include all contacts.</p>
+            ) : (
+              <div className="segment-filter-list">
+                {filters.map((filter, i) => (
+                  <SegmentFilterRow
+                    key={i}
+                    filter={filter}
+                    index={i}
+                    customFields={customFields}
+                    onChange={updateFilter}
+                    onRemove={removeFilter}
+                  />
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="ghost-btn segment-preview-btn"
+              onClick={() => void handlePreview()}
+              disabled={previewLoading}
+            >
+              {previewLoading ? "Loading..." : "Preview Matching Contacts"}
+            </button>
+
+            {previewContacts !== null && (
+              <div className="segment-preview-result">
+                <strong>{previewContacts.length} contact{previewContacts.length !== 1 ? "s" : ""} match</strong>
+                {previewContacts.slice(0, 5).map((c) => (
+                  <div key={c.id} className="segment-preview-contact">
+                    <span className="contacts-avatar" style={{ width: 26, height: 26, fontSize: "0.75rem" }}>
+                      {(c.display_name || "U").slice(0, 1).toUpperCase()}
+                    </span>
+                    <span>{c.display_name || "Unknown"}</span>
+                    <span className="segment-preview-phone">{formatPhone(c.phone_number)}</span>
+                  </div>
+                ))}
+                {previewContacts.length > 5 && (
+                  <p className="segment-preview-more">+{previewContacts.length - 5} more</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {error && <p className="error-text">{error}</p>}
+
+        <div className="kb-modal-actions">
+          <button type="button" className="ghost-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="primary-btn" disabled={saving} onClick={() => void handleSave()}>
+            {saving ? "Saving..." : initial ? "Update Segment" : "Create Segment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Contacts Tab ─────────────────────────────────────────────────────────────
+
+function ContactsTab({
+  token,
+  customFields
+}: {
+  token: string;
+  customFields: ContactField[];
+}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { token } = useDashboardShell();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -230,53 +507,36 @@ export function Component() {
   const allVisibleSelected = contacts.length > 0 && selectedCount === contacts.length;
   const someVisibleSelected = selectedCount > 0 && selectedCount < contacts.length;
 
+  const activeCustomFields = customFields.filter((f) => f.is_active);
+
   useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = someVisibleSelected;
-    }
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someVisibleSelected;
   }, [someVisibleSelected]);
 
   useEffect(() => {
-    setSelectedIds((current) => current.filter((id) => contacts.some((contact) => contact.id === id)));
+    setSelectedIds((current) => current.filter((id) => contacts.some((c) => c.id === id)));
   }, [contacts]);
 
   useEffect(() => {
     const closeMenus = (event: MouseEvent) => {
-      if (exportMenuRef.current && event.target instanceof Node && !exportMenuRef.current.contains(event.target)) {
-        setShowExportMenu(false);
-      }
-      if (importMenuRef.current && event.target instanceof Node && !importMenuRef.current.contains(event.target)) {
-        setShowImportMenu(false);
-      }
+      if (exportMenuRef.current && event.target instanceof Node && !exportMenuRef.current.contains(event.target)) setShowExportMenu(false);
+      if (importMenuRef.current && event.target instanceof Node && !importMenuRef.current.contains(event.target)) setShowImportMenu(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setShowExportMenu(false);
-        setShowImportMenu(false);
-        setShowAddModal(false);
-      }
+      if (event.key === "Escape") { setShowExportMenu(false); setShowImportMenu(false); setShowAddModal(false); }
     };
     window.addEventListener("mousedown", closeMenus);
     window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.removeEventListener("mousedown", closeMenus);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
+    return () => { window.removeEventListener("mousedown", closeMenus); window.removeEventListener("keydown", closeOnEscape); };
   }, []);
 
   const updateSearchParam = (name: string, value: string) => {
     const next = new URLSearchParams(searchParams);
-    if (!value || value === "all") {
-      next.delete(name);
-    } else {
-      next.set(name, value);
-    }
+    if (!value || value === "all") next.delete(name); else next.set(name, value);
     setSearchParams(next, { replace: true });
   };
 
-  const clearFilters = () => {
-    setSearchParams(new URLSearchParams(), { replace: true });
-  };
+  const clearFilters = () => setSearchParams(new URLSearchParams(), { replace: true });
 
   const invalidateContacts = async () => {
     await Promise.all([
@@ -289,7 +549,8 @@ export function Component() {
   const openAddModal = () => {
     setShowExportMenu(false);
     setShowImportMenu(false);
-    setFormState(DEFAULT_FORM_STATE);
+    const customFields: Record<string, string> = {};
+    setFormState({ ...DEFAULT_FORM_STATE, customFields });
     setShowAddModal(true);
     setInfo(null);
     setError(null);
@@ -308,11 +569,13 @@ export function Component() {
         tags: normalizeTags(formState.tags),
         orderDate: formState.orderDate || undefined,
         sourceId: formState.sourceId || undefined,
-        sourceUrl: formState.sourceUrl || undefined
+        sourceUrl: formState.sourceUrl || undefined,
+        customFields: Object.fromEntries(
+          Object.entries(formState.customFields).filter(([, v]) => v.trim())
+        )
       });
       await invalidateContacts();
       setShowAddModal(false);
-      setFormState(DEFAULT_FORM_STATE);
       setInfo("Contact added.");
     } catch (submitError) {
       setError((submitError as Error).message);
@@ -333,10 +596,7 @@ export function Component() {
   };
 
   const handleImportFile = async (file: File | null) => {
-    if (!file) {
-      return;
-    }
-
+    if (!file) return;
     setSubmitting(true);
     setError(null);
     setInfo(null);
@@ -350,9 +610,7 @@ export function Component() {
       setError((importError as Error).message);
     } finally {
       setSubmitting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -363,14 +621,7 @@ export function Component() {
       const payload =
         mode === "selected"
           ? { ids: selectedIds }
-          : {
-              filters: {
-                q: search || undefined,
-                type: typeFilter === "all" ? undefined : typeFilter,
-                source: sourceFilter === "all" ? undefined : sourceFilter,
-                limit: 1000
-              }
-            };
+          : { filters: { q: search || undefined, type: typeFilter === "all" ? undefined : typeFilter, source: sourceFilter === "all" ? undefined : sourceFilter, limit: 1000 } };
       const { blob, filename } = await exportContactsWorkbook(token, payload);
       downloadBlob(blob, filename);
     } catch (exportError) {
@@ -379,344 +630,532 @@ export function Component() {
   };
 
   const contactRows = useMemo(
-    () =>
-      contacts.map((contact) => ({
-        ...contact,
-        tagItems: [getTypeLabel(contact.contact_type), ...contact.tags]
-      })),
+    () => contacts.map((contact) => ({ ...contact, tagItems: [getTypeLabel(contact.contact_type), ...contact.tags] })),
     [contacts]
   );
 
+  const setCustomField = (name: string, value: string) => {
+    setFormState((current) => ({ ...current, customFields: { ...current.customFields, [name]: value } }));
+  };
+
   return (
-    <section className="finance-shell contacts-shell">
-      <article className="finance-panel contacts-panel">
-        {info ? <p className="info-text">{info}</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+    <>
+      {info ? <p className="info-text">{info}</p> : null}
+      {error ? <p className="error-text">{error}</p> : null}
 
-        <div className="contacts-toolbar">
-          <div className="contacts-toolbar-left">
-            <button
-              type="button"
-              className={showFilters ? "ghost-btn contacts-tool-btn active" : "ghost-btn contacts-tool-btn"}
-              onClick={() => setShowFilters((current) => !current)}
-            >
-              <FilterIcon />
-              <span>Filter</span>
-              {activeFilterCount > 0 ? <strong>{activeFilterCount}</strong> : null}
-            </button>
-          </div>
-
-          <div className="contacts-toolbar-right">
-            <label className="contacts-search">
-              <SearchIcon />
-              <input
-                value={search}
-                onChange={(event) => updateSearchParam("q", event.target.value)}
-                placeholder="Search contacts"
-              />
-            </label>
-
-            <div className="contacts-menu-wrap" ref={exportMenuRef}>
-              <button
-                type="button"
-                className="ghost-btn contacts-tool-btn"
-                onClick={() => {
-                  setShowImportMenu(false);
-                  setShowExportMenu((current) => !current);
-                }}
-              >
-                <DownloadIcon />
-                <span>Export</span>
-              </button>
-              {showExportMenu ? (
-                <div className="contacts-menu">
-                  <button type="button" disabled={selectedCount === 0} onClick={() => void handleExport("selected")}>
-                    Export selected {selectedCount > 0 ? `(${selectedCount})` : ""}
-                  </button>
-                  <button type="button" disabled={contacts.length === 0} onClick={() => void handleExport("filtered")}>
-                    Export all filtered
-                  </button>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="contacts-menu-wrap" ref={importMenuRef}>
-              <button
-                type="button"
-                className="ghost-btn contacts-tool-btn"
-                onClick={() => {
-                  setShowExportMenu(false);
-                  setShowImportMenu((current) => !current);
-                }}
-              >
-                <UploadIcon />
-                <span>Import</span>
-              </button>
-              {showImportMenu ? (
-                <div className="contacts-menu">
-                  <button type="button" onClick={() => void handleTemplateDownload()}>
-                    Download template
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowImportMenu(false);
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    Upload XLSX
-                  </button>
-                </div>
-              ) : null}
-            </div>
-
-            <button type="button" className="primary-btn contacts-add-btn" onClick={openAddModal}>
-              <PlusIcon />
-              <span>Add Contact</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx"
-              hidden
-              onChange={(event) => void handleImportFile(event.target.files?.[0] ?? null)}
-            />
-          </div>
+      <div className="contacts-toolbar">
+        <div className="contacts-toolbar-left">
+          <button
+            type="button"
+            className={showFilters ? "ghost-btn contacts-tool-btn active" : "ghost-btn contacts-tool-btn"}
+            onClick={() => setShowFilters((c) => !c)}
+          >
+            <FilterIcon />
+            <span>Filter</span>
+            {activeFilterCount > 0 ? <strong>{activeFilterCount}</strong> : null}
+          </button>
         </div>
 
-        {showFilters ? (
-          <div className="contacts-filter-bar">
-            <label>
-              Type
-              <select value={typeFilter} onChange={(event) => updateSearchParam("type", event.target.value)}>
-                {CONTACT_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Source
-              <select value={sourceFilter} onChange={(event) => updateSearchParam("source", event.target.value)}>
-                {CONTACT_SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" className="ghost-btn" onClick={clearFilters}>
-              Clear filters
+        <div className="contacts-toolbar-right">
+          <label className="contacts-search">
+            <SearchIcon />
+            <input value={search} onChange={(e) => updateSearchParam("q", e.target.value)} placeholder="Search contacts" />
+          </label>
+
+          <div className="contacts-menu-wrap" ref={exportMenuRef}>
+            <button
+              type="button"
+              className="ghost-btn contacts-tool-btn"
+              onClick={() => { setShowImportMenu(false); setShowExportMenu((c) => !c); }}
+            >
+              <DownloadIcon /><span>Export</span>
             </button>
+            {showExportMenu && (
+              <div className="contacts-menu">
+                <button type="button" disabled={selectedCount === 0} onClick={() => void handleExport("selected")}>
+                  Export selected {selectedCount > 0 ? `(${selectedCount})` : ""}
+                </button>
+                <button type="button" disabled={contacts.length === 0} onClick={() => void handleExport("filtered")}>
+                  Export all filtered
+                </button>
+              </div>
+            )}
           </div>
-        ) : null}
 
-        {importResult && importResult.errors.length > 0 ? (
-          <div className="contacts-import-summary">
-            <strong>Import issues</strong>
-            <ul>
-              {importResult.errors.slice(0, 6).map((item) => (
-                <li key={`${item.row}-${item.message}`}>Row {item.row}: {item.message}</li>
-              ))}
-            </ul>
+          <div className="contacts-menu-wrap" ref={importMenuRef}>
+            <button
+              type="button"
+              className="ghost-btn contacts-tool-btn"
+              onClick={() => { setShowExportMenu(false); setShowImportMenu((c) => !c); }}
+            >
+              <UploadIcon /><span>Import</span>
+            </button>
+            {showImportMenu && (
+              <div className="contacts-menu">
+                <button type="button" onClick={() => void handleTemplateDownload()}>Download template</button>
+                <button type="button" onClick={() => { setShowImportMenu(false); fileInputRef.current?.click(); }}>
+                  Upload XLSX
+                </button>
+              </div>
+            )}
           </div>
-        ) : null}
 
-        {contactsQuery.isLoading ? (
-          <p className="empty-note">Loading contacts...</p>
-        ) : contacts.length === 0 ? (
-          <p className="empty-note">
-            {activeFilterCount > 0 ? "No contacts match the current search or filters." : "No contacts added yet."}
-          </p>
-        ) : (
-          <div className="contacts-table-wrap">
-            <table className="contacts-table">
-              <thead>
-                <tr>
-                  <th>
+          <button type="button" className="primary-btn contacts-add-btn" onClick={openAddModal}>
+            <PlusIcon /><span>Add Contact</span>
+          </button>
+          <input ref={fileInputRef} type="file" accept=".xlsx" hidden onChange={(e) => void handleImportFile(e.target.files?.[0] ?? null)} />
+        </div>
+      </div>
+
+      {showFilters && (
+        <div className="contacts-filter-bar">
+          <label>
+            Type
+            <select value={typeFilter} onChange={(e) => updateSearchParam("type", e.target.value)}>
+              {CONTACT_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Source
+            <select value={sourceFilter} onChange={(e) => updateSearchParam("source", e.target.value)}>
+              {CONTACT_SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <button type="button" className="ghost-btn" onClick={clearFilters}>Clear filters</button>
+        </div>
+      )}
+
+      {importResult && importResult.errors.length > 0 && (
+        <div className="contacts-import-summary">
+          <strong>Import issues</strong>
+          <ul>
+            {importResult.errors.slice(0, 6).map((item) => (
+              <li key={`${item.row}-${item.message}`}>Row {item.row}: {item.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {contactsQuery.isLoading ? (
+        <p className="empty-note">Loading contacts...</p>
+      ) : contacts.length === 0 ? (
+        <p className="empty-note">
+          {activeFilterCount > 0 ? "No contacts match the current search or filters." : "No contacts added yet."}
+        </p>
+      ) : (
+        <div className="contacts-table-wrap">
+          <table className="contacts-table">
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(e) => setSelectedIds(e.target.checked ? contacts.map((c) => c.id) : [])}
+                  />
+                </th>
+                <th>Name</th>
+                <th>Tags</th>
+                <th>Phone</th>
+                <th>Order Date</th>
+                <th>Source</th>
+                {activeCustomFields.map((f) => <th key={f.id}>{f.label}</th>)}
+                <th>Created</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contactRows.map((contact) => (
+                <tr key={contact.id}>
+                  <td>
                     <input
-                      ref={selectAllRef}
                       type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={(event) =>
-                        setSelectedIds(event.target.checked ? contacts.map((contact) => contact.id) : [])
+                      checked={selectedIds.includes(contact.id)}
+                      onChange={(e) =>
+                        setSelectedIds((current) =>
+                          e.target.checked
+                            ? Array.from(new Set([...current, contact.id]))
+                            : current.filter((id) => id !== contact.id)
+                        )
                       }
                     />
-                  </th>
-                  <th>Name</th>
-                  <th>Tags</th>
-                  <th>Phone</th>
-                  <th>Order Date</th>
-                  <th>Contact Created Source</th>
-                  <th>Source ID</th>
-                  <th>Source URL</th>
-                  <th>Created Date</th>
-                  <th>Last Updated</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contactRows.map((contact) => (
-                  <tr key={contact.id}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(contact.id)}
-                        onChange={(event) =>
-                          setSelectedIds((current) =>
-                            event.target.checked
-                              ? Array.from(new Set([...current, contact.id]))
-                              : current.filter((item) => item !== contact.id)
-                          )
-                        }
-                      />
-                    </td>
-                    <td>
-                      <div className="contacts-name-cell">
-                        <span className="contacts-avatar">
-                          {(contact.display_name || "U").slice(0, 1).toUpperCase()}
+                  </td>
+                  <td>
+                    <div className="contacts-name-cell">
+                      <span className="contacts-avatar">{(contact.display_name || "U").slice(0, 1).toUpperCase()}</span>
+                      <div>
+                        <strong>{contact.display_name || "Unknown"}</strong>
+                        {contact.email ? <small>{contact.email}</small> : null}
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="contacts-tag-list">
+                      {contact.tagItems.map((tag, index) => (
+                        <span key={`${contact.id}-${tag}-${index}`} className={index === 0 ? "contacts-tag contacts-tag-type" : "contacts-tag"}>
+                          {tag}
                         </span>
-                        <div>
-                          <strong>{contact.display_name || "Unknown"}</strong>
-                          {contact.email ? <small>{contact.email}</small> : null}
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="contacts-tag-list">
-                        {contact.tagItems.map((tag, index) => (
-                          <span
-                            key={`${contact.id}-${tag}-${index}`}
-                            className={index === 0 ? "contacts-tag contacts-tag-type" : "contacts-tag"}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td>{formatPhone(contact.phone_number)}</td>
-                    <td>{formatDateTime(contact.order_date)}</td>
-                    <td>{getSourceLabel(contact.source_type)}</td>
-                    <td>{contact.source_id || "-"}</td>
-                    <td>
-                      {canRenderUrl(contact.source_url) ? (
-                        <a href={contact.source_url ?? "#"} target="_blank" rel="noreferrer" className="contacts-link">
-                          {contact.source_url}
-                        </a>
-                      ) : (
-                        contact.source_url || "-"
-                      )}
-                    </td>
-                    <td>{formatDate(contact.created_at)}</td>
-                    <td>{formatDateTime(contact.updated_at)}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="ghost-btn"
-                        disabled={!contact.linked_conversation_id}
-                        onClick={() => {
-                          if (contact.linked_conversation_id) {
-                            navigate(`/dashboard/inbox/${contact.linked_conversation_id}`);
-                          }
-                        }}
-                      >
-                        Open Chat
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </article>
+                      ))}
+                    </div>
+                  </td>
+                  <td>{formatPhone(contact.phone_number)}</td>
+                  <td>{formatDateTime(contact.order_date)}</td>
+                  <td>{getSourceLabel(contact.source_type)}</td>
+                  {activeCustomFields.map((f) => {
+                    const fv = contact.custom_field_values?.find((v) => v.field_name === f.name);
+                    return <td key={f.id}>{renderFieldValue(f.field_type, fv?.value ?? null)}</td>;
+                  })}
+                  <td>{formatDate(contact.created_at)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      disabled={!contact.linked_conversation_id}
+                      onClick={() => { if (contact.linked_conversation_id) navigate(`/dashboard/inbox/${contact.linked_conversation_id}`); }}
+                    >
+                      Open Chat
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      {showAddModal ? (
+      {showAddModal && (
         <div className="kb-modal-backdrop" onClick={() => setShowAddModal(false)}>
-          <div className="kb-modal kb-modal-wide" onClick={(event) => event.stopPropagation()}>
+          <div className="kb-modal kb-modal-wide" onClick={(e) => e.stopPropagation()}>
             <h3>Add Contact</h3>
             <div className="contacts-form-grid">
               <label>
-                Name
-                <input
-                  value={formState.name}
-                  onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
-                />
+                Name *
+                <input value={formState.name} onChange={(e) => setFormState((c) => ({ ...c, name: e.target.value }))} />
               </label>
               <label>
-                Phone
-                <input
-                  value={formState.phone}
-                  onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))}
-                />
+                Phone *
+                <input value={formState.phone} onChange={(e) => setFormState((c) => ({ ...c, phone: e.target.value }))} />
               </label>
               <label>
                 Email
-                <input
-                  type="email"
-                  value={formState.email}
-                  onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
-                />
+                <input type="email" value={formState.email} onChange={(e) => setFormState((c) => ({ ...c, email: e.target.value }))} />
               </label>
               <label>
                 Type
-                <select
-                  value={formState.type}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, type: event.target.value as ContactType }))
-                  }
-                >
-                  {CONTACT_TYPE_OPTIONS.filter((option) => option.value !== "all").map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
+                <select value={formState.type} onChange={(e) => setFormState((c) => ({ ...c, type: e.target.value as ContactType }))}>
+                  {CONTACT_TYPE_OPTIONS.filter((o) => o.value !== "all").map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
               </label>
               <label>
                 Tags
-                <input
-                  value={formState.tags}
-                  onChange={(event) => setFormState((current) => ({ ...current, tags: event.target.value }))}
-                  placeholder="VIP, Follow up"
-                />
+                <input value={formState.tags} onChange={(e) => setFormState((c) => ({ ...c, tags: e.target.value }))} placeholder="VIP, Follow up" />
               </label>
               <label>
                 Order Date
-                <input
-                  type="datetime-local"
-                  value={formState.orderDate}
-                  onChange={(event) => setFormState((current) => ({ ...current, orderDate: event.target.value }))}
-                />
+                <input type="datetime-local" value={formState.orderDate} onChange={(e) => setFormState((c) => ({ ...c, orderDate: e.target.value }))} />
               </label>
               <label>
                 Source ID
-                <input
-                  value={formState.sourceId}
-                  onChange={(event) => setFormState((current) => ({ ...current, sourceId: event.target.value }))}
-                />
+                <input value={formState.sourceId} onChange={(e) => setFormState((c) => ({ ...c, sourceId: e.target.value }))} />
               </label>
               <label>
                 Source URL
-                <input
-                  type="url"
-                  value={formState.sourceUrl}
-                  onChange={(event) => setFormState((current) => ({ ...current, sourceUrl: event.target.value }))}
-                />
+                <input type="url" value={formState.sourceUrl} onChange={(e) => setFormState((c) => ({ ...c, sourceUrl: e.target.value }))} />
               </label>
+
+              {activeCustomFields.length > 0 && (
+                <div className="contacts-form-custom-divider">
+                  <span>Custom Fields</span>
+                </div>
+              )}
+
+              {activeCustomFields.map((field) => (
+                <label key={field.id}>
+                  {field.label}{field.is_mandatory ? " *" : ""}
+                  {field.field_type === "SWITCH" ? (
+                    <select
+                      value={formState.customFields[field.name] ?? ""}
+                      onChange={(e) => setCustomField(field.name, e.target.value)}
+                    >
+                      <option value="">Select...</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  ) : field.field_type === "DATE" ? (
+                    <input
+                      type="date"
+                      value={formState.customFields[field.name] ?? ""}
+                      onChange={(e) => setCustomField(field.name, e.target.value)}
+                    />
+                  ) : field.field_type === "NUMBER" ? (
+                    <input
+                      type="number"
+                      value={formState.customFields[field.name] ?? ""}
+                      onChange={(e) => setCustomField(field.name, e.target.value)}
+                    />
+                  ) : field.field_type === "MULTI_TEXT" ? (
+                    <textarea
+                      value={formState.customFields[field.name] ?? ""}
+                      onChange={(e) => setCustomField(field.name, e.target.value)}
+                      rows={3}
+                      style={{ resize: "vertical", minHeight: 72, borderRadius: 10, border: "1px solid #cfd9e7", padding: "0.5rem 0.72rem" }}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={formState.customFields[field.name] ?? ""}
+                      onChange={(e) => setCustomField(field.name, e.target.value)}
+                    />
+                  )}
+                </label>
+              ))}
             </div>
             <div className="kb-modal-actions">
-              <button type="button" className="ghost-btn" onClick={() => setShowAddModal(false)}>
-                Cancel
-              </button>
+              <button type="button" className="ghost-btn" onClick={() => setShowAddModal(false)}>Cancel</button>
               <button type="button" className="primary-btn" disabled={submitting} onClick={() => void handleCreateContact()}>
                 {submitting ? "Saving..." : "Save Contact"}
               </button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
+    </>
+  );
+}
+
+// ─── Segments Tab ─────────────────────────────────────────────────────────────
+
+function SegmentsTab({ token, customFields }: { token: string; customFields: ContactField[] }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [showModal, setShowModal] = useState(false);
+  const [editingSegment, setEditingSegment] = useState<ContactSegment | null>(null);
+  const [expandedSegmentId, setExpandedSegmentId] = useState<string | null>(null);
+
+  const segmentsQuery = useQuery({
+    queryKey: dashboardQueryKeys.contactSegments,
+    queryFn: () => listContactSegments(token).then((r) => r.segments),
+    enabled: Boolean(token)
+  });
+
+  const segmentContactsQuery = useQuery({
+    queryKey: expandedSegmentId ? dashboardQueryKeys.segmentContacts(expandedSegmentId) : ["disabled"],
+    queryFn: () => (expandedSegmentId ? fetchSegmentContacts(token, expandedSegmentId).then((r) => r.contacts) : Promise.resolve([])),
+    enabled: Boolean(expandedSegmentId)
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteContactSegment(token, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactSegmentsRoot })
+  });
+
+  const segments = segmentsQuery.data ?? [];
+
+  const handleSaved = () => {
+    setShowModal(false);
+    setEditingSegment(null);
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactSegmentsRoot });
+  };
+
+  const openCreate = () => { setEditingSegment(null); setShowModal(true); };
+  const openEdit = (seg: ContactSegment) => { setEditingSegment(seg); setShowModal(true); };
+
+  const toggleExpand = (segmentId: string) => {
+    setExpandedSegmentId((prev) => (prev === segmentId ? null : segmentId));
+  };
+
+  return (
+    <>
+      <div className="contacts-toolbar">
+        <div className="contacts-toolbar-left" />
+        <div className="contacts-toolbar-right">
+          <button type="button" className="primary-btn contacts-add-btn" onClick={openCreate}>
+            <PlusIcon /><span>New Segment</span>
+          </button>
+        </div>
+      </div>
+
+      {segmentsQuery.isLoading ? (
+        <p className="empty-note">Loading segments...</p>
+      ) : segments.length === 0 ? (
+        <div className="segments-empty">
+          <p>No segments yet.</p>
+          <p>Create dynamic contact groups by combining filters on name, date, type, tags, or custom fields.</p>
+          <button type="button" className="primary-btn" onClick={openCreate}>
+            <PlusIcon /> Create your first segment
+          </button>
+        </div>
+      ) : (
+        <div className="segments-list">
+          {segments.map((seg) => {
+            const isExpanded = expandedSegmentId === seg.id;
+            const segContacts = isExpanded ? (segmentContactsQuery.data ?? []) : [];
+            const isLoading = isExpanded && segmentContactsQuery.isFetching;
+
+            return (
+              <div key={seg.id} className={`segment-card ${isExpanded ? "segment-card-expanded" : ""}`}>
+                <div className="segment-card-head">
+                  <div className="segment-card-info">
+                    <strong>{seg.name}</strong>
+                    <div className="segment-card-filters">
+                      {seg.filters.length === 0 ? (
+                        <span className="segment-filter-badge">All contacts</span>
+                      ) : (
+                        seg.filters.map((f, i) => (
+                          <span key={i} className="segment-filter-badge">
+                            {f.field.startsWith("custom:") ? f.field.slice(7) : f.field} {f.op.replace(/_/g, " ")}
+                            {f.value ? ` "${f.value}"` : ""}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <small>Created {formatDate(seg.created_at)}</small>
+                  </div>
+                  <div className="segment-card-actions">
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => toggleExpand(seg.id)}
+                    >
+                      {isExpanded ? "Collapse" : "View Contacts"}
+                    </button>
+                    <button type="button" className="ghost-btn" onClick={() => openEdit(seg)}>Edit</button>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      style={{ color: "#e53e3e" }}
+                      onClick={() => { if (window.confirm(`Delete segment "${seg.name}"?`)) deleteMutation.mutate(seg.id); }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="segment-card-contacts">
+                    {isLoading ? (
+                      <p className="empty-note">Loading contacts...</p>
+                    ) : segContacts.length === 0 ? (
+                      <p className="empty-note">No contacts match this segment.</p>
+                    ) : (
+                      <table className="contacts-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Phone</th>
+                            <th>Tags</th>
+                            <th>Created</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {segContacts.slice(0, 50).map((c) => (
+                            <tr key={c.id}>
+                              <td>
+                                <div className="contacts-name-cell">
+                                  <span className="contacts-avatar">{(c.display_name || "U").slice(0, 1).toUpperCase()}</span>
+                                  <div>
+                                    <strong>{c.display_name || "Unknown"}</strong>
+                                    {c.email ? <small>{c.email}</small> : null}
+                                  </div>
+                                </div>
+                              </td>
+                              <td>{formatPhone(c.phone_number)}</td>
+                              <td>
+                                <div className="contacts-tag-list">
+                                  <span className="contacts-tag contacts-tag-type">{getTypeLabel(c.contact_type)}</span>
+                                  {c.tags.slice(0, 2).map((tag) => (
+                                    <span key={tag} className="contacts-tag">{tag}</span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td>{formatDate(c.created_at)}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="ghost-btn"
+                                  disabled={!c.linked_conversation_id}
+                                  onClick={() => { if (c.linked_conversation_id) navigate(`/dashboard/inbox/${c.linked_conversation_id}`); }}
+                                >
+                                  Open Chat
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {segContacts.length > 50 && <p className="segment-preview-more">Showing 50 of {segContacts.length} contacts</p>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showModal && (
+        <SegmentModal
+          token={token}
+          customFields={customFields}
+          initial={editingSegment ?? undefined}
+          onClose={() => { setShowModal(false); setEditingSegment(null); }}
+          onSaved={handleSaved}
+        />
+      )}
+    </>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export function Component() {
+  const { token } = useDashboardShell();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab: TabId = (searchParams.get("tab") as TabId | null) ?? "contacts";
+
+  const fieldsQuery = useQuery({
+    queryKey: dashboardQueryKeys.contactFields,
+    queryFn: () => listContactFields(token).then((r) => r.fields),
+    enabled: Boolean(token)
+  });
+  const customFields = fieldsQuery.data ?? [];
+
+  const setTab = (tab: TabId) => {
+    const next = new URLSearchParams();
+    next.set("tab", tab);
+    setSearchParams(next, { replace: true });
+  };
+
+  return (
+    <section className="finance-shell contacts-shell">
+      <article className="finance-panel contacts-panel">
+        <div className="contacts-tab-bar">
+          <button
+            type="button"
+            className={activeTab === "contacts" ? "contacts-tab active" : "contacts-tab"}
+            onClick={() => setTab("contacts")}
+          >
+            Contacts
+          </button>
+          <button
+            type="button"
+            className={activeTab === "segments" ? "contacts-tab active" : "contacts-tab"}
+            onClick={() => setTab("segments")}
+          >
+            Segments
+          </button>
+        </div>
+
+        {activeTab === "contacts" ? (
+          <ContactsTab token={token} customFields={customFields} />
+        ) : (
+          <SegmentsTab token={token} customFields={customFields} />
+        )}
+      </article>
     </section>
   );
 }
