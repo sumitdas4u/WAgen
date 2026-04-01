@@ -5096,6 +5096,63 @@ textarea {
   color: var(--ink);
 }
 
+/* ── Contacts column picker ────────────────────────────────── */
+
+.contacts-columns-menu {
+  min-width: 220px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0.5rem 0 0;
+}
+
+.contacts-columns-hint {
+  margin: 0 0 0.5rem;
+  padding: 0 0.9rem;
+  font-size: 0.74rem;
+  color: #8faacb;
+}
+
+.contacts-columns-section-label {
+  padding: 0.25rem 0.9rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9db3cc;
+}
+
+.contacts-columns-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.84rem;
+  color: #2d4a78;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.contacts-columns-row:hover {
+  background: #f1f6fd;
+}
+
+.contacts-columns-row input[type="checkbox"] {
+  accent-color: #2557a0;
+  flex-shrink: 0;
+}
+
+.contacts-columns-footer {
+  border-top: 1px solid #e6edf6;
+  padding: 0.5rem 0.9rem;
+  margin-top: 0.35rem;
+}
+
+.contacts-empty-cell {
+  color: #c2cfe0;
+  font-size: 0.88rem;
+}
+
 /* ── Contacts tab bar ──────────────────────────────────────── */
 
 .contacts-tab-bar {

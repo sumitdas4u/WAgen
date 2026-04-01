@@ -100,6 +100,41 @@ const SEGMENT_OP_OPTIONS: Array<{ value: SegmentFilterOp; label: string; onlyDat
   { value: "is_not_empty", label: "is not empty", noValue: true }
 ];
 
+// ─── Column definitions ───────────────────────────────────────────────────────
+
+const COLUMNS_STORAGE_KEY = "contacts_visible_columns_v1";
+
+// Standard columns the user can toggle (Name is always pinned)
+const STANDARD_COLUMN_DEFS: Array<{ id: string; label: string }> = [
+  { id: "phone",      label: "Phone" },
+  { id: "email",      label: "Email" },
+  { id: "type",       label: "Type" },
+  { id: "tags",       label: "Tags" },
+  { id: "order_date", label: "Order Date" },
+  { id: "source",     label: "Source" },
+  { id: "source_id",  label: "Source ID" },
+  { id: "source_url", label: "Source URL" },
+  { id: "created_at", label: "Created" },
+  { id: "updated_at", label: "Last Updated" }
+];
+
+const DEFAULT_VISIBLE_COLUMNS = ["phone", "type", "tags", "created_at"];
+
+function loadVisibleColumns(): string[] {
+  try {
+    const raw = localStorage.getItem(COLUMNS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) return parsed as string[];
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_VISIBLE_COLUMNS;
+}
+
+function saveVisibleColumns(cols: string[]): void {
+  try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cols)); } catch { /* ignore */ }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function normalizeTags(value: string): string[] {
@@ -123,13 +158,6 @@ function formatDate(value: string | null | undefined): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return "-";
   return new Date(timestamp).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "-";
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "-";
-  return new Date(timestamp).toLocaleString();
 }
 
 function getTypeLabel(value: ContactType): string {
@@ -207,6 +235,14 @@ function TrashIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" width="14" height="14">
       <path d="M4 5h12M8 5V3h4v2M6 5l1 11h6l1-11" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function ColumnsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M3 5.5h14M3 10h14M3 14.5h14M7 3v14M13 3v14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -478,6 +514,7 @@ function ContactsTab({
   const [showFilters, setShowFilters] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
@@ -485,9 +522,11 @@ function ContactsTab({
   const [importResult, setImportResult] = useState<ContactImportResult | null>(null);
   const [formState, setFormState] = useState<ContactFormState>(DEFAULT_FORM_STATE);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(loadVisibleColumns);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const importMenuRef = useRef<HTMLDivElement | null>(null);
+  const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
 
   const search = searchParams.get("q") ?? "";
@@ -507,8 +546,6 @@ function ContactsTab({
   const allVisibleSelected = contacts.length > 0 && selectedCount === contacts.length;
   const someVisibleSelected = selectedCount > 0 && selectedCount < contacts.length;
 
-  const activeCustomFields = customFields.filter((f) => f.is_active);
-
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = someVisibleSelected;
   }, [someVisibleSelected]);
@@ -521,9 +558,10 @@ function ContactsTab({
     const closeMenus = (event: MouseEvent) => {
       if (exportMenuRef.current && event.target instanceof Node && !exportMenuRef.current.contains(event.target)) setShowExportMenu(false);
       if (importMenuRef.current && event.target instanceof Node && !importMenuRef.current.contains(event.target)) setShowImportMenu(false);
+      if (columnsMenuRef.current && event.target instanceof Node && !columnsMenuRef.current.contains(event.target)) setShowColumnsMenu(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setShowExportMenu(false); setShowImportMenu(false); setShowAddModal(false); }
+      if (event.key === "Escape") { setShowExportMenu(false); setShowImportMenu(false); setShowColumnsMenu(false); setShowAddModal(false); }
     };
     window.addEventListener("mousedown", closeMenus);
     window.addEventListener("keydown", closeOnEscape);
@@ -638,6 +676,24 @@ function ContactsTab({
     setFormState((current) => ({ ...current, customFields: { ...current.customFields, [name]: value } }));
   };
 
+  const activeCustomFields = customFields.filter((f) => f.is_active);
+
+  // Column picker helpers
+  const allColumnDefs = useMemo(() => [
+    ...STANDARD_COLUMN_DEFS,
+    ...customFields.filter((f) => f.is_active).map((f) => ({ id: `custom:${f.name}`, label: f.label }))
+  ], [customFields]);
+
+  const toggleColumn = (id: string) => {
+    setVisibleColumns((prev) => {
+      const next = prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id];
+      saveVisibleColumns(next);
+      return next;
+    });
+  };
+
+  const isColVisible = (id: string) => visibleColumns.includes(id);
+
   return (
     <>
       {info ? <p className="info-text">{info}</p> : null}
@@ -654,6 +710,58 @@ function ContactsTab({
             <span>Filter</span>
             {activeFilterCount > 0 ? <strong>{activeFilterCount}</strong> : null}
           </button>
+
+          <div className="contacts-menu-wrap" ref={columnsMenuRef}>
+            <button
+              type="button"
+              className={showColumnsMenu ? "ghost-btn contacts-tool-btn active" : "ghost-btn contacts-tool-btn"}
+              onClick={() => setShowColumnsMenu((c) => !c)}
+            >
+              <ColumnsIcon />
+              <span>Columns</span>
+              {visibleColumns.length > 0 ? <strong>{visibleColumns.length}</strong> : null}
+            </button>
+            {showColumnsMenu && (
+              <div className="contacts-menu contacts-columns-menu">
+                <p className="contacts-columns-hint">Choose which columns to show</p>
+                <div className="contacts-columns-section-label">Standard Fields</div>
+                {STANDARD_COLUMN_DEFS.map((col) => (
+                  <label key={col.id} className="contacts-columns-row">
+                    <input
+                      type="checkbox"
+                      checked={isColVisible(col.id)}
+                      onChange={() => toggleColumn(col.id)}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+                {customFields.filter((f) => f.is_active).length > 0 && (
+                  <>
+                    <div className="contacts-columns-section-label" style={{ marginTop: "0.5rem" }}>Custom Fields</div>
+                    {customFields.filter((f) => f.is_active).map((f) => (
+                      <label key={f.id} className="contacts-columns-row">
+                        <input
+                          type="checkbox"
+                          checked={isColVisible(`custom:${f.name}`)}
+                          onChange={() => toggleColumn(`custom:${f.name}`)}
+                        />
+                        {f.label}
+                      </label>
+                    ))}
+                  </>
+                )}
+                <div className="contacts-columns-footer">
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={() => { setVisibleColumns(DEFAULT_VISIBLE_COLUMNS); saveVisibleColumns(DEFAULT_VISIBLE_COLUMNS); }}
+                  >
+                    Reset to default
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="contacts-toolbar-right">
@@ -755,13 +863,12 @@ function ContactsTab({
                     onChange={(e) => setSelectedIds(e.target.checked ? contacts.map((c) => c.id) : [])}
                   />
                 </th>
+                {/* Name is always pinned */}
                 <th>Name</th>
-                <th>Tags</th>
-                <th>Phone</th>
-                <th>Order Date</th>
-                <th>Source</th>
-                {activeCustomFields.map((f) => <th key={f.id}>{f.label}</th>)}
-                <th>Created</th>
+                {/* Dynamic columns */}
+                {allColumnDefs.filter((col) => isColVisible(col.id)).map((col) => (
+                  <th key={col.id}>{col.label}</th>
+                ))}
                 <th>Action</th>
               </tr>
             </thead>
@@ -781,32 +888,44 @@ function ContactsTab({
                       }
                     />
                   </td>
+                  {/* Name always shown */}
                   <td>
                     <div className="contacts-name-cell">
                       <span className="contacts-avatar">{(contact.display_name || "U").slice(0, 1).toUpperCase()}</span>
                       <div>
                         <strong>{contact.display_name || "Unknown"}</strong>
-                        {contact.email ? <small>{contact.email}</small> : null}
+                        {contact.email && !isColVisible("email") ? <small>{contact.email}</small> : null}
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <div className="contacts-tag-list">
-                      {contact.tagItems.map((tag, index) => (
-                        <span key={`${contact.id}-${tag}-${index}`} className={index === 0 ? "contacts-tag contacts-tag-type" : "contacts-tag"}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td>{formatPhone(contact.phone_number)}</td>
-                  <td>{formatDateTime(contact.order_date)}</td>
-                  <td>{getSourceLabel(contact.source_type)}</td>
-                  {activeCustomFields.map((f) => {
-                    const fv = contact.custom_field_values?.find((v) => v.field_name === f.name);
-                    return <td key={f.id}>{renderFieldValue(f.field_type, fv?.value ?? null)}</td>;
+                  {/* Dynamic column cells */}
+                  {allColumnDefs.filter((col) => isColVisible(col.id)).map((col) => {
+                    if (col.id.startsWith("custom:")) {
+                      const fieldName = col.id.slice(7);
+                      const fv = contact.custom_field_values?.find((v) => v.field_name === fieldName);
+                      return <td key={col.id}>{renderFieldValue(fv?.field_type ?? "TEXT", fv?.value ?? null)}</td>;
+                    }
+                    switch (col.id) {
+                      case "phone":       return <td key={col.id}>{formatPhone(contact.phone_number)}</td>;
+                      case "email":       return <td key={col.id}>{contact.email || "-"}</td>;
+                      case "type":        return <td key={col.id}><span className="contacts-tag contacts-tag-type">{getTypeLabel(contact.contact_type)}</span></td>;
+                      case "tags":        return (
+                        <td key={col.id}>
+                          <div className="contacts-tag-list">
+                            {contact.tags.map((tag) => <span key={tag} className="contacts-tag">{tag}</span>)}
+                            {contact.tags.length === 0 && <span className="contacts-empty-cell">—</span>}
+                          </div>
+                        </td>
+                      );
+                      case "order_date":  return <td key={col.id}>{formatDate(contact.order_date)}</td>;
+                      case "source":      return <td key={col.id}>{getSourceLabel(contact.source_type)}</td>;
+                      case "source_id":   return <td key={col.id}>{contact.source_id || "—"}</td>;
+                      case "source_url":  return <td key={col.id}>{contact.source_url ? <a href={contact.source_url} target="_blank" rel="noreferrer" className="contacts-link">{contact.source_url}</a> : "—"}</td>;
+                      case "created_at":  return <td key={col.id}>{formatDate(contact.created_at)}</td>;
+                      case "updated_at":  return <td key={col.id}>{formatDate(contact.updated_at)}</td>;
+                      default:            return <td key={col.id}>—</td>;
+                    }
                   })}
-                  <td>{formatDate(contact.created_at)}</td>
                   <td>
                     <button
                       type="button"
