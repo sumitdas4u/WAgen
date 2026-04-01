@@ -57,6 +57,7 @@ interface QueuedInboundMessage {
   senderName?: string;
   shouldAutoReply: boolean;
   channelLinkedNumber: string | null;
+  mediaUrl?: string | null;
 }
 
 interface ExtractedInboundText {
@@ -1075,6 +1076,7 @@ class WhatsAppSessionManager {
       flowMessageText: job.flowText ?? job.text,
       senderName: job.senderName,
       shouldAutoReply: job.shouldAutoReply,
+      mediaUrl: job.mediaUrl ?? null,
       sendReply: async ({ text }) => {
         const runtime = this.sessions.get(job.userId);
         if (!runtime || runtime.status !== "connected") {
@@ -1140,9 +1142,13 @@ class WhatsAppSessionManager {
     const extracted = this.extractInboundText(userId, runtime, message);
     let text = extracted?.displayText ?? "";
     let flowText = extracted?.flowText ?? text;
-    const mediaContext = runtime ? await extractInboundMediaText(runtime.socket, message) : null;
-    if (mediaContext) {
-      text = text ? `${text}\n${mediaContext}` : mediaContext;
+    let inboundMediaUrl: string | null = null;
+    if (runtime) {
+      const mediaResult = await extractInboundMediaText(runtime.socket, message, userId);
+      if (mediaResult.text) {
+        text = text ? `${text}\n${mediaResult.text}` : mediaResult.text;
+      }
+      inboundMediaUrl = mediaResult.mediaUrl;
     }
 
     if (!text) {
@@ -1194,7 +1200,8 @@ class WhatsAppSessionManager {
       flowText,
       senderName,
       shouldAutoReply,
-      channelLinkedNumber
+      channelLinkedNumber,
+      mediaUrl: inboundMediaUrl
     });
   }
 }

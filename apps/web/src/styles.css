@@ -1315,6 +1315,7 @@
   font-size: 0.88rem;
   word-break: break-word;
   display: block;
+  overflow: hidden;
 }
 
 .inbox-conversation-panel .bubble.inbound {
@@ -8679,16 +8680,111 @@ select:focus {
   margin: 0;
   word-break: break-word;
 }
-.msg-buttons-list {
+/* ── Shared "bleed" image (full-width inside bubble, no side padding) ─── */
+.msg-bleed-image-link {
+  display: block;
+  margin: -0.55rem -0.72rem 0.55rem;
+}
+.msg-bleed-image {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 0;
+}
+
+/* ── Shared action-rows (buttons + list items displayed as WhatsApp rows) */
+.msg-action-rows {
+  /* bleed left / right / bottom to bubble edge */
+  margin: 0.45rem -0.72rem -0.55rem;
+  border-top: 1px solid rgba(255,255,255,0.22);
+}
+.bubble.inbound .msg-action-rows {
+  border-top-color: rgba(0,0,0,0.1);
+}
+.msg-action-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: 0.35rem;
-  margin-top: 0.2rem;
+  padding: 0.52rem 0.72rem;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  text-align: center;
+  background: rgba(255,255,255,0.07);
 }
-.msg-buttons-list.outgoing .msg-button-chip {
-  border-color: rgba(255,255,255,0.5);
-  color: #fff;
+.bubble.inbound .msg-action-row {
+  background: rgba(0,0,0,0.025);
+  border-bottom-color: rgba(0,0,0,0.07);
 }
+.msg-action-row:last-child {
+  border-bottom: none;
+  border-radius: 0 0 16px 16px;
+}
+.msg-action-row-icon {
+  font-size: 0.82rem;
+  opacity: 0.85;
+  color: rgba(255,255,255,0.9);
+  flex-shrink: 0;
+}
+.bubble.inbound .msg-action-row-icon { color: #1b7fc4; }
+.msg-action-row-label {
+  font-size: 0.855rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.95);
+}
+.bubble.inbound .msg-action-row-label { color: #1b7fc4; }
+/* List rows: no icon, slightly different layout */
+.msg-action-row--list {
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.msg-action-row-desc {
+  font-size: 0.75rem;
+  opacity: 0.72;
+}
+
+/* ── Buttons message ──────────────────────────────────────────────────── */
+.msg-buttons-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.msg-buttons-body {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── List message ─────────────────────────────────────────────────────── */
+.msg-list-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+}
+.msg-list-title {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Template message ─────────────────────────────────────────────────── */
+.msg-template-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+}
+.msg-template-body {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Legacy chip style (kept for any remaining uses) */
 .msg-button-chip {
   display: inline-block;
   border: 1.5px solid rgba(0,0,0,0.18);
@@ -8699,73 +8795,6 @@ select:focus {
   white-space: nowrap;
   cursor: default;
   background: rgba(255,255,255,0.12);
-}
-
-/* List */
-.msg-list-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  min-width: 180px;
-}
-.msg-list-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  margin: 0 0 0.2rem;
-}
-.msg-list-items {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  border: 1px solid rgba(0,0,0,0.1);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.msg-list-item {
-  display: flex;
-  flex-direction: column;
-  padding: 0.35rem 0.6rem;
-  background: rgba(255,255,255,0.12);
-  border-bottom: 1px solid rgba(0,0,0,0.06);
-  font-size: 0.83rem;
-}
-.msg-list-item:last-child { border-bottom: none; }
-.msg-list-item-label { font-weight: 600; }
-.msg-list-item-desc { font-size: 0.76rem; opacity: 0.75; }
-.msg-list-trigger {
-  display: flex;
-  justify-content: center;
-  margin-top: 0.15rem;
-}
-
-/* Template */
-.msg-template-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  max-width: 280px;
-}
-.msg-template-image {
-  width: 100%;
-  max-height: 160px;
-  object-fit: cover;
-  border-radius: 10px 10px 0 0;
-  display: block;
-}
-.msg-template-name {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  opacity: 0.7;
-  text-transform: uppercase;
-  margin: 0;
-}
-.msg-template-body {
-  font-size: 0.875rem;
-  line-height: 1.5;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 /* Location */

@@ -485,6 +485,7 @@ export async function trackInboundMessage(
   options?: {
     channelType?: AgentChannelType;
     channelLinkedNumber?: string | null;
+    mediaUrl?: string | null;
   }
 ): Promise<Conversation> {
   const channelType = options?.channelType ?? "qr";
@@ -536,11 +537,28 @@ export async function trackInboundMessage(
     ]
   );
 
-  await pool.query(
-    `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text)
-     VALUES ($1, 'inbound', $2, $3)`,
-    [conversation.id, senderName ?? null, message]
-  );
+  const inboundMediaUrl = options?.mediaUrl ?? null;
+  if (inboundMediaUrl) {
+    try {
+      await pool.query(
+        `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, media_url)
+         VALUES ($1, 'inbound', $2, $3, $4)`,
+        [conversation.id, senderName ?? null, message, inboundMediaUrl]
+      );
+    } catch {
+      await pool.query(
+        `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text)
+         VALUES ($1, 'inbound', $2, $3)`,
+        [conversation.id, senderName ?? null, message]
+      );
+    }
+  } else {
+    await pool.query(
+      `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text)
+       VALUES ($1, 'inbound', $2, $3)`,
+      [conversation.id, senderName ?? null, message]
+    );
+  }
 
   const capturedProfile = extractCapturedProfileDetails(message);
   const contactPhoneNumber = capturedProfile.phoneNumber ?? phoneNumber;
@@ -614,31 +632,62 @@ export async function trackOutboundMessage(
       ]
     );
   } catch {
-    // Fallback without new columns
-    await pool.query(
-      `INSERT INTO conversation_messages (
-         conversation_id,
-         direction,
-         sender_name,
-         message_text,
-         prompt_tokens,
-         completion_tokens,
-         total_tokens,
-         ai_model,
-         retrieval_chunks
-       )
-       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        conversationId,
-        usage?.senderName ?? null,
-        message,
-        usage?.promptTokens ?? null,
-        usage?.completionTokens ?? null,
-        usage?.totalTokens ?? null,
-        usage?.aiModel ?? null,
-        usage?.retrievalChunks ?? null
-      ]
-    );
+    // message_type / message_content missing (migration 0016 not yet applied).
+    // Preserve media_url from migration 0015 so images survive.
+    try {
+      await pool.query(
+        `INSERT INTO conversation_messages (
+           conversation_id,
+           direction,
+           sender_name,
+           message_text,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           ai_model,
+           retrieval_chunks,
+           media_url
+         )
+         VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          conversationId,
+          usage?.senderName ?? null,
+          message,
+          usage?.promptTokens ?? null,
+          usage?.completionTokens ?? null,
+          usage?.totalTokens ?? null,
+          usage?.aiModel ?? null,
+          usage?.retrievalChunks ?? null,
+          mediaUrl ?? null
+        ]
+      );
+    } catch {
+      // Last resort: pre-0015 schema without media_url
+      await pool.query(
+        `INSERT INTO conversation_messages (
+           conversation_id,
+           direction,
+           sender_name,
+           message_text,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           ai_model,
+           retrieval_chunks
+         )
+         VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          conversationId,
+          usage?.senderName ?? null,
+          message,
+          usage?.promptTokens ?? null,
+          usage?.completionTokens ?? null,
+          usage?.totalTokens ?? null,
+          usage?.aiModel ?? null,
+          usage?.retrievalChunks ?? null
+        ]
+      );
+    }
   }
 
   const retrievalDelta = scoreFromRetrievalChunks(usage?.retrievalChunks);
@@ -1130,28 +1179,54 @@ export async function listConversationMessages(conversationId: string): Promise<
     );
     return result.rows;
   } catch {
-    // Migration not yet applied — return without new columns.
-    const result = await pool.query<ConversationMessage>(
-      `SELECT
-         id,
-         direction,
-         sender_name,
-         message_text,
-         prompt_tokens,
-         completion_tokens,
-         total_tokens,
-         ai_model,
-         retrieval_chunks,
-         NULL::text          AS media_url,
-         'text'::text        AS message_type,
-         NULL::jsonb         AS message_content,
-         created_at
-       FROM conversation_messages
-       WHERE conversation_id = $1
-       ORDER BY created_at ASC`,
-      [conversationId]
-    );
-    return result.rows;
+    // message_type / message_content columns missing (migration 0016 not yet applied).
+    // media_url is available from migration 0015 — use it so images still resolve.
+    try {
+      const result = await pool.query<ConversationMessage>(
+        `SELECT
+           id,
+           direction,
+           sender_name,
+           message_text,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           ai_model,
+           retrieval_chunks,
+           media_url,
+           'text'::text        AS message_type,
+           NULL::jsonb         AS message_content,
+           created_at
+         FROM conversation_messages
+         WHERE conversation_id = $1
+         ORDER BY created_at ASC`,
+        [conversationId]
+      );
+      return result.rows;
+    } catch {
+      // media_url also missing (pre-migration 0015) — last resort.
+      const result = await pool.query<ConversationMessage>(
+        `SELECT
+           id,
+           direction,
+           sender_name,
+           message_text,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           ai_model,
+           retrieval_chunks,
+           NULL::text          AS media_url,
+           'text'::text        AS message_type,
+           NULL::jsonb         AS message_content,
+           created_at
+         FROM conversation_messages
+         WHERE conversation_id = $1
+         ORDER BY created_at ASC`,
+        [conversationId]
+      );
+      return result.rows;
+    }
   }
 }
 

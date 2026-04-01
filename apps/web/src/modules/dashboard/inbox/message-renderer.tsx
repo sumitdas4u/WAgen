@@ -88,22 +88,44 @@ function detectTypeFromText(text: string, mediaUrl: string | null, storedType: s
   if (storedType && storedType !== "text") {
     return storedType as UniversalMessageType;
   }
+
+  // Extension-based URL detection (skip for extension-less URLs like /api/media/uuid).
   if (mediaUrl) {
-    const ext = mediaUrl.split("?")[0].toLowerCase();
-    if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/.test(ext)) return "image";
-    if (/\.(mp4|mov|avi|webm|mkv)$/.test(ext)) return "video";
-    if (/\.(mp3|ogg|wav|m4a|aac|opus)$/.test(ext)) return "audio";
-    return "file";
+    const urlPath = mediaUrl.split("?")[0].toLowerCase();
+    if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/.test(urlPath)) return "image";
+    if (/\.(mp4|mov|avi|webm|mkv)(\?|$)/.test(urlPath)) return "video";
+    if (/\.(mp3|ogg|wav|m4a|aac|opus)(\?|$)/.test(urlPath)) return "audio";
+    if (/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|csv|txt)(\?|$)/.test(urlPath)) return "file";
+    // Extension-less URL — continue to text-pattern detection below.
+    // If no text pattern matches, we'll fall back to "file" at the end.
   }
+
   const t = text?.trim() ?? "";
-  if (t.startsWith("[IMAGE]") || t.startsWith("[Extracted image text]:") || t === "[Image received with no readable text]") return "image";
+  if (t.startsWith("[IMAGE]") || t.startsWith("[Extracted image text]:") || t === "[Image received with no readable text]" || t === "[Image received; text extraction unavailable]") return "image";
   if (t.startsWith("[VIDEO]")) return "video";
   if (t.startsWith("[AUDIO]")) return "audio";
-  if (t.startsWith("[DOCUMENT]")) return "file";
+  if (t.startsWith("[DOCUMENT]") || t.startsWith("[Extracted document text]:") || t.startsWith("[Document received") || t.startsWith("[PDF received")) return "file";
   if (t.startsWith("[LOCATION]")) return "location";
   if (t.startsWith("[CONTACT]")) return "contact";
   if (t.startsWith("[POLL]")) return "poll";
   if (t.startsWith("[Template:")) return "template";
+
+  // Detect summarized list / buttons format produced by summarizeFlowMessage.
+  // text_buttons → "title\n\n1. Btn\n2. Btn"  (numbered item starts immediately)
+  // list         → "title\n\nSectionHeader\n1. Item" (non-numbered line precedes items)
+  if (t.includes("\n\n")) {
+    const afterTitle = t.slice(t.indexOf("\n\n") + 2).trimStart();
+    const lines = afterTitle.split("\n").filter((l) => l.trim());
+    const hasNumberedItems = lines.some((l) => /^\d+\./.test(l.trim()));
+    if (hasNumberedItems) {
+      const firstLine = lines[0] ?? "";
+      return /^\d+\./.test(firstLine.trim()) ? "buttons" : "list";
+    }
+  }
+
+  // Extension-less media URL with no text pattern match — generic file/attachment.
+  if (mediaUrl) return "file";
+
   return "text";
 }
 
@@ -156,7 +178,7 @@ function contentFromPayload(
       return {
         template: {
           name: payload.templateName as string,
-          text: `Template: ${payload.templateName as string}`,
+          text: `📋 Template: ${payload.templateName as string}`,
           buttons: []
         }
       };
@@ -277,7 +299,7 @@ function contentFromText(
 
     case "template": {
       const name = text.match(/\[Template:\s?([^\]]+)\]/)?.[1] ?? "";
-      return { template: { name, text: name ? `Template: ${name}` : text, buttons: [] } };
+      return { template: { name, text: name ? `📋 Template: ${name}` : text, buttons: [] } };
     }
 
     case "buttons": {
@@ -295,13 +317,20 @@ function contentFromText(
     case "list": {
       const parts = text.split(/\n\n+/);
       const title = parts[0] ?? "";
-      const itemLines = parts.slice(1).join("\n").split("\n").filter((l) => /^\d+\./.test(l.trim()));
-      const items = itemLines.map((l, i) => {
+      const bodyLines = parts.slice(1).join("\n").split("\n").filter((l) => l.trim());
+      // Lines before the first numbered item are treated as section/button label
+      const firstNumberedIdx = bodyLines.findIndex((l) => /^\d+\./.test(l.trim()));
+      const buttonLabel = firstNumberedIdx > 0 ? bodyLines.slice(0, firstNumberedIdx).join(" ").trim() : undefined;
+      const itemLines = firstNumberedIdx >= 0 ? bodyLines.slice(firstNumberedIdx) : bodyLines;
+      const numberedItems = itemLines.filter((l) => /^\d+\./.test(l.trim()));
+      const items = numberedItems.map((l, i) => {
         const withoutNumber = l.replace(/^\d+\.\s?/, "").trim();
-        const [label, description] = withoutNumber.split(" - ");
-        return { id: String(i), label: label ?? withoutNumber, description };
+        const dashIdx = withoutNumber.indexOf(" - ");
+        const label = dashIdx >= 0 ? withoutNumber.slice(0, dashIdx) : withoutNumber;
+        const description = dashIdx >= 0 ? withoutNumber.slice(dashIdx + 3) : undefined;
+        return { id: String(i), label, description };
       });
-      return { list: { title, items } };
+      return { list: { title, button_label: buttonLabel, items } };
     }
 
     default:
@@ -455,22 +484,22 @@ function FileMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
 
 function ButtonsMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
   const { text, buttons = [], media_url } = msg.content;
-  const isOutgoing = msg.direction === "outgoing";
 
   return (
     <div className="msg-buttons-wrap">
       {media_url && (
-        <a href={media_url} target="_blank" rel="noopener noreferrer" className="msg-buttons-media">
-          <img className="msg-image" src={media_url} alt="Media" loading="lazy" />
+        <a href={media_url} target="_blank" rel="noopener noreferrer" className="msg-bleed-image-link">
+          <img className="msg-bleed-image" src={media_url} alt="Media" loading="lazy" />
         </a>
       )}
       {text && <p className="msg-buttons-body">{text}</p>}
       {buttons.length > 0 && (
-        <div className={`msg-buttons-list${isOutgoing ? " outgoing" : ""}`}>
+        <div className="msg-action-rows">
           {buttons.map((btn) => (
-            <span key={btn.id} className="msg-button-chip">
-              {btn.label}
-            </span>
+            <div key={btn.id} className="msg-action-row">
+              <span className="msg-action-row-icon">↩</span>
+              <span className="msg-action-row-label">{btn.label}</span>
+            </div>
           ))}
         </div>
       )}
@@ -485,17 +514,14 @@ function ListMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
   return (
     <div className="msg-list-wrap">
       {list.title && <p className="msg-list-title">{list.title}</p>}
-      <div className="msg-list-items">
-        {list.items.map((item) => (
-          <div key={item.id} className="msg-list-item">
-            <span className="msg-list-item-label">{item.label}</span>
-            {item.description && <span className="msg-list-item-desc">{item.description}</span>}
-          </div>
-        ))}
-      </div>
-      {list.button_label && (
-        <div className="msg-list-trigger">
-          <span className="msg-button-chip">≡ {list.button_label}</span>
+      {list.items.length > 0 && (
+        <div className="msg-action-rows">
+          {list.items.map((item) => (
+            <div key={item.id} className="msg-action-row msg-action-row--list">
+              <span className="msg-action-row-label">{item.label}</span>
+              {item.description && <span className="msg-action-row-desc">{item.description}</span>}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -509,16 +535,18 @@ function TemplateMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
   return (
     <div className="msg-template-wrap">
       {tmpl.image && (
-        <a href={tmpl.image} target="_blank" rel="noopener noreferrer">
-          <img className="msg-template-image" src={tmpl.image} alt="Template" loading="lazy" />
+        <a href={tmpl.image} target="_blank" rel="noopener noreferrer" className="msg-bleed-image-link">
+          <img className="msg-bleed-image" src={tmpl.image} alt="Template header" loading="lazy" />
         </a>
       )}
-      {tmpl.name && <p className="msg-template-name">{tmpl.name}</p>}
-      <p className="msg-template-body">{tmpl.text}</p>
+      {tmpl.text && <p className="msg-template-body">{tmpl.text}</p>}
       {tmpl.buttons && tmpl.buttons.length > 0 && (
-        <div className="msg-buttons-list">
+        <div className="msg-action-rows">
           {tmpl.buttons.map((btn) => (
-            <span key={btn.id} className="msg-button-chip">{btn.label}</span>
+            <div key={btn.id} className="msg-action-row">
+              <span className="msg-action-row-icon">↩</span>
+              <span className="msg-action-row-label">{btn.label}</span>
+            </div>
           ))}
         </div>
       )}

@@ -2,6 +2,7 @@ import type { WAMessage, WASocket } from "@whiskeysockets/baileys";
 import * as baileys from "@whiskeysockets/baileys";
 import pdfParse from "pdf-parse";
 import { env } from "../config/env.js";
+import { pool } from "../db/pool.js";
 import { openAIService } from "./openai-service.js";
 
 function unwrapMessageContent(message: NonNullable<WAMessage["message"]>): NonNullable<WAMessage["message"]> {
@@ -67,16 +68,40 @@ function limitText(text: string): string {
   return text.slice(0, env.INBOUND_MEDIA_MAX_TEXT_CHARS);
 }
 
-export async function extractInboundMediaText(socket: WASocket, message: WAMessage): Promise<string | null> {
-  if (!message.message) {
+async function storeMediaInUploads(
+  userId: string,
+  buffer: Buffer,
+  mimeType: string,
+  filename: string
+): Promise<string | null> {
+  try {
+    const base64Data = buffer.toString("base64");
+    const result = await pool.query<{ id: string }>(
+      `INSERT INTO media_uploads (user_id, mime_type, filename, data, size_bytes)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [userId, mimeType, filename, base64Data, buffer.length]
+    );
+    return `/api/media/${result.rows[0].id}`;
+  } catch {
     return null;
+  }
+}
+
+export async function extractInboundMediaText(
+  socket: WASocket,
+  message: WAMessage,
+  userId?: string
+): Promise<{ text: string | null; mediaUrl: string | null }> {
+  if (!message.message) {
+    return { text: null, mediaUrl: null };
   }
 
   const content = unwrapMessageContent(message.message);
   const hasImage = Boolean(content.imageMessage);
   const document = content.documentMessage;
   if (!hasImage && !document) {
-    return null;
+    return { text: null, mediaUrl: null };
   }
 
   const mimeType = content.imageMessage?.mimetype || document?.mimetype || "application/octet-stream";
@@ -86,14 +111,22 @@ export async function extractInboundMediaText(socket: WASocket, message: WAMessa
     "Inbound media download timed out"
   );
   if (!media || media.length === 0) {
-    return null;
+    return { text: null, mediaUrl: null };
   }
 
   if (media.length > env.INBOUND_MEDIA_MAX_BYTES) {
-    return `[Media attached but too large to parse automatically (${Math.round(media.length / (1024 * 1024))}MB)].`;
+    return {
+      text: `[Media attached but too large to parse automatically (${Math.round(media.length / (1024 * 1024))}MB)].`,
+      mediaUrl: null
+    };
   }
 
   if (hasImage || mimeType.startsWith("image/")) {
+    // Store the image buffer so we can show the actual photo in the chat.
+    const mediaUrl = userId
+      ? await storeMediaInUploads(userId, media, mimeType, "inbound-image")
+      : null;
+
     try {
       const extracted = await withTimeout(
         openAIService.extractTextFromImage(media, mimeType),
@@ -101,9 +134,10 @@ export async function extractInboundMediaText(socket: WASocket, message: WAMessa
         "Image OCR timed out"
       );
       const cleaned = normalizeExtractedText(extracted);
-      return cleaned ? `[Extracted image text]: ${limitText(cleaned)}` : "[Image received with no readable text]";
+      const text = cleaned ? `[Extracted image text]: ${limitText(cleaned)}` : "[Image received with no readable text]";
+      return { text, mediaUrl };
     } catch {
-      return "[Image received; text extraction unavailable]";
+      return { text: "[Image received; text extraction unavailable]", mediaUrl };
     }
   }
 
@@ -111,16 +145,22 @@ export async function extractInboundMediaText(socket: WASocket, message: WAMessa
     try {
       const parsed = await withTimeout(pdfParse(media), env.INBOUND_MEDIA_TIMEOUT_MS, "PDF media parsing timed out");
       const cleaned = normalizeExtractedText(parsed.text ?? "");
-      return cleaned ? `[Extracted document text]: ${limitText(cleaned)}` : "[Document received with no readable text]";
+      return {
+        text: cleaned ? `[Extracted document text]: ${limitText(cleaned)}` : "[Document received with no readable text]",
+        mediaUrl: null
+      };
     } catch {
-      return "[PDF received; text extraction failed]";
+      return { text: "[PDF received; text extraction failed]", mediaUrl: null };
     }
   }
 
   if (mimeType.startsWith("text/") || mimeType.includes("json") || mimeType.includes("xml") || mimeType.includes("csv")) {
     const cleaned = normalizeExtractedText(media.toString("utf8"));
-    return cleaned ? `[Extracted document text]: ${limitText(cleaned)}` : "[Document received with no readable text]";
+    return {
+      text: cleaned ? `[Extracted document text]: ${limitText(cleaned)}` : "[Document received with no readable text]",
+      mediaUrl: null
+    };
   }
 
-  return `[Document received: ${document?.fileName ?? mimeType}]`;
+  return { text: `[Document received: ${document?.fileName ?? mimeType}]`, mediaUrl: null };
 }

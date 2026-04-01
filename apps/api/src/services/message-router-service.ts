@@ -31,6 +31,7 @@ export interface ProcessIncomingMessageInput {
   flowMessageText?: string | null;
   senderName?: string;
   shouldAutoReply?: boolean;
+  mediaUrl?: string | null;
   sendReply?: (payload: { text: string }) => Promise<void>;
 }
 
@@ -124,7 +125,8 @@ export async function processIncomingMessage(
     input.senderName,
     {
       channelType: input.channelType,
-      channelLinkedNumber: input.channelLinkedNumber ?? null
+      channelLinkedNumber: input.channelLinkedNumber ?? null,
+      mediaUrl: input.mediaUrl ?? null
     }
   );
 
