@@ -480,7 +480,6 @@ function ListRow({ template, onView, onDuplicate, onTest, onCopyId, onConfigurat
             View
           </button>
           <OptionsMenu
-            template={template}
             onDuplicate={onDuplicate}
             onTest={onTest}
             onCopyId={onCopyId}
