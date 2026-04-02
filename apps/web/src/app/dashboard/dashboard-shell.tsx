@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "templates" | "billing" | "knowledge" | "settings";
+type PrimaryNavId = "conversations" | "leads" | "billing" | "knowledge" | "settings";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -46,13 +46,6 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "leads",
     title: "Contacts",
     defaultModuleIds: ["leads"]
-  },
-  {
-    id: "templates",
-    label: "Templates",
-    icon: "templates",
-    title: "Templates",
-    defaultModuleIds: ["templates"]
   },
   {
     id: "billing",
@@ -102,7 +95,6 @@ const SETTINGS_MENU_ITEMS: SettingsNavItem[] = [
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   inbox: { label: "Chats", subtitle: "Live Inbox" },
   leads: { label: "Contacts", subtitle: "Customer Directory" },
-  templates: { label: "Templates", subtitle: "Create and manage broadcast templates" },
   billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
   "studio-flows": { label: "Flows", subtitle: "Build chatbot workflows visually" },
@@ -208,9 +200,7 @@ function DashboardShellLayout() {
           ? "/dashboard/inbox"
           : item.id === "leads"
             ? "/dashboard/leads"
-            : item.id === "templates"
-              ? "/dashboard/templates"
-              : item.id === "billing"
+            : item.id === "billing"
                 ? "/dashboard/billing"
                 : item.id === "knowledge"
                   ? studioDefaultTo
@@ -222,9 +212,7 @@ function DashboardShellLayout() {
       ? "conversations"
       : currentModuleId === "leads"
         ? "leads"
-        : currentModuleId === "templates"
-          ? "templates"
-          : currentModuleId === "billing"
+        : currentModuleId === "billing"
             ? "billing"
             : currentModuleId.startsWith("settings-")
               ? "settings"
