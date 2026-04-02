@@ -5,7 +5,7 @@ type MediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
 
 interface Props {
   mediaType: MediaType;
-  onUploaded: (url: string) => void;
+  onUploaded: (url: string, localPreviewUrl?: string) => void;
 }
 
 const CONFIG: Record<MediaType, { accept: string; exts: string; maxMb: number; icon: string; label: string }> = {
@@ -34,8 +34,10 @@ export function MediaUploader({ mediaType, onUploaded }: Props) {
     }
 
     // Preview
+    let localPreviewUrl: string | undefined;
     if (mediaType === "IMAGE") {
-      setPreview(URL.createObjectURL(file));
+      localPreviewUrl = URL.createObjectURL(file);
+      setPreview(localPreviewUrl);
       setPreviewName(null);
     } else {
       setPreview(null);
@@ -45,7 +47,7 @@ export function MediaUploader({ mediaType, onUploaded }: Props) {
     setUploading(true);
     try {
       const url = await uploadFlowMedia(file);
-      onUploaded(url);
+      onUploaded(url, localPreviewUrl);
       setUploaded(true);
     } catch (err) {
       setError((err as Error).message || "Upload failed.");

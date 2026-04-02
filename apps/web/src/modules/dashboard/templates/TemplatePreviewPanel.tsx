@@ -57,13 +57,20 @@ function renderButton(btn: { type: string; text: string }) {
 interface Props {
   components: TemplateComponent[];
   businessName?: string;
+  headerImageUrl?: string;
 }
 
-export function TemplatePreviewPanel({ components, businessName = "Your Business" }: Props) {
+export function TemplatePreviewPanel({ components, businessName = "Your Business", headerImageUrl }: Props) {
   const header = components.find((c) => c.type === "HEADER");
   const body = components.find((c) => c.type === "BODY");
   const footer = components.find((c) => c.type === "FOOTER");
   const buttonsComp = components.find((c) => c.type === "BUTTONS");
+
+  // Resolve image URL: prefer explicit prop, then fall back to example handle
+  const resolvedImageUrl =
+    headerImageUrl ||
+    (header?.example as { header_handle?: string[] } | undefined)?.header_handle?.[0] ||
+    null;
 
   return (
     <div
@@ -147,7 +154,29 @@ export function TemplatePreviewPanel({ components, businessName = "Your Business
               {highlightVariables(header.text)}
             </div>
           )}
-          {header && header.format !== "TEXT" && header.format && (
+          {header && header.format === "IMAGE" && (
+            <div
+              style={{
+                height: "140px",
+                overflow: "hidden",
+                background: "#d0d0d0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              {resolvedImageUrl ? (
+                <img
+                  src={resolvedImageUrl}
+                  alt="Header"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                <span style={{ fontSize: "13px", color: "#666" }}>🖼️ Image</span>
+              )}
+            </div>
+          )}
+          {header && header.format === "VIDEO" && (
             <div
               style={{
                 background: "#ccc",
@@ -160,10 +189,39 @@ export function TemplatePreviewPanel({ components, businessName = "Your Business
                 gap: "6px"
               }}
             >
-              {header.format === "IMAGE" && "🖼️ Image"}
-              {header.format === "VIDEO" && "🎬 Video"}
-              {header.format === "DOCUMENT" && "📄 Document"}
-              {header.format === "LOCATION" && "📍 Location"}
+              🎬 Video
+            </div>
+          )}
+          {header && header.format === "DOCUMENT" && (
+            <div
+              style={{
+                background: "#ccc",
+                height: "80px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#666",
+                fontSize: "13px",
+                gap: "6px"
+              }}
+            >
+              📄 Document
+            </div>
+          )}
+          {header && header.format === "LOCATION" && (
+            <div
+              style={{
+                background: "#ccc",
+                height: "100px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#666",
+                fontSize: "13px",
+                gap: "6px"
+              }}
+            >
+              📍 Location
             </div>
           )}
 

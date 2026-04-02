@@ -12,6 +12,29 @@ import { MediaUploader } from "./MediaUploader";
 import { TemplatePreviewPanel } from "./TemplatePreviewPanel";
 import { useCreateTemplateMutation } from "./queries";
 
+function extractPrefillState(t: MessageTemplate) {
+  const header = t.components.find((c) => c.type === "HEADER");
+  const body = t.components.find((c) => c.type === "BODY");
+  const footer = t.components.find((c) => c.type === "FOOTER");
+  const buttonsComp = t.components.find((c) => c.type === "BUTTONS");
+  return {
+    name: t.name + "_copy",
+    category: t.category,
+    language: t.language,
+    headerFormat: header?.format ?? "NONE",
+    headerText: header?.text ?? "",
+    headerHandle: (header?.example as { header_handle?: string[] } | undefined)?.header_handle?.[0] ?? "",
+    bodyText: body?.text ?? "",
+    footerText: footer?.text ?? "",
+    buttons: (buttonsComp?.buttons ?? []).map((b) => ({
+      type: b.type,
+      text: b.text,
+      url: b.url,
+      phone: b.phone_number
+    }))
+  };
+}
+
 const LANGUAGES = [
   { value: "en_US", label: "English (US)" },
   { value: "en_GB", label: "English (UK)" },
@@ -102,18 +125,21 @@ interface Props {
   metaStatus?: MetaBusinessStatus | null;
   onBack: () => void;
   onCreated: (template: MessageTemplate) => void;
+  prefill?: MessageTemplate;
 }
 
-export function TemplateCreatePage({ token, metaStatus, onBack, onCreated }: Props) {
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<TemplateCategory>("MARKETING");
-  const [language, setLanguage] = useState("en_US");
-  const [headerFormat, setHeaderFormat] = useState("NONE");
-  const [headerText, setHeaderText] = useState("");
-  const [headerHandle, setHeaderHandle] = useState("");
-  const [bodyText, setBodyText] = useState("");
-  const [footerText, setFooterText] = useState("");
-  const [buttons, setButtons] = useState<Array<{ type: string; text: string; url?: string; phone?: string; coupon?: string }>>([]);
+export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefill }: Props) {
+  const init = prefill ? extractPrefillState(prefill) : null;
+  const [name, setName] = useState(init?.name ?? "");
+  const [category, setCategory] = useState<TemplateCategory>(init?.category ?? "MARKETING");
+  const [language, setLanguage] = useState(init?.language ?? "en_US");
+  const [headerFormat, setHeaderFormat] = useState(init?.headerFormat ?? "NONE");
+  const [headerText, setHeaderText] = useState(init?.headerText ?? "");
+  const [headerHandle, setHeaderHandle] = useState(init?.headerHandle ?? "");
+  const [headerImageUrl, setHeaderImageUrl] = useState<string | null>(null);
+  const [bodyText, setBodyText] = useState(init?.bodyText ?? "");
+  const [footerText, setFooterText] = useState(init?.footerText ?? "");
+  const [buttons, setButtons] = useState<Array<{ type: string; text: string; url?: string; phone?: string; coupon?: string }>>(init?.buttons ?? []);
   const [variableMapping, setVariableMapping] = useState<Record<string, string>>({});
   const [showButtonMenu, setShowButtonMenu] = useState(false);
   const [showAI, setShowAI] = useState(false);
@@ -306,7 +332,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated }: Pro
                   name="headerFormat"
                   value={fmt}
                   checked={headerFormat === fmt}
-                  onChange={() => { setHeaderFormat(fmt); setHeaderText(""); setHeaderHandle(""); }}
+                  onChange={() => { setHeaderFormat(fmt); setHeaderText(""); setHeaderHandle(""); setHeaderImageUrl(null); }}
                   style={{ accentColor: "#25d366" }}
                 />
                 {fmt.charAt(0) + fmt.slice(1).toLowerCase()}
@@ -334,7 +360,10 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated }: Pro
             <div style={{ marginTop: "12px" }}>
               <MediaUploader
                 mediaType={headerFormat as "IMAGE" | "VIDEO" | "DOCUMENT"}
-                onUploaded={(url) => setHeaderHandle(url)}
+                onUploaded={(url, localPreviewUrl) => {
+                  setHeaderHandle(url);
+                  if (headerFormat === "IMAGE") setHeaderImageUrl(localPreviewUrl ?? url);
+                }}
               />
             </div>
           )}
@@ -622,7 +651,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated }: Pro
             />
           </div>
         ) : (
-          <TemplatePreviewPanel components={previewComponents} businessName={connectionName} />
+          <TemplatePreviewPanel components={previewComponents} businessName={connectionName} headerImageUrl={headerImageUrl ?? undefined} />
         )}
       </div>
     </div>
