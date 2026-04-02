@@ -4,6 +4,7 @@ import {
   deleteMessageTemplate,
   fetchTemplates,
   generateAITemplate,
+  sendTestTemplateMessage,
   syncMessageTemplates,
   uploadTemplateMedia,
   type CreateTemplatePayload,
@@ -65,5 +66,12 @@ export function useUploadMediaMutation(token: string) {
   return useMutation({
     mutationFn: ({ connectionId, file }: { connectionId: string; file: File }) =>
       uploadTemplateMedia(token, connectionId, file).then((r) => r.handle)
+  });
+}
+
+export function useSendTestTemplateMutation(token: string) {
+  return useMutation({
+    mutationFn: (payload: { templateId: string; to: string; variableValues: Record<string, string> }) =>
+      sendTestTemplateMessage(token, payload)
   });
 }

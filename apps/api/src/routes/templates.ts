@@ -7,6 +7,7 @@ import {
   deleteTemplate,
   generateTemplateWithAI,
   listTemplates,
+  sendTestTemplate,
   syncAllTemplates,
   uploadTemplateMedia,
   type TemplateStatus
@@ -152,6 +153,28 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
       } finally {
         await request.cleanRequestFiles();
       }
+    }
+  );
+
+  // POST /api/meta/templates/test-send — send template to a test phone number
+  fastify.post(
+    "/api/meta/templates/test-send",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const body = request.body as {
+        templateId?: string;
+        to?: string;
+        variableValues?: Record<string, string>;
+      };
+      if (!body.templateId || !body.to) {
+        return reply.status(400).send({ error: "templateId and to are required." });
+      }
+      const result = await sendTestTemplate(request.authUser.userId, {
+        templateId: body.templateId,
+        to: body.to,
+        variableValues: body.variableValues ?? {}
+      });
+      return { ok: true, messageId: result.messageId };
     }
   );
 

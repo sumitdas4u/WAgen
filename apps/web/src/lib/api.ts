@@ -1942,6 +1942,17 @@ export function uploadTemplateMedia(token: string, connectionId: string, file: F
   );
 }
 
+export function sendTestTemplateMessage(
+  token: string,
+  payload: { templateId: string; to: string; variableValues: Record<string, string> }
+) {
+  return apiRequest<{ ok: boolean; messageId: string | null }>("/api/meta/templates/test-send", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
 
 // ── Contact Fields ────────────────────────────────────────────────────────────
 

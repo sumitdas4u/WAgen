@@ -374,3 +374,94 @@ export async function uploadTemplateMedia(
   const result = await graphPostMedia(conn.phone_number_id, accessToken, fileBuffer, mimeType);
   return { handle: result.id };
 }
+
+// ─── Test-send ────────────────────────────────────────────────────────────────
+
+function buildSendComponents(
+  components: TemplateComponent[],
+  variableValues: Record<string, string>
+): Array<Record<string, unknown>> {
+  const result: Array<Record<string, unknown>> = [];
+
+  for (const comp of components) {
+    if (comp.type === "HEADER") {
+      const handle =
+        (comp.example as { header_handle?: string[] } | undefined)?.header_handle?.[0];
+      if (comp.format === "IMAGE" && handle) {
+        result.push({ type: "header", parameters: [{ type: "image", image: { link: handle } }] });
+      } else if (comp.format === "VIDEO" && handle) {
+        result.push({ type: "header", parameters: [{ type: "video", video: { link: handle } }] });
+      } else if (comp.format === "DOCUMENT" && handle) {
+        result.push({ type: "header", parameters: [{ type: "document", document: { link: handle } }] });
+      }
+      // TEXT headers are static — no parameters needed
+    } else if (comp.type === "BODY" && comp.text) {
+      const uniqueVars = [...new Set([...comp.text.matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[0]))];
+      if (uniqueVars.length > 0) {
+        result.push({
+          type: "body",
+          parameters: uniqueVars.map((v) => ({
+            type: "text",
+            text: variableValues[v] || v.replace(/\{\{|\}\}/g, "")
+          }))
+        });
+      }
+    } else if (comp.type === "BUTTONS") {
+      (comp.buttons ?? []).forEach((btn, idx) => {
+        if (btn.type === "COPY_CODE" && btn.example?.[0]) {
+          result.push({
+            type: "button",
+            sub_type: "coupon_code",
+            index: String(idx),
+            parameters: [{ type: "coupon_code", coupon_code: btn.example[0] }]
+          });
+        }
+      });
+    }
+  }
+
+  return result;
+}
+
+export async function sendTestTemplate(
+  userId: string,
+  payload: { templateId: string; to: string; variableValues: Record<string, string> }
+): Promise<{ messageId: string | null }> {
+  const rows = await pool.query<MessageTemplateRow>(
+    `SELECT id, user_id, connection_id, template_id, name, category, language,
+            status, quality_score, components_json, meta_rejection_reason,
+            created_at::text, updated_at::text
+     FROM message_templates WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [payload.templateId, userId]
+  );
+  const row = rows.rows[0];
+  if (!row) throw new Error("Template not found.");
+
+  const template = mapTemplate(row);
+
+  const digits = payload.to.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) {
+    throw new Error("Phone number must contain 8–15 digits.");
+  }
+
+  const conn = await getConnectionForUser(userId, template.connectionId);
+  const accessToken = decryptToken(conn.access_token_encrypted);
+  const sendComponents = buildSendComponents(template.components, payload.variableValues);
+
+  const response = await graphPost<{ messages?: Array<{ id?: string }> }>(
+    `/${conn.phone_number_id}/messages`,
+    accessToken,
+    {
+      messaging_product: "whatsapp",
+      to: digits,
+      type: "template",
+      template: {
+        name: template.name,
+        language: { code: template.language },
+        ...(sendComponents.length > 0 ? { components: sendComponents } : {})
+      }
+    }
+  );
+
+  return { messageId: response.messages?.[0]?.id ?? null };
+}

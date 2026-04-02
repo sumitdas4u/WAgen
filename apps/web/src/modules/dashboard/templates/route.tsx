@@ -8,7 +8,11 @@ export function Component() {
   const { token } = useDashboardShell();
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
 
-  return <TemplateListPage token={token} metaStatus={metaStatusQuery.data ?? null} />;
+  return (
+    <section className="clone-settings-view" style={{ fontFamily: "inherit" }}>
+      <TemplateListPage token={token} metaStatus={metaStatusQuery.data ?? null} />
+    </section>
+  );
 }
 
 export async function prefetchData({ token, queryClient }: DashboardModulePrefetchContext) {

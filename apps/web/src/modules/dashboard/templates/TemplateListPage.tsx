@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { MessageTemplate, MetaBusinessStatus, TemplateCategory, TemplateStatus } from "../../../lib/api";
 import { TemplateCreatePage } from "./TemplateCreatePage";
 import { TemplatePreviewPanel } from "./TemplatePreviewPanel";
 import { TemplateStatusBadge } from "./TemplateStatusBadge";
-import { useDeleteTemplateMutation, useSyncTemplatesMutation, useTemplatesQuery } from "./queries";
+import { useDeleteTemplateMutation, useSendTestTemplateMutation, useSyncTemplatesMutation, useTemplatesQuery } from "./queries";
 
 // ─── Mini card preview ────────────────────────────────────────────────────────
 
@@ -107,16 +108,26 @@ interface OptionsMenuProps {
 
 function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete }: OptionsMenuProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [dropPos, setDropPos] = useState<{ top: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
+
+  function handleToggle(e: { stopPropagation: () => void }) {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    setOpen((v) => !v);
+  }
 
   const item = (icon: string, label: string, action: () => void, danger = false) => (
     <button
@@ -133,6 +144,7 @@ function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete
         border: "none",
         cursor: "pointer",
         fontSize: "13px",
+        fontFamily: "inherit",
         color: danger ? "#dc2626" : "#222",
         textAlign: "left"
       }}
@@ -145,10 +157,11 @@ function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete
   );
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        onClick={handleToggle}
         style={{
           background: "none",
           border: "1px solid #e0e0e0",
@@ -163,17 +176,17 @@ function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete
       >
         ⋮
       </button>
-      {open && (
+      {open && dropPos && createPortal(
         <div
           style={{
-            position: "absolute",
-            right: 0,
-            top: "calc(100% + 4px)",
+            position: "fixed",
+            top: dropPos.top,
+            right: dropPos.right,
             background: "#fff",
             border: "1.5px solid #e0e0e0",
             borderRadius: "10px",
             boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-            zIndex: 100,
+            zIndex: 9999,
             minWidth: "190px",
             overflow: "hidden"
           }}
@@ -184,81 +197,210 @@ function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete
           {item("⚙", "Configurations", onConfigurations)}
           <div style={{ borderTop: "1px solid #f0f0f0", margin: "4px 0" }} />
           {item("🗑", "Delete", onDelete, true)}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
 // ─── Test template modal ──────────────────────────────────────────────────────
 
-function TestTemplateModal({ template, onClose }: { template: MessageTemplate; onClose: () => void }) {
+function TestTemplateModal({
+  template,
+  token,
+  onClose
+}: {
+  template: MessageTemplate;
+  token: string;
+  onClose: () => void;
+}) {
   const vars = [...new Set([...JSON.stringify(template.components).matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[0]))];
+  const [phone, setPhone] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<"variables" | "media" | "advanced">("variables");
+  const [sent, setSent] = useState(false);
+
+  const sendMutation = useSendTestTemplateMutation(token);
 
   const filled = template.components.map((c) => {
     if (c.type !== "BODY" || !c.text) return c;
     let text = c.text;
-    for (const [k, v] of Object.entries(values)) {
-      text = text.replaceAll(k, v || k);
-    }
+    for (const [k, v] of Object.entries(values)) text = text.replaceAll(k, v || k);
     return { ...c, text };
   });
 
+  async function handleSend() {
+    if (!phone.trim()) return;
+    try {
+      await sendMutation.mutateAsync({
+        templateId: template.id,
+        to: phone.trim(),
+        variableValues: values
+      });
+      setSent(true);
+    } catch {
+      // error shown via sendMutation.error
+    }
+  }
+
+  const phoneValid = phone.replace(/\D/g, "").length >= 8;
+
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        zIndex: 200,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px"
-      }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
       onClick={onClose}
     >
       <div
-        style={{
-          background: "#fff",
-          borderRadius: "16px",
-          width: "100%",
-          maxWidth: "700px",
-          maxHeight: "90vh",
-          overflow: "auto",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.2)"
-        }}
+        style={{ background: "#fff", borderRadius: "16px", width: "100%", maxWidth: "760px", maxHeight: "92vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.22)", overflow: "hidden" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: "16px" }}>Test template</div>
-            <div style={{ fontSize: "13px", color: "#666", marginTop: "2px" }}>{template.name}</div>
-          </div>
-          <button type="button" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "20px", color: "#888" }}>×</button>
+        {/* Header */}
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: "17px" }}>Test template</div>
+          <button type="button" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "22px", color: "#888", lineHeight: 1 }}>×</button>
         </div>
-        <div style={{ padding: "24px", display: "flex", gap: "24px" }}>
-          {vars.length > 0 && (
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: "13px", marginBottom: "12px" }}>Fill variables</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {vars.map((v) => (
-                  <div key={v}>
-                    <label style={{ fontSize: "12px", fontWeight: 600, color: "#555", display: "block", marginBottom: "4px" }}>{v}</label>
-                    <input
-                      value={values[v] ?? ""}
-                      onChange={(e) => setValues((prev) => ({ ...prev, [v]: e.target.value }))}
-                      placeholder={`Value for ${v}`}
-                      style={{ width: "100%", border: "1.5px solid #e0e0e0", borderRadius: "6px", padding: "7px 10px", fontSize: "13px", boxSizing: "border-box" }}
-                    />
-                  </div>
-                ))}
+
+        {/* Phone input row */}
+        <div style={{ padding: "14px 24px", background: "#f6f8fb", borderBottom: "1px solid #eef0f3", display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
+          <label style={{ fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
+            Enter your phone number <span style={{ color: "#dc2626" }}>*</span>
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: "0", border: "1.5px solid #d1d5db", borderRadius: "8px", overflow: "hidden", background: "#fff", maxWidth: "280px", flex: 1 }}>
+            <div style={{ padding: "9px 12px", borderRight: "1px solid #e5e7eb", fontSize: "18px", lineHeight: 1, userSelect: "none" }}>🇮🇳</div>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+91 98047 35837"
+              style={{ flex: 1, border: "none", outline: "none", padding: "9px 12px", fontSize: "14px", fontFamily: "inherit" }}
+            />
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+          {/* Left: preview */}
+          <div style={{ width: "300px", flexShrink: 0, borderRight: "1px solid #f0f0f0", padding: "16px", overflowY: "auto" }}>
+            <div style={{ marginBottom: "8px" }}>
+              <div style={{ fontWeight: 700, fontSize: "14px", color: "#111" }}>{template.name}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                <TemplateStatusBadge status={template.status} />
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#1d4ed8", background: "#eff6ff", padding: "2px 6px", borderRadius: "4px" }}>{template.category}</span>
               </div>
             </div>
-          )}
-          <div style={{ flex: "0 0 280px" }}>
             <TemplatePreviewPanel components={filled} />
+          </div>
+
+          {/* Right: tabs */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+            {/* Tab bar */}
+            <div style={{ display: "flex", borderBottom: "1.5px solid #e5e7eb", padding: "0 24px", flexShrink: 0 }}>
+              {(["variables", "media", "advanced"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    padding: "12px 16px",
+                    background: "none",
+                    border: "none",
+                    borderBottom: activeTab === tab ? "2px solid #1a56db" : "2px solid transparent",
+                    marginBottom: "-1.5px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: activeTab === tab ? 600 : 400,
+                    color: activeTab === tab ? "#1a56db" : "#555",
+                    fontFamily: "inherit",
+                    textTransform: "capitalize"
+                  }}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+              {activeTab === "variables" && (
+                vars.length === 0 ? (
+                  <div style={{ color: "#888", fontSize: "14px", marginTop: "4px" }}>
+                    This message template doesn&apos;t have variables
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {vars.map((v) => (
+                      <div key={v}>
+                        <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#444", marginBottom: "5px" }}>
+                          {v}
+                        </label>
+                        <input
+                          value={values[v] ?? ""}
+                          onChange={(e) => setValues((prev) => ({ ...prev, [v]: e.target.value }))}
+                          placeholder={`Value for ${v}`}
+                          style={{ width: "100%", border: "1.5px solid #e0e0e0", borderRadius: "8px", padding: "8px 12px", fontSize: "14px", boxSizing: "border-box", fontFamily: "inherit" }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {activeTab === "media" && (
+                <div style={{ color: "#888", fontSize: "14px" }}>
+                  Media overrides are not supported for test sends. The template&apos;s original media will be used.
+                </div>
+              )}
+
+              {activeTab === "advanced" && (
+                <div style={{ color: "#888", fontSize: "14px" }}>
+                  Advanced options coming soon.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "16px 24px", borderTop: "1px solid #f0f0f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          {/* Error / success */}
+          <div style={{ flex: 1 }}>
+            {sent && (
+              <div style={{ color: "#166534", fontSize: "13px", fontWeight: 600 }}>
+                ✓ Message sent successfully!
+              </div>
+            )}
+            {sendMutation.isError && (
+              <div style={{ color: "#dc2626", fontSize: "13px" }}>
+                {(sendMutation.error as Error).message}
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ padding: "9px 20px", borderRadius: "8px", border: "1.5px solid #e0e0e0", background: "#fff", cursor: "pointer", fontSize: "14px", fontFamily: "inherit" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!phoneValid || sendMutation.isPending}
+              style={{
+                padding: "9px 28px",
+                borderRadius: "8px",
+                border: "none",
+                background: phoneValid && !sendMutation.isPending ? "#1a56db" : "#93c5fd",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: "14px",
+                cursor: phoneValid && !sendMutation.isPending ? "pointer" : "not-allowed",
+                fontFamily: "inherit"
+              }}
+            >
+              {sendMutation.isPending ? "Sending…" : "Test"}
+            </button>
           </div>
         </div>
       </div>
@@ -633,8 +775,14 @@ export function TemplateListPage({ token, metaStatus }: Props) {
     onDelete: () => setDeleteTarget(t)
   });
 
+  const isSyncing = syncMutation.isPending || templatesQuery.isFetching;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+      <style>{`
+        @keyframes tmpl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .tmpl-sync-spin { animation: tmpl-spin 0.7s linear infinite; display: inline-block; }
+      `}</style>
 
       {/* ── Page title row ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
@@ -643,11 +791,11 @@ export function TemplateListPage({ token, metaStatus }: Props) {
           <button
             type="button"
             onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending || templatesQuery.isFetching}
-            style={{ padding: "8px", borderRadius: "8px", border: "1.5px solid #e0e0e0", background: "#fff", cursor: "pointer", color: "#555", fontSize: "16px", lineHeight: 1 }}
+            disabled={isSyncing}
+            style={{ padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #e0e0e0", background: "#fff", cursor: isSyncing ? "not-allowed" : "pointer", color: "#555", fontSize: "16px", lineHeight: 1, opacity: isSyncing ? 0.7 : 1 }}
             title="Sync from Meta"
           >
-            ↻
+            <span className={isSyncing ? "tmpl-sync-spin" : ""}>↻</span>
           </button>
           <button
             type="button"
@@ -912,7 +1060,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
 
       {/* ── Modals ── */}
       {viewTemplate && <ViewModal template={viewTemplate} onClose={() => setViewTemplate(null)} />}
-      {testTemplate && <TestTemplateModal template={testTemplate} onClose={() => setTestTemplate(null)} />}
+      {testTemplate && <TestTemplateModal template={testTemplate} token={token} onClose={() => setTestTemplate(null)} />}
       {configTemplate && <ConfigurationsModal template={configTemplate} onClose={() => setConfigTemplate(null)} />}
       {deleteTarget && (
         <DeleteConfirmModal
