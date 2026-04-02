@@ -98,7 +98,6 @@ function MiniPreview({ template }: { template: MessageTemplate }) {
 // ─── Options menu ─────────────────────────────────────────────────────────────
 
 interface OptionsMenuProps {
-  template: MessageTemplate;
   onDuplicate: () => void;
   onTest: () => void;
   onCopyId: () => void;
@@ -106,7 +105,7 @@ interface OptionsMenuProps {
   onDelete: () => void;
 }
 
-function OptionsMenu({ template, onDuplicate, onTest, onCopyId, onConfigurations, onDelete }: OptionsMenuProps) {
+function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete }: OptionsMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
