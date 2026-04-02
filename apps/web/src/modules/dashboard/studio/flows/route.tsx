@@ -460,7 +460,8 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
           {
             ...connection,
             type: "buttonEdge",
-            markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 }
+            markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#64748b" },
+            style: { stroke: "#64748b", strokeWidth: 1.5, strokeDasharray: "6,3" }
           },
           cur
         )
@@ -610,7 +611,7 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
             edgeTypes={EDGE_TYPES}
             fitView
             deleteKeyCode="Delete"
-            defaultEdgeOptions={{ type: "buttonEdge", markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
+            defaultEdgeOptions={{ type: "buttonEdge", markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#64748b" }, style: { stroke: "#64748b", strokeWidth: 1.5, strokeDasharray: "6,3" } }}
           >
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#c8d6e8" />
             <Controls />

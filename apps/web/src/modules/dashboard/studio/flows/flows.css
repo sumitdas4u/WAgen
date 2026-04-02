@@ -796,30 +796,69 @@ body.flow-builder-mode .chatbot-studio-content {
 
 .fn-node-body { padding: 0.55rem 0.72rem 0.5rem; display: flex; flex-direction: column; gap: 0.38rem; }
 
-/* ── Canvas node: clean minimal card ──────────────────────
-   Show ONLY the header. All content hidden.
-   Click the node to open config in the right panel.
-   Output handles rendered below the header as small dots.
+/* ── Canvas node: content preview card ────────────────────
+   Show content as read-only preview inside node.
+   Click node to open config in the right panel.
 ───────────────────────────────────────────────────────── */
 .fn-canvas .fn-node {
-  min-width: 170px;
-  max-width: 220px;
+  min-width: 240px;
+  max-width: 280px;
   cursor: pointer;
 }
 
-/* Hide entire body — all config shown in right panel on click */
-.fn-canvas .fn-node .fn-node-body > *:not(.fn-api-outputs):not(.fn-cond-outputs) {
-  display: none !important;
-}
-
-/* Body: just a thin strip to hold output handles */
+/* Body: normal padding, overflow visible for edge handles */
 .fn-canvas .fn-node .fn-node-body {
-  padding: 0 0.6rem 0.45rem;
+  padding: 0.5rem 0.72rem 0.6rem;
   overflow: visible;
 }
 
-/* Remove "Click to configure" text */
-.fn-canvas .fn-node::after { display: none; }
+/* Inputs/textareas: read-only preview — no user interaction */
+.fn-canvas .fn-node .fn-node-body input,
+.fn-canvas .fn-node .fn-node-body textarea,
+.fn-canvas .fn-node .fn-node-body select {
+  pointer-events: none;
+  user-select: none;
+  background: #f8fafc !important;
+  border-color: #e8eef4 !important;
+  resize: none;
+  max-height: 68px;
+  overflow: hidden;
+}
+
+/* Hide add/remove action buttons and connection banners in canvas */
+.fn-canvas .fn-node .fn-add-btn { display: none !important; }
+.fn-canvas .fn-node .fn-node-body .fn-icon-btn { display: none !important; }
+.fn-canvas .fn-node .fn-google-banner { display: none !important; }
+.fn-canvas .fn-node .fn-media-upload { pointer-events: none; opacity: 0.75; }
+
+/* Button/list rows in canvas: ensure handle overflow is visible */
+.fn-canvas .fn-node .fn-btn-rows,
+.fn-canvas .fn-node .fn-btn-row,
+.fn-canvas .fn-node .fn-list-section,
+.fn-canvas .fn-node .fn-list-row {
+  overflow: visible;
+}
+
+/* Button rows in canvas: clean preview look */
+.fn-canvas .fn-node .fn-btn-row {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 0.25rem 0.5rem;
+}
+.fn-canvas .fn-node .fn-btn-row-input {
+  border: none !important;
+  background: transparent !important;
+  font-size: 0.73rem;
+  font-weight: 500;
+  color: var(--text-1) !important;
+}
+
+/* List rows in canvas: clean preview look */
+.fn-canvas .fn-node .fn-list-row {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
 
 .fn-right-body .fn-node {
   min-width: 0;
@@ -854,18 +893,16 @@ body.flow-builder-mode .chatbot-studio-content {
 .fn-canvas .fn-node .fn-cond-branch {
   overflow: visible !important;
   position: relative;
-  /* Compact: just a tiny label + handle dot */
-  padding: 0.18rem 1.4rem 0.18rem 0.5rem;
-  font-size: 0.63rem;
+  padding: 0.22rem 1.6rem 0.22rem 0.55rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  border-radius: 6px;
-  background: #f8fafc;
-  border: 1px solid #e8eef6;
-  min-height: 0;
+  border-radius: 7px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   gap: 0.3rem;
 }
-/* Hide the colored dot in canvas — handle itself is the indicator */
-.fn-canvas .fn-node .fn-cond-dot { display: none; }
+/* Show the colored dot in canvas for branch type visibility */
+.fn-canvas .fn-node .fn-cond-dot { display: inline-block; }
 
 .fn-right-body .fn-node-header .fn-icon-btn {
   display: none;
@@ -1023,31 +1060,45 @@ body.flow-builder-mode .chatbot-studio-content {
 .react-flow__handle { opacity: 1 !important; }
 
 .fn-handle-in {
-  width: 16px !important; height: 16px !important;
+  width: 18px !important; height: 18px !important;
   background: #3b82f6 !important;
   border: 2.5px solid #fff !important;
-  box-shadow: 0 0 0 2.5px rgba(59,130,246,.45) !important;
-  left: -8px !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.4) !important;
+  left: -9px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   transition: box-shadow .15s, transform .12s !important;
   cursor: crosshair !important;
 }
 .fn-handle-in:hover {
-  transform: scale(1.45) !important;
-  box-shadow: 0 0 0 4px rgba(59,130,246,.55) !important;
+  transform: scale(1.35) !important;
+  box-shadow: 0 0 0 4px rgba(59,130,246,.45) !important;
 }
 
 .fn-handle-out {
-  width: 16px !important; height: 16px !important;
+  width: 20px !important; height: 20px !important;
   background: #14b8a6 !important;
   border: 2.5px solid #fff !important;
-  box-shadow: 0 0 0 2.5px rgba(20,184,166,.45) !important;
-  right: -8px !important;
+  box-shadow: 0 0 0 2px rgba(20,184,166,.4) !important;
+  right: -10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   transition: box-shadow .15s, transform .12s !important;
   cursor: crosshair !important;
 }
+.fn-handle-out::before {
+  content: '+';
+  color: rgba(255,255,255,0.95);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+}
 .fn-handle-out:hover {
-  transform: scale(1.45) !important;
-  box-shadow: 0 0 0 4px rgba(20,184,166,.55) !important;
+  transform: scale(1.3) !important;
+  box-shadow: 0 0 0 4px rgba(20,184,166,.45) !important;
 }
 
 /* Coloured output variants */
