@@ -404,7 +404,6 @@ function GridCard({ template, onView, onDuplicate, onTest, onCopyId, onConfigura
               View
             </button>
             <OptionsMenu
-              template={template}
               onDuplicate={onDuplicate}
               onTest={onTest}
               onCopyId={onCopyId}
