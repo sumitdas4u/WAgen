@@ -103,6 +103,7 @@ jobs:
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           port: ${{ secrets.STAGING_PORT }}
+          command_timeout: 30m
           script_stop: true
           script: |
             cd "${{ secrets.STAGING_APP_DIR }}"
@@ -138,6 +139,7 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: ${{ secrets.PROD_PORT }}
+          command_timeout: 30m
           script_stop: true
           script: |
             cd "${{ secrets.PROD_APP_DIR }}"
