@@ -796,94 +796,30 @@ body.flow-builder-mode .chatbot-studio-content {
 
 .fn-node-body { padding: 0.55rem 0.72rem 0.5rem; display: flex; flex-direction: column; gap: 0.38rem; }
 
+/* ── Canvas node: clean minimal card ──────────────────────
+   Show ONLY the header. All content hidden.
+   Click the node to open config in the right panel.
+   Output handles rendered below the header as small dots.
+───────────────────────────────────────────────────────── */
 .fn-canvas .fn-node {
-  min-width: 210px;
-  max-width: 270px;
+  min-width: 170px;
+  max-width: 220px;
   cursor: pointer;
 }
 
-.fn-canvas .fn-node .fn-node-body {
-  padding: 0.4rem 0.62rem 0.48rem;
-  gap: 0.28rem;
-  /* overflow must be visible so output handles at the bottom are not clipped */
-  overflow: visible;
-}
-
-.fn-canvas .fn-node .fn-node-label {
-  display: none;
-}
-
-.fn-canvas .fn-node .fn-node-input,
-.fn-canvas .fn-node .fn-node-textarea,
-.fn-canvas .fn-node .fn-node-select,
-.fn-canvas .fn-node .fn-btn-row-input,
-.fn-canvas .fn-node .fn-list-row-input,
-.fn-canvas .fn-node .fn-input,
-.fn-canvas .fn-node .fn-select,
-.fn-canvas .fn-node .fn-textarea {
-  border: none;
-  background: transparent;
-  padding: 0;
-  min-height: 0;
-  box-shadow: none;
-  pointer-events: none;
-  font-size: 0.72rem;
-  color: var(--text-2);
-}
-
-.fn-canvas .fn-node .fn-node-textarea,
-.fn-canvas .fn-node .fn-textarea {
-  max-height: 2.8em;
-  line-height: 1.4;
-  overflow: hidden;
-  resize: none;
-}
-
-.fn-canvas .fn-node .fn-node-select,
-.fn-canvas .fn-node .fn-select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-}
-
-.fn-canvas .fn-node .fn-node-body .fn-icon-btn,
-.fn-canvas .fn-node .fn-node-body .fn-add-btn,
-.fn-canvas .fn-node .fn-node-body .fn-btn,
-.fn-canvas .fn-node .fn-node-body .fn-google-connection,
-.fn-canvas .fn-node .fn-node-body .fn-google-note,
-.fn-canvas .fn-node .fn-node-body .fn-api-hint,
-.fn-canvas .fn-node .fn-node-body .fn-test-panel {
+/* Hide entire body — all config shown in right panel on click */
+.fn-canvas .fn-node .fn-node-body > *:not(.fn-api-outputs):not(.fn-cond-outputs) {
   display: none !important;
 }
 
-.fn-canvas .fn-node .fn-section {
-  border: none;
-  background: transparent;
-  padding: 0;
-  gap: 0.25rem;
+/* Body: just a thin strip to hold output handles */
+.fn-canvas .fn-node .fn-node-body {
+  padding: 0 0.6rem 0.45rem;
+  overflow: visible;
 }
 
-.fn-canvas .fn-node .fn-section h4,
-.fn-canvas .fn-node .fn-section p,
-.fn-canvas .fn-node .fn-field-label {
-  display: none;
-}
-
-.fn-canvas .fn-node::after {
-  content: "Click to configure";
-  display: block;
-  padding: 0 0.66rem 0.54rem;
-  font-size: 0.63rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text-3);
-  opacity: 0.75;
-}
-
-.fn-canvas .fn-node.selected::after {
-  color: var(--fn-teal);
-  opacity: 1;
-}
+/* Remove "Click to configure" text */
+.fn-canvas .fn-node::after { display: none; }
 
 .fn-right-body .fn-node {
   min-width: 0;
@@ -906,26 +842,30 @@ body.flow-builder-mode .chatbot-studio-content {
 /* canvas node: hide delete btn (no interaction) */
 .fn-canvas .fn-node .fn-delete-btn { display: none; }
 
-/* ── Canvas node: always show output handle rows ──────── */
-/* These MUST be visible even in compact canvas view — clipping hides handles */
+/* ── Canvas node: output handle rows ──────────────────── */
 .fn-canvas .fn-node .fn-api-outputs,
 .fn-canvas .fn-node .fn-cond-outputs {
   display: flex !important;
   overflow: visible !important;
   flex-direction: column;
-  gap: 0.2rem;
-  padding-top: 0.22rem;
+  gap: 0.18rem;
 }
 .fn-canvas .fn-node .fn-api-branch,
 .fn-canvas .fn-node .fn-cond-branch {
   overflow: visible !important;
   position: relative;
+  /* Compact: just a tiny label + handle dot */
+  padding: 0.18rem 1.4rem 0.18rem 0.5rem;
+  font-size: 0.63rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: #f8fafc;
+  border: 1px solid #e8eef6;
+  min-height: 0;
+  gap: 0.3rem;
 }
-/* Hide most canvas body content but keep output sections */
-.fn-canvas .fn-node .fn-node-body > *:not(.fn-api-outputs):not(.fn-cond-outputs) {
-  max-height: 72px;
-  overflow: hidden;
-}
+/* Hide the colored dot in canvas — handle itself is the indicator */
+.fn-canvas .fn-node .fn-cond-dot { display: none; }
 
 .fn-right-body .fn-node-header .fn-icon-btn {
   display: none;
