@@ -128,9 +128,11 @@ export interface ContactDeliverySuppression {
 
 const WEBHOOK_LOCK_TIMEOUT_MS = 5 * 60_000;
 const HIGH_FAILURE_MIN_ATTEMPTS = 20;
+const HEALTHY_ECOSYSTEM_REMARK = "This message was not delivered to maintain healthy ecosystem engagement.";
 
 const PERMANENT_META_CODES = new Set(["131026", "131047", "132000", "132001", "133010", "131051"]);
 const BUSINESS_LOGIC_META_CODES = new Set(["132000", "132001", "131051"]);
+const HEALTHY_ECOSYSTEM_META_CODES = new Set(["131049"]);
 const INVALID_NUMBER_META_CODES = new Set(["133010"]);
 
 function normalizePhoneDigits(value: string | null | undefined): string | null {
@@ -164,15 +166,48 @@ function extractErrorMessage(error: unknown): string {
   return String(error ?? "Unknown delivery failure");
 }
 
+function parseProviderErrorMetadata(errorMessage: string | null | undefined): {
+  baseMessage: string | null;
+  metaCode: string | null;
+  subcode: string | null;
+  statusCode: string | null;
+} {
+  const trimmedMessage = trimToNull(errorMessage);
+  if (!trimmedMessage) {
+    return {
+      baseMessage: null,
+      metaCode: null,
+      subcode: null,
+      statusCode: null
+    };
+  }
+
+  const metaCode = trimmedMessage.match(/\bcode=(\d{1,10})\b/i)?.[1] ?? null;
+  const subcode = trimmedMessage.match(/\bsubcode=(\d{1,16})\b/i)?.[1] ?? null;
+  const statusCode = trimmedMessage.match(/\bstatus=(\d{3})\b/i)?.[1] ?? null;
+  const bracketDetails = /\s*\[[^\]]*\]\s*$/i;
+  const baseMessage = trimToNull(trimmedMessage.replace(bracketDetails, "")) ?? trimmedMessage;
+
+  return {
+    baseMessage,
+    metaCode,
+    subcode,
+    statusCode
+  };
+}
+
 function extractErrorCode(error: unknown): string | null {
   if (error instanceof Error) {
+    const metadata = parseProviderErrorMetadata(error.message);
+    if (metadata.metaCode) {
+      return metadata.metaCode;
+    }
     const match = error.message.match(/\b(13\d{4})\b/);
     if (match?.[1]) {
       return match[1];
     }
-    const statusMatch = error.message.match(/\bstatus=(\d{3})\b/i);
-    if (statusMatch?.[1]) {
-      return statusMatch[1];
+    if (metadata.statusCode) {
+      return metadata.statusCode;
     }
   }
   return null;
@@ -180,6 +215,45 @@ function extractErrorCode(error: unknown): string | null {
 
 function isRetryableHttpStatus(message: string): boolean {
   return /\b(429|500|502|503|504)\b/.test(message);
+}
+
+export function isHealthyEcosystemFailure(errorCode?: string | null, errorMessage?: string | null): boolean {
+  if (errorCode && HEALTHY_ECOSYSTEM_META_CODES.has(errorCode)) {
+    return true;
+  }
+
+  const normalizedMessage = (errorMessage ?? "").toLowerCase();
+  return (
+    normalizedMessage.includes("healthy ecosystem") ||
+    normalizedMessage.includes("ecosystem engagement") ||
+    normalizedMessage.includes("maintain healthy ecosystem")
+  );
+}
+
+export function normalizeDeliveryFailureMessage(errorCode?: string | null, errorMessage?: string | null): string {
+  const trimmedMessage = trimToNull(errorMessage);
+  if (isHealthyEcosystemFailure(errorCode, trimmedMessage)) {
+    return HEALTHY_ECOSYSTEM_REMARK;
+  }
+
+  const metadata = parseProviderErrorMetadata(trimmedMessage);
+  const baseMessage = metadata.baseMessage ?? trimmedMessage ?? "Unknown delivery failure";
+  const displayCode =
+    metadata.metaCode ??
+    ((errorCode ?? "").match(/^\d{1,10}$/) && errorCode !== metadata.statusCode ? errorCode ?? null : null) ??
+    errorCode ??
+    null;
+
+  if (displayCode && baseMessage.toLowerCase().startsWith(`meta code ${displayCode}`.toLowerCase())) {
+    return baseMessage;
+  }
+
+  if (displayCode) {
+    const subcodeSuffix = metadata.subcode ? ` (subcode ${metadata.subcode})` : "";
+    return `Meta code ${displayCode}${subcodeSuffix}: ${baseMessage}`;
+  }
+
+  return baseMessage;
 }
 
 export function retryDelayMs(retryCount: number): number {
@@ -196,9 +270,10 @@ export function retryDelayMs(retryCount: number): number {
 }
 
 export function classifyDeliveryFailure(error: unknown, explicitCode?: string | null): DeliveryFailureClassification {
-  const errorMessage = extractErrorMessage(error);
-  const normalizedMessage = errorMessage.toLowerCase();
+  const rawErrorMessage = extractErrorMessage(error);
   const errorCode = explicitCode ?? extractErrorCode(error);
+  const errorMessage = normalizeDeliveryFailureMessage(errorCode, rawErrorMessage);
+  const normalizedMessage = rawErrorMessage.toLowerCase();
 
   if (
     normalizedMessage.includes("timeout") ||
@@ -206,11 +281,21 @@ export function classifyDeliveryFailure(error: unknown, explicitCode?: string | 
     normalizedMessage.includes("econnreset") ||
     normalizedMessage.includes("enotfound") ||
     normalizedMessage.includes("fetch failed") ||
-    isRetryableHttpStatus(errorMessage)
+    isRetryableHttpStatus(rawErrorMessage)
   ) {
     return {
       retryable: true,
       category: "transient",
+      errorCode,
+      errorMessage,
+      suppressionReason: null
+    };
+  }
+
+  if (isHealthyEcosystemFailure(errorCode, rawErrorMessage)) {
+    return {
+      retryable: false,
+      category: "business_logic",
       errorCode,
       errorMessage,
       suppressionReason: null
@@ -228,11 +313,13 @@ export function classifyDeliveryFailure(error: unknown, explicitCode?: string | 
   }
 
   if (
-    normalizedMessage.includes("template") &&
-    (normalizedMessage.includes("missing") ||
-      normalizedMessage.includes("rejected") ||
-      normalizedMessage.includes("mismatch") ||
-      normalizedMessage.includes("not found"))
+    errorCode === "100" ||
+    normalizedMessage.includes("invalid parameter") ||
+    (normalizedMessage.includes("template") &&
+      (normalizedMessage.includes("missing") ||
+        normalizedMessage.includes("rejected") ||
+        normalizedMessage.includes("mismatch") ||
+        normalizedMessage.includes("not found")))
   ) {
     return {
       retryable: false,
@@ -876,6 +963,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
     input.status === "failed"
       ? classifyDeliveryFailure(new Error(trimToNull(input.errorMessage) ?? `Meta delivery failed ${input.errorCode ?? ""}`.trim()), input.errorCode)
       : null;
+  const normalizedErrorMessage = failure?.errorMessage ?? trimToNull(input.errorMessage);
 
   await withTransaction(async (client) => {
     const rowResult = await client.query<{
@@ -924,7 +1012,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
            error_code = COALESCE($3, error_code),
            error_message = COALESCE($4, error_message)
        WHERE id = $1`,
-      [row.message_id, input.status, input.errorCode ?? null, trimToNull(input.errorMessage)]
+      [row.message_id, input.status, input.errorCode ?? null, normalizedErrorMessage]
     );
 
     if (failure?.suppressionReason) {
@@ -937,7 +1025,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
         metadata: {
           wamid: input.wamid,
           errorCode: input.errorCode ?? null,
-          errorMessage: trimToNull(input.errorMessage)
+          errorMessage: normalizedErrorMessage
         }
       });
     }
@@ -963,6 +1051,7 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
     input.status === "failed"
       ? classifyDeliveryFailure(new Error(trimToNull(input.errorMessage) ?? `Meta delivery failed ${input.errorCode ?? ""}`.trim()), input.errorCode)
       : null;
+  const normalizedErrorMessage = failure?.errorMessage ?? trimToNull(input.errorMessage);
 
   await withTransaction(async (client) => {
     const rowResult = await client.query<{
@@ -1010,11 +1099,11 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
            error_message = COALESCE($4, error_message),
            next_retry_at = NULL
        WHERE id = $1`,
-      [
+       [
         row.campaign_message_id,
         input.status,
         input.errorCode ?? null,
-        trimToNull(input.errorMessage)
+        normalizedErrorMessage
       ]
     );
 
@@ -1032,7 +1121,7 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
           campaignId: row.campaign_id,
           wamid: input.wamid,
           errorCode: input.errorCode ?? null,
-          errorMessage: trimToNull(input.errorMessage)
+          errorMessage: normalizedErrorMessage
         }
       });
     }

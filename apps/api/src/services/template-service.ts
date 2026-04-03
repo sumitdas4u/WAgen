@@ -96,6 +96,7 @@ interface ConnectionRow {
 }
 
 type TemplateMediaFormat = Extract<NonNullable<TemplateComponent["format"]>, "IMAGE" | "VIDEO" | "DOCUMENT">;
+const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
 
 export interface TemplateDispatchResult {
   messageId: string | null;
@@ -161,6 +162,116 @@ function normalizePhoneDigits(value: string | null | undefined): string | null {
 function normalizePlaceholderKey(raw: string): string {
   const inner = raw.replace(/^\{\{\s*|\s*\}\}$/g, "").trim();
   return `{{${inner}}}`;
+}
+
+function isPositiveIntegerToken(value: string): boolean {
+  return /^[1-9]\d*$/.test(value.trim());
+}
+
+function listPlaceholders(text: string | null | undefined): string[] {
+  if (!text) {
+    return [];
+  }
+  return [...text.matchAll(PLACEHOLDER_PATTERN)].map((match) => normalizePlaceholderKey(match[0]));
+}
+
+function validateSequentialNumericPlaceholders(placeholders: string[]): string[] {
+  const numericValues = placeholders
+    .map((placeholder) => placeholder.replace(/^\{\{|\}\}$/g, "").trim())
+    .filter((value) => isPositiveIntegerToken(value))
+    .map((value) => Number(value))
+    .sort((left, right) => left - right);
+
+  const errors: string[] = [];
+  for (let index = 0; index < numericValues.length; index += 1) {
+    const expected = index + 1;
+    if (numericValues[index] !== expected) {
+      errors.push(`Template variables must be numbered sequentially as {{1}}, {{2}}, {{3}} with no gaps. Missing {{${expected}}}.`);
+      break;
+    }
+  }
+  return errors;
+}
+
+function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
+  if (payload.category === "AUTHENTICATION") {
+    throw new Error(
+      "Authentication templates need Meta's dedicated authentication-template format and are not supported in this builder yet."
+    );
+  }
+
+  const errors: string[] = [];
+  const placeholders: string[] = [];
+
+  for (const component of payload.components) {
+    if (component.type === "HEADER") {
+      if (component.format === "VIDEO" || component.format === "DOCUMENT" || component.format === "LOCATION") {
+        errors.push("This template builder currently supports text and image headers only.");
+      }
+      if (component.format === "TEXT" && component.text) {
+        placeholders.push(...listPlaceholders(component.text));
+      }
+      if ((component.format === "IMAGE" || component.format === "VIDEO" || component.format === "DOCUMENT") && !component.example) {
+        errors.push(`Header ${component.format.toLowerCase()} templates need a sample file before submission.`);
+      }
+      continue;
+    }
+
+    if (component.type === "BODY" && component.text) {
+      placeholders.push(...listPlaceholders(component.text));
+      continue;
+    }
+
+    if (component.type === "FOOTER" && component.text) {
+      if (/[\r\n]/.test(component.text)) {
+        errors.push("Footer text must stay on a single line.");
+      }
+      if (listPlaceholders(component.text).length > 0) {
+        errors.push("Footer text cannot contain template variables. Move dynamic values into the body instead.");
+      }
+      if (EMOJI_PATTERN.test(component.text)) {
+        errors.push("Footer text cannot contain emojis. Remove the emoji from the footer and try again.");
+      }
+      continue;
+    }
+
+    if (component.type !== "BUTTONS") {
+      continue;
+    }
+
+    for (const [index, button] of (component.buttons ?? []).entries()) {
+      if (!button.text.trim()) {
+        errors.push(`Button ${index + 1} is missing its label.`);
+      }
+      if (button.type === "URL") {
+        if (!button.url?.trim()) {
+          errors.push(`URL button ${index + 1} needs a destination URL.`);
+        }
+        if (button.url) {
+          placeholders.push(...listPlaceholders(button.url));
+        }
+      }
+      if (button.type === "PHONE_NUMBER" && !button.phone_number?.trim()) {
+        errors.push(`Phone button ${index + 1} needs a phone number.`);
+      }
+    }
+  }
+
+  const invalidPlaceholders = placeholders.filter((placeholder) => {
+    const token = placeholder.replace(/^\{\{|\}\}$/g, "").trim();
+    return !isPositiveIntegerToken(token);
+  });
+  if (invalidPlaceholders.length > 0) {
+    errors.push(
+      `Use numbered variables like {{1}}, {{2}}, {{3}}. Invalid variable(s): ${Array.from(new Set(invalidPlaceholders)).join(", ")}.`
+    );
+  }
+
+  errors.push(...validateSequentialNumericPlaceholders(Array.from(new Set(placeholders))));
+
+  if (errors.length > 0) {
+    throw new Error(errors[0]!);
+  }
 }
 
 function normalizeManualVariableValues(values: Record<string, string>): {
@@ -551,6 +662,8 @@ export async function createTemplate(
   userId: string,
   payload: CreateTemplatePayload
 ): Promise<MessageTemplate> {
+  validateCreateTemplatePayload(payload);
+
   const conn = await getConnectionForUser(userId, payload.connectionId);
   const accessToken = decryptToken(conn.access_token_encrypted);
 
@@ -593,14 +706,20 @@ export async function createTemplate(
 
 export async function syncAllTemplates(userId: string): Promise<MessageTemplate[]> {
   const connResult = await pool.query<{ connection_id: string }>(
-    `SELECT DISTINCT connection_id FROM message_templates WHERE user_id = $1`,
+    `SELECT id AS connection_id
+     FROM whatsapp_business_connections
+     WHERE user_id = $1
+       AND status = 'connected'`,
     [userId]
   );
 
   interface MetaListItem {
     id: string;
     name: string;
+    language?: string;
+    category?: string;
     status: string;
+    components?: TemplateComponent[];
     quality_score?: { score?: string };
     rejected_reason?: string;
   }
@@ -620,7 +739,7 @@ export async function syncAllTemplates(userId: string): Promise<MessageTemplate[
       const response = await graphGet<GraphListResponse<MetaListItem>>(
         `/${conn.waba_id}/message_templates`,
         accessToken,
-        { fields: "id,name,status,quality_score,rejected_reason", limit: 250 }
+        { fields: "id,name,language,category,status,components,quality_score,rejected_reason", limit: 250 }
       );
       metaTemplates = response.data ?? [];
     } catch (error) {
@@ -630,20 +749,34 @@ export async function syncAllTemplates(userId: string): Promise<MessageTemplate[
 
     for (const template of metaTemplates) {
       await pool.query(
-        `UPDATE message_templates
-         SET status = $1,
-             quality_score = $2,
-             meta_rejection_reason = $3,
-             updated_at = NOW()
-         WHERE connection_id = $4
-           AND template_id = $5
-           AND status <> 'DISABLED'`,
+        `INSERT INTO message_templates
+           (user_id, connection_id, template_id, name, category, language, status, quality_score, components_json, meta_rejection_reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+         ON CONFLICT (connection_id, name, language)
+           WHERE status <> 'DISABLED'
+         DO UPDATE SET
+           template_id = EXCLUDED.template_id,
+           category = EXCLUDED.category,
+           status = EXCLUDED.status,
+           quality_score = EXCLUDED.quality_score,
+           components_json = CASE
+             WHEN jsonb_typeof(EXCLUDED.components_json) = 'array' AND jsonb_array_length(EXCLUDED.components_json) > 0
+               THEN EXCLUDED.components_json
+             ELSE message_templates.components_json
+           END,
+           meta_rejection_reason = EXCLUDED.meta_rejection_reason,
+           updated_at = NOW()`,
         [
+          userId,
+          connection_id,
+          template.id,
+          template.name,
+          (template.category ?? "MARKETING").toUpperCase(),
+          template.language ?? "en_US",
           template.status.toUpperCase(),
           template.quality_score?.score ?? null,
-          template.rejected_reason ?? null,
-          connection_id,
-          template.id
+          JSON.stringify(Array.isArray(template.components) ? template.components : []),
+          template.rejected_reason ?? null
         ]
       );
     }

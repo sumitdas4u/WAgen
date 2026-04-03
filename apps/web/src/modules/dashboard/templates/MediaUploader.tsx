@@ -1,9 +1,11 @@
 import { useRef, useState } from "react";
-import { uploadFlowMedia } from "../../../lib/supabase";
+import { uploadTemplateMedia } from "../../../lib/api";
 
 type MediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
 
 interface Props {
+  token: string;
+  connectionId: string;
   mediaType: MediaType;
   onUploaded: (url: string, localPreviewUrl?: string) => void;
 }
@@ -14,7 +16,7 @@ const CONFIG: Record<MediaType, { accept: string; exts: string; maxMb: number; i
   DOCUMENT: { accept: "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain", exts: ".pdf,.doc,.docx,.xls,.xlsx,.txt", maxMb: 10, icon: "📄", label: "Document" }
 };
 
-export function MediaUploader({ mediaType, onUploaded }: Props) {
+export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Props) {
   const cfg = CONFIG[mediaType];
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -46,8 +48,8 @@ export function MediaUploader({ mediaType, onUploaded }: Props) {
 
     setUploading(true);
     try {
-      const url = await uploadFlowMedia(file);
-      onUploaded(url, localPreviewUrl);
+      const uploaded = await uploadTemplateMedia(token, connectionId, file);
+      onUploaded(uploaded.handle, localPreviewUrl);
       setUploaded(true);
     } catch (err) {
       setError((err as Error).message || "Upload failed.");

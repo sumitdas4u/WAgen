@@ -1,4 +1,7 @@
 import { pool } from "../db/pool.js";
+import { normalizeDeliveryFailureMessage } from "./message-delivery-data-service.js";
+
+const HEALTHY_ECOSYSTEM_REMARK = "This message was not delivered to maintain healthy ecosystem engagement.";
 
 export type DeliveryReportStatus = "sending" | "sent" | "delivered" | "read" | "failed" | "retrying";
 
@@ -94,6 +97,15 @@ function normalizeDisplayPhone(value: string | null | undefined): string {
   return trimmed;
 }
 
+function healthyEcosystemFailureSql(alias: string): string {
+  return `(
+    ${alias}.error_code = '131049'
+    OR LOWER(COALESCE(${alias}.error_message, '')) LIKE '%healthy ecosystem%'
+    OR LOWER(COALESCE(${alias}.error_message, '')) LIKE '%ecosystem engagement%'
+    OR LOWER(COALESCE(${alias}.error_message, '')) LIKE '%maintain healthy ecosystem%'
+  )`;
+}
+
 function buildDeliveryEnrichedCte(input: {
   userId: string;
   days: number;
@@ -121,6 +133,7 @@ function buildDeliveryEnrichedCte(input: {
   return {
     params,
     filterSql,
+    // Normalize known Meta failure reasons here so older rows render with the same remarks as new rows.
     sql: `WITH ranked_attempts AS (
       SELECT
         mda.id,
@@ -201,6 +214,7 @@ function buildDeliveryEnrichedCte(input: {
         CASE
           WHEN latest_attempts.attempt_status = 'retry_scheduled' THEN
             COALESCE(latest_attempts.provider_response_json->>'nextRetryAt', 'Retry scheduled')
+          WHEN ${healthyEcosystemFailureSql("latest_attempts")} THEN '${HEALTHY_ECOSYSTEM_REMARK}'
           ELSE latest_attempts.error_message
         END AS remarks,
         latest_attempts.error_code,
@@ -212,10 +226,10 @@ function buildDeliveryEnrichedCte(input: {
         ) AS is_not_in_whatsapp,
         (
           latest_attempts.error_code = '429'
+          OR ${healthyEcosystemFailureSql("latest_attempts")}
           OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%429%'
           OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%rate limit%'
           OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%frequency%'
-          OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%healthy ecosystem%'
         ) AS is_frequency_limit
       FROM latest_attempts
       LEFT JOIN campaign_messages camp_msg ON camp_msg.id = latest_attempts.campaign_message_id
@@ -355,7 +369,7 @@ export async function getDeliveryReportSummary(
     })),
     topFailureReasons: failureResult.rows.map((row) => ({
       errorCode: row.error_code ?? null,
-      message: row.remarks?.trim() || "Unknown failure",
+      message: normalizeDeliveryFailureMessage(row.error_code ?? null, row.remarks),
       count: Number(row.count ?? 0)
     }))
   };
@@ -428,7 +442,7 @@ export async function listDeliveryLogs(
       messageContent: row.message_content,
       to: normalizeDisplayPhone(row.phone_number),
       dateTime: row.occurred_at,
-      remarks: row.remarks,
+      remarks: row.final_status === "failed" ? normalizeDeliveryFailureMessage(row.error_code ?? null, row.remarks) : row.remarks,
       errorCode: row.error_code ?? null
     })),
     total: Number(countResult.rows[0]?.count ?? 0)

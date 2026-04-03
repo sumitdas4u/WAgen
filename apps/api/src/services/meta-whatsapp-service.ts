@@ -235,8 +235,22 @@ export function buildGraphUrl(path: string, query?: Record<string, string | numb
 export async function parseGraphResponse<T>(response: Response): Promise<T> {
   const json = await response.json().catch(() => null);
   if (!response.ok) {
-    const errorPayload = (json as { error?: { message?: string; code?: number | string; error_subcode?: number | string } } | null)?.error;
+    const errorPayload = (
+      json as {
+        error?: {
+          message?: string;
+          code?: number | string;
+          error_subcode?: number | string;
+          error_data?: { details?: string };
+        };
+      } | null
+    )?.error;
     const message = errorPayload?.message || `Meta Graph request failed (${response.status})`;
+    const errorDetails = errorPayload?.error_data?.details?.trim() || null;
+    const displayMessage =
+      errorDetails && !message.toLowerCase().includes(errorDetails.toLowerCase())
+        ? `${message}: ${errorDetails}`
+        : message;
     const errorCode = errorPayload?.code != null ? String(errorPayload.code) : null;
     const errorSubcode = errorPayload?.error_subcode != null ? String(errorPayload.error_subcode) : null;
     const details = [
@@ -244,7 +258,7 @@ export async function parseGraphResponse<T>(response: Response): Promise<T> {
       ...(errorCode ? [`code=${errorCode}`] : []),
       ...(errorSubcode ? [`subcode=${errorSubcode}`] : [])
     ].join(" ");
-    throw new Error(`${message} [${details}]`);
+    throw new Error(`${displayMessage} [${details}]`);
   }
   return json as T;
 }

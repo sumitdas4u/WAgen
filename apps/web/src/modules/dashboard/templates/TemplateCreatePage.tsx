@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   GeneratedTemplate,
   MessageTemplate,
@@ -11,6 +11,9 @@ import { AIGeneratorPanel } from "./AIGeneratorPanel";
 import { MediaUploader } from "./MediaUploader";
 import { TemplatePreviewPanel } from "./TemplatePreviewPanel";
 import { useCreateTemplateMutation } from "./queries";
+
+const PLACEHOLDER_PATTERN = /\{\{\s*([^}]+?)\s*\}\}/g;
+const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
 
 function extractPrefillState(t: MessageTemplate) {
   const header = t.components.find((c) => c.type === "HEADER");
@@ -61,9 +64,134 @@ const BUTTON_TYPES = [
   { type: "COPY_CODE", label: "📋 Coupon code", note: "1 button maximum", section: "Call to action buttons" }
 ] as const;
 
+const HEADER_FORMAT_OPTIONS = [
+  { value: "NONE", label: "None", supported: true },
+  { value: "TEXT", label: "Text", supported: true },
+  { value: "IMAGE", label: "Image", supported: true },
+  { value: "VIDEO", label: "Video", supported: false },
+  { value: "DOCUMENT", label: "Document", supported: false },
+  { value: "LOCATION", label: "Location", supported: false }
+] as const;
+
 function detectVariables(text: string): string[] {
-  const matches = [...text.matchAll(/\{\{([^}]+)\}\}/g)];
-  return [...new Set(matches.map((m) => m[0]))];
+  const matches = [...text.matchAll(PLACEHOLDER_PATTERN)];
+  return [...new Set(matches.map((m) => `{{${(m[1] ?? "").trim()}}}`))];
+}
+
+function isPositiveIntegerToken(value: string): boolean {
+  return /^[1-9]\d*$/.test(value.trim());
+}
+
+function validateTemplateDraft(input: {
+  category: TemplateCategory;
+  headerFormat: string;
+  headerHandle: string;
+  headerText: string;
+  bodyText: string;
+  footerText: string;
+  buttons: Array<{ type: string; text: string; url?: string; phone?: string }>;
+}): { formError: string | null; footerError: string | null; bodyError: string | null } {
+  if (input.category === "AUTHENTICATION") {
+    return {
+      formError:
+        "Authentication templates need Meta's dedicated authentication-template format and are not supported in this builder yet.",
+      footerError: null,
+      bodyError: null
+    };
+  }
+
+  if (["IMAGE", "VIDEO", "DOCUMENT"].includes(input.headerFormat) && !input.headerHandle.trim()) {
+    return {
+      formError: "Upload a sample media file for the header before submitting this template.",
+      footerError: null,
+      bodyError: null
+    };
+  }
+
+  const footerText = input.footerText.trim();
+  if (footerText) {
+    if (detectVariables(footerText).length > 0) {
+      return {
+        formError: "Footer text cannot contain variables. Move dynamic values into the body instead.",
+        footerError: "Footer text cannot contain variables.",
+        bodyError: null
+      };
+    }
+    if (EMOJI_PATTERN.test(footerText)) {
+      return {
+        formError: "Footer text cannot contain emojis. Remove the emoji from the footer and try again.",
+        footerError: "Footer text cannot contain emojis.",
+        bodyError: null
+      };
+    }
+  }
+
+  const placeholders = [
+    ...detectVariables(input.headerText),
+    ...detectVariables(input.bodyText),
+    ...input.buttons.flatMap((button) => detectVariables(button.url ?? ""))
+  ];
+
+  const invalidPlaceholders = Array.from(
+    new Set(
+      placeholders.filter((placeholder) => {
+        const token = placeholder.replace(/^\{\{|\}\}$/g, "").trim();
+        return !isPositiveIntegerToken(token);
+      })
+    )
+  );
+  if (invalidPlaceholders.length > 0) {
+    return {
+      formError: `Use numbered variables like {{1}}, {{2}}, {{3}}. Invalid variable(s): ${invalidPlaceholders.join(", ")}.`,
+      footerError: null,
+      bodyError: "Use numbered variables like {{1}}, {{2}}, {{3}}."
+    };
+  }
+
+  const numericPlaceholders = Array.from(
+    new Set(
+      placeholders
+        .map((placeholder) => Number(placeholder.replace(/^\{\{|\}\}$/g, "").trim()))
+        .filter((value) => Number.isInteger(value) && value > 0)
+    )
+  ).sort((left, right) => left - right);
+
+  for (let index = 0; index < numericPlaceholders.length; index += 1) {
+    const expected = index + 1;
+    if (numericPlaceholders[index] !== expected) {
+      return {
+        formError: `Template variables must be sequential with no gaps. Add {{${expected}}} before using higher numbers.`,
+        footerError: null,
+        bodyError: "Template variables must be sequential with no gaps."
+      };
+    }
+  }
+
+  const missingButtonConfig = input.buttons.findIndex((button) => {
+    if (!button.text.trim()) {
+      return true;
+    }
+    if (button.type === "URL" && !button.url?.trim()) {
+      return true;
+    }
+    if (button.type === "PHONE_NUMBER" && !button.phone?.trim()) {
+      return true;
+    }
+    return false;
+  });
+  if (missingButtonConfig >= 0) {
+    return {
+      formError: `Complete the configuration for button ${missingButtonConfig + 1} before submitting.`,
+      footerError: null,
+      bodyError: null
+    };
+  }
+
+  return {
+    formError: null,
+    footerError: null,
+    bodyError: null
+  };
 }
 
 function buildComponents(
@@ -144,11 +272,30 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const [showButtonMenu, setShowButtonMenu] = useState(false);
   const [showAI, setShowAI] = useState(false);
   const [nameError, setNameError] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const createMutation = useCreateTemplateMutation(token);
   const connectionId = metaStatus?.connection?.id ?? "";
 
   const detectedVars = detectVariables(bodyText);
+  const draftValidation = validateTemplateDraft({
+    category,
+    headerFormat,
+    headerHandle,
+    headerText,
+    bodyText,
+    footerText,
+    buttons
+  });
+
+  useEffect(() => {
+    if (formError && draftValidation.formError !== formError) {
+      setFormError(draftValidation.formError);
+    }
+    if (formError && !draftValidation.formError) {
+      setFormError(null);
+    }
+  }, [draftValidation.formError, formError]);
 
   const previewComponents = buildComponents(
     name, headerFormat, headerText, headerHandle,
@@ -215,11 +362,16 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
 
   async function handleSubmit() {
     if (!connectionId) return;
+    if (draftValidation.formError) {
+      setFormError(draftValidation.formError);
+      return;
+    }
     const components = buildComponents(
       name, headerFormat, headerText, headerHandle,
       bodyText, footerText, buttons, variableMapping
     );
     try {
+      setFormError(null);
       const template = await createMutation.mutateAsync({
         connectionId,
         name: name.trim(),
@@ -238,6 +390,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     !nameError &&
     bodyText.trim().length > 0 &&
     connectionId.length > 0 &&
+    !draftValidation.formError &&
     !createMutation.isPending;
 
   return (
@@ -279,9 +432,16 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             >
               <option value="" disabled>Select Category</option>
               {CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
+                <option key={c.value} value={c.value}>
+                  {c.value === "AUTHENTICATION" ? `${c.label} (coming soon)` : c.label}
+                </option>
               ))}
             </select>
+            {category === "AUTHENTICATION" && (
+              <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>
+                Authentication templates use Meta&apos;s separate authentication-template format and are not supported here yet.
+              </div>
+            )}
           </div>
           <div>
             <label style={{ display: "block", fontWeight: 600, fontSize: "13px", marginBottom: "6px" }}>
@@ -325,19 +485,33 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             <span style={{ fontSize: "11px", background: "#f3f4f6", padding: "2px 8px", borderRadius: "999px", color: "#666" }}>Optional</span>
           </div>
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-            {["NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT", "LOCATION"].map((fmt) => (
-              <label key={fmt} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "14px" }}>
+            {HEADER_FORMAT_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: option.supported ? "pointer" : "not-allowed",
+                  fontSize: "14px",
+                  opacity: option.supported ? 1 : 0.5
+                }}
+              >
                 <input
                   type="radio"
                   name="headerFormat"
-                  value={fmt}
-                  checked={headerFormat === fmt}
-                  onChange={() => { setHeaderFormat(fmt); setHeaderText(""); setHeaderHandle(""); setHeaderImageUrl(null); }}
+                  value={option.value}
+                  checked={headerFormat === option.value}
+                  disabled={!option.supported}
+                  onChange={() => { setHeaderFormat(option.value); setHeaderText(""); setHeaderHandle(""); setHeaderImageUrl(null); }}
                   style={{ accentColor: "#25d366" }}
                 />
-                {fmt.charAt(0) + fmt.slice(1).toLowerCase()}
+                {option.label}
               </label>
             ))}
+          </div>
+          <div style={{ marginTop: "10px", fontSize: "12px", color: "#64748b" }}>
+            This builder currently supports text and image headers only.
           </div>
           {headerFormat === "TEXT" && (
             <input
@@ -359,6 +533,8 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
           {["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat) && (
             <div style={{ marginTop: "12px" }}>
               <MediaUploader
+                token={token}
+                connectionId={connectionId}
                 mediaType={headerFormat as "IMAGE" | "VIDEO" | "DOCUMENT"}
                 onUploaded={(url, localPreviewUrl) => {
                   setHeaderHandle(url);
@@ -379,7 +555,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             <textarea
               value={bodyText}
               onChange={(e) => setBodyText(e.target.value.slice(0, 1024))}
-              placeholder="Hi {{Name}}!&#10;&#10;Write your message here. Use {{VariableName}} for dynamic content."
+              placeholder="Hi {{1}}!&#10;&#10;Write your message here. Use numbered variables like {{1}}, {{2}} for dynamic content."
               rows={6}
               style={{
                 width: "100%",
@@ -403,7 +579,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
               type="button"
               onClick={() => {
                 const next = detectedVars.length + 1;
-                setBodyText((t) => t + `{{var${next}}}`);
+                setBodyText((t) => t + `{{${next}}}`);
               }}
               style={{
                 padding: "6px 14px",
@@ -424,6 +600,10 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
               <button type="button" onClick={() => setBodyText((t) => t + "~strikethrough~")} style={{ background: "none", border: "none", textDecoration: "line-through", cursor: "pointer", color: "#555" }}>S</button>
             </div>
           </div>
+
+          {draftValidation.bodyError && (
+            <div style={{ marginTop: "10px", color: "#dc2626", fontSize: "12px" }}>{draftValidation.bodyError}</div>
+          )}
 
           {/* Variable mapping rows */}
           {detectedVars.length > 0 && (
@@ -456,17 +636,25 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
           </div>
           <input
             value={footerText}
-            onChange={(e) => setFooterText(e.target.value.slice(0, 60))}
-            placeholder="You can use this space to add a tagline, a way to unsubscribe, etc.,"
+            onChange={(e) => {
+              setFooterText(e.target.value.slice(0, 60));
+              if (formError) {
+                setFormError(null);
+              }
+            }}
+            placeholder="Plain text only. Avoid emojis and variables here."
             style={{
               width: "100%",
               borderRadius: "8px",
-              border: "1.5px solid #e0e0e0",
+              border: `1.5px solid ${draftValidation.footerError ? "#dc2626" : "#e0e0e0"}`,
               padding: "10px 12px",
               fontSize: "14px",
               boxSizing: "border-box"
             }}
           />
+          <div style={{ marginTop: "8px", fontSize: "12px", color: draftValidation.footerError ? "#dc2626" : "#64748b" }}>
+            {draftValidation.footerError ?? "Meta commonly rejects footer text with emojis or variables. Keep the footer plain."}
+          </div>
         </div>
 
         {/* Buttons card */}
@@ -597,9 +785,9 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
         </div>
 
         {/* Error */}
-        {createMutation.isError && (
+        {(formError || createMutation.isError) && (
           <div style={{ padding: "12px", borderRadius: "8px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: "13px" }}>
-            {(createMutation.error as Error).message}
+            {formError ?? (createMutation.error as Error).message}
           </div>
         )}
 

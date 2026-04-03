@@ -431,12 +431,23 @@ function readWebhookError(raw: Record<string, unknown>): { code: string | null; 
   const errors = Array.isArray(raw.errors) ? (raw.errors as Array<Record<string, unknown>>) : [];
   const first = errors[0] ?? {};
   const code = first.code != null ? String(first.code) : null;
-  const message =
-    typeof first.message === "string"
-      ? first.message
-      : typeof first.title === "string"
-        ? first.title
+  const errorData = first.error_data && typeof first.error_data === "object" ? (first.error_data as Record<string, unknown>) : null;
+  const details =
+    typeof errorData?.details === "string"
+      ? errorData.details.trim()
+      : typeof first.details === "string"
+        ? first.details.trim()
         : null;
+  const baseMessage =
+    typeof first.message === "string"
+      ? first.message.trim()
+      : typeof first.title === "string"
+        ? first.title.trim()
+        : null;
+  const message =
+    baseMessage && details && baseMessage.toLowerCase() !== details.toLowerCase()
+      ? `${baseMessage}: ${details}`
+      : baseMessage ?? details ?? null;
   return { code, message };
 }
 
