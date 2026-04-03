@@ -110,11 +110,15 @@ function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete
   const [open, setOpen] = useState(false);
   const [dropPos, setDropPos] = useState<{ top: number; right: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const insideBtn = btnRef.current?.contains(target);
+      const insideDrop = dropRef.current?.contains(target);
+      if (!insideBtn && !insideDrop) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -178,6 +182,7 @@ function OptionsMenu({ onDuplicate, onTest, onCopyId, onConfigurations, onDelete
       </button>
       {open && dropPos && createPortal(
         <div
+          ref={dropRef}
           style={{
             position: "fixed",
             top: dropPos.top,
