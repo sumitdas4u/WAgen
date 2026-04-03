@@ -8,6 +8,7 @@ const dashboardReviewRoot = ["dashboard", "studio", "review"] as const;
 const dashboardKnowledgeRoot = ["dashboard", "studio", "knowledge"] as const;
 const dashboardBillingRoot = ["dashboard", "billing"] as const;
 const dashboardTemplatesRoot = ["dashboard", "templates"] as const;
+const dashboardCampaignsRoot = ["dashboard", "campaigns"] as const;
 const dashboardContactFieldsRoot = ["dashboard", "contact-fields"] as const;
 const dashboardContactSegmentsRoot = ["dashboard", "contact-segments"] as const;
 
@@ -37,6 +38,10 @@ export const dashboardQueryKeys = {
   billingRoot: dashboardBillingRoot,
   templatesRoot: dashboardTemplatesRoot,
   templates: [...dashboardTemplatesRoot, "list"] as const,
+  campaignsRoot: dashboardCampaignsRoot,
+  campaigns: [...dashboardCampaignsRoot, "list"] as const,
+  campaignMessages: (campaignId: string, status: string, page: number) =>
+    [...dashboardCampaignsRoot, "messages", campaignId, status, page] as const,
   contactFieldsRoot: dashboardContactFieldsRoot,
   contactFields: [...dashboardContactFieldsRoot, "list"] as const,
   contactSegmentsRoot: dashboardContactSegmentsRoot,

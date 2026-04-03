@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { getOrCreateConversation, trackOutboundMessage, updateMessageDeliveryStatus } from "./conversation-service.js";
+import { updateCampaignMessageDelivery } from "./campaign-service.js";
 import {
   encodeFlowLocationInput,
   formatFlowLocationSummary
@@ -1661,7 +1662,10 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
           name: payload.templateName.trim(),
           language: {
             code: payload.language.trim() || "en"
-          }
+          },
+          ...(payload.components && payload.components.length > 0
+            ? { components: payload.components }
+            : {})
         }
       };
 
@@ -1774,6 +1778,28 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
   }
 }
 
+function buildMetaTemplateRequestBody(input: {
+  to: string;
+  templateName: string;
+  language: string;
+  components?: Array<Record<string, unknown>>;
+}): Record<string, unknown> {
+  return {
+    messaging_product: "whatsapp",
+    to: input.to,
+    type: "template",
+    template: {
+      name: input.templateName.trim(),
+      language: {
+        code: input.language.trim() || "en"
+      },
+      ...(input.components && input.components.length > 0
+        ? { components: input.components }
+        : {})
+    }
+  };
+}
+
 export async function sendMetaTextDirect(input: {
   userId: string;
   to: string;
@@ -1810,6 +1836,43 @@ export async function sendMetaTextDirect(input: {
     connection: mapConnection(resolvedRow),
     to: normalizedTo,
     text
+  };
+}
+
+export async function sendMetaTemplateDirect(input: {
+  userId: string;
+  to: string;
+  templateName: string;
+  language: string;
+  components?: Array<Record<string, unknown>>;
+  phoneNumberId?: string;
+  linkedNumber?: string | null;
+}): Promise<{ messageId: string | null; connection: MetaConnection; to: string }> {
+  const normalizedTo = normalizePhoneDigits(input.to);
+  if (!normalizedTo) {
+    throw new Error("Recipient phone must contain 8 to 15 digits.");
+  }
+  if (!input.templateName.trim()) {
+    throw new Error("Template name is required.");
+  }
+
+  const resolvedRow = await resolveMetaSendConnectionRow(input);
+  const accessToken = decryptToken(resolvedRow.access_token_encrypted);
+  const response = await graphPost<{ messages?: Array<{ id?: string }> }>(
+    `/${resolvedRow.phone_number_id}/messages`,
+    accessToken,
+    buildMetaTemplateRequestBody({
+      to: normalizedTo,
+      templateName: input.templateName,
+      language: input.language,
+      components: input.components
+    })
+  );
+
+  return {
+    messageId: response.messages?.[0]?.id ?? null,
+    connection: mapConnection(resolvedRow),
+    to: normalizedTo
   };
 }
 
@@ -2086,6 +2149,11 @@ export async function processDeliveryStatuses(payload: unknown): Promise<void> {
           await updateMessageDeliveryStatus(wamid, status as "delivered" | "read" | "failed", errorCode);
         } catch (err) {
           console.error("[MetaWebhook] delivery status update failed", err);
+        }
+        try {
+          await updateCampaignMessageDelivery(wamid, status as "delivered" | "read" | "failed", errorCode);
+        } catch (err) {
+          console.error("[MetaWebhook] campaign delivery status update failed", err);
         }
       }
     }

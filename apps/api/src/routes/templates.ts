@@ -179,7 +179,10 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to send test template.";
         fastify.log.error({ err }, "test-send template error");
-        return reply.status(500).send({ error: message });
+        if (message.toLowerCase().includes("not found")) {
+          return reply.status(404).send({ error: message });
+        }
+        return reply.status(400).send({ error: message });
       }
     }
   );

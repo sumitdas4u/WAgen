@@ -53,7 +53,9 @@ export interface UniversalMessage {
     template?: {
       name?: string;
       image?: string;
+      headerText?: string;
       text: string;
+      footerText?: string;
       buttons?: { id: string; label: string }[];
     };
     location?: {
@@ -178,8 +180,11 @@ function contentFromPayload(
       return {
         template: {
           name: payload.templateName as string,
-          text: `📋 Template: ${payload.templateName as string}`,
-          buttons: []
+          image: payload.headerMediaUrl as string | undefined,
+          headerText: payload.headerText as string | undefined,
+          text: (payload.previewText as string) || `📋 Template: ${payload.templateName as string}`,
+          footerText: payload.footerText as string | undefined,
+          buttons: (payload.buttons as { id: string; label: string }[]) ?? []
         }
       };
 
@@ -545,7 +550,9 @@ function TemplateMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
           <img className="msg-bleed-image" src={tmpl.image} alt="Template header" loading="lazy" />
         </a>
       )}
+      {tmpl.headerText && <p className="msg-template-body"><strong>{tmpl.headerText}</strong></p>}
       {tmpl.text && <p className="msg-template-body">{tmpl.text}</p>}
+      {tmpl.footerText && <p className="msg-caption">{tmpl.footerText}</p>}
       {tmpl.buttons && tmpl.buttons.length > 0 && (
         <div className="msg-action-rows">
           {tmpl.buttons.map((btn) => (

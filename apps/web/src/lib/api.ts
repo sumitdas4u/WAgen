@@ -1873,6 +1873,8 @@ export interface MessageTemplate {
   qualityScore: string | null;
   components: TemplateComponent[];
   metaRejectionReason: string | null;
+  linkedNumber: string | null;
+  displayPhoneNumber: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1967,6 +1969,132 @@ export function sendTestTemplateMessage(
     token,
     body: JSON.stringify(payload)
   });
+}
+
+export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
+export type CampaignMessageStatus = "queued" | "sent" | "delivered" | "read" | "failed" | "skipped";
+export type CampaignTemplateVariableSource = "contact" | "static";
+
+export interface CampaignTemplateVariableBinding {
+  source: CampaignTemplateVariableSource;
+  field?: string;
+  value?: string;
+  fallback?: string;
+}
+
+export type CampaignTemplateVariables = Record<string, CampaignTemplateVariableBinding>;
+
+export interface Campaign {
+  id: string;
+  user_id: string;
+  name: string;
+  status: CampaignStatus;
+  template_id: string | null;
+  template_variables: CampaignTemplateVariables;
+  target_segment_id: string | null;
+  scheduled_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  total_count: number;
+  sent_count: number;
+  delivered_count: number;
+  read_count: number;
+  failed_count: number;
+  skipped_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignMessage {
+  id: string;
+  campaign_id: string;
+  contact_id: string | null;
+  phone_number: string;
+  wamid: string | null;
+  status: CampaignMessageStatus;
+  retry_count: number;
+  next_retry_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  resolved_variables_json: Record<string, string> | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function fetchCampaigns(token: string) {
+  return apiRequest<{ campaigns: Campaign[] }>("/api/campaigns", { token });
+}
+
+export function createCampaignDraft(
+  token: string,
+  payload: {
+    name: string;
+    templateId?: string | null;
+    templateVariables?: CampaignTemplateVariables;
+    targetSegmentId?: string | null;
+    scheduledAt?: string | null;
+  }
+) {
+  return apiRequest<{ campaign: Campaign }>("/api/campaigns", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateCampaignDraft(
+  token: string,
+  campaignId: string,
+  payload: Partial<{
+    name: string;
+    templateId: string | null;
+    templateVariables: CampaignTemplateVariables;
+    targetSegmentId: string | null;
+    scheduledAt: string | null;
+  }>
+) {
+  return apiRequest<{ campaign: Campaign }>(`/api/campaigns/${campaignId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function launchCampaignDraft(token: string, campaignId: string) {
+  return apiRequest<{ campaign: Campaign }>(`/api/campaigns/${campaignId}/launch`, {
+    method: "POST",
+    token
+  });
+}
+
+export function cancelCampaignRun(token: string, campaignId: string) {
+  return apiRequest<{ campaign: Campaign }>(`/api/campaigns/${campaignId}/cancel`, {
+    method: "POST",
+    token
+  });
+}
+
+export function fetchCampaignMessages(
+  token: string,
+  campaignId: string,
+  options?: { limit?: number; offset?: number; status?: CampaignMessageStatus }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (typeof options?.offset === "number") {
+    params.set("offset", String(options.offset));
+  }
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  const query = params.toString();
+  const path = query ? `/api/campaigns/${campaignId}/messages?${query}` : `/api/campaigns/${campaignId}/messages`;
+  return apiRequest<{ messages: CampaignMessage[]; total: number }>(path, { token });
 }
 
 

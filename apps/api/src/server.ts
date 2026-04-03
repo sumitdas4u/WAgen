@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { runMigrations } from "./scripts/migrate.js";
 import { renewDueWorkspaceCredits } from "./services/workspace-billing-service.js";
 import { runAutoRechargeSweep } from "./services/workspace-billing-center-service.js";
+import { startCampaignWorker } from "./services/campaign-worker-service.js";
 
 await runMigrations({
   silent: env.NODE_ENV === "production"
@@ -48,6 +49,8 @@ if (env.AUTO_RECHARGE_CRON_ENABLED) {
     void runAutoRecharge();
   }, intervalMs);
 }
+
+startCampaignWorker();
 
 const close = async () => {
   await app.close();

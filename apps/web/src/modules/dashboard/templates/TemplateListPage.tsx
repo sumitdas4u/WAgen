@@ -750,7 +750,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
   }
 
   function handleDuplicate(template: MessageTemplate) {
-    navigate(`/dashboard/settings/templates/${template.id}`, {
+    navigate(`/dashboard/templates/${template.id}`, {
       state: { prefill: template }
     });
   }
@@ -788,7 +788,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
           </button>
           <button
             type="button"
-            onClick={() => { setSuccessMsg(null); navigate("/dashboard/settings/templates/new"); }}
+            onClick={() => { setSuccessMsg(null); navigate("/dashboard/templates/new"); }}
             style={{ padding: "9px 16px", borderRadius: "8px", background: "#128c7e", color: "#fff", border: "none", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
           >
             + Create New Template
@@ -941,7 +941,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
               <div style={{ fontSize: "48px", marginBottom: "12px" }}>📋</div>
               <div style={{ fontWeight: 700, fontSize: "18px", marginBottom: "8px" }}>No templates yet</div>
               <div style={{ color: "#666", fontSize: "14px", marginBottom: "20px" }}>Create your first WhatsApp template to start broadcasting.</div>
-              <button type="button" onClick={() => navigate("/dashboard/settings/templates/new")} style={{ padding: "10px 24px", borderRadius: "8px", background: "#128c7e", color: "#fff", border: "none", fontWeight: 700, fontSize: "14px", cursor: "pointer" }}>
+              <button type="button" onClick={() => navigate("/dashboard/templates/new")} style={{ padding: "10px 24px", borderRadius: "8px", background: "#128c7e", color: "#fff", border: "none", fontWeight: 700, fontSize: "14px", cursor: "pointer" }}>
                 + Create Template
               </button>
             </div>
@@ -971,7 +971,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
                   cursor: "pointer",
                   padding: "24px"
                 }}
-                onClick={() => navigate("/dashboard/settings/templates/new")}
+                onClick={() => navigate("/dashboard/templates/new")}
               >
                 <div
                   style={{

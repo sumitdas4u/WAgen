@@ -442,6 +442,16 @@ export function Component() {
   const selectedConversationMessages = messagesQuery.data ?? [];
   const selectedConversationLabel = selectedConversation ? getConversationDisplayName(selectedConversation) : "Select a conversation";
   const selectedConversationStage = selectedConversation ? normalizeStage(selectedConversation.stage) : "cold";
+  const availableTemplates = useMemo(() => {
+    if (!selectedConversation || selectedConversation.channel_type !== "api") {
+      return [];
+    }
+    const linkedNumber = selectedConversation.channel_linked_number?.trim();
+    if (!linkedNumber) {
+      return approvedTemplates;
+    }
+    return approvedTemplates.filter((template) => !template.linkedNumber || template.linkedNumber === linkedNumber);
+  }, [approvedTemplates, selectedConversation]);
 
   const selectedConversationAiTimer = selectedConversation ? chatAiTimers[selectedConversation.id] ?? null : null;
   const selectedConversationAiTimerLabel = selectedConversationAiTimer
@@ -680,6 +690,7 @@ export function Component() {
     },
     onSuccess: async () => {
       setShowTemplateMenu(false);
+      setTemplateVarsDialog(null);
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
       if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
       setInfo("Template sent.");
@@ -1288,15 +1299,15 @@ export function Component() {
                           )}
 
                           {/* Template dropup */}
-                          {showTemplateMenu && (
+                          {showTemplateMenu && selectedConversation.channel_type === "api" && (
                             <div className="compose-dropup compose-template-dropup">
-                              <div className="compose-dropup-label">Send approved template</div>
+                                <div className="compose-dropup-label">Send approved template</div>
                               {templatesQuery.isLoading ? (
                                 <button type="button" disabled>Loading templates…</button>
-                              ) : approvedTemplates.length === 0 ? (
+                              ) : availableTemplates.length === 0 ? (
                                 <button type="button" disabled>No approved templates</button>
                               ) : (
-                                approvedTemplates.map((t) => (
+                                availableTemplates.map((t) => (
                                   <button key={t.id} type="button" className="compose-template-item" disabled={sendTemplateMutation.isPending} onClick={() => handleSelectTemplate(t)}>
                                     <strong>{t.name}</strong>
                                     <span>{getTemplateBodyText(t).slice(0, 80)}{getTemplateBodyText(t).length > 80 ? "…" : ""}</span>
@@ -1335,13 +1346,15 @@ export function Component() {
                                 onClick={() => { setShowToolbarFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); }}
                               >⚡</button>
 
-                              <button
-                                type="button"
-                                className={`compose-tool${showTemplateMenu ? " active" : ""}`}
-                                title="Send approved template"
-                                disabled={sendTemplateMutation.isPending}
-                                onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); }}
-                              >{sendTemplateMutation.isPending ? "…" : "📋"}</button>
+                              {selectedConversation.channel_type === "api" && (
+                                <button
+                                  type="button"
+                                  className={`compose-tool${showTemplateMenu ? " active" : ""}`}
+                                  title="Send approved template"
+                                  disabled={sendTemplateMutation.isPending}
+                                  onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); }}
+                                >{sendTemplateMutation.isPending ? "…" : "📋"}</button>
+                              )}
                             </div>
 
                             {/* Right tools */}
@@ -1434,6 +1447,9 @@ export function Component() {
                       ))}
                     </div>
                     <div className="tmpl-dialog-actions">
+                      {sendTemplateMutation.isError && (
+                        <div className="tmpl-dialog-error">{(sendTemplateMutation.error as Error).message}</div>
+                      )}
                       <button type="button" className="ghost-btn" onClick={() => setTemplateVarsDialog(null)}>Cancel</button>
                       <button
                         type="button"
@@ -1446,7 +1462,6 @@ export function Component() {
                             templateId: templateVarsDialog.template.id,
                             variableValues: templateVarsDialog.values
                           });
-                          setTemplateVarsDialog(null);
                         }}
                       >
                         {sendTemplateMutation.isPending ? "Sending…" : "Send Template"}

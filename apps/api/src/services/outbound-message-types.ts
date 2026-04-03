@@ -31,7 +31,18 @@ export type FlowMessagePayload =
       buttons: FlowButtonOption[];
     }
   | { type: "list"; text: string; buttonLabel: string; sections: FlowListSection[] }
-  | { type: "template"; templateName: string; language: string }
+  | {
+      type: "template";
+      templateName: string;
+      language: string;
+      previewText?: string;
+      headerText?: string;
+      footerText?: string;
+      headerMediaType?: "image" | "video" | "document";
+      headerMediaUrl?: string;
+      buttons?: FlowButtonOption[];
+      components?: Array<Record<string, unknown>>;
+    }
   | { type: "product"; catalogId: string; productId: string; bodyText?: string }
   | {
       type: "product_list";
@@ -124,7 +135,7 @@ export function summarizeFlowMessage(payload: FlowMessagePayload): string {
     }
 
     case "template":
-      return `[Template: ${cleanLine(payload.templateName)}]`;
+      return cleanLine(payload.previewText) || cleanLine(payload.headerText) || `[Template: ${cleanLine(payload.templateName)}]`;
 
     case "product":
       return cleanLine(payload.bodyText) || `[Product: ${cleanLine(payload.productId)}]`;

@@ -30,7 +30,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
   },
   {
     id: "templates",
-    path: "templates",
+    path: "templates/*",
     navTo: "/dashboard/templates",
     navLabel: "Templates",
     subtitle: "Broadcast templates",
