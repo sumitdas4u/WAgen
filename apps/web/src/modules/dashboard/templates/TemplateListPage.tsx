@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import type { MessageTemplate, MetaBusinessStatus, TemplateCategory, TemplateStatus } from "../../../lib/api";
-import { TemplateCreatePage } from "./TemplateCreatePage";
 import { TemplatePreviewPanel } from "./TemplatePreviewPanel";
 import { TemplateStatusBadge } from "./TemplateStatusBadge";
 import { useDeleteTemplateMutation, useSendTestTemplateMutation, useSyncTemplatesMutation, useTemplatesQuery } from "./queries";
@@ -710,8 +710,7 @@ interface Props {
 }
 
 export function TemplateListPage({ token, metaStatus }: Props) {
-  const [showCreate, setShowCreate] = useState(false);
-  const [duplicateFrom, setDuplicateFrom] = useState<MessageTemplate | undefined>();
+  const navigate = useNavigate();
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [activeTab, setActiveTab] = useState<"mine" | "library">("mine");
@@ -746,24 +745,9 @@ export function TemplateListPage({ token, metaStatus }: Props) {
   }
 
   function handleDuplicate(template: MessageTemplate) {
-    setDuplicateFrom(template);
-    setShowCreate(true);
-  }
-
-  if (showCreate) {
-    return (
-      <TemplateCreatePage
-        token={token}
-        metaStatus={metaStatus}
-        prefill={duplicateFrom}
-        onBack={() => { setShowCreate(false); setDuplicateFrom(undefined); }}
-        onCreated={(t) => {
-          setShowCreate(false);
-          setDuplicateFrom(undefined);
-          setSuccessMsg(`Template "${t.name}" submitted for Meta approval.`);
-        }}
-      />
-    );
+    navigate(`/dashboard/settings/templates/${template.id}`, {
+      state: { prefill: template }
+    });
   }
 
   const makeActions = (t: MessageTemplate) => ({
@@ -799,7 +783,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
           </button>
           <button
             type="button"
-            onClick={() => { setSuccessMsg(null); setDuplicateFrom(undefined); setShowCreate(true); }}
+            onClick={() => { setSuccessMsg(null); navigate("/dashboard/settings/templates/new"); }}
             style={{ padding: "9px 16px", borderRadius: "8px", background: "#128c7e", color: "#fff", border: "none", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
           >
             + Create New Template
@@ -952,7 +936,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
               <div style={{ fontSize: "48px", marginBottom: "12px" }}>📋</div>
               <div style={{ fontWeight: 700, fontSize: "18px", marginBottom: "8px" }}>No templates yet</div>
               <div style={{ color: "#666", fontSize: "14px", marginBottom: "20px" }}>Create your first WhatsApp template to start broadcasting.</div>
-              <button type="button" onClick={() => setShowCreate(true)} style={{ padding: "10px 24px", borderRadius: "8px", background: "#128c7e", color: "#fff", border: "none", fontWeight: 700, fontSize: "14px", cursor: "pointer" }}>
+              <button type="button" onClick={() => navigate("/dashboard/settings/templates/new")} style={{ padding: "10px 24px", borderRadius: "8px", background: "#128c7e", color: "#fff", border: "none", fontWeight: 700, fontSize: "14px", cursor: "pointer" }}>
                 + Create Template
               </button>
             </div>
@@ -982,7 +966,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
                   cursor: "pointer",
                   padding: "24px"
                 }}
-                onClick={() => { setDuplicateFrom(undefined); setShowCreate(true); }}
+                onClick={() => navigate("/dashboard/settings/templates/new")}
               >
                 <div
                   style={{

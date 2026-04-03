@@ -71,7 +71,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
   },
   {
     id: "studio-flows",
-    path: "studio/flows",
+    path: "studio/flows/*",
     navTo: "/dashboard/studio/flows",
     navLabel: "Flows",
     subtitle: "Visual bot builder",
@@ -180,7 +180,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
   },
   {
     id: "settings-templates",
-    path: "settings/templates",
+    path: "settings/templates/*",
     navTo: "/dashboard/settings/templates",
     navLabel: "Templates",
     subtitle: "WhatsApp message templates",

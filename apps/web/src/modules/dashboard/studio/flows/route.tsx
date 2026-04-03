@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useRoutes } from "react-router-dom";
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -769,16 +770,12 @@ const CHANNEL_TABS: { key: FlowChannel | "all"; label: string }[] = [
 
 function FlowsPage() {
   const { token } = useDashboardShell();
+  const navigate = useNavigate();
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FlowChannel | "all">("all");
-  const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
-  const [editingFlow, setEditingFlow] = useState<FlowDoc | null>(null);
-  const [editingFlowLoading, setEditingFlowLoading] = useState(false);
-  const [editingFlowError, setEditingFlowError] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -788,60 +785,7 @@ function FlowsPage() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  useEffect(() => {
-    if (!editingFlowId) {
-      setEditingFlow(null);
-      setEditingFlowError(null);
-      setEditingFlowLoading(false);
-      return;
-    }
-
-    if (editingFlow?.id === editingFlowId) {
-      return;
-    }
-
-    let cancelled = false;
-    setEditingFlowLoading(true);
-    setEditingFlowError(null);
-
-    apiGetFlow(token, editingFlowId)
-      .then((flow) => {
-        if (!cancelled) {
-          setEditingFlow(flow);
-        }
-      })
-      .catch((fetchError) => {
-        if (!cancelled) {
-          setEditingFlowError(String(fetchError));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setEditingFlowLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [editingFlow?.id, editingFlowId, token]);
-
-  const handleChange = useCallback((updated: FlowDoc) => {
-    setFlows((cur) => cur.map((f) => (f.id === updated.id ? summarizeFlow(updated) : f)));
-    setEditingFlow((cur) => (cur?.id === updated.id ? updated : cur));
-  }, []);
-
-  const handleCreate = async (name: string, channel: FlowChannel) => {
-    setShowCreateModal(false);
-    try {
-      const created = await apiCreateFlow(token, name, channel);
-      setFlows((cur) => [summarizeFlow(created), ...cur]);
-      setEditingFlowId(created.id);
-      setEditingFlow(created);
-    } catch (e) {
-      console.error("Failed to create flow", e);
-    }
-  };
+  // handleCreate is now on /new sub-route
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -849,11 +793,6 @@ function FlowsPage() {
     try {
       await apiDeleteFlow(token, id);
       setFlows((cur) => cur.filter((f) => f.id !== id));
-      if (editingFlowId === id) {
-        setEditingFlowId(null);
-        setEditingFlow(null);
-        setEditingFlowError(null);
-      }
     } catch (e) {
       console.error("Failed to delete flow", e);
     }
@@ -877,59 +816,13 @@ function FlowsPage() {
     try {
       const updated = await apiPublishFlow(token, flow.id, !flow.published);
       setFlows((cur) => cur.map((f) => (f.id === flow.id ? summarizeFlow(updated) : f)));
-      setEditingFlow((cur) => (cur?.id === updated.id ? updated : cur));
       setListNotice(null);
     } catch (e) {
       console.error("Failed to toggle publish", e);
     }
   };
 
-  // â”€â”€ Editor view
-  if (editingFlowId && editingFlowLoading) {
-    return (
-      <div className="fn-page-center" style={{ color: "var(--text-3)", fontSize: "0.85rem" }}>
-        Loading flow details...
-      </div>
-    );
-  }
-
-  if (editingFlowId && editingFlowError) {
-    return (
-      <div className="fn-page-center" style={{ flexDirection: "column", gap: "0.75rem" }}>
-        <div style={{ color: "#9f1239", fontSize: "0.85rem" }}>
-          Failed to load flow details: {editingFlowError}
-        </div>
-        <button
-          className="fn-btn"
-          onClick={() => {
-            setEditingFlowId(null);
-            setEditingFlow(null);
-            setEditingFlowError(null);
-          }}
-        >
-          Back to Flows
-        </button>
-      </div>
-    );
-  }
-
-  if (editingFlowId && editingFlow) {
-    return (
-      <FlowEditor
-        key={editingFlow.id}
-        flow={editingFlow}
-        token={token}
-        onChange={handleChange}
-        onBack={() => {
-          setEditingFlowId(null);
-          setEditingFlow(null);
-          setEditingFlowError(null);
-        }}
-      />
-    );
-  }
-
-  // â”€â”€ List view
+  // ── List view
   const filtered = activeTab === "all" ? flows : flows.filter((f) => f.channel === activeTab);
 
   if (loading) {
@@ -955,7 +848,7 @@ function FlowsPage() {
           <h2 className="fn-list-title">Flows</h2>
           <p className="fn-list-sub">Automate conversations across channels</p>
         </div>
-        <button className="fn-btn fn-btn-primary" onClick={() => setShowCreateModal(true)}>
+        <button className="fn-btn fn-btn-primary" onClick={() => navigate("new")}>
           + New Flow
         </button>
       </div>
@@ -982,7 +875,7 @@ function FlowsPage() {
           <div style={{ fontSize: "0.85rem", color: "var(--text-3)" }}>
             {activeTab === "all" ? "No flows yet." : `No ${CHANNEL_META[activeTab as FlowChannel]?.label ?? ""} flows yet.`}
           </div>
-          <button className="fn-btn fn-btn-primary" onClick={() => setShowCreateModal(true)}>
+          <button className="fn-btn fn-btn-primary" onClick={() => navigate("new")}>
             + Create Flow
           </button>
         </div>
@@ -1026,11 +919,7 @@ function FlowsPage() {
                   <button
                     className="fn-btn fn-btn-primary"
                     style={{ flex: 1 }}
-                    onClick={() => {
-                      setEditingFlow(null);
-                      setEditingFlowError(null);
-                      setEditingFlowId(flow.id);
-                    }}
+                    onClick={() => navigate(flow.id)}
                   >
                     Edit
                   </button>
@@ -1040,18 +929,78 @@ function FlowsPage() {
           })}
         </div>
       )}
-
-      {showCreateModal && (
-        <CreateFlowModal
-          onCreate={handleCreate}
-          onClose={() => setShowCreateModal(false)}
-        />
-      )}
     </div>
   );
 }
 
 // â”€â”€â”€ Exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// ─── Flow editor page ────────────────────────────────────────────────────────
+
+function FlowEditorPage() {
+  const { token } = useDashboardShell();
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [flow, setFlow] = useState<FlowDoc | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    apiGetFlow(token, id)
+      .then((f) => setFlow(f))
+      .catch((e) => setFetchError(String(e)))
+      .finally(() => setLoading(false));
+  }, [id, token]);
+
+  if (loading) {
+    return <div className="fn-page-center" style={{ color: "var(--text-3)", fontSize: "0.85rem" }}>Loading flow...</div>;
+  }
+  if (fetchError || !flow) {
+    return (
+      <div className="fn-page-center" style={{ flexDirection: "column", gap: "0.75rem" }}>
+        <div style={{ color: "#9f1239", fontSize: "0.85rem" }}>{fetchError ?? "Flow not found."}</div>
+        <button className="fn-btn" onClick={() => navigate("/dashboard/studio/flows")}>Back to Flows</button>
+      </div>
+    );
+  }
+
+  return (
+    <FlowEditor
+      key={flow.id}
+      flow={flow}
+      token={token}
+      onChange={(updated) => setFlow(updated)}
+      onBack={() => navigate("/dashboard/studio/flows")}
+    />
+  );
+}
+
+// ─── Flow new page ────────────────────────────────────────────────────────────
+
+function FlowNewPage() {
+  const { token } = useDashboardShell();
+  const navigate = useNavigate();
+
+  const handleCreate = async (name: string, channel: FlowChannel) => {
+    try {
+      const created = await apiCreateFlow(token, name, channel);
+      navigate(`/dashboard/studio/flows/${created.id}`, { replace: true });
+    } catch (e) {
+      console.error("Failed to create flow", e);
+    }
+  };
+
+  return (
+    <CreateFlowModal
+      onCreate={handleCreate}
+      onClose={() => navigate("/dashboard/studio/flows")}
+    />
+  );
+}
+
+// ─── Exports ─────────────────────────────────────────────────────────────────
 
 export async function prefetch(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1065,6 +1014,12 @@ export function Component() {
     document.title = "Studio · Flows";
   }, []);
 
-  return <FlowsPage />;
+  const element = useRoutes([
+    { index: true, element: <FlowsPage /> },
+    { path: "new", element: <FlowNewPage /> },
+    { path: ":id", element: <FlowEditorPage /> }
+  ]);
+
+  return <>{element}</>;
 }
 
