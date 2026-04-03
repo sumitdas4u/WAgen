@@ -1942,6 +1942,22 @@ export function uploadTemplateMedia(token: string, connectionId: string, file: F
   );
 }
 
+export function sendConversationTemplate(
+  token: string,
+  conversationId: string,
+  templateId: string,
+  variableValues?: Record<string, string>
+) {
+  return apiRequest<{ ok: boolean; messageId: string | null }>(
+    `/api/conversations/${conversationId}/send-template`,
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify({ templateId, variableValues: variableValues ?? {} })
+    }
+  );
+}
+
 export function sendTestTemplateMessage(
   token: string,
   payload: { templateId: string; to: string; variableValues: Record<string, string> }

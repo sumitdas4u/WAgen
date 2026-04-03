@@ -28,13 +28,15 @@ export async function sendConversationFlowMessage(input: {
     throw new Error("Message text is required.");
   }
 
+  let outboundWamid: string | null = null;
   if (conversation.channel_type === "api") {
-    await sendMetaFlowMessageDirect({
+    const sent = await sendMetaFlowMessageDirect({
       userId: input.userId,
       to: conversation.phone_number,
       payload: input.payload,
       linkedNumber: conversation.channel_linked_number
     });
+    outboundWamid = sent.messageId ?? null;
   } else if (conversation.channel_type === "qr") {
     await whatsappSessionManager.sendFlowMessage({
       userId: input.userId,
@@ -63,7 +65,8 @@ export async function sendConversationFlowMessage(input: {
       summaryText,
       { senderName: input.senderName ?? null },
       input.mediaUrl ?? payloadMediaUrl ?? null,
-      input.payload
+      input.payload,
+      outboundWamid
     );
   }
 

@@ -7,6 +7,7 @@ import {
   getMetaBusinessConfig,
   getMetaBusinessStatus,
   handleMetaWebhookPayload,
+  processDeliveryStatuses,
   sendMetaTextMessage,
   verifyMetaWebhookSignature
 } from "../services/meta-whatsapp-service.js";
@@ -185,6 +186,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     await handleMetaWebhookPayload(payload);
+    await processDeliveryStatuses(payload);
 
     // Handle template status update events
     const parsed = payload as { entry?: Array<{ changes?: Array<{ field?: string; value?: unknown }> }> };

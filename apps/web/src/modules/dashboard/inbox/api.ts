@@ -4,6 +4,7 @@ import {
   fetchConversations,
   fetchPublishedFlows,
   fetchTemplates,
+  sendConversationTemplate,
   type PublishedFlowSummary,
   type MessageTemplate,
   sendConversationManualMessage,
@@ -61,6 +62,15 @@ export function assignInboxFlow(token: string, conversationId: string, flowId: s
 export async function fetchInboxApprovedTemplates(token: string): Promise<MessageTemplate[]> {
   const res = await fetchTemplates(token, { status: "APPROVED" });
   return res.templates;
+}
+
+export function sendInboxConversationTemplate(
+  token: string,
+  conversationId: string,
+  templateId: string,
+  variableValues?: Record<string, string>
+) {
+  return sendConversationTemplate(token, conversationId, templateId, variableValues);
 }
 
 export async function aiAssistText(

@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
-import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
+import { getOrCreateConversation, trackOutboundMessage, updateMessageDeliveryStatus } from "./conversation-service.js";
 import {
   encodeFlowLocationInput,
   formatFlowLocationSummary
@@ -1487,7 +1487,7 @@ export async function sendMetaTextMessage(input: {
     channelType: "api",
     channelLinkedNumber: sent.connection.linkedNumber
   });
-  await trackOutboundMessage(conversation.id, sent.text);
+  await trackOutboundMessage(conversation.id, sent.text, undefined, null, null, sent.messageId ?? null);
 
   return {
     messageId: sent.messageId,
@@ -2061,4 +2061,33 @@ export function verifyMetaWebhookSignature(rawBody: string, signatureHeader: str
   }
 
   return timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+export async function processDeliveryStatuses(payload: unknown): Promise<void> {
+  const parsed = (payload ?? {}) as WebhookPayload;
+  for (const entry of parsed.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const statuses = change.value?.statuses;
+      if (!Array.isArray(statuses) || statuses.length === 0) {
+        continue;
+      }
+      for (const raw of statuses) {
+        const wamid = typeof raw["id"] === "string" ? raw["id"] : null;
+        const status = typeof raw["status"] === "string" ? raw["status"] : null;
+        if (!wamid || !status) {
+          continue;
+        }
+        if (status !== "delivered" && status !== "read" && status !== "failed") {
+          continue;
+        }
+        const errors = Array.isArray(raw["errors"]) ? (raw["errors"] as Array<Record<string, unknown>>) : [];
+        const errorCode = errors[0]?.["code"] != null ? String(errors[0]["code"]) : null;
+        try {
+          await updateMessageDeliveryStatus(wamid, status as "delivered" | "read" | "failed", errorCode);
+        } catch (err) {
+          console.error("[MetaWebhook] delivery status update failed", err);
+        }
+      }
+    }
+  }
 }

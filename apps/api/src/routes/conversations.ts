@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { openAIService } from "../services/openai-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
+import { sendTestTemplate } from "../services/template-service.js";
 import {
   listLeadsWithSummary,
   listConversationMessages,
@@ -219,6 +220,50 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           senderName
         });
         return { ok: true, delivered };
+      } catch (error) {
+        const message = (error as Error).message;
+        if (message.toLowerCase().includes("not found")) {
+          return reply.status(404).send({ error: message });
+        }
+        return reply.status(400).send({ error: message });
+      }
+    }
+  );
+
+  // ── Send an approved template directly into a conversation ──────────────
+  const SendTemplateSchema = z.object({
+    templateId: z.string().uuid(),
+    variableValues: z.record(z.string()).optional().default({})
+  });
+
+  fastify.post(
+    "/api/conversations/:conversationId/send-template",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const parsed = SendTemplateSchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid payload" });
+
+      // Resolve phone number from the conversation
+      const convRow = await pool.query<{ phone_number: string; channel_type: string }>(
+        `SELECT phone_number, channel_type FROM conversations WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [params.conversationId, request.authUser.userId]
+      );
+      if ((convRow.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+      const { phone_number, channel_type } = convRow.rows[0];
+      if (channel_type !== "api") {
+        return reply.status(400).send({ error: "Templates can only be sent on the API (Meta) channel." });
+      }
+
+      try {
+        const result = await sendTestTemplate(request.authUser.userId, {
+          templateId: parsed.data.templateId,
+          to: phone_number,
+          variableValues: parsed.data.variableValues
+        });
+        return { ok: true, messageId: result.messageId };
       } catch (error) {
         const message = (error as Error).message;
         if (message.toLowerCase().includes("not found")) {
