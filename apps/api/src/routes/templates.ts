@@ -13,38 +13,40 @@ import {
   type TemplateStatus
 } from "../services/template-service.js";
 
-const UPLOAD_MEDIA_RULES: Array<{
-  mimeTypes: string[];
-  extensions: string[];
-  maxBytes: number;
-}> = [
+type TemplateUploadMediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
+
+const UPLOAD_MEDIA_RULES: Record<
+  TemplateUploadMediaType,
   {
-    mimeTypes: ["image/jpeg", "image/png", "image/webp"],
-    extensions: [".jpg", ".jpeg", ".png", ".webp"],
-    maxBytes: 5 * 1024 * 1024
-  },
-  {
-    mimeTypes: ["video/mp4", "video/3gpp", "video/quicktime"],
-    extensions: [".mp4", ".3gp", ".mov"],
-    maxBytes: 16 * 1024 * 1024
-  },
-  {
-    mimeTypes: [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/plain"
-    ],
-    extensions: [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt"],
-    maxBytes: 10 * 1024 * 1024
+    mimeTypes: string[];
+    extensions: string[];
+    maxBytes: number;
+    description: string;
   }
-];
+> = {
+  IMAGE: {
+    mimeTypes: ["image/jpeg", "image/png"],
+    extensions: [".jpg", ".jpeg", ".png"],
+    maxBytes: 5 * 1024 * 1024,
+    description: "JPG or PNG"
+  },
+  VIDEO: {
+    mimeTypes: ["video/mp4"],
+    extensions: [".mp4"],
+    maxBytes: 16 * 1024 * 1024,
+    description: "MP4"
+  },
+  DOCUMENT: {
+    mimeTypes: ["application/pdf"],
+    extensions: [".pdf"],
+    maxBytes: 10 * 1024 * 1024,
+    description: "PDF"
+  }
+};
 
 const TemplateComponentButtonSchema = z.object({
   type: z.enum(["QUICK_REPLY", "URL", "PHONE_NUMBER", "COPY_CODE", "FLOW"]),
-  text: z.string().trim().min(1).max(200),
+  text: z.string().trim().min(1).max(25),
   url: z.string().url().optional(),
   phone_number: z.string().optional(),
   example: z.array(z.string()).optional()
@@ -148,8 +150,12 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const query = request.query as Record<string, string | undefined>;
       const connectionId = query.connectionId;
+      const mediaType = (query.mediaType ?? "").toUpperCase() as TemplateUploadMediaType;
       if (!connectionId) {
         return reply.status(400).send({ error: "connectionId query parameter is required" });
+      }
+      if (!mediaType || !(mediaType in UPLOAD_MEDIA_RULES)) {
+        return reply.status(400).send({ error: "mediaType query parameter must be IMAGE, VIDEO, or DOCUMENT" });
       }
 
       const files = await request.saveRequestFiles();
@@ -161,20 +167,17 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
         const file = files[0]!;
         const ext = (file.filename ?? "").toLowerCase().split(".").pop() ?? "";
         const extWithDot = `.${ext}`;
+        const rule = UPLOAD_MEDIA_RULES[mediaType];
 
-        const matchedRule = UPLOAD_MEDIA_RULES.find(
-          (rule) => rule.extensions.includes(extWithDot) && rule.mimeTypes.includes(file.mimetype ?? "")
-        );
-
-        if (!matchedRule) {
+        if (!rule.extensions.includes(extWithDot) || !rule.mimeTypes.includes(file.mimetype ?? "")) {
           return reply.status(400).send({
-            error: "Unsupported file type. Supported sample media: .jpg, .jpeg, .png, .webp, .mp4, .3gp, .mov, .pdf, .doc, .docx, .xls, .xlsx, .txt"
+            error: `${mediaType.toLowerCase()} template headers currently support ${rule.description} sample files only. Upload the sample here instead of pasting a public URL.`
           });
         }
 
         const buffer = await readFile(file.filepath);
-        if (buffer.byteLength > matchedRule.maxBytes) {
-          return reply.status(400).send({ error: `File exceeds ${Math.round(matchedRule.maxBytes / (1024 * 1024))}MB limit` });
+        if (buffer.byteLength > rule.maxBytes) {
+          return reply.status(400).send({ error: `File exceeds ${Math.round(rule.maxBytes / (1024 * 1024))}MB limit` });
         }
 
         const result = await uploadTemplateMedia(

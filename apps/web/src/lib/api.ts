@@ -1935,11 +1935,16 @@ export function generateAITemplate(
   });
 }
 
-export function uploadTemplateMedia(token: string, connectionId: string, file: File) {
+export function uploadTemplateMedia(
+  token: string,
+  connectionId: string,
+  mediaType: "IMAGE" | "VIDEO" | "DOCUMENT",
+  file: File
+) {
   const form = new FormData();
   form.append("file", file);
   return apiRequest<{ handle: string }>(
-    `/api/meta/templates/upload-media?connectionId=${encodeURIComponent(connectionId)}`,
+    `/api/meta/templates/upload-media?connectionId=${encodeURIComponent(connectionId)}&mediaType=${encodeURIComponent(mediaType)}`,
     { method: "POST", token, body: form }
   );
 }

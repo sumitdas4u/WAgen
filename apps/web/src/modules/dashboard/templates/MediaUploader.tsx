@@ -12,23 +12,22 @@ interface Props {
 
 const CONFIG: Record<MediaType, { accept: string; exts: string; maxMb: number; icon: string; label: string }> = {
   IMAGE: {
-    accept: "image/jpeg,image/png,image/webp",
-    exts: ".jpg,.jpeg,.png,.webp",
+    accept: "image/jpeg,image/png",
+    exts: ".jpg,.jpeg,.png",
     maxMb: 5,
     icon: "[img]",
     label: "Image"
   },
   VIDEO: {
-    accept: "video/mp4,video/3gpp,video/quicktime",
-    exts: ".mp4,.3gp,.mov",
+    accept: "video/mp4",
+    exts: ".mp4",
     maxMb: 16,
     icon: "[vid]",
     label: "Video"
   },
   DOCUMENT: {
-    accept:
-      "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain",
-    exts: ".pdf,.doc,.docx,.xls,.xlsx,.txt",
+    accept: "application/pdf",
+    exts: ".pdf",
     maxMb: 10,
     icon: "[doc]",
     label: "Document"
@@ -66,7 +65,7 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
 
     setUploading(true);
     try {
-      const uploaded = await uploadTemplateMedia(token, connectionId, file);
+      const uploaded = await uploadTemplateMedia(token, connectionId, mediaType, file);
       onUploaded(uploaded.handle, localPreviewUrl);
       setUploaded(true);
     } catch (err) {
@@ -173,6 +172,9 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
           Sample uploaded successfully for Meta template review.
         </div>
       )}
+      <div style={{ marginTop: "6px", fontSize: "12px", color: "#64748b" }}>
+        Upload the sample here to generate a Meta header handle. Public URLs are not accepted for template media headers.
+      </div>
       {error && <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>{error}</div>}
     </div>
   );

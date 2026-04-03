@@ -122,6 +122,13 @@ function validateTemplateDraft(input: {
       bodyError: null
     };
   }
+  if (["IMAGE", "VIDEO", "DOCUMENT"].includes(input.headerFormat) && /^https?:\/\//i.test(input.headerHandle.trim())) {
+    return {
+      formError: "Media headers must use the Meta sample handle from Upload Sample Media. Public URLs are not accepted here.",
+      footerError: null,
+      bodyError: null
+    };
+  }
 
   const footerText = input.footerText.trim();
   if (footerText) {
@@ -544,7 +551,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             ))}
           </div>
           <div style={{ marginTop: "10px", fontSize: "12px", color: "#64748b" }}>
-            This builder supports text, image, video, and document headers. Location headers are still not supported here.
+            This builder supports text, image, video, and document headers. Use JPG or PNG for image headers, MP4 for video headers, and PDF for document headers. Location headers are still not supported here.
           </div>
           {headerFormat === "TEXT" && (
             <input

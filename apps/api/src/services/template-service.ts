@@ -99,6 +99,16 @@ interface ConnectionRow {
 
 type TemplateMediaFormat = Extract<NonNullable<TemplateComponent["format"]>, "IMAGE" | "VIDEO" | "DOCUMENT">;
 const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
+const TEMPLATE_HEADER_SAMPLE_MIME_TYPES: Record<TemplateMediaFormat, ReadonlySet<string>> = {
+  IMAGE: new Set(["image/jpeg", "image/png"]),
+  VIDEO: new Set(["video/mp4"]),
+  DOCUMENT: new Set(["application/pdf"])
+};
+const TEMPLATE_HEADER_SAMPLE_HELP: Record<TemplateMediaFormat, string> = {
+  IMAGE: "JPG or PNG",
+  VIDEO: "MP4",
+  DOCUMENT: "PDF"
+};
 
 export interface TemplateDispatchResult {
   messageId: string | null;
@@ -324,6 +334,41 @@ function normalizeButtonExampleValues(button: TemplateComponentButton): string[]
   return normalizeStringList(button.example);
 }
 
+function decodeTemplateHandleSegment(value: string): string | null {
+  if (!/^[A-Za-z0-9+/=]+$/.test(value)) {
+    return null;
+  }
+  try {
+    const decoded = Buffer.from(value, "base64").toString("utf8").trim();
+    return decoded && /^[\x20-\x7E]+$/.test(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function inspectTemplateHeaderHandle(handle: string): {
+  isUrl: boolean;
+  mimeType: string | null;
+} {
+  const trimmed = handle.trim();
+  if (!trimmed) {
+    return { isUrl: false, mimeType: null };
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return { isUrl: true, mimeType: null };
+  }
+
+  const segments = trimmed.split(":");
+  if (segments.length < 3) {
+    return { isUrl: false, mimeType: null };
+  }
+
+  return {
+    isUrl: false,
+    mimeType: decodeTemplateHandleSegment(segments[2] ?? "")
+  };
+}
+
 function normalizeTemplatePhoneNumber(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -401,11 +446,28 @@ function normalizeCreateTemplateComponents(components: TemplateComponent[]): Tem
           continue;
         }
 
+        const handle = handles[0]!;
+        const handleInfo = inspectTemplateHeaderHandle(handle);
+        if (handleInfo.isUrl) {
+          errors.push(
+            `Header ${format.toLowerCase()} templates must use the Meta sample handle returned by Upload Sample Media. Public URLs are not accepted here.`
+          );
+          continue;
+        }
+
+        const allowedMimeTypes = TEMPLATE_HEADER_SAMPLE_MIME_TYPES[format];
+        if (handleInfo.mimeType && !allowedMimeTypes.has(handleInfo.mimeType)) {
+          errors.push(
+            `Header ${format.toLowerCase()} templates currently support ${TEMPLATE_HEADER_SAMPLE_HELP[format]} sample files only. Upload a fresh ${TEMPLATE_HEADER_SAMPLE_HELP[format]} file and try again.`
+          );
+          continue;
+        }
+
         normalized.push({
           type: "HEADER",
           format,
           example: {
-            header_handle: [handles[0]!]
+            header_handle: [handle]
           }
         });
         continue;
@@ -579,6 +641,12 @@ function normalizeCreateTemplateComponents(components: TemplateComponent[]): Tem
 
 function improveTemplateCreateErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "Failed to create template.");
+  if (/\bsubcode=2388273\b/i.test(message)) {
+    return `${message} Meta rejected the media sample reference. Upload the sample file in WAgen and use the returned Meta header handle; public URLs are not accepted for template media headers.`;
+  }
+  if (/\bsubcode=2388084\b/i.test(message)) {
+    return `${message} Meta rejected the uploaded media sample for this header type. Use JPG or PNG for image headers, MP4 for video headers, and PDF for document headers.`;
+  }
   if (!/\bcode=131009\b/i.test(message) && !/\bcode=100\b/i.test(message)) {
     return message;
   }

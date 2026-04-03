@@ -64,8 +64,8 @@ export function useGenerateTemplateMutation(token: string) {
 
 export function useUploadMediaMutation(token: string) {
   return useMutation({
-    mutationFn: ({ connectionId, file }: { connectionId: string; file: File }) =>
-      uploadTemplateMedia(token, connectionId, file).then((r) => r.handle)
+    mutationFn: ({ connectionId, mediaType, file }: { connectionId: string; mediaType: "IMAGE" | "VIDEO" | "DOCUMENT"; file: File }) =>
+      uploadTemplateMedia(token, connectionId, mediaType, file).then((r) => r.handle)
   });
 }
 
