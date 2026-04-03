@@ -2266,6 +2266,128 @@
   background: rgba(195, 230, 150, 0.5);
 }
 
+/* ─── Template variable dialog ────────────────────────────────────────────── */
+
+.tmpl-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 20, 40, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.tmpl-dialog {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 48px rgba(10, 20, 60, 0.2);
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+.tmpl-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.1rem 0.75rem;
+  border-bottom: 1px solid #edf2f8;
+}
+
+.tmpl-dialog-head strong {
+  font-size: 0.9rem;
+  color: #1a2c38;
+}
+
+.tmpl-dialog-name {
+  font-size: 0.76rem;
+  color: #6a8099;
+  background: #f0f4fa;
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  margin-left: 0.2rem;
+}
+
+.tmpl-dialog-close {
+  border: none;
+  background: transparent;
+  color: #8fa0b4;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-left: auto;
+  padding: 0.15rem 0.3rem;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.tmpl-dialog-close:hover {
+  background: #f0f4fa;
+  color: #2b3f5f;
+}
+
+.tmpl-dialog-preview {
+  padding: 0.75rem 1.1rem;
+  background: #f7fafd;
+  border-bottom: 1px solid #edf2f8;
+}
+
+.tmpl-dialog-preview-text {
+  font-size: 0.82rem;
+  color: #2b3f5f;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.tmpl-dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 1.1rem;
+}
+
+.tmpl-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.tmpl-dialog-field span {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #5a7899;
+  font-family: monospace;
+}
+
+.tmpl-dialog-field input {
+  border: 1px solid #c8d6e2;
+  border-radius: 8px;
+  padding: 0.46rem 0.65rem;
+  font-size: 0.84rem;
+  color: #1a2c38;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tmpl-dialog-field input:focus {
+  border-color: #2d6be4;
+  box-shadow: 0 0 0 3px rgba(45, 107, 228, 0.12);
+}
+
+.tmpl-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.75rem 1.1rem 0.9rem;
+  border-top: 1px solid #edf2f8;
+}
+
 .message-inline-code {
   font-family: monospace;
   font-size: 0.85em;

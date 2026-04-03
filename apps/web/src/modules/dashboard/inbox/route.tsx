@@ -12,7 +12,8 @@ import {
   assignInboxFlow,
   sendManualConversationMessage,
   updateConversationAiMode,
-  aiAssistText
+  aiAssistText,
+  sendInboxConversationTemplate
 } from "./api";
 import {
   buildInboxConversationsQueryOptions,
@@ -346,8 +347,8 @@ export function Component() {
   // Layout state
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileConversationOpen, setIsMobileConversationOpen] = useState(false);
-  const [isDesktopFilterPanelOpen, setIsDesktopFilterPanelOpen] = useState(true);
-  const [isDesktopLeadPanelOpen, setIsDesktopLeadPanelOpen] = useState(true);
+  const [isDesktopFilterPanelOpen, setIsDesktopFilterPanelOpen] = useState(false);
+  const [isDesktopLeadPanelOpen, setIsDesktopLeadPanelOpen] = useState(false);
 
   // Chat state
   const [chatAiMenuOpen, setChatAiMenuOpen] = useState(false);
@@ -366,6 +367,7 @@ export function Component() {
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showTranslateSubmenu, setShowTranslateSubmenu] = useState(false);
   const [isAiRewriting, setIsAiRewriting] = useState(false);
+  const [templateVarsDialog, setTemplateVarsDialog] = useState<{ template: MessageTemplate; vars: string[]; values: Record<string, string> } | null>(null);
 
   // Toast
   const [info, setInfo] = useState<string | null>(null);
@@ -672,6 +674,19 @@ export function Component() {
     }
   });
 
+  const sendTemplateMutation = useMutation({
+    mutationFn: async ({ conversationId, templateId, variableValues }: { conversationId: string; templateId: string; variableValues: Record<string, string> }) => {
+      return sendInboxConversationTemplate(token, conversationId, templateId, variableValues);
+    },
+    onSuccess: async () => {
+      setShowTemplateMenu(false);
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
+      setInfo("Template sent.");
+    },
+    onError: (e) => setError((e as Error).message)
+  });
+
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
   const updateSearchParam = useCallback((key: string, value: string) => {
@@ -776,12 +791,28 @@ export function Component() {
   }, [agentReplyText, isAiRewriting, token]);
 
   const handleSelectTemplate = useCallback((template: MessageTemplate) => {
-    const bodyText = getTemplateBodyText(template);
-    setAgentReplyText(bodyText);
-    setManualComposeConversationId(selectedConversation?.id ?? null);
+    if (!selectedConversation) return;
     setShowTemplateMenu(false);
-    textareaRef.current?.focus();
-  }, [selectedConversation]);
+    if (selectedConversation.channel_type !== "api") {
+      setError("Templates can only be sent on the WhatsApp API channel.");
+      return;
+    }
+    // Collect unique {{N}} placeholders from all text components
+    const allText = template.components
+      .filter((c) => c.text)
+      .map((c) => c.text ?? "")
+      .join("\n");
+    const vars = [...new Set([...allText.matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[0]))];
+    if (vars.length === 0) {
+      // No variables — send immediately
+      sendTemplateMutation.mutate({ conversationId: selectedConversation.id, templateId: template.id, variableValues: {} });
+    } else {
+      // Open variable-fill dialog
+      const initialValues: Record<string, string> = {};
+      vars.forEach((v) => { initialValues[v] = ""; });
+      setTemplateVarsDialog({ template, vars, values: initialValues });
+    }
+  }, [selectedConversation, sendTemplateMutation]);
 
   const handleSendMessage = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -1037,24 +1068,6 @@ export function Component() {
                     )}
                     {selectedConversation && (
                       <>
-                        <button className="ghost-btn" type="button" disabled={assignFlowMutation.isPending} onClick={() => { setFlowMenuOpen((v) => !v); setChatAiMenuOpen(false); }}>
-                          {assignFlowMutation.isPending ? "Assigning..." : "Assign flow"}
-                        </button>
-                        {flowMenuOpen && (
-                          <div className="chat-ai-menu">
-                            {publishedFlowsQuery.isLoading ? (
-                              <button type="button" disabled>Loading flows...</button>
-                            ) : publishedFlows.length === 0 ? (
-                              <button type="button" disabled>No published flows</button>
-                            ) : (
-                              publishedFlows.map((flow) => (
-                                <button key={flow.id} type="button" onClick={() => assignFlowMutation.mutate({ conversationId: selectedConversation.id, flowId: flow.id, flowName: flow.name })}>
-                                  {flow.name}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        )}
                         <button
                           className="ghost-btn"
                           type="button"
@@ -1284,7 +1297,7 @@ export function Component() {
                                 <button type="button" disabled>No approved templates</button>
                               ) : (
                                 approvedTemplates.map((t) => (
-                                  <button key={t.id} type="button" className="compose-template-item" onClick={() => handleSelectTemplate(t)}>
+                                  <button key={t.id} type="button" className="compose-template-item" disabled={sendTemplateMutation.isPending} onClick={() => handleSelectTemplate(t)}>
                                     <strong>{t.name}</strong>
                                     <span>{getTemplateBodyText(t).slice(0, 80)}{getTemplateBodyText(t).length > 80 ? "…" : ""}</span>
                                   </button>
@@ -1326,8 +1339,9 @@ export function Component() {
                                 type="button"
                                 className={`compose-tool${showTemplateMenu ? " active" : ""}`}
                                 title="Send approved template"
+                                disabled={sendTemplateMutation.isPending}
                                 onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); }}
-                              >📋</button>
+                              >{sendTemplateMutation.isPending ? "…" : "📋"}</button>
                             </div>
 
                             {/* Right tools */}
@@ -1391,6 +1405,56 @@ export function Component() {
                   </div>
                 )}
               </section>
+
+              {/* ── Template variable fill dialog ── */}
+              {templateVarsDialog && (
+                <div className="tmpl-dialog-overlay" onClick={() => setTemplateVarsDialog(null)}>
+                  <div className="tmpl-dialog" onClick={(e) => e.stopPropagation()}>
+                    <div className="tmpl-dialog-head">
+                      <strong>Fill template variables</strong>
+                      <span className="tmpl-dialog-name">{templateVarsDialog.template.name}</span>
+                      <button type="button" className="tmpl-dialog-close" onClick={() => setTemplateVarsDialog(null)}>✕</button>
+                    </div>
+                    <div className="tmpl-dialog-preview">
+                      {templateVarsDialog.template.components.filter((c) => c.text).map((c, i) => (
+                        <p key={i} className="tmpl-dialog-preview-text">{c.text}</p>
+                      ))}
+                    </div>
+                    <div className="tmpl-dialog-fields">
+                      {templateVarsDialog.vars.map((v) => (
+                        <label key={v} className="tmpl-dialog-field">
+                          <span>{v}</span>
+                          <input
+                            type="text"
+                            placeholder={`Value for ${v}`}
+                            value={templateVarsDialog.values[v] ?? ""}
+                            onChange={(e) => setTemplateVarsDialog((prev) => prev ? { ...prev, values: { ...prev.values, [v]: e.target.value } } : prev)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="tmpl-dialog-actions">
+                      <button type="button" className="ghost-btn" onClick={() => setTemplateVarsDialog(null)}>Cancel</button>
+                      <button
+                        type="button"
+                        className="compose-send-btn"
+                        disabled={sendTemplateMutation.isPending}
+                        onClick={() => {
+                          if (!selectedConversation) return;
+                          sendTemplateMutation.mutate({
+                            conversationId: selectedConversation.id,
+                            templateId: templateVarsDialog.template.id,
+                            variableValues: templateVarsDialog.values
+                          });
+                          setTemplateVarsDialog(null);
+                        }}
+                      >
+                        {sendTemplateMutation.isPending ? "Sending…" : "Send Template"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ── Lead detail panel ── */}
               {showLeadDetailPane && (
