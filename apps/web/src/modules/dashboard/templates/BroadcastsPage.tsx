@@ -128,10 +128,6 @@ function formatFieldLabel(field: ContactField): string {
   return `${field.label} (custom)`;
 }
 
-function getTemplateSnippet(template: MessageTemplate): string {
-  return template.components.find((component) => component.type === "BODY")?.text ?? template.name;
-}
-
 interface Props {
   token: string;
   metaStatus?: MetaBusinessStatus | null;
