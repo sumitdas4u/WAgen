@@ -594,7 +594,8 @@ export async function trackOutboundMessage(
     senderName?: string | null;
   },
   mediaUrl?: string | null,
-  payload?: FlowMessagePayload | null
+  payload?: FlowMessagePayload | null,
+  wamid?: string | null
 ): Promise<void> {
   const msgType = payload ? payloadToMessageType(payload) : "text";
   const msgContent = payload ? JSON.stringify(payload) : null;
@@ -614,9 +615,11 @@ export async function trackOutboundMessage(
          retrieval_chunks,
          media_url,
          message_type,
-         message_content
+         message_content,
+         wamid,
+         sent_at
        )
-       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
+       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW())`,
       [
         conversationId,
         usage?.senderName ?? null,
@@ -628,7 +631,8 @@ export async function trackOutboundMessage(
         usage?.retrievalChunks ?? null,
         mediaUrl ?? null,
         msgType,
-        msgContent
+        msgContent,
+        wamid ?? null
       ]
     );
   } catch {
@@ -1508,4 +1512,20 @@ export async function getUsageAnalytics(
     daily: [...dayMap.values()].sort((a, b) => a.day.localeCompare(b.day)),
     recent_messages: recentMessages
   };
+}
+
+export async function updateMessageDeliveryStatus(
+  wamid: string,
+  status: "delivered" | "read" | "failed",
+  errorCode?: string | null
+): Promise<void> {
+  await pool.query(
+    `UPDATE conversation_messages
+     SET delivery_status = $2,
+         delivered_at    = CASE WHEN $2 = 'delivered' THEN NOW() ELSE delivered_at END,
+         read_at         = CASE WHEN $2 = 'read'      THEN NOW() ELSE read_at      END,
+         error_code      = COALESCE($3, error_code)
+     WHERE wamid = $1`,
+    [wamid, status, errorCode ?? null]
+  );
 }
