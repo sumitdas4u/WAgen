@@ -3,13 +3,16 @@ import {
   fetchConversationMessages,
   fetchConversations,
   fetchPublishedFlows,
+  fetchTemplates,
   type PublishedFlowSummary,
+  type MessageTemplate,
   sendConversationManualMessage,
   uploadConversationMedia,
   setConversationPaused,
   setManualTakeover,
   type Conversation,
-  type ConversationMessage
+  type ConversationMessage,
+  API_URL
 } from "../../../lib/api";
 
 export async function fetchInboxConversations(token: string): Promise<Conversation[]> {
@@ -53,4 +56,27 @@ export function uploadInboxMedia(token: string, conversationId: string, file: Fi
 
 export function assignInboxFlow(token: string, conversationId: string, flowId: string) {
   return assignFlowToConversation(token, flowId, conversationId);
+}
+
+export async function fetchInboxApprovedTemplates(token: string): Promise<MessageTemplate[]> {
+  const res = await fetchTemplates(token, { status: "APPROVED" });
+  return res.templates;
+}
+
+export async function aiAssistText(
+  token: string,
+  text: string,
+  action: "rewrite" | "translate",
+  language?: string
+): Promise<{ text: string }> {
+  const res = await fetch(`${API_URL}/api/ai-assist/text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ text, action, language })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "AI assist failed" }));
+    throw new Error((err as { error?: string }).error ?? "AI assist failed");
+  }
+  return res.json() as Promise<{ text: string }>;
 }

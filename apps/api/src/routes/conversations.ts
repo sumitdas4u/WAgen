@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
+import { openAIService } from "../services/openai-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
 import {
   listLeadsWithSummary,
@@ -266,6 +267,29 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
       const mediaId = result.rows[0].id;
       return { mediaId, url: `/api/media/${mediaId}`, mimeType: file.mimetype };
+    }
+  );
+
+  // ── AI Assist: rewrite / translate message text ───────────────────────────
+  const AiAssistSchema = z.object({
+    text: z.string().trim().min(1).max(4000),
+    action: z.enum(["rewrite", "translate"]),
+    language: z.string().max(60).optional()
+  });
+
+  fastify.post(
+    "/api/ai-assist/text",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = AiAssistSchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid input" });
+      const { text, action, language } = parsed.data;
+      const systemPrompt =
+        action === "rewrite"
+          ? "You are a professional WhatsApp business messaging assistant. Rewrite the given message to be clearer, more professional, and friendly. Return only the rewritten message text with no explanation or prefix."
+          : `You are a professional translator. Translate the given message to ${language ?? "English"}. Return only the translated text with no explanation or prefix.`;
+      const result = await openAIService.generateReply(systemPrompt, text, undefined, { temperature: 0.5 });
+      return { text: result.content.trim() };
     }
   );
 

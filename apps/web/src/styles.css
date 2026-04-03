@@ -1795,6 +1795,477 @@
   background: rgba(195, 230, 150, 0.5);
 }
 
+/* ─── Compose tabs (Reply / Notes) ───────────────────────────────────────── */
+
+.compose-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #dde8f0;
+  margin-bottom: 0.4rem;
+}
+
+.compose-tab {
+  padding: 0.42rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #7a95b0;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+}
+
+.compose-tab:hover {
+  color: #2d6be4;
+}
+
+.compose-tab.active {
+  color: #2d6be4;
+  border-bottom-color: #2d6be4;
+  font-weight: 600;
+}
+
+.chat-compose-textarea.notes-mode {
+  background: #fffde7;
+  border-color: #f0c040;
+}
+
+/* ─── Compose toolbar ─────────────────────────────────────────────────────── */
+
+.compose-toolbar-wrap {
+  position: relative;
+  margin-top: 0.35rem;
+}
+
+.compose-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+  padding: 0.28rem 0;
+}
+
+.compose-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.compose-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.compose-tool {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #5a7899;
+  transition: background 0.12s, color 0.12s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.compose-tool:hover:not(:disabled) {
+  background: #edf3fb;
+  color: #2d6be4;
+}
+
+.compose-tool:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.compose-tool.active {
+  background: #dce9fd;
+  color: #2d6be4;
+}
+
+.compose-tool-aa {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: #5a7899;
+}
+
+.compose-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: #d0dceb;
+  margin: 0 0.18rem;
+  flex-shrink: 0;
+}
+
+/* ─── AI Assist button ────────────────────────────────────────────────────── */
+
+.compose-ai-assist-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #5a3abf;
+  background: rgba(100, 60, 220, 0.08);
+  border: 1px solid rgba(100, 60, 220, 0.22);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s;
+  white-space: nowrap;
+}
+
+.compose-ai-assist-btn:hover {
+  background: rgba(100, 60, 220, 0.14);
+  border-color: rgba(100, 60, 220, 0.38);
+}
+
+.compose-ai-assist-btn.active {
+  background: rgba(100, 60, 220, 0.16);
+  border-color: rgba(100, 60, 220, 0.5);
+}
+
+/* ─── Send button (compose) ───────────────────────────────────────────────── */
+
+.compose-send-btn {
+  padding: 0.36rem 1.05rem;
+  background: #2d6be4;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s;
+  white-space: nowrap;
+}
+
+.compose-send-btn:hover:not(:disabled) {
+  background: #1a51c0;
+}
+
+.compose-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── AI Assist popup ─────────────────────────────────────────────────────── */
+
+.ai-assist-popup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 230px;
+  background: #fff;
+  border: 1px solid #dde5f0;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(30, 50, 100, 0.14);
+  z-index: 60;
+  overflow: hidden;
+}
+
+.ai-assist-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.75rem 0.45rem;
+  border-bottom: 1px solid #edf2f8;
+}
+
+.ai-assist-popup-header span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #2b3f5f;
+}
+
+.ai-assist-popup-header kbd {
+  font-size: 0.65rem;
+  color: #8fa0b4;
+  background: #f0f4fa;
+  border-radius: 4px;
+  padding: 0.08em 0.3em;
+  font-family: inherit;
+  margin-left: 0.3rem;
+}
+
+.ai-assist-popup-close {
+  border: none;
+  background: transparent;
+  color: #8fa0b4;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0.1rem 0.25rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.ai-assist-popup-close:hover {
+  background: #f0f4fa;
+  color: #2b3f5f;
+}
+
+.ai-assist-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+  position: relative;
+}
+
+.ai-assist-popup-item:hover:not(:disabled) {
+  background: #f5f8fe;
+}
+
+.ai-assist-popup-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-assist-translate-row {
+  cursor: default;
+}
+
+.ai-assist-item-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.ai-assist-item-label {
+  font-size: 0.81rem;
+  font-weight: 500;
+  color: #2b3f5f;
+  flex: 1;
+}
+
+.ai-assist-item-arrow {
+  font-size: 1rem;
+  color: #8fa0b4;
+  margin-left: auto;
+}
+
+.ai-assist-popup-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.38rem 0.75rem;
+  border-top: 1px solid #edf2f8;
+  background: #f7fafd;
+}
+
+.ai-assist-popup-footer span {
+  font-size: 0.68rem;
+  color: #8fa0b4;
+}
+
+/* ─── AI Translate submenu ────────────────────────────────────────────────── */
+
+.ai-translate-submenu {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 0;
+  width: 150px;
+  background: #fff;
+  border: 1px solid #dde5f0;
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(30, 50, 100, 0.12);
+  z-index: 61;
+  overflow: hidden;
+}
+
+.ai-translate-submenu button {
+  display: block;
+  width: 100%;
+  padding: 0.42rem 0.75rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 0.8rem;
+  color: #2b3f5f;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ai-translate-submenu button:hover:not(:disabled) {
+  background: #f5f8fe;
+}
+
+.ai-translate-submenu button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Compose dropups (flow + template) ───────────────────────────────────── */
+
+.compose-dropup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #dde5f0;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(30, 50, 100, 0.14);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+}
+
+.compose-dropup-label {
+  padding: 0.45rem 0.75rem 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #8fa0b4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #edf2f8;
+}
+
+.compose-dropup button {
+  display: block;
+  width: 100%;
+  padding: 0.48rem 0.75rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 0.82rem;
+  color: #2b3f5f;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.compose-dropup button:hover:not(:disabled) {
+  background: #f5f8fe;
+}
+
+.compose-dropup button:disabled {
+  color: #9aaab8;
+  cursor: not-allowed;
+}
+
+.compose-template-dropup {
+  left: auto;
+  right: 0;
+  max-width: 360px;
+}
+
+.compose-template-item {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.18rem !important;
+  padding: 0.5rem 0.75rem !important;
+  border-bottom: 1px solid #f0f4fa !important;
+}
+
+.compose-template-item:last-child {
+  border-bottom: none !important;
+}
+
+.compose-template-item strong {
+  font-size: 0.8rem;
+  color: #1a2c38;
+}
+
+.compose-template-item span {
+  font-size: 0.73rem;
+  color: #6a8099;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+/* ─── AI Suggestions strip (below toolbar) ────────────────────────────────── */
+
+.compose-suggestions {
+  border-top: 1px solid #e8f0e4;
+  background: linear-gradient(135deg, #fff6ca 0%, #f2ffe5 100%);
+  border-radius: 0 0 10px 10px;
+  padding: 0.5rem 0.6rem 0.55rem;
+  margin-top: 0.3rem;
+}
+
+.compose-suggestions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #496043;
+}
+
+.compose-suggestions-head button {
+  border: none;
+  background: transparent;
+  font-size: 0.72rem;
+  color: #6d7755;
+  cursor: pointer;
+  padding: 0.1rem 0.25rem;
+  border-radius: 4px;
+}
+
+.compose-suggestions-head button:hover {
+  background: rgba(0,0,0,0.06);
+}
+
+.compose-suggestions-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.compose-suggestions-strip button {
+  padding: 0.28rem 0.65rem;
+  font-size: 0.76rem;
+  background: rgba(255,255,255,0.75);
+  border: 1px solid #c9df9e;
+  border-radius: 20px;
+  color: #315b18;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+
+.compose-suggestions-strip button:hover {
+  background: #fff;
+}
+
+.compose-suggestions-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: #3a5c1a;
+  background: rgba(195, 230, 150, 0.25);
+  border: 1px solid #c4d59b;
+  border-radius: 8px;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 0.3rem;
+}
+
+.compose-suggestions-show:hover {
+  background: rgba(195, 230, 150, 0.5);
+}
+
 .message-inline-code {
   font-family: monospace;
   font-size: 0.85em;

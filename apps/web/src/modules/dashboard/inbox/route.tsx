@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { Conversation, ConversationMessage } from "../../../lib/api";
+import type { Conversation, ConversationMessage, MessageTemplate } from "../../../lib/api";
 import { fetchContactByConversation } from "../../../lib/api";
 import { normalizeMessage, renderMessage } from "./message-renderer";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
@@ -11,14 +11,15 @@ import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import {
   assignInboxFlow,
   sendManualConversationMessage,
-
-  updateConversationAiMode
+  updateConversationAiMode,
+  aiAssistText
 } from "./api";
 import {
   buildInboxConversationsQueryOptions,
   useInboxConversationsQuery,
   useInboxMessagesQuery,
-  useInboxPublishedFlowsQuery
+  useInboxPublishedFlowsQuery,
+  useInboxTemplatesQuery
 } from "./queries";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -96,6 +97,12 @@ const CHAT_AI_DURATION_OPTIONS: Array<{ label: string; minutes: number | null }>
 ];
 
 const QUICK_EMOJIS = ["👍", "😊", "🙏", "✅", "🔥", "💯", "👋", "😄", "❤️", "🎉", "⚡", "📞", "📧", "💬", "🏷️", "🔔"];
+
+const TRANSLATE_LANGUAGES = ["English", "Hindi", "Spanish", "French", "Arabic", "Portuguese", "Bengali", "Urdu", "Gujarati", "Marathi", "Tamil", "Telugu"];
+
+function getTemplateBodyText(template: MessageTemplate): string {
+  return template.components.find((c) => c.type === "BODY")?.text ?? template.name;
+}
 
 
 
@@ -353,6 +360,12 @@ export function Component() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
+  const [composeTab, setComposeTab] = useState<"reply" | "notes">("reply");
+  const [showAiAssistPopup, setShowAiAssistPopup] = useState(false);
+  const [showToolbarFlowMenu, setShowToolbarFlowMenu] = useState(false);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const [showTranslateSubmenu, setShowTranslateSubmenu] = useState(false);
+  const [isAiRewriting, setIsAiRewriting] = useState(false);
 
   // Toast
   const [info, setInfo] = useState<string | null>(null);
@@ -368,6 +381,7 @@ export function Component() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
+  const toolbarWrapRef = useRef<HTMLDivElement | null>(null);
 
   // ─── URL filter state ─────────────────────────────────────────────────────
   const legacyFolder = (searchParams.get("folder") as ChatFolderFilter | null) ?? null;
@@ -396,6 +410,8 @@ export function Component() {
     staleTime: 30_000
   });
   const linkedContact = contactQuery.data ?? null;
+  const templatesQuery = useInboxTemplatesQuery(token);
+  const approvedTemplates = templatesQuery.data ?? [];
 
   // ─── Derived data ─────────────────────────────────────────────────────────
   const allConversations = useMemo(() => sortConversationsByRecent(conversationsQuery.data ?? []), [conversationsQuery.data]);
@@ -510,7 +526,7 @@ export function Component() {
 
   // Close menus on outside click / escape
   useEffect(() => {
-    if (!chatAiMenuOpen && !flowMenuOpen && !showEmojiPicker) return;
+    if (!chatAiMenuOpen && !flowMenuOpen && !showEmojiPicker && !showAiAssistPopup && !showToolbarFlowMenu && !showTemplateMenu && !showTranslateSubmenu) return;
     const onOutside = (e: MouseEvent) => {
       if (chatAiMenuRef.current && e.target instanceof Node && !chatAiMenuRef.current.contains(e.target)) {
         setChatAiMenuOpen(false);
@@ -519,14 +535,23 @@ export function Component() {
       if (emojiPickerRef.current && e.target instanceof Node && !emojiPickerRef.current.contains(e.target)) {
         setShowEmojiPicker(false);
       }
+      if (toolbarWrapRef.current && e.target instanceof Node && !toolbarWrapRef.current.contains(e.target)) {
+        setShowAiAssistPopup(false);
+        setShowToolbarFlowMenu(false);
+        setShowTemplateMenu(false);
+        setShowTranslateSubmenu(false);
+      }
     };
     const onEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setChatAiMenuOpen(false); setFlowMenuOpen(false); setShowEmojiPicker(false); }
+      if (e.key === "Escape") {
+        setChatAiMenuOpen(false); setFlowMenuOpen(false); setShowEmojiPicker(false);
+        setShowAiAssistPopup(false); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false);
+      }
     };
     window.addEventListener("mousedown", onOutside);
     window.addEventListener("keydown", onEscape);
     return () => { window.removeEventListener("mousedown", onOutside); window.removeEventListener("keydown", onEscape); };
-  }, [chatAiMenuOpen, flowMenuOpen, showEmojiPicker]);
+  }, [chatAiMenuOpen, flowMenuOpen, showEmojiPicker, showAiAssistPopup, showToolbarFlowMenu, showTemplateMenu, showTranslateSubmenu]);
 
   // Reset chat UI when conversation changes
   useEffect(() => {
@@ -538,6 +563,11 @@ export function Component() {
     setShowEmojiPicker(false);
     setAttachedFiles([]);
     setIsScrolledToBottom(true);
+    setComposeTab("reply");
+    setShowAiAssistPopup(false);
+    setShowToolbarFlowMenu(false);
+    setShowTemplateMenu(false);
+    setShowTranslateSubmenu(false);
   }, [selectedConversationId]);
 
   // Scroll to bottom when conversation is first opened or messages load
@@ -711,6 +741,47 @@ export function Component() {
       file: named, previewUrl: URL.createObjectURL(named), name: named.name, type: named.type
     }].slice(0, 5));
   }, []);
+
+  const handleAiRewrite = useCallback(async () => {
+    const text = agentReplyText.trim();
+    if (!text || isAiRewriting) return;
+    setIsAiRewriting(true);
+    try {
+      const result = await aiAssistText(token, text, "rewrite");
+      setAgentReplyText(result.text);
+      textareaRef.current?.focus();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setIsAiRewriting(false);
+      setShowAiAssistPopup(false);
+    }
+  }, [agentReplyText, isAiRewriting, token]);
+
+  const handleAiTranslate = useCallback(async (language: string) => {
+    const text = agentReplyText.trim();
+    if (!text || isAiRewriting) return;
+    setIsAiRewriting(true);
+    try {
+      const result = await aiAssistText(token, text, "translate", language);
+      setAgentReplyText(result.text);
+      textareaRef.current?.focus();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setIsAiRewriting(false);
+      setShowAiAssistPopup(false);
+      setShowTranslateSubmenu(false);
+    }
+  }, [agentReplyText, isAiRewriting, token]);
+
+  const handleSelectTemplate = useCallback((template: MessageTemplate) => {
+    const bodyText = getTemplateBodyText(template);
+    setAgentReplyText(bodyText);
+    setManualComposeConversationId(selectedConversation?.id ?? null);
+    setShowTemplateMenu(false);
+    textareaRef.current?.focus();
+  }, [selectedConversation]);
 
   const handleSendMessage = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -1106,36 +1177,14 @@ export function Component() {
                 {/* Compose area */}
                 {selectedConversation && (
                   <div className="inbox-compose-stack">
-                    {/* AI suggestions panel — only in manual mode */}
-                    {showManualComposer && replySuggestions.length > 0 && (
-                      showAiSuggestions ? (
-                        <div className="inbox-reply-assist">
-                          <div className="inbox-reply-assist-head">
-                            <div className="inbox-reply-assist-copy">
-                              <strong>AI Suggested Replies</strong>
-                              <span>{getLeadIntentLabel(selectedConversation)} — {getLeadSuggestedAction(selectedConversation)}</span>
-                            </div>
-                            <button type="button" className="inbox-reply-assist-toggle" onClick={() => setShowAiSuggestions(false)} title="Close suggestions">
-                              ✕
-                            </button>
-                          </div>
-                          <div className="inbox-suggestion-strip">
-                            {replySuggestions.map((s) => (
-                              <button key={s} type="button" onClick={() => { setManualComposeConversationId(selectedConversation.id); setAgentReplyText(s); textareaRef.current?.focus(); }}>
-                                {s}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <button type="button" className="inbox-reply-assist-show-btn" onClick={() => setShowAiSuggestions(true)}>
-                          💡 AI Suggestions
-                        </button>
-                      )
-                    )}
-
                     {showManualComposer ? (
                       <form className="chat-compose-form" onSubmit={(e) => { e.preventDefault(); void handleSendMessage(); }}>
+                        {/* Reply / Notes tabs */}
+                        <div className="compose-tabs">
+                          <button type="button" className={`compose-tab${composeTab === "reply" ? " active" : ""}`} onClick={() => setComposeTab("reply")}>Reply</button>
+                          <button type="button" className={`compose-tab${composeTab === "notes" ? " active" : ""}`} onClick={() => setComposeTab("notes")}>Notes</button>
+                        </div>
+
                         {/* Attachment previews */}
                         {attachedFiles.length > 0 && (
                           <div className="chat-attachment-previews">
@@ -1153,69 +1202,183 @@ export function Component() {
                           </div>
                         )}
 
-                        <div className="chat-compose-input-row">
-                          <div className="chat-compose-textarea-wrap">
-                            <textarea
-                              ref={textareaRef}
-                              className="chat-compose-textarea"
-                              value={agentReplyText}
-                              onChange={(e) => setAgentReplyText(e.target.value)}
-                              onKeyDown={handleKeyDown}
-                              onPaste={handlePaste}
-                              placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
-                              rows={1}
-                              maxLength={4000}
-                              disabled={!isAnyChannelConnected}
-                            />
-                          </div>
-                        </div>
+                        {/* Textarea */}
+                        <textarea
+                          ref={textareaRef}
+                          className={`chat-compose-textarea${composeTab === "notes" ? " notes-mode" : ""}`}
+                          value={agentReplyText}
+                          onChange={(e) => { setAgentReplyText(e.target.value); if (selectedConversation) setManualComposeConversationId(selectedConversation.id); }}
+                          onKeyDown={handleKeyDown}
+                          onPaste={handlePaste}
+                          placeholder={composeTab === "notes" ? "Add an internal note… (visible to agents only)" : `Message ${selectedConversationLabel}…`}
+                          rows={2}
+                          maxLength={4000}
+                          disabled={!isAnyChannelConnected}
+                        />
 
-                        <div className="chat-compose-footer">
-                          <div className="chat-compose-tools">
-                            {/* Attachment button */}
-                            <button
-                              type="button"
-                              className="chat-tool-btn"
-                              title="Attach file"
-                              disabled={!isAnyChannelConnected || attachedFiles.length >= 5}
-                              onClick={() => fileInputRef.current?.click()}
-                            >
-                              📎
-                            </button>
-                            <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt" style={{ display: "none" }} multiple onChange={handleFileSelect} />
-
-                            {/* Emoji picker */}
-                            <div className="chat-emoji-wrap" ref={emojiPickerRef}>
-                              <button type="button" className="chat-tool-btn" title="Emoji" disabled={!isAnyChannelConnected} onClick={() => setShowEmojiPicker((v) => !v)}>
-                                😊
+                        {/* Toolbar row */}
+                        <div className="compose-toolbar-wrap" ref={toolbarWrapRef}>
+                          {/* AI Assist popup — floats above toolbar */}
+                          {showAiAssistPopup && (
+                            <div className="ai-assist-popup">
+                              <div className="ai-assist-popup-header">
+                                <span>AI Assist <kbd>Ctrl ⇧ A</kbd></span>
+                                <button type="button" className="ai-assist-popup-close" onClick={() => setShowAiAssistPopup(false)}>✕</button>
+                              </div>
+                              <button
+                                type="button"
+                                className="ai-assist-popup-item"
+                                disabled={!agentReplyText.trim() || isAiRewriting}
+                                onClick={() => { void handleAiRewrite(); }}
+                              >
+                                <span className="ai-assist-item-icon">✨</span>
+                                <span className="ai-assist-item-label">{isAiRewriting ? "Rewriting…" : "AI Rewrite"}</span>
+                                <span className="ai-assist-item-arrow">›</span>
                               </button>
-                              {showEmojiPicker && (
-                                <div className="chat-emoji-picker">
-                                  {QUICK_EMOJIS.map((emoji) => (
-                                    <button key={emoji} type="button" onClick={() => handleEmojiSelect(emoji)}>{emoji}</button>
-                                  ))}
-                                </div>
+                              <div className="ai-assist-popup-item ai-assist-translate-row" onMouseEnter={() => setShowTranslateSubmenu(true)} onMouseLeave={() => setShowTranslateSubmenu(false)}>
+                                <span className="ai-assist-item-icon">🔤</span>
+                                <span className="ai-assist-item-label">AI Translate</span>
+                                <span className="ai-assist-item-arrow">›</span>
+                                {showTranslateSubmenu && (
+                                  <div className="ai-translate-submenu">
+                                    {TRANSLATE_LANGUAGES.map((lang) => (
+                                      <button key={lang} type="button" disabled={!agentReplyText.trim() || isAiRewriting} onClick={() => { void handleAiTranslate(lang); }}>
+                                        {lang}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="ai-assist-popup-footer">
+                                <span>⬆⬇ Move</span>
+                                <span>↵ Select</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Flow dropup */}
+                          {showToolbarFlowMenu && (
+                            <div className="compose-dropup">
+                              <div className="compose-dropup-label">Assign flow bot</div>
+                              {publishedFlowsQuery.isLoading ? (
+                                <button type="button" disabled>Loading…</button>
+                              ) : publishedFlows.length === 0 ? (
+                                <button type="button" disabled>No published flows</button>
+                              ) : (
+                                publishedFlows.map((flow) => (
+                                  <button key={flow.id} type="button" onClick={() => { assignFlowMutation.mutate({ conversationId: selectedConversation.id, flowId: flow.id, flowName: flow.name }); setShowToolbarFlowMenu(false); }}>
+                                    {flow.name}
+                                  </button>
+                                ))
                               )}
                             </div>
+                          )}
 
-                            {/* Character count */}
-                            {agentReplyText.length > 0 && (
-                              <span className={`chat-char-count${agentReplyText.length > 3800 ? " near-limit" : ""}`}>
-                                {agentReplyText.length}/4000
-                              </span>
-                            )}
-                          </div>
+                          {/* Template dropup */}
+                          {showTemplateMenu && (
+                            <div className="compose-dropup compose-template-dropup">
+                              <div className="compose-dropup-label">Send approved template</div>
+                              {templatesQuery.isLoading ? (
+                                <button type="button" disabled>Loading templates…</button>
+                              ) : approvedTemplates.length === 0 ? (
+                                <button type="button" disabled>No approved templates</button>
+                              ) : (
+                                approvedTemplates.map((t) => (
+                                  <button key={t.id} type="button" className="compose-template-item" onClick={() => handleSelectTemplate(t)}>
+                                    <strong>{t.name}</strong>
+                                    <span>{getTemplateBodyText(t).slice(0, 80)}{getTemplateBodyText(t).length > 80 ? "…" : ""}</span>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
 
-                          <div className="chat-compose-send">
-                            {!isAnyChannelConnected ? (
-                              <span className="chat-compose-offline-note">Connect a channel to send messages</span>
-                            ) : (
-                              <button type="submit" className="primary-btn chat-send-btn" disabled={isSendDisabled}>
-                                {uploadMutation.isPending ? "Uploading…" : sendMessageMutation.isPending ? "Sending…" : "Send"}
+                          <div className="compose-toolbar">
+                            {/* Left tools */}
+                            <div className="compose-toolbar-left">
+                              <button type="button" className="compose-tool" title="Attach file" disabled={!isAnyChannelConnected || attachedFiles.length >= 5} onClick={() => fileInputRef.current?.click()}>＋</button>
+                              <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt" style={{ display: "none" }} multiple onChange={handleFileSelect} />
+
+                              <div className="chat-emoji-wrap" ref={emojiPickerRef}>
+                                <button type="button" className="compose-tool" title="Emoji" disabled={!isAnyChannelConnected} onClick={() => setShowEmojiPicker((v) => !v)}>😊</button>
+                                {showEmojiPicker && (
+                                  <div className="chat-emoji-picker">
+                                    {QUICK_EMOJIS.map((emoji) => (
+                                      <button key={emoji} type="button" onClick={() => handleEmojiSelect(emoji)}>{emoji}</button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <button type="button" className="compose-tool compose-tool-aa" title="Font">Aa</button>
+
+                              <span className="compose-toolbar-sep" />
+
+                              <button
+                                type="button"
+                                className={`compose-tool${showToolbarFlowMenu ? " active" : ""}`}
+                                title="Assign flow bot"
+                                disabled={assignFlowMutation.isPending}
+                                onClick={() => { setShowToolbarFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); }}
+                              >⚡</button>
+
+                              <button
+                                type="button"
+                                className={`compose-tool${showTemplateMenu ? " active" : ""}`}
+                                title="Send approved template"
+                                onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); }}
+                              >📋</button>
+                            </div>
+
+                            {/* Right tools */}
+                            <div className="compose-toolbar-right">
+                              {agentReplyText.length > 0 && (
+                                <span className={`chat-char-count${agentReplyText.length > 3800 ? " near-limit" : ""}`}>{agentReplyText.length}/4000</span>
+                              )}
+
+                              <button
+                                type="button"
+                                className={`compose-ai-assist-btn${showAiAssistPopup ? " active" : ""}`}
+                                onClick={() => { setShowAiAssistPopup((v) => !v); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); }}
+                              >
+                                ✨ AI Assist
                               </button>
-                            )}
+
+                              <button type="button" className="compose-tool" title="Clear message" onClick={() => setAgentReplyText("")}>↩</button>
+
+                              {!isAnyChannelConnected ? (
+                                <span className="chat-compose-offline-note">Connect a channel</span>
+                              ) : (
+                                <button type="submit" className="compose-send-btn" disabled={isSendDisabled}>
+                                  {uploadMutation.isPending ? "Uploading…" : sendMessageMutation.isPending ? "Sending…" : "Send"}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
+
+                        {/* AI suggested replies — below toolbar */}
+                        {replySuggestions.length > 0 && (
+                          showAiSuggestions ? (
+                            <div className="compose-suggestions">
+                              <div className="compose-suggestions-head">
+                                <span>💡 {getLeadIntentLabel(selectedConversation)} — {getLeadSuggestedAction(selectedConversation)}</span>
+                                <button type="button" onClick={() => setShowAiSuggestions(false)}>✕</button>
+                              </div>
+                              <div className="compose-suggestions-strip">
+                                {replySuggestions.map((s) => (
+                                  <button key={s} type="button" onClick={() => { setManualComposeConversationId(selectedConversation.id); setAgentReplyText(s); textareaRef.current?.focus(); }}>
+                                    {s}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <button type="button" className="compose-suggestions-show" onClick={() => setShowAiSuggestions(true)}>
+                              💡 AI Suggestions
+                            </button>
+                          )
+                        )}
                       </form>
                     ) : (
                       <div className="inbox-manual-hint">

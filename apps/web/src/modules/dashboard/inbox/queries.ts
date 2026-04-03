@@ -1,6 +1,6 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
-import { fetchInboxConversations, fetchInboxMessages, fetchInboxPublishedFlows } from "./api";
+import { fetchInboxConversations, fetchInboxMessages, fetchInboxPublishedFlows, fetchInboxApprovedTemplates } from "./api";
 
 export function buildInboxConversationsQueryOptions(
   token: string,
@@ -40,4 +40,12 @@ export function buildInboxPublishedFlowsQueryOptions(token: string) {
 
 export function useInboxPublishedFlowsQuery(token: string) {
   return useQuery(buildInboxPublishedFlowsQueryOptions(token));
+}
+
+export function useInboxTemplatesQuery(token: string) {
+  return useQuery({
+    queryKey: ["inbox", "approvedTemplates"],
+    queryFn: () => fetchInboxApprovedTemplates(token),
+    staleTime: 60_000
+  });
 }
