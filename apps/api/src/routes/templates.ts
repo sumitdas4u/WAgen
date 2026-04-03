@@ -169,12 +169,18 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
       if (!body.templateId || !body.to) {
         return reply.status(400).send({ error: "templateId and to are required." });
       }
-      const result = await sendTestTemplate(request.authUser.userId, {
-        templateId: body.templateId,
-        to: body.to,
-        variableValues: body.variableValues ?? {}
-      });
-      return { ok: true, messageId: result.messageId };
+      try {
+        const result = await sendTestTemplate(request.authUser.userId, {
+          templateId: body.templateId,
+          to: body.to,
+          variableValues: body.variableValues ?? {}
+        });
+        return { ok: true, messageId: result.messageId };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to send test template.";
+        fastify.log.error({ err }, "test-send template error");
+        return reply.status(500).send({ error: message });
+      }
     }
   );
 

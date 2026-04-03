@@ -388,11 +388,11 @@ function buildSendComponents(
       const handle =
         (comp.example as { header_handle?: string[] } | undefined)?.header_handle?.[0];
       if (comp.format === "IMAGE" && handle) {
-        result.push({ type: "header", parameters: [{ type: "image", image: { link: handle } }] });
+        result.push({ type: "header", parameters: [{ type: "image", image: { id: handle } }] });
       } else if (comp.format === "VIDEO" && handle) {
-        result.push({ type: "header", parameters: [{ type: "video", video: { link: handle } }] });
+        result.push({ type: "header", parameters: [{ type: "video", video: { id: handle } }] });
       } else if (comp.format === "DOCUMENT" && handle) {
-        result.push({ type: "header", parameters: [{ type: "document", document: { link: handle } }] });
+        result.push({ type: "header", parameters: [{ type: "document", document: { id: handle } }] });
       }
       // TEXT headers are static — no parameters needed
     } else if (comp.type === "BODY" && comp.text) {
