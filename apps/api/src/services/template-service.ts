@@ -5,10 +5,12 @@ import {
   graphDelete,
   graphGet,
   graphPost,
-  graphPostMedia,
+  graphStartUploadSession,
+  graphUploadFileHandle,
   sendMetaTemplateDirect,
   type GraphListResponse
 } from "./meta-whatsapp-service.js";
+import { env } from "../config/env.js";
 import type { FlowButtonOption, FlowMessagePayload } from "./outbound-message-types.js";
 
 export type TemplateStatus = "PENDING" | "APPROVED" | "REJECTED" | "PAUSED" | "DISABLED";
@@ -202,11 +204,12 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
 
   const errors: string[] = [];
   const placeholders: string[] = [];
+  let hasBody = false;
 
   for (const component of payload.components) {
     if (component.type === "HEADER") {
-      if (component.format === "VIDEO" || component.format === "DOCUMENT" || component.format === "LOCATION") {
-        errors.push("This template builder currently supports text and image headers only.");
+      if (component.format === "LOCATION") {
+        errors.push("Location headers are not supported in this template builder yet.");
       }
       if (component.format === "TEXT" && component.text) {
         placeholders.push(...listPlaceholders(component.text));
@@ -218,6 +221,7 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
     }
 
     if (component.type === "BODY" && component.text) {
+      hasBody = true;
       placeholders.push(...listPlaceholders(component.text));
       continue;
     }
@@ -257,6 +261,10 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
     }
   }
 
+  if (!hasBody) {
+    errors.push("Template body text is required.");
+  }
+
   const invalidPlaceholders = placeholders.filter((placeholder) => {
     const token = placeholder.replace(/^\{\{|\}\}$/g, "").trim();
     return !isPositiveIntegerToken(token);
@@ -272,6 +280,310 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
   if (errors.length > 0) {
     throw new Error(errors[0]!);
   }
+}
+
+function trimExampleString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => trimExampleString(item))
+    .filter((item): item is string => Boolean(item));
+}
+
+function normalizeBodyExampleRows(example: Record<string, unknown> | undefined): string[][] {
+  const raw = example?.body_text;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  if (raw.every((item) => typeof item === "string")) {
+    const row = normalizeStringList(raw);
+    return row.length > 0 ? [row] : [];
+  }
+
+  return raw
+    .filter((item): item is unknown[] => Array.isArray(item))
+    .map((item) => normalizeStringList(item))
+    .filter((row) => row.length > 0);
+}
+
+function normalizeHeaderTextExample(example: Record<string, unknown> | undefined): string[] {
+  return normalizeStringList(example?.header_text);
+}
+
+function normalizeHeaderHandleExample(example: Record<string, unknown> | undefined): string[] {
+  return normalizeStringList(example?.header_handle);
+}
+
+function normalizeButtonExampleValues(button: TemplateComponentButton): string[] {
+  return normalizeStringList(button.example);
+}
+
+function normalizeTemplatePhoneNumber(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const prefix = trimmed.startsWith("+") ? "+" : "";
+  const digits = trimmed.replace(/\D/g, "");
+  return `${prefix}${digits}`;
+}
+
+function buildTemplateExampleValue(
+  placeholder: string,
+  provided: string | null | undefined
+): string {
+  return provided?.trim() || placeholder.replace(/^\{\{|\}\}$/g, "").trim();
+}
+
+function normalizeCreateTemplateComponents(components: TemplateComponent[]): TemplateComponent[] {
+  const normalized: TemplateComponent[] = [];
+  const errors: string[] = [];
+  const quickReplyButtons: TemplateComponentButton[] = [];
+  const ctaButtons: TemplateComponentButton[] = [];
+  const couponButtons: TemplateComponentButton[] = [];
+  let hasBody = false;
+
+  for (const component of components) {
+    if (component.type === "HEADER") {
+      const format = component.format;
+      if (!format) {
+        errors.push("Header format is required when a header is included.");
+        continue;
+      }
+
+      if (format === "LOCATION") {
+        errors.push("Location headers are not supported in this template builder yet.");
+        continue;
+      }
+
+      if (format === "TEXT") {
+        const text = component.text?.trim() ?? "";
+        if (!text) {
+          errors.push("Header text is empty.");
+          continue;
+        }
+
+        const placeholders = listPlaceholders(text);
+        if (placeholders.length === 0) {
+          normalized.push({ type: "HEADER", format: "TEXT", text });
+          continue;
+        }
+
+        const examples = normalizeHeaderTextExample(component.example).slice(0, placeholders.length);
+        if (examples.length !== placeholders.length) {
+          errors.push("Header text variables need sample values for Meta review.");
+          continue;
+        }
+
+        normalized.push({
+          type: "HEADER",
+          format: "TEXT",
+          text,
+          example: {
+            header_text: placeholders.map((placeholder, index) =>
+              buildTemplateExampleValue(placeholder, examples[index] ?? null)
+            )
+          }
+        });
+        continue;
+      }
+
+      if (format === "IMAGE" || format === "VIDEO" || format === "DOCUMENT") {
+        const handles = normalizeHeaderHandleExample(component.example);
+        if (handles.length === 0) {
+          errors.push(`Header ${format.toLowerCase()} templates need a sample file handle before submission.`);
+          continue;
+        }
+
+        normalized.push({
+          type: "HEADER",
+          format,
+          example: {
+            header_handle: [handles[0]!]
+          }
+        });
+        continue;
+      }
+    }
+
+    if (component.type === "BODY") {
+      const text = component.text?.trim() ?? "";
+      if (!text) {
+        errors.push("Template body text is required.");
+        continue;
+      }
+
+      hasBody = true;
+      const placeholders = listPlaceholders(text);
+      if (placeholders.length === 0) {
+        normalized.push({ type: "BODY", text });
+        continue;
+      }
+
+      const rows = normalizeBodyExampleRows(component.example);
+      const firstRow = rows[0] ?? [];
+      if (firstRow.length !== placeholders.length) {
+        errors.push("Body variables need sample values for Meta review.");
+        continue;
+      }
+
+      normalized.push({
+        type: "BODY",
+        text,
+        example: {
+          body_text: [
+            placeholders.map((placeholder, index) =>
+              buildTemplateExampleValue(placeholder, firstRow[index] ?? null)
+            )
+          ]
+        }
+      });
+      continue;
+    }
+
+    if (component.type === "FOOTER") {
+      const text = component.text?.trim() ?? "";
+      if (!text) {
+        continue;
+      }
+      normalized.push({ type: "FOOTER", text });
+      continue;
+    }
+
+    if (component.type !== "BUTTONS") {
+      continue;
+    }
+
+    for (const [index, button] of (component.buttons ?? []).entries()) {
+      const text = button.text.trim();
+      if (!text) {
+        errors.push(`Button ${index + 1} is missing its label.`);
+        continue;
+      }
+
+      if (button.type === "FLOW") {
+        errors.push("Flow buttons are not supported in this template builder yet.");
+        continue;
+      }
+
+      if (button.type === "QUICK_REPLY") {
+        quickReplyButtons.push({ type: "QUICK_REPLY", text });
+        continue;
+      }
+
+      if (button.type === "URL") {
+        const url = button.url?.trim() ?? "";
+        if (!url) {
+          errors.push(`URL button ${index + 1} needs a destination URL.`);
+          continue;
+        }
+
+        const placeholders = listPlaceholders(url);
+        if (placeholders.length > 1) {
+          errors.push(`URL button ${index + 1} can only use one variable in its URL.`);
+          continue;
+        }
+        if (placeholders.length === 1 && !url.endsWith(placeholders[0]!)) {
+          errors.push(`Dynamic URL button ${index + 1} must place its variable at the end of the URL.`);
+          continue;
+        }
+
+        const normalizedButton: TemplateComponentButton = {
+          type: "URL",
+          text,
+          url
+        };
+
+        if (placeholders.length === 1) {
+          const examples = normalizeButtonExampleValues(button);
+          if (examples.length === 0) {
+            errors.push(`URL button ${index + 1} needs a sample value for its dynamic URL variable.`);
+            continue;
+          }
+          normalizedButton.example = [
+            buildTemplateExampleValue(placeholders[0]!, examples[0] ?? null)
+          ];
+        }
+
+        ctaButtons.push(normalizedButton);
+        continue;
+      }
+
+      if (button.type === "PHONE_NUMBER") {
+        const phone = normalizeTemplatePhoneNumber(button.phone_number ?? "");
+        if (!phone) {
+          errors.push(`Phone button ${index + 1} needs a phone number.`);
+          continue;
+        }
+
+        ctaButtons.push({
+          type: "PHONE_NUMBER",
+          text,
+          phone_number: phone
+        });
+        continue;
+      }
+
+      if (button.type === "COPY_CODE") {
+        const examples = normalizeButtonExampleValues(button);
+        if (examples.length === 0) {
+          errors.push(`Coupon code button ${index + 1} needs a sample coupon code.`);
+          continue;
+        }
+
+        couponButtons.push({
+          type: "COPY_CODE",
+          text,
+          example: [examples[0]!]
+        });
+      }
+    }
+  }
+
+  if (!hasBody) {
+    errors.push("Template body text is required.");
+  }
+  if (quickReplyButtons.length > 3) {
+    errors.push("Quick reply templates can include at most 3 quick reply buttons.");
+  }
+  if (ctaButtons.filter((button) => button.type === "URL").length > 2) {
+    errors.push("Templates can include at most 2 URL buttons.");
+  }
+  if (ctaButtons.filter((button) => button.type === "PHONE_NUMBER").length > 1) {
+    errors.push("Templates can include at most 1 phone button.");
+  }
+  if (couponButtons.length > 1) {
+    errors.push("Templates can include at most 1 coupon code button.");
+  }
+
+  const combinedButtons = [...quickReplyButtons, ...ctaButtons, ...couponButtons];
+  if (combinedButtons.length > 0) {
+    normalized.push({
+      type: "BUTTONS",
+      buttons: combinedButtons
+    });
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors[0]!);
+  }
+
+  return normalized;
+}
+
+function improveTemplateCreateErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? "Failed to create template.");
+  if (!/\bcode=131009\b/i.test(message) && !/\bcode=100\b/i.test(message)) {
+    return message;
+  }
+
+  return `${message} Meta rejected this template structure. Common causes are using a media ID instead of a template sample handle, missing header/body example values for variables, or missing example values for a dynamic URL or coupon-code button.`;
 }
 
 function normalizeManualVariableValues(values: Record<string, string>): {
@@ -663,6 +975,7 @@ export async function createTemplate(
   payload: CreateTemplatePayload
 ): Promise<MessageTemplate> {
   validateCreateTemplatePayload(payload);
+  const normalizedComponents = normalizeCreateTemplateComponents(payload.components);
 
   const conn = await getConnectionForUser(userId, payload.connectionId);
   const accessToken = decryptToken(conn.access_token_encrypted);
@@ -673,16 +986,21 @@ export async function createTemplate(
     category: string;
   }
 
-  const metaResponse = await graphPost<MetaCreateResponse>(
-    `/${conn.waba_id}/message_templates`,
-    accessToken,
-    {
-      name: payload.name,
-      language: payload.language,
-      category: payload.category,
-      components: payload.components
-    }
-  );
+  let metaResponse: MetaCreateResponse;
+  try {
+    metaResponse = await graphPost<MetaCreateResponse>(
+      `/${conn.waba_id}/message_templates`,
+      accessToken,
+      {
+        name: payload.name,
+        language: payload.language,
+        category: payload.category,
+        components: normalizedComponents
+      }
+    );
+  } catch (error) {
+    throw new Error(improveTemplateCreateErrorMessage(error));
+  }
 
   const result = await pool.query<{ id: string }>(
     `INSERT INTO message_templates
@@ -697,7 +1015,7 @@ export async function createTemplate(
       (metaResponse.category ?? payload.category).toUpperCase(),
       payload.language,
       (metaResponse.status ?? "PENDING").toUpperCase(),
-      JSON.stringify(payload.components)
+      JSON.stringify(normalizedComponents)
     ]
   );
 
@@ -892,12 +1210,22 @@ export async function uploadTemplateMedia(
   userId: string,
   connectionId: string,
   fileBuffer: Buffer,
-  mimeType: string
+  mimeType: string,
+  fileName?: string | null
 ): Promise<{ handle: string }> {
+  if (!env.META_APP_ID?.trim()) {
+    throw new Error("Meta app configuration is missing. Set META_APP_ID before uploading template media.");
+  }
   const conn = await getConnectionForUser(userId, connectionId);
   const accessToken = decryptToken(conn.access_token_encrypted);
-  const result = await graphPostMedia(conn.phone_number_id, accessToken, fileBuffer, mimeType);
-  return { handle: result.id };
+  const resolvedExtension = mimeType.split("/")[1] ?? "bin";
+  const uploadSession = await graphStartUploadSession(env.META_APP_ID.trim(), accessToken, {
+    fileName: fileName?.trim() || `template-sample.${resolvedExtension}`,
+    fileLength: fileBuffer.byteLength,
+    fileType: mimeType
+  });
+  const result = await graphUploadFileHandle(uploadSession.id, accessToken, fileBuffer, mimeType);
+  return { handle: result.h };
 }
 
 export async function dispatchTemplateMessage(

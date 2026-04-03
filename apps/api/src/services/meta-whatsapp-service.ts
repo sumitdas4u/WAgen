@@ -331,6 +331,49 @@ export async function graphPostMedia(
   return parseGraphResponse<{ id: string }>(response);
 }
 
+export async function graphStartUploadSession(
+  appId: string,
+  accessToken: string,
+  input: {
+    fileName: string;
+    fileLength: number;
+    fileType: string;
+  }
+): Promise<{ id: string }> {
+  const response = await fetch(
+    buildGraphUrl(`/${appId}/uploads`, {
+      file_name: input.fileName,
+      file_length: input.fileLength,
+      file_type: input.fileType
+    }),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }
+  );
+  return parseGraphResponse<{ id: string }>(response);
+}
+
+export async function graphUploadFileHandle(
+  uploadSessionId: string,
+  accessToken: string,
+  fileBuffer: Buffer,
+  mimeType: string
+): Promise<{ h: string }> {
+  const response = await fetch(buildGraphUrl(`/${uploadSessionId}`), {
+    method: "POST",
+    headers: {
+      Authorization: `OAuth ${accessToken}`,
+      file_offset: "0",
+      "Content-Type": mimeType
+    },
+    body: new Blob([new Uint8Array(fileBuffer)], { type: mimeType })
+  });
+  return parseGraphResponse<{ h: string }>(response);
+}
+
 type PhoneRegistrationAttempt = {
   attempted: boolean;
   success: boolean;

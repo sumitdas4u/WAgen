@@ -33,7 +33,8 @@ function extractPrefillState(t: MessageTemplate) {
       type: b.type,
       text: b.text,
       url: b.url,
-      phone: b.phone_number
+      phone: b.phone_number,
+      coupon: b.example?.[0] ?? ""
     }))
   };
 }
@@ -68,14 +69,28 @@ const HEADER_FORMAT_OPTIONS = [
   { value: "NONE", label: "None", supported: true },
   { value: "TEXT", label: "Text", supported: true },
   { value: "IMAGE", label: "Image", supported: true },
-  { value: "VIDEO", label: "Video", supported: false },
-  { value: "DOCUMENT", label: "Document", supported: false },
+  { value: "VIDEO", label: "Video", supported: true },
+  { value: "DOCUMENT", label: "Document", supported: true },
   { value: "LOCATION", label: "Location", supported: false }
 ] as const;
 
 function detectVariables(text: string): string[] {
   const matches = [...text.matchAll(PLACEHOLDER_PATTERN)];
   return [...new Set(matches.map((m) => `{{${(m[1] ?? "").trim()}}}`))];
+}
+
+function collectDraftVariables(input: {
+  headerText: string;
+  bodyText: string;
+  buttons: Array<{ url?: string }>;
+}): string[] {
+  return Array.from(
+    new Set([
+      ...detectVariables(input.headerText),
+      ...detectVariables(input.bodyText),
+      ...input.buttons.flatMap((button) => detectVariables(button.url ?? ""))
+    ])
+  );
 }
 
 function isPositiveIntegerToken(value: string): boolean {
@@ -204,6 +219,7 @@ function buildComponents(
   buttons: Array<{ type: string; text: string; url?: string; phone?: string; coupon?: string }>,
   variableMapping: Record<string, string>
 ): TemplateComponent[] {
+  void name_;
   const components: TemplateComponent[] = [];
 
   if (headerFormat !== "NONE") {
@@ -213,6 +229,12 @@ function buildComponents(
     };
     if (headerFormat === "TEXT" && headerText.trim()) {
       headerComp.text = headerText.trim();
+      const vars = detectVariables(headerText);
+      if (vars.length > 0) {
+        headerComp.example = {
+          header_text: vars.map((variable) => variableMapping[variable] || variable.replace(/\{\{|\}\}/g, ""))
+        };
+      }
     }
     if (["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat) && headerHandle) {
       headerComp.example = { header_handle: [headerHandle] };
@@ -237,7 +259,13 @@ function buildComponents(
   if (buttons.length > 0) {
     const btns: TemplateComponentButton[] = buttons.map((b) => {
       const btn: TemplateComponentButton = { type: b.type as TemplateComponentButton["type"], text: b.text };
-      if (b.url) btn.url = b.url;
+      if (b.url) {
+        btn.url = b.url;
+        const urlVars = detectVariables(b.url);
+        if (urlVars.length > 0) {
+          btn.example = [variableMapping[urlVars[0]!] || urlVars[0]!.replace(/\{\{|\}\}/g, "")];
+        }
+      }
       if (b.phone) btn.phone_number = b.phone;
       if (b.coupon) btn.example = [b.coupon];
       return btn;
@@ -277,7 +305,11 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const createMutation = useCreateTemplateMutation(token);
   const connectionId = metaStatus?.connection?.id ?? "";
 
-  const detectedVars = detectVariables(bodyText);
+  const detectedVars = collectDraftVariables({
+    headerText,
+    bodyText,
+    buttons
+  });
   const draftValidation = validateTemplateDraft({
     category,
     headerFormat,
@@ -325,7 +357,8 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
         type: b.type,
         text: b.text,
         url: b.url,
-        phone: b.phone_number
+        phone: b.phone_number,
+        coupon: b.example?.[0] ?? ""
       }))
     );
     setShowAI(false);
@@ -511,7 +544,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             ))}
           </div>
           <div style={{ marginTop: "10px", fontSize: "12px", color: "#64748b" }}>
-            This builder currently supports text and image headers only.
+            This builder supports text, image, video, and document headers. Location headers are still not supported here.
           </div>
           {headerFormat === "TEXT" && (
             <input
@@ -695,6 +728,14 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                   value={btn.phone ?? ""}
                   onChange={(e) => setButtons((prev) => prev.map((b, i) => i === idx ? { ...b, phone: e.target.value } : b))}
                   placeholder="+1234567890"
+                  style={{ flex: 1, borderRadius: "6px", border: "1.5px solid #e0e0e0", padding: "7px 10px", fontSize: "13px" }}
+                />
+              )}
+              {btn.type === "COPY_CODE" && (
+                <input
+                  value={btn.coupon ?? ""}
+                  onChange={(e) => setButtons((prev) => prev.map((b, i) => i === idx ? { ...b, coupon: e.target.value } : b))}
+                  placeholder="SUMMER25"
                   style={{ flex: 1, borderRadius: "6px", border: "1.5px solid #e0e0e0", padding: "7px 10px", fontSize: "13px" }}
                 />
               )}

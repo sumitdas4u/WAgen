@@ -13,9 +13,34 @@ import {
   type TemplateStatus
 } from "../services/template-service.js";
 
-const SUPPORTED_MEDIA_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const SUPPORTED_MEDIA_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
-const MAX_MEDIA_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+const UPLOAD_MEDIA_RULES: Array<{
+  mimeTypes: string[];
+  extensions: string[];
+  maxBytes: number;
+}> = [
+  {
+    mimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    extensions: [".jpg", ".jpeg", ".png", ".webp"],
+    maxBytes: 5 * 1024 * 1024
+  },
+  {
+    mimeTypes: ["video/mp4", "video/3gpp", "video/quicktime"],
+    extensions: [".mp4", ".3gp", ".mov"],
+    maxBytes: 16 * 1024 * 1024
+  },
+  {
+    mimeTypes: [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/plain"
+    ],
+    extensions: [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt"],
+    maxBytes: 10 * 1024 * 1024
+  }
+];
 
 const TemplateComponentButtonSchema = z.object({
   type: z.enum(["QUICK_REPLY", "URL", "PHONE_NUMBER", "COPY_CODE", "FLOW"]),
@@ -78,8 +103,14 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
           details: parsed.error.flatten().fieldErrors
         });
       }
-      const template = await createTemplate(request.authUser.userId, parsed.data);
-      return reply.status(201).send({ template });
+      try {
+        const template = await createTemplate(request.authUser.userId, parsed.data);
+        return reply.status(201).send({ template });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to submit template.";
+        fastify.log.error({ err: error }, "create template error");
+        return reply.status(400).send({ error: message });
+      }
     }
   );
 
@@ -110,7 +141,7 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // POST /api/meta/templates/upload-media — upload image for header
+  // POST /api/meta/templates/upload-media — upload sample media and return a template header handle
   fastify.post(
     "/api/meta/templates/upload-media",
     { preHandler: [fastify.requireAuth] },
@@ -131,22 +162,27 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
         const ext = (file.filename ?? "").toLowerCase().split(".").pop() ?? "";
         const extWithDot = `.${ext}`;
 
-        if (!SUPPORTED_MEDIA_EXTENSIONS.includes(extWithDot) || !SUPPORTED_MEDIA_MIME_TYPES.includes(file.mimetype ?? "")) {
+        const matchedRule = UPLOAD_MEDIA_RULES.find(
+          (rule) => rule.extensions.includes(extWithDot) && rule.mimeTypes.includes(file.mimetype ?? "")
+        );
+
+        if (!matchedRule) {
           return reply.status(400).send({
-            error: `Unsupported file type. Supported: ${SUPPORTED_MEDIA_EXTENSIONS.join(", ")}`
+            error: "Unsupported file type. Supported sample media: .jpg, .jpeg, .png, .webp, .mp4, .3gp, .mov, .pdf, .doc, .docx, .xls, .xlsx, .txt"
           });
         }
 
         const buffer = await readFile(file.filepath);
-        if (buffer.byteLength > MAX_MEDIA_SIZE_BYTES) {
-          return reply.status(400).send({ error: "File exceeds 5MB limit" });
+        if (buffer.byteLength > matchedRule.maxBytes) {
+          return reply.status(400).send({ error: `File exceeds ${Math.round(matchedRule.maxBytes / (1024 * 1024))}MB limit` });
         }
 
         const result = await uploadTemplateMedia(
           request.authUser.userId,
           connectionId,
           buffer,
-          file.mimetype ?? "image/jpeg"
+          file.mimetype ?? "application/octet-stream",
+          file.filename ?? null
         );
 
         return { handle: result.handle };

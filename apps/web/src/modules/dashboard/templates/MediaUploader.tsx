@@ -7,13 +7,32 @@ interface Props {
   token: string;
   connectionId: string;
   mediaType: MediaType;
-  onUploaded: (url: string, localPreviewUrl?: string) => void;
+  onUploaded: (handle: string, localPreviewUrl?: string) => void;
 }
 
 const CONFIG: Record<MediaType, { accept: string; exts: string; maxMb: number; icon: string; label: string }> = {
-  IMAGE:    { accept: "image/jpeg,image/png,image/webp,image/gif", exts: ".jpg,.jpeg,.png,.webp,.gif", maxMb: 5,  icon: "🖼️", label: "Image"    },
-  VIDEO:    { accept: "video/mp4,video/3gpp,video/quicktime",      exts: ".mp4,.3gp,.mov",           maxMb: 16, icon: "🎬", label: "Video"    },
-  DOCUMENT: { accept: "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain", exts: ".pdf,.doc,.docx,.xls,.xlsx,.txt", maxMb: 10, icon: "📄", label: "Document" }
+  IMAGE: {
+    accept: "image/jpeg,image/png,image/webp",
+    exts: ".jpg,.jpeg,.png,.webp",
+    maxMb: 5,
+    icon: "[img]",
+    label: "Image"
+  },
+  VIDEO: {
+    accept: "video/mp4,video/3gpp,video/quicktime",
+    exts: ".mp4,.3gp,.mov",
+    maxMb: 16,
+    icon: "[vid]",
+    label: "Video"
+  },
+  DOCUMENT: {
+    accept:
+      "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain",
+    exts: ".pdf,.doc,.docx,.xls,.xlsx,.txt",
+    maxMb: 10,
+    icon: "[doc]",
+    label: "Document"
+  }
 };
 
 export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Props) {
@@ -35,7 +54,6 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
       return;
     }
 
-    // Preview
     let localPreviewUrl: string | undefined;
     if (mediaType === "IMAGE") {
       localPreviewUrl = URL.createObjectURL(file);
@@ -62,11 +80,13 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
     <div>
       <div
         onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          const file = e.dataTransfer.files[0];
-          if (file) handleFile(file);
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          const file = event.dataTransfer.files[0];
+          if (file) {
+            void handleFile(file);
+          }
         }}
         style={{
           border: "2px dashed #d1d5db",
@@ -90,18 +110,27 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
             style={{ maxHeight: "120px", borderRadius: "6px", objectFit: "contain" }}
           />
         ) : previewName ? (
-          <div style={{ fontSize: "13px", color: "#333", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
-            <span style={{ fontSize: "28px" }}>{cfg.icon}</span>
+          <div
+            style={{
+              fontSize: "13px",
+              color: "#333",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "4px"
+            }}
+          >
+            <span style={{ fontSize: "20px", fontWeight: 700 }}>{cfg.icon}</span>
             <span>{previewName}</span>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
-            <div style={{ fontSize: "28px" }}>{cfg.icon}</div>
+            <div style={{ fontSize: "20px", fontWeight: 700 }}>{cfg.icon}</div>
             <div style={{ fontSize: "13px", color: "#555" }}>
-              Drag & drop or <strong>click to upload</strong>
+              Drag and drop or <strong>click to upload</strong>
             </div>
             <div style={{ fontSize: "11px", color: "#aaa" }}>
-              {cfg.label} — max {cfg.maxMb}MB ({cfg.exts})
+              {cfg.label} - max {cfg.maxMb}MB ({cfg.exts})
             </div>
           </div>
         )}
@@ -130,21 +159,21 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
         type="file"
         accept={cfg.accept}
         style={{ display: "none" }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
-          e.target.value = "";
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            void handleFile(file);
+          }
+          event.target.value = "";
         }}
       />
 
       {uploaded && (
         <div style={{ marginTop: "6px", fontSize: "12px", color: "#16a34a", fontWeight: 600 }}>
-          ✓ Uploaded successfully
+          Sample uploaded successfully for Meta template review.
         </div>
       )}
-      {error && (
-        <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>{error}</div>
-      )}
+      {error && <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>{error}</div>}
     </div>
   );
 }
