@@ -331,8 +331,15 @@ export function BroadcastsPage({ token, metaStatus }: Props) {
           </div>
 
           {selectedTemplate && (
-            <div style={{ padding: "14px 16px", borderRadius: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", fontSize: "13px", color: "#334155" }}>
-              Sending number: <strong>{selectedTemplate.displayPhoneNumber ?? selectedTemplate.linkedNumber ?? "Workspace default"}</strong>
+            <div style={{ display: "grid", gap: "10px" }}>
+              <div style={{ padding: "14px 16px", borderRadius: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", fontSize: "13px", color: "#334155" }}>
+                Sending number: <strong>{selectedTemplate.displayPhoneNumber ?? selectedTemplate.linkedNumber ?? "Workspace default"}</strong>
+              </div>
+              {selectedTemplate.category === "MARKETING" && (
+                <div style={{ padding: "12px 14px", borderRadius: "12px", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: "13px" }}>
+                  This is a Meta marketing template. Approval only means the template format is allowed. Delivery can still be blocked per recipient based on Meta engagement policy.
+                </div>
+              )}
             </div>
           )}
 

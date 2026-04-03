@@ -14,6 +14,7 @@ import {
   trackOutboundMessage
 } from "./conversation-service.js";
 import {
+  applyDeliveryAttemptWebhookStatusUpdate,
   applyCampaignDeliveryStatusUpdate,
   applyConversationDeliveryStatusUpdate,
   claimWebhookStatusEvent,
@@ -493,6 +494,14 @@ export async function processMetaDeliveryStatuses(payload: unknown): Promise<voi
         }
 
         try {
+          await applyDeliveryAttemptWebhookStatusUpdate({
+            wamid,
+            status,
+            errorCode: error.code,
+            errorMessage: error.message,
+            eventTimestamp,
+            payload: raw
+          });
           await applyConversationDeliveryStatusUpdate({
             wamid,
             status,

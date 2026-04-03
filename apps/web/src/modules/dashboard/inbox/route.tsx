@@ -814,11 +814,11 @@ export function Component() {
       .map((c) => c.text ?? "")
       .join("\n");
     const vars = [...new Set([...allText.matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[0]))];
-    if (vars.length === 0) {
+    if (vars.length === 0 && template.category !== "MARKETING") {
       // No variables — send immediately
       sendTemplateMutation.mutate({ conversationId: selectedConversation.id, templateId: template.id, variableValues: {} });
     } else {
-      // Open variable-fill dialog
+      // Open variable-fill dialog, and require confirmation for marketing templates even without variables.
       const initialValues: Record<string, string> = {};
       vars.forEach((v) => { initialValues[v] = ""; });
       setTemplateVarsDialog({ template, vars, values: initialValues });
@@ -1309,7 +1309,7 @@ export function Component() {
                               ) : (
                                 availableTemplates.map((t) => (
                                   <button key={t.id} type="button" className="compose-template-item" disabled={sendTemplateMutation.isPending} onClick={() => handleSelectTemplate(t)}>
-                                    <strong>{t.name}</strong>
+                                    <strong>{t.name} <span style={{ color: t.category === "MARKETING" ? "#b45309" : "#0f766e", fontWeight: 700 }}>{t.category}</span></strong>
                                     <span>{getTemplateBodyText(t).slice(0, 80)}{getTemplateBodyText(t).length > 80 ? "…" : ""}</span>
                                   </button>
                                 ))
@@ -1429,6 +1429,21 @@ export function Component() {
                       <button type="button" className="tmpl-dialog-close" onClick={() => setTemplateVarsDialog(null)}>✕</button>
                     </div>
                     <div className="tmpl-dialog-preview">
+                      {templateVarsDialog.template.category === "MARKETING" && (
+                        <div
+                          style={{
+                            marginBottom: "12px",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            background: "#fffbeb",
+                            border: "1px solid #fde68a",
+                            color: "#92400e",
+                            fontSize: "13px"
+                          }}
+                        >
+                          Approved marketing templates can still be blocked by Meta based on recipient engagement policy. A successful send request does not guarantee delivery.
+                        </div>
+                      )}
                       {templateVarsDialog.template.components.filter((c) => c.text).map((c, i) => (
                         <p key={i} className="tmpl-dialog-preview-text">{c.text}</p>
                       ))}

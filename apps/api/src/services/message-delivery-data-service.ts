@@ -129,6 +129,12 @@ export interface ContactDeliverySuppression {
 const WEBHOOK_LOCK_TIMEOUT_MS = 5 * 60_000;
 const HIGH_FAILURE_MIN_ATTEMPTS = 20;
 const HEALTHY_ECOSYSTEM_REMARK = "This message was not delivered to maintain healthy ecosystem engagement.";
+const UNKNOWN_WEBHOOK_FAILURE_REMARK =
+  "Meta marked this message as failed but did not include a reason in the delivery webhook.";
+const UNKNOWN_TEMPLATE_WEBHOOK_FAILURE_REMARK =
+  "Meta marked this template message as failed but did not include a reason in the delivery webhook.";
+const UNKNOWN_MARKETING_TEMPLATE_WEBHOOK_FAILURE_REMARK =
+  "Meta marked this marketing template as failed without a detailed reason. Marketing deliveries can be blocked by recipient engagement policy even when the template is approved.";
 
 const PERMANENT_META_CODES = new Set(["131026", "131047", "132000", "132001", "133010", "131051"]);
 const BUSINESS_LOGIC_META_CODES = new Set(["132000", "132001", "131051"]);
@@ -256,6 +262,37 @@ export function normalizeDeliveryFailureMessage(errorCode?: string | null, error
   return baseMessage;
 }
 
+export function resolveWebhookFailureMessage(input: {
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  messageKind?: DeliveryMessageKind | null;
+  templateCategory?: string | null;
+}): string {
+  const explicitMessage = trimToNull(input.errorMessage);
+  if (explicitMessage) {
+    return explicitMessage;
+  }
+
+  const errorCode = trimToNull(input.errorCode);
+  if (errorCode) {
+    return `Meta delivery failed with code ${errorCode}.`;
+  }
+
+  if ((input.templateCategory ?? "").toUpperCase() === "MARKETING") {
+    return UNKNOWN_MARKETING_TEMPLATE_WEBHOOK_FAILURE_REMARK;
+  }
+
+  if (
+    input.messageKind === "campaign_template" ||
+    input.messageKind === "conversation_template" ||
+    input.messageKind === "test_template"
+  ) {
+    return UNKNOWN_TEMPLATE_WEBHOOK_FAILURE_REMARK;
+  }
+
+  return UNKNOWN_WEBHOOK_FAILURE_REMARK;
+}
+
 export function retryDelayMs(retryCount: number): number {
   switch (retryCount) {
     case 0:
@@ -267,6 +304,97 @@ export function retryDelayMs(retryCount: number): number {
     default:
       return 60 * 60_000;
   }
+}
+
+export async function applyDeliveryAttemptWebhookStatusUpdate(input: {
+  wamid: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  eventTimestamp?: string | null;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  const attemptResult = await pool.query<{
+    attempt_id: string;
+    user_id: string;
+    campaign_id: string | null;
+    connection_id: string | null;
+    current_status: DeliveryAttemptStatus;
+    message_kind: DeliveryMessageKind;
+    template_category: string | null;
+  }>(
+    `SELECT
+       mda.id AS attempt_id,
+       mda.user_id,
+       mda.campaign_id,
+       mda.connection_id,
+       mda.status AS current_status,
+       mda.message_kind,
+       mt.category AS template_category
+     FROM message_delivery_attempts mda
+     LEFT JOIN message_templates mt
+       ON mt.id::text = NULLIF(mda.requested_payload_json->>'templateId', '')
+     WHERE mda.provider_message_id = $1
+     ORDER BY mda.created_at DESC
+     LIMIT 1`,
+    [input.wamid]
+  );
+  const attempt = attemptResult.rows[0];
+  if (!attempt) {
+    return;
+  }
+
+  const webhookSnapshot = {
+    lastWebhookStatus: input.status,
+    ...(input.eventTimestamp ? { lastWebhookStatusAt: input.eventTimestamp } : {}),
+    ...(input.payload ? { lastWebhookPayload: input.payload } : {})
+  };
+
+  if (input.status === "failed") {
+    const webhookFailureMessage = resolveWebhookFailureMessage({
+      errorCode: input.errorCode,
+      errorMessage: input.errorMessage,
+      messageKind: attempt.message_kind,
+      templateCategory: attempt.template_category
+    });
+    const failure = classifyDeliveryFailure(new Error(webhookFailureMessage), input.errorCode);
+
+    await pool.query(
+      `UPDATE message_delivery_attempts
+       SET status = 'failed',
+           retryable = FALSE,
+           error_category = $2,
+           error_code = COALESCE($3, error_code),
+           error_message = COALESCE($4, error_message),
+           provider_response_json = COALESCE(provider_response_json, '{}'::jsonb) || $5::jsonb,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [
+        attempt.attempt_id,
+        failure.category,
+        failure.errorCode ?? input.errorCode ?? null,
+        failure.errorMessage,
+        JSON.stringify(webhookSnapshot)
+      ]
+    );
+
+    await refreshApiDowntimeAlert(attempt.user_id, attempt.connection_id ?? null);
+    await refreshFailureRateAlert(attempt.user_id, attempt.campaign_id ?? null);
+    return;
+  }
+
+  const nextAttemptStatus: DeliveryAttemptStatus =
+    attempt.current_status === "failed" ? "failed" : "sent";
+
+  await pool.query(
+    `UPDATE message_delivery_attempts
+     SET status = $2,
+         retryable = CASE WHEN $2 = 'failed' THEN retryable ELSE FALSE END,
+         provider_response_json = COALESCE(provider_response_json, '{}'::jsonb) || $3::jsonb,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [attempt.attempt_id, nextAttemptStatus, JSON.stringify(webhookSnapshot)]
+  );
 }
 
 export function classifyDeliveryFailure(error: unknown, explicitCode?: string | null): DeliveryFailureClassification {
@@ -959,11 +1087,18 @@ export async function applyConversationDeliveryStatusUpdate(input: {
   errorMessage?: string | null;
   eventTimestamp?: string | null;
 }): Promise<void> {
+  const webhookFailureMessage =
+    input.status === "failed"
+      ? resolveWebhookFailureMessage({
+          errorCode: input.errorCode,
+          errorMessage: input.errorMessage
+        })
+      : trimToNull(input.errorMessage);
   const failure =
     input.status === "failed"
-      ? classifyDeliveryFailure(new Error(trimToNull(input.errorMessage) ?? `Meta delivery failed ${input.errorCode ?? ""}`.trim()), input.errorCode)
+      ? classifyDeliveryFailure(new Error(webhookFailureMessage ?? "Meta delivery failed"), input.errorCode)
       : null;
-  const normalizedErrorMessage = failure?.errorMessage ?? trimToNull(input.errorMessage);
+  const normalizedErrorMessage = failure?.errorMessage ?? webhookFailureMessage;
 
   await withTransaction(async (client) => {
     const rowResult = await client.query<{
@@ -1047,11 +1182,18 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
   errorMessage?: string | null;
   eventTimestamp?: string | null;
 }): Promise<void> {
+  const webhookFailureMessage =
+    input.status === "failed"
+      ? resolveWebhookFailureMessage({
+          errorCode: input.errorCode,
+          errorMessage: input.errorMessage
+        })
+      : trimToNull(input.errorMessage);
   const failure =
     input.status === "failed"
-      ? classifyDeliveryFailure(new Error(trimToNull(input.errorMessage) ?? `Meta delivery failed ${input.errorCode ?? ""}`.trim()), input.errorCode)
+      ? classifyDeliveryFailure(new Error(webhookFailureMessage ?? "Meta delivery failed"), input.errorCode)
       : null;
-  const normalizedErrorMessage = failure?.errorMessage ?? trimToNull(input.errorMessage);
+  const normalizedErrorMessage = failure?.errorMessage ?? webhookFailureMessage;
 
   await withTransaction(async (client) => {
     const rowResult = await client.query<{

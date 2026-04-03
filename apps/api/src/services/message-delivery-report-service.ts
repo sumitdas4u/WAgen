@@ -2,6 +2,8 @@ import { pool } from "../db/pool.js";
 import { normalizeDeliveryFailureMessage } from "./message-delivery-data-service.js";
 
 const HEALTHY_ECOSYSTEM_REMARK = "This message was not delivered to maintain healthy ecosystem engagement.";
+const UNKNOWN_MARKETING_TEMPLATE_WEBHOOK_FAILURE_REMARK =
+  "Meta marked this marketing template as failed without a detailed reason. Marketing deliveries can be blocked by recipient engagement policy even when the template is approved.";
 
 export type DeliveryReportStatus = "sending" | "sent" | "delivered" | "read" | "failed" | "retrying";
 
@@ -97,12 +99,12 @@ function normalizeDisplayPhone(value: string | null | undefined): string {
   return trimmed;
 }
 
-function healthyEcosystemFailureSql(alias: string): string {
+function healthyEcosystemFailureSql(errorCodeExpr: string, errorMessageExpr: string): string {
   return `(
-    ${alias}.error_code = '131049'
-    OR LOWER(COALESCE(${alias}.error_message, '')) LIKE '%healthy ecosystem%'
-    OR LOWER(COALESCE(${alias}.error_message, '')) LIKE '%ecosystem engagement%'
-    OR LOWER(COALESCE(${alias}.error_message, '')) LIKE '%maintain healthy ecosystem%'
+    ${errorCodeExpr} = '131049'
+    OR LOWER(COALESCE(${errorMessageExpr}, '')) LIKE '%healthy ecosystem%'
+    OR LOWER(COALESCE(${errorMessageExpr}, '')) LIKE '%ecosystem engagement%'
+    OR LOWER(COALESCE(${errorMessageExpr}, '')) LIKE '%maintain healthy ecosystem%'
   )`;
 }
 
@@ -129,6 +131,16 @@ function buildDeliveryEnrichedCte(input: {
   }
 
   const filterSql = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
+  const resolvedErrorCodeSql = `COALESCE(latest_attempts.error_code, cm.error_code, camp_msg.error_code)`;
+  const resolvedErrorMessageSql = `COALESCE(latest_attempts.error_message, cm.error_message, camp_msg.error_message)`;
+  const marketingFallbackSql = `(
+    mt_req.category = 'MARKETING'
+    AND (
+      ${resolvedErrorMessageSql} IS NULL
+      OR LOWER(COALESCE(${resolvedErrorMessageSql}, '')) IN ('unknown delivery failure', 'meta delivery failed')
+    )
+  )`;
+  const healthyEcosystemSql = healthyEcosystemFailureSql(resolvedErrorCodeSql, resolvedErrorMessageSql);
 
   return {
     params,
@@ -214,28 +226,30 @@ function buildDeliveryEnrichedCte(input: {
         CASE
           WHEN latest_attempts.attempt_status = 'retry_scheduled' THEN
             COALESCE(latest_attempts.provider_response_json->>'nextRetryAt', 'Retry scheduled')
-          WHEN ${healthyEcosystemFailureSql("latest_attempts")} THEN '${HEALTHY_ECOSYSTEM_REMARK}'
-          ELSE latest_attempts.error_message
+          WHEN ${healthyEcosystemSql} THEN '${HEALTHY_ECOSYSTEM_REMARK}'
+          WHEN ${marketingFallbackSql} THEN '${UNKNOWN_MARKETING_TEMPLATE_WEBHOOK_FAILURE_REMARK}'
+          ELSE ${resolvedErrorMessageSql}
         END AS remarks,
-        latest_attempts.error_code,
+        ${resolvedErrorCodeSql} AS error_code,
         (
-          latest_attempts.error_code = '133010'
-          OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%not a valid whatsapp%'
-          OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%invalid number%'
-          OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%not valid%'
+          ${resolvedErrorCodeSql} = '133010'
+          OR LOWER(COALESCE(${resolvedErrorMessageSql}, '')) LIKE '%not a valid whatsapp%'
+          OR LOWER(COALESCE(${resolvedErrorMessageSql}, '')) LIKE '%invalid number%'
+          OR LOWER(COALESCE(${resolvedErrorMessageSql}, '')) LIKE '%not valid%'
         ) AS is_not_in_whatsapp,
         (
-          latest_attempts.error_code = '429'
-          OR ${healthyEcosystemFailureSql("latest_attempts")}
-          OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%429%'
-          OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%rate limit%'
-          OR LOWER(COALESCE(latest_attempts.error_message, '')) LIKE '%frequency%'
+          ${resolvedErrorCodeSql} = '429'
+          OR ${healthyEcosystemSql}
+          OR LOWER(COALESCE(${resolvedErrorMessageSql}, '')) LIKE '%429%'
+          OR LOWER(COALESCE(${resolvedErrorMessageSql}, '')) LIKE '%rate limit%'
+          OR LOWER(COALESCE(${resolvedErrorMessageSql}, '')) LIKE '%frequency%'
         ) AS is_frequency_limit
       FROM latest_attempts
       LEFT JOIN campaign_messages camp_msg ON camp_msg.id = latest_attempts.campaign_message_id
       LEFT JOIN conversation_messages cm ON cm.wamid = latest_attempts.provider_message_id
       LEFT JOIN conversations conv ON conv.id = COALESCE(latest_attempts.conversation_id, cm.conversation_id)
       LEFT JOIN whatsapp_business_connections wbc ON wbc.id = latest_attempts.connection_id
+      LEFT JOIN message_templates mt_req ON mt_req.id::text = NULLIF(latest_attempts.requested_payload_json->>'templateId', '')
     )`
   };
 }
