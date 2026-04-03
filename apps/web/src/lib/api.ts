@@ -1972,7 +1972,7 @@ export function sendTestTemplateMessage(
 }
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
-export type CampaignMessageStatus = "queued" | "sent" | "delivered" | "read" | "failed" | "skipped";
+export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
 export type CampaignTemplateVariableSource = "contact" | "static";
 
 export interface CampaignTemplateVariableBinding {
@@ -2022,6 +2022,124 @@ export interface CampaignMessage {
   read_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CampaignDeliveryAnalytics {
+  campaignId: string;
+  counts: {
+    total: number;
+    queued: number;
+    sending: number;
+    sent: number;
+    delivered: number;
+    read: number;
+    failed: number;
+    skipped: number;
+  };
+  retries: {
+    totalAttempts: number;
+    retryAttempts: number;
+    pendingRetries: number;
+  };
+  failureRate: number;
+  topErrors: Array<{
+    errorCode: string | null;
+    errorMessage: string | null;
+    count: number;
+  }>;
+}
+
+export type DeliveryAlertType = "high_failure_rate" | "webhook_delay" | "api_downtime";
+export type DeliveryAlertSeverity = "info" | "warning" | "critical";
+export type DeliveryAlertStatus = "open" | "resolved";
+
+export interface DeliveryAlert {
+  id: string;
+  user_id: string;
+  campaign_id: string | null;
+  connection_id: string | null;
+  alert_type: DeliveryAlertType;
+  severity: DeliveryAlertSeverity;
+  status: DeliveryAlertStatus;
+  summary: string;
+  details_json: Record<string, unknown>;
+  triggered_at: string;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeliveryOverview {
+  windowSeconds: number;
+  attempts: {
+    total: number;
+    sent: number;
+    failed: number;
+    retryScheduled: number;
+    successRate: number;
+  };
+  queuedCampaignMessages: number;
+  openAlerts: number;
+  suppressedRecipients: number;
+}
+
+export type DeliveryReportStatus = "sending" | "sent" | "delivered" | "read" | "failed" | "retrying";
+
+export interface DeliveryReportChannel {
+  key: string;
+  label: string;
+  messages: number;
+  failed: number;
+}
+
+export interface DeliverySummaryCard {
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface DeliverySummaryDay {
+  day: string;
+  sent: number;
+  delivered: number;
+  engaged: number;
+  failed: number;
+}
+
+export interface DeliveryFailureReason {
+  errorCode: string | null;
+  message: string;
+  count: number;
+}
+
+export interface DeliveryReportSummary {
+  rangeDays: number;
+  cards: {
+    recipients: DeliverySummaryCard;
+    sent: DeliverySummaryCard;
+    delivered: DeliverySummaryCard;
+    engaged: DeliverySummaryCard;
+    notInWhatsApp: DeliverySummaryCard;
+    frequencyLimit: DeliverySummaryCard;
+    failed: DeliverySummaryCard;
+  };
+  channels: DeliveryReportChannel[];
+  daily: DeliverySummaryDay[];
+  topFailureReasons: DeliveryFailureReason[];
+}
+
+export interface DeliveryLogRow {
+  rowId: string;
+  messageId: string;
+  status: DeliveryReportStatus;
+  sender: string;
+  channelKey: string;
+  channelLabel: string;
+  messageContent: string;
+  to: string;
+  dateTime: string;
+  remarks: string | null;
+  errorCode: string | null;
 }
 
 export function fetchCampaigns(token: string) {
@@ -2095,6 +2213,122 @@ export function fetchCampaignMessages(
   const query = params.toString();
   const path = query ? `/api/campaigns/${campaignId}/messages?${query}` : `/api/campaigns/${campaignId}/messages`;
   return apiRequest<{ messages: CampaignMessage[]; total: number }>(path, { token });
+}
+
+export function fetchCampaignDeliveryAnalytics(token: string, campaignId: string) {
+  return apiRequest<{ analytics: CampaignDeliveryAnalytics }>(`/api/campaigns/${campaignId}/analytics`, { token });
+}
+
+export function fetchDeliveryOverview(token: string) {
+  return apiRequest<{ overview: DeliveryOverview }>("/api/delivery/overview", { token });
+}
+
+export function fetchDeliveryReportSummary(
+  token: string,
+  options?: { days?: number; channelKey?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.days === "number") {
+    params.set("days", String(options.days));
+  }
+  if (options?.channelKey) {
+    params.set("channelKey", options.channelKey);
+  }
+  const query = params.toString();
+  const path = query ? `/api/delivery/summary?${query}` : "/api/delivery/summary";
+  return apiRequest<{ summary: DeliveryReportSummary }>(path, { token });
+}
+
+export function fetchDeliveryNotifications(
+  token: string,
+  options?: {
+    days?: number;
+    channelKey?: string | null;
+    status?: DeliveryReportStatus | null;
+    limit?: number;
+    offset?: number;
+  }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.days === "number") {
+    params.set("days", String(options.days));
+  }
+  if (options?.channelKey) {
+    params.set("channelKey", options.channelKey);
+  }
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (typeof options?.offset === "number") {
+    params.set("offset", String(options.offset));
+  }
+  const query = params.toString();
+  const path = query ? `/api/delivery/notifications?${query}` : "/api/delivery/notifications";
+  return apiRequest<{ rows: DeliveryLogRow[]; total: number }>(path, { token });
+}
+
+export function fetchDeliveryFailures(
+  token: string,
+  options?: { days?: number; channelKey?: string | null; limit?: number; offset?: number }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.days === "number") {
+    params.set("days", String(options.days));
+  }
+  if (options?.channelKey) {
+    params.set("channelKey", options.channelKey);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (typeof options?.offset === "number") {
+    params.set("offset", String(options.offset));
+  }
+  const query = params.toString();
+  const path = query ? `/api/delivery/failures?${query}` : "/api/delivery/failures";
+  return apiRequest<{ rows: DeliveryLogRow[]; total: number }>(path, { token });
+}
+
+export function fetchDeliveryConversations(
+  token: string,
+  options?: { days?: number; channelKey?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.days === "number") {
+    params.set("days", String(options.days));
+  }
+  if (options?.channelKey) {
+    params.set("channelKey", options.channelKey);
+  }
+  const query = params.toString();
+  const path = query ? `/api/delivery/conversations?${query}` : "/api/delivery/conversations";
+  return apiRequest<{ conversations: Conversation[] }>(path, { token });
+}
+
+export function fetchDeliveryAlerts(
+  token: string,
+  options?: { status?: DeliveryAlertStatus; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/delivery/alerts?${query}` : "/api/delivery/alerts";
+  return apiRequest<{ alerts: DeliveryAlert[] }>(path, { token });
+}
+
+export function resolveDeliveryAlertItem(token: string, alertId: string) {
+  return apiRequest<{ alert: DeliveryAlert }>(`/api/delivery/alerts/${alertId}/resolve`, {
+    method: "POST",
+    token
+  });
 }
 
 

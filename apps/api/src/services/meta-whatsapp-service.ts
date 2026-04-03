@@ -1,8 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
-import { getOrCreateConversation, trackOutboundMessage, updateMessageDeliveryStatus } from "./conversation-service.js";
-import { updateCampaignMessageDelivery } from "./campaign-service.js";
+import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
 import {
   encodeFlowLocationInput,
   formatFlowLocationSummary
@@ -236,10 +235,16 @@ export function buildGraphUrl(path: string, query?: Record<string, string | numb
 export async function parseGraphResponse<T>(response: Response): Promise<T> {
   const json = await response.json().catch(() => null);
   if (!response.ok) {
-    const message =
-      (json as { error?: { message?: string } } | null)?.error?.message ||
-      `Meta Graph request failed (${response.status})`;
-    throw new Error(message);
+    const errorPayload = (json as { error?: { message?: string; code?: number | string; error_subcode?: number | string } } | null)?.error;
+    const message = errorPayload?.message || `Meta Graph request failed (${response.status})`;
+    const errorCode = errorPayload?.code != null ? String(errorPayload.code) : null;
+    const errorSubcode = errorPayload?.error_subcode != null ? String(errorPayload.error_subcode) : null;
+    const details = [
+      `status=${response.status}`,
+      ...(errorCode ? [`code=${errorCode}`] : []),
+      ...(errorSubcode ? [`subcode=${errorSubcode}`] : [])
+    ].join(" ");
+    throw new Error(`${message} [${details}]`);
   }
   return json as T;
 }
@@ -2126,36 +2131,3 @@ export function verifyMetaWebhookSignature(rawBody: string, signatureHeader: str
   return timingSafeEqual(expectedBuffer, receivedBuffer);
 }
 
-export async function processDeliveryStatuses(payload: unknown): Promise<void> {
-  const parsed = (payload ?? {}) as WebhookPayload;
-  for (const entry of parsed.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const statuses = change.value?.statuses;
-      if (!Array.isArray(statuses) || statuses.length === 0) {
-        continue;
-      }
-      for (const raw of statuses) {
-        const wamid = typeof raw["id"] === "string" ? raw["id"] : null;
-        const status = typeof raw["status"] === "string" ? raw["status"] : null;
-        if (!wamid || !status) {
-          continue;
-        }
-        if (status !== "delivered" && status !== "read" && status !== "failed") {
-          continue;
-        }
-        const errors = Array.isArray(raw["errors"]) ? (raw["errors"] as Array<Record<string, unknown>>) : [];
-        const errorCode = errors[0]?.["code"] != null ? String(errors[0]["code"]) : null;
-        try {
-          await updateMessageDeliveryStatus(wamid, status as "delivered" | "read" | "failed", errorCode);
-        } catch (err) {
-          console.error("[MetaWebhook] delivery status update failed", err);
-        }
-        try {
-          await updateCampaignMessageDelivery(wamid, status as "delivered" | "read" | "failed", errorCode);
-        } catch (err) {
-          console.error("[MetaWebhook] campaign delivery status update failed", err);
-        }
-      }
-    }
-  }
-}

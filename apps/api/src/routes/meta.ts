@@ -7,10 +7,10 @@ import {
   getMetaBusinessConfig,
   getMetaBusinessStatus,
   handleMetaWebhookPayload,
-  processDeliveryStatuses,
   sendMetaTextMessage,
   verifyMetaWebhookSignature
 } from "../services/meta-whatsapp-service.js";
+import { processMetaDeliveryStatuses } from "../services/message-delivery-service.js";
 import { applyTemplateWebhookUpdate } from "../services/template-service.js";
 
 const CompleteEmbeddedSignupSchema = z.object({
@@ -186,7 +186,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     await handleMetaWebhookPayload(payload);
-    await processDeliveryStatuses(payload);
+    await processMetaDeliveryStatuses(payload);
 
     // Handle template status update events
     const parsed = payload as { entry?: Array<{ changes?: Array<{ field?: string; value?: unknown }> }> };

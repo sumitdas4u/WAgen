@@ -1,5 +1,5 @@
 import { getConversationById, setConversationManualAndPaused, trackOutboundMessage } from "./conversation-service.js";
-import { sendMetaFlowMessageDirect } from "./meta-whatsapp-service.js";
+import { sendTrackedApiConversationFlowMessage } from "./message-delivery-service.js";
 import { summarizeFlowMessage, type FlowMessagePayload } from "./outbound-message-types.js";
 import { sendWidgetConversationMessage } from "./widget-chat-gateway-service.js";
 import { whatsappSessionManager } from "./whatsapp-session-manager.js";
@@ -28,15 +28,16 @@ export async function sendConversationFlowMessage(input: {
     throw new Error("Message text is required.");
   }
 
-  let outboundWamid: string | null = null;
   if (conversation.channel_type === "api") {
-    const sent = await sendMetaFlowMessageDirect({
+    await sendTrackedApiConversationFlowMessage({
       userId: input.userId,
-      to: conversation.phone_number,
+      conversation,
       payload: input.payload,
-      linkedNumber: conversation.channel_linked_number
+      summaryText,
+      mediaUrl: input.mediaUrl ?? null,
+      senderName: input.senderName ?? null,
+      track: input.track
     });
-    outboundWamid = sent.messageId ?? null;
   } else if (conversation.channel_type === "qr") {
     await whatsappSessionManager.sendFlowMessage({
       userId: input.userId,
@@ -54,7 +55,7 @@ export async function sendConversationFlowMessage(input: {
     }
   }
 
-  if (input.track !== false) {
+  if (conversation.channel_type !== "api" && input.track !== false) {
     // If no explicit mediaUrl, pull it from the payload itself (media / media_buttons blocks).
     const payloadMediaUrl =
       input.payload.type === "media" ? input.payload.url :
@@ -66,7 +67,7 @@ export async function sendConversationFlowMessage(input: {
       { senderName: input.senderName ?? null },
       input.mediaUrl ?? payloadMediaUrl ?? null,
       input.payload,
-      outboundWamid
+      null
     );
   }
 

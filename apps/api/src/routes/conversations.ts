@@ -3,17 +3,14 @@ import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { openAIService } from "../services/openai-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
-import { realtimeHub } from "../services/realtime-hub.js";
-import { dispatchTemplateMessage } from "../services/template-service.js";
+import { deliverConversationTemplateMessage } from "../services/message-delivery-service.js";
 import {
   listLeadsWithSummary,
   listConversationMessages,
   listConversations,
   summarizeLeadConversations,
   setConversationAIPaused,
-  setConversationManualAndPaused,
   setManualTakeover,
-  trackOutboundMessage
 } from "../services/conversation-service.js";
 
 const ToggleSchema = z.object({
@@ -249,13 +246,9 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
       // Resolve phone number from the conversation
       const convRow = await pool.query<{
-        phone_number: string;
         channel_type: string;
-        channel_linked_number: string | null;
-        score: number;
-        stage: string;
       }>(
-        `SELECT phone_number, channel_type, channel_linked_number, score, stage
+        `SELECT channel_type
          FROM conversations
          WHERE id = $1
            AND user_id = $2
@@ -265,7 +258,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       if ((convRow.rowCount ?? 0) === 0) {
         return reply.status(404).send({ error: "Conversation not found" });
       }
-      const { phone_number, channel_type, channel_linked_number, score, stage } = convRow.rows[0];
+      const { channel_type } = convRow.rows[0];
       if (channel_type !== "api") {
         return reply.status(400).send({ error: "Templates can only be sent on the API (Meta) channel." });
       }
@@ -277,30 +270,12 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         );
         const senderName = userRow.rows[0]?.name?.trim() || request.authUser.email.split("@")[0] || "Agent";
 
-        const result = await dispatchTemplateMessage(request.authUser.userId, {
-          templateId: parsed.data.templateId,
-          to: phone_number,
-          variableValues: parsed.data.variableValues,
-          expectedLinkedNumber: channel_linked_number
-        });
-
-        await trackOutboundMessage(
-          params.conversationId,
-          result.summaryText,
-          { senderName },
-          result.messagePayload.headerMediaUrl ?? null,
-          result.messagePayload,
-          result.messageId ?? null
-        );
-        await setConversationManualAndPaused(request.authUser.userId, params.conversationId);
-
-        realtimeHub.broadcast(request.authUser.userId, "conversation.updated", {
+        const result = await deliverConversationTemplateMessage({
+          userId: request.authUser.userId,
           conversationId: params.conversationId,
-          phoneNumber: phone_number,
-          direction: "outbound",
-          message: result.summaryText,
-          score,
-          stage
+          templateId: parsed.data.templateId,
+          variableValues: parsed.data.variableValues,
+          senderName
         });
 
         return { ok: true, messageId: result.messageId };

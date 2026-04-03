@@ -1,10 +1,11 @@
-import { pool } from "../db/pool.js";
+import { pool, withTransaction } from "../db/pool.js";
 import type { Contact } from "../types/models.js";
 import { getSegmentContacts } from "./contact-segments-service.js";
+import { findSuppressedRecipients } from "./message-delivery-data-service.js";
 import { getMessageTemplate, resolveTemplatePayload } from "./template-service.js";
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
-export type CampaignMessageStatus = "queued" | "sent" | "delivered" | "read" | "failed" | "skipped";
+export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
 export type CampaignTemplateVariableSource = "contact" | "static";
 
 export interface CampaignTemplateVariableBinding {
@@ -243,6 +244,10 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   if (eligibleContacts.length === 0) {
     throw new Error("No contacts with phone numbers in the selected segment.");
   }
+  const suppressedRecipients = await findSuppressedRecipients(
+    userId,
+    eligibleContacts.map((contact) => contact.phone_number)
+  );
 
   const template = await getMessageTemplate(userId, campaign.template_id);
   if (template.status !== "APPROVED") {
@@ -264,11 +269,18 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
     let status: CampaignMessageStatus = "queued";
     let errorMessage: string | null = null;
     let resolvedVariablesJson: Record<string, string> = resolved.values;
+    const normalizedPhoneNumber = phoneNumber.replace(/\D/g, "");
+    const suppression = suppressedRecipients.get(normalizedPhoneNumber);
 
-    if (resolved.missing.length > 0) {
+    if (suppression) {
+      status = "skipped";
+      errorMessage = `Recipient suppressed: ${suppression.reason_label}`;
+    }
+
+    if (status === "queued" && resolved.missing.length > 0) {
       status = "skipped";
       errorMessage = `Missing campaign bindings for ${resolved.missing.join(", ")}`;
-    } else {
+    } else if (status === "queued") {
       try {
         const preparedPayload = resolveTemplatePayload(template, resolved.values);
         resolvedVariablesJson = preparedPayload.resolvedVariables;
@@ -390,22 +402,34 @@ export async function markCampaignMessageSent(
   campaignMessageId: string,
   wamid: string | null
 ): Promise<void> {
-  await pool.query(
-    `UPDATE campaign_messages
-     SET status = 'sent',
-         wamid = COALESCE($2, wamid),
-         sent_at = NOW(),
-         error_code = NULL,
-         error_message = NULL
-     WHERE id = $1`,
-    [campaignMessageId, wamid]
-  );
-  await pool.query(
-    `UPDATE campaigns
-     SET sent_count = sent_count + 1
-     WHERE id = (SELECT campaign_id FROM campaign_messages WHERE id = $1)`,
-    [campaignMessageId]
-  );
+  await withTransaction(async (client) => {
+    const current = await client.query<{ campaign_id: string; status: CampaignMessageStatus }>(
+      `SELECT campaign_id, status
+       FROM campaign_messages
+       WHERE id = $1
+       LIMIT 1
+       FOR UPDATE`,
+      [campaignMessageId]
+    );
+    const row = current.rows[0];
+    if (!row || row.status === "sent" || row.status === "delivered" || row.status === "read") {
+      return;
+    }
+
+    await client.query(
+      `UPDATE campaign_messages
+       SET status = 'sent',
+           wamid = COALESCE($2, wamid),
+           sent_at = COALESCE(sent_at, NOW()),
+           next_retry_at = NULL,
+           error_code = NULL,
+           error_message = NULL
+       WHERE id = $1`,
+      [campaignMessageId, wamid]
+    );
+
+    await client.query(`UPDATE campaigns SET sent_count = sent_count + 1 WHERE id = $1`, [row.campaign_id]);
+  });
 }
 
 export async function markCampaignMessageFailed(
@@ -415,34 +439,47 @@ export async function markCampaignMessageFailed(
   permanent: boolean,
   nextRetryAt?: Date
 ): Promise<void> {
-  if (permanent || !nextRetryAt) {
-    await pool.query(
-      `UPDATE campaign_messages
-       SET status = 'failed',
-           error_code = $2,
-           error_message = $3,
-           next_retry_at = NULL
-       WHERE id = $1`,
-      [campaignMessageId, errorCode, errorMessage]
-    );
-    await pool.query(
-      `UPDATE campaigns
-       SET failed_count = failed_count + 1
-       WHERE id = (SELECT campaign_id FROM campaign_messages WHERE id = $1)`,
+  await withTransaction(async (client) => {
+    const current = await client.query<{ campaign_id: string; status: CampaignMessageStatus }>(
+      `SELECT campaign_id, status
+       FROM campaign_messages
+       WHERE id = $1
+       LIMIT 1
+       FOR UPDATE`,
       [campaignMessageId]
     );
-    return;
-  }
+    const row = current.rows[0];
+    if (!row) {
+      return;
+    }
 
-  await pool.query(
-    `UPDATE campaign_messages
-     SET retry_count = retry_count + 1,
-         next_retry_at = $2,
-         error_code = $3,
-         error_message = $4
-     WHERE id = $1`,
-    [campaignMessageId, nextRetryAt.toISOString(), errorCode, errorMessage]
-  );
+    if (permanent || !nextRetryAt) {
+      if (row.status !== "failed") {
+        await client.query(
+          `UPDATE campaign_messages
+           SET status = 'failed',
+               error_code = $2,
+               error_message = $3,
+               next_retry_at = NULL
+           WHERE id = $1`,
+          [campaignMessageId, errorCode, errorMessage]
+        );
+        await client.query(`UPDATE campaigns SET failed_count = failed_count + 1 WHERE id = $1`, [row.campaign_id]);
+      }
+      return;
+    }
+
+    await client.query(
+      `UPDATE campaign_messages
+       SET status = 'queued',
+           retry_count = retry_count + 1,
+           next_retry_at = $2,
+           error_code = $3,
+           error_message = $4
+       WHERE id = $1`,
+      [campaignMessageId, nextRetryAt.toISOString(), errorCode, errorMessage]
+    );
+  });
 }
 
 export async function updateCampaignMessageDelivery(
@@ -483,7 +520,13 @@ export async function markCampaignCompleted(campaignId: string): Promise<void> {
      SET status = 'completed',
          completed_at = NOW()
      WHERE id = $1
-       AND status = 'running'`,
+       AND status = 'running'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM campaign_messages
+         WHERE campaign_id = $1
+           AND status IN ('queued', 'sending')
+       )`,
     [campaignId]
   );
 }
@@ -492,15 +535,33 @@ export async function fetchQueuedCampaignMessages(
   campaignId: string,
   batchSize = 100
 ): Promise<CampaignMessage[]> {
-  const result = await pool.query<CampaignMessage>(
-    `SELECT *
-     FROM campaign_messages
-     WHERE campaign_id = $1
-       AND status = 'queued'
-       AND (retry_count = 0 OR next_retry_at <= NOW())
-     ORDER BY created_at ASC
-     LIMIT $2`,
-    [campaignId, batchSize]
-  );
-  return result.rows;
+  return claimQueuedCampaignMessages(campaignId, batchSize);
+}
+
+export async function claimQueuedCampaignMessages(
+  campaignId: string,
+  batchSize = 100
+): Promise<CampaignMessage[]> {
+  return withTransaction(async (client) => {
+    const result = await client.query<CampaignMessage>(
+      `WITH next_messages AS (
+         SELECT id
+         FROM campaign_messages
+         WHERE campaign_id = $1
+           AND status = 'queued'
+           AND (retry_count = 0 OR next_retry_at <= NOW())
+         ORDER BY created_at ASC
+         LIMIT $2
+         FOR UPDATE SKIP LOCKED
+       )
+       UPDATE campaign_messages cm
+       SET status = 'sending',
+           next_retry_at = NULL
+       FROM next_messages
+       WHERE cm.id = next_messages.id
+       RETURNING cm.*`,
+      [campaignId, batchSize]
+    );
+    return result.rows;
+  });
 }

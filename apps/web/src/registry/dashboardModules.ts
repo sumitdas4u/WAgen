@@ -42,6 +42,18 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     requiresAuth: true
   },
   {
+    id: "analytics",
+    path: "analytics/*",
+    navTo: "/dashboard/analytics",
+    navLabel: "Analytics",
+    subtitle: "Delivery and reports",
+    icon: "analytics",
+    section: "main",
+    lazyRoute: () => import("../modules/dashboard/analytics/route"),
+    prefetchStrategy: "code+data",
+    requiresAuth: true
+  },
+  {
     id: "billing",
     path: "billing",
     navTo: "/dashboard/billing",

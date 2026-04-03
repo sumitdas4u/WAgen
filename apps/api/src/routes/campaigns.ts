@@ -11,6 +11,7 @@ import {
   type CampaignMessageStatus
 } from "../services/campaign-service.js";
 import { enqueueCampaign } from "../services/campaign-worker-service.js";
+import { getCampaignDeliveryAnalytics } from "../services/message-delivery-data-service.js";
 
 const TemplateVariableBindingSchema = z.object({
   source: z.enum(["contact", "static"]),
@@ -58,7 +59,7 @@ const UpdateCampaignBodySchema = CreateCampaignBodySchema.partial();
 const CampaignMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  status: z.enum(["queued", "sent", "delivered", "read", "failed", "skipped"]).optional()
+  status: z.enum(["queued", "sending", "sent", "delivered", "read", "failed", "skipped"]).optional()
 });
 
 export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
@@ -103,6 +104,19 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: "Campaign not found" });
       }
       return { campaign };
+    }
+  );
+
+  fastify.get(
+    "/api/campaigns/:campaignId/analytics",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { campaignId } = request.params as { campaignId: string };
+      const analytics = await getCampaignDeliveryAnalytics(request.authUser.userId, campaignId);
+      if (!analytics) {
+        return reply.status(404).send({ error: "Campaign not found" });
+      }
+      return { analytics };
     }
   );
 

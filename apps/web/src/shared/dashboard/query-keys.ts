@@ -11,6 +11,7 @@ const dashboardTemplatesRoot = ["dashboard", "templates"] as const;
 const dashboardCampaignsRoot = ["dashboard", "campaigns"] as const;
 const dashboardContactFieldsRoot = ["dashboard", "contact-fields"] as const;
 const dashboardContactSegmentsRoot = ["dashboard", "contact-segments"] as const;
+const dashboardAnalyticsRoot = ["dashboard", "analytics"] as const;
 
 export const dashboardQueryKeys = {
   bootstrap: dashboardBootstrapRoot,
@@ -42,6 +43,15 @@ export const dashboardQueryKeys = {
   campaigns: [...dashboardCampaignsRoot, "list"] as const,
   campaignMessages: (campaignId: string, status: string, page: number) =>
     [...dashboardCampaignsRoot, "messages", campaignId, status, page] as const,
+  analyticsRoot: dashboardAnalyticsRoot,
+  deliverySummary: (days: number, channelKey: string) => [...dashboardAnalyticsRoot, "summary", days, channelKey] as const,
+  deliveryNotifications: (days: number, channelKey: string, status: string, page: number) =>
+    [...dashboardAnalyticsRoot, "notifications", days, channelKey, status, page] as const,
+  deliveryFailures: (days: number, channelKey: string, page: number) =>
+    [...dashboardAnalyticsRoot, "failures", days, channelKey, page] as const,
+  deliveryConversations: (days: number, channelKey: string) =>
+    [...dashboardAnalyticsRoot, "conversations", days, channelKey] as const,
+  deliveryAlerts: (status: string) => [...dashboardAnalyticsRoot, "alerts", status] as const,
   contactFieldsRoot: dashboardContactFieldsRoot,
   contactFields: [...dashboardContactFieldsRoot, "list"] as const,
   contactSegmentsRoot: dashboardContactSegmentsRoot,

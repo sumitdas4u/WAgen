@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "billing" | "knowledge" | "settings";
+type PrimaryNavId = "conversations" | "leads" | "analytics" | "billing" | "knowledge" | "settings";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -32,6 +32,12 @@ type SettingsNavItem = {
   to: string;
 };
 
+type AnalyticsNavItem = {
+  label: string;
+  icon: DashboardIconName;
+  to: string;
+};
+
 const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   {
     id: "conversations",
@@ -46,6 +52,13 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "leads",
     title: "Contacts",
     defaultModuleIds: ["leads"]
+  },
+  {
+    id: "analytics",
+    label: "Analytics",
+    icon: "analytics",
+    title: "Analytics",
+    defaultModuleIds: ["analytics"]
   },
   {
     id: "billing",
@@ -92,10 +105,19 @@ const SETTINGS_MENU_ITEMS: SettingsNavItem[] = [
   { moduleId: "settings-contact-fields", label: "Contact Fields", icon: "leads", to: "/dashboard/settings/contact-fields" }
 ];
 
+const ANALYTICS_MENU_ITEMS: AnalyticsNavItem[] = [
+  { label: "Dashboard", icon: "analytics", to: "/dashboard/analytics" },
+  { label: "WA Failed message", icon: "unanswered", to: "/dashboard/analytics/failed-messages" },
+  { label: "WA Notification message", icon: "templates", to: "/dashboard/analytics/notification-messages" },
+  { label: "Conversation report", icon: "chats", to: "/dashboard/analytics/conversation-report" },
+  { label: "Reports", icon: "billing", to: "/dashboard/analytics/reports" }
+];
+
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   inbox: { label: "Chats", subtitle: "Live Inbox" },
   leads: { label: "Contacts", subtitle: "Customer Directory" },
   billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
+  analytics: { label: "Analytics", subtitle: "Message delivery and reporting" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
   "studio-flows": { label: "Flows", subtitle: "Build chatbot workflows visually" },
   "studio-personality": { label: "Chatbot Personality", subtitle: "Tune voice, identity, and behavior" },
@@ -200,6 +222,8 @@ function DashboardShellLayout() {
           ? "/dashboard/inbox"
           : item.id === "leads"
             ? "/dashboard/leads"
+            : item.id === "analytics"
+              ? "/dashboard/analytics"
             : item.id === "billing"
                 ? "/dashboard/billing"
                 : item.id === "knowledge"
@@ -212,6 +236,8 @@ function DashboardShellLayout() {
       ? "conversations"
       : currentModuleId === "leads"
         ? "leads"
+        : currentModuleId === "analytics"
+          ? "analytics"
         : currentModuleId === "billing"
             ? "billing"
             : currentModuleId.startsWith("settings-")
@@ -291,6 +317,7 @@ function DashboardShellLayout() {
 
   const isStudioSection = visibleStudioItems.some((item) => item.moduleId === currentModuleId);
   const isSettingsSection = currentModuleId.startsWith("settings-");
+  const isAnalyticsSection = currentModuleId === "analytics";
   const visibleSettingsItems = SETTINGS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const showBillingActions = isModuleEnabled("billing");
   const showTestAction = isModuleEnabled("studio-test");
@@ -327,6 +354,15 @@ function DashboardShellLayout() {
 
     if (isSettingsSection) {
       return renderSubSidebar("Settings", visibleSettingsItems);
+    }
+
+    if (isAnalyticsSection) {
+      return renderSubSidebar("Analytics", ANALYTICS_MENU_ITEMS.map((item) => ({
+        moduleId: item.to,
+        label: item.label,
+        icon: item.icon,
+        to: item.to
+      })));
     }
 
     return <Outlet />;
