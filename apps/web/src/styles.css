@@ -1850,11 +1850,12 @@
 .compose-channel-hint,
 .compose-note-intro {
   border: 1px solid #d7e2db;
-  border-radius: 12px;
-  background: #ffffff;
-  padding: 0.68rem 0.75rem;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbf8 100%);
+  padding: 0.78rem 0.82rem;
   display: grid;
   gap: 0.18rem;
+  box-shadow: 0 10px 24px rgba(34, 52, 42, 0.06);
 }
 
 .compose-channel-hint strong,
@@ -1868,6 +1869,46 @@
   color: #5f7067;
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.compose-channel-hint-warning {
+  border-color: #e5d1a6;
+  background: linear-gradient(180deg, #fffdf7 0%, #fff8e8 100%);
+}
+
+.compose-channel-hint-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.compose-channel-hint-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.compose-channel-hint-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d9e4dc;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #668075;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.compose-channel-hint-close:hover {
+  background: #ffffff;
+  border-color: #bccfc3;
+  color: #244534;
 }
 
 .compose-notes-panel {
@@ -1991,15 +2032,30 @@
   justify-content: space-between;
   gap: 0.5rem;
   flex-wrap: wrap;
-  padding: 0.2rem 0 0.15rem;
+  padding: 0.58rem 0.68rem;
+  border: 1px solid #dbe6de;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.compose-channel-row-copy {
+  display: grid;
+  gap: 0.1rem;
 }
 
 .compose-channel-row-label {
-  color: #6a7e73;
-  font-size: 0.74rem;
+  color: #567066;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.compose-channel-row-subtitle {
+  color: #6e8177;
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .compose-channel-row-actions {
@@ -2007,14 +2063,16 @@
   align-items: center;
   gap: 0.35rem;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .compose-action-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.3rem 0.68rem;
-  font-size: 0.78rem;
+  min-height: 36px;
+  padding: 0.38rem 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: #365447;
   background: #f6faf7;
@@ -2106,8 +2164,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.78rem;
+  min-height: 36px;
+  padding: 0.38rem 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: #5a3abf;
   background: rgba(100, 60, 220, 0.08);

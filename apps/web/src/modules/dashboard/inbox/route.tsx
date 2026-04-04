@@ -385,6 +385,7 @@ export function Component() {
   const [showTranslateSubmenu, setShowTranslateSubmenu] = useState(false);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [isAiRewriting, setIsAiRewriting] = useState(false);
+  const [showReplyGuide, setShowReplyGuide] = useState(true);
   const [templateVarsDialog, setTemplateVarsDialog] = useState<{ template: MessageTemplate; vars: string[]; values: Record<string, string> } | null>(null);
 
   // Toast
@@ -628,6 +629,7 @@ export function Component() {
     setShowTemplateMenu(false);
     setShowTranslateSubmenu(false);
     setShowFormatMenu(false);
+    setShowReplyGuide(true);
   }, [selectedConversationId]);
 
   useEffect(() => {
@@ -1354,10 +1356,17 @@ export function Component() {
                     {composeTab === "reply" ? (
                       canManualReply ? (
                       <form className="chat-compose-form" onSubmit={(e) => { e.preventDefault(); void handleSendMessage(); }}>
-                        <div className="compose-channel-hint">
-                          <strong>Reply channel</strong>
-                          <span>Use Template for approved API outbound messages, Flow for automation, and AI Assist for drafting help.</span>
-                        </div>
+                        {showReplyGuide && (
+                          <div className="compose-channel-hint">
+                            <div className="compose-channel-hint-head">
+                              <div className="compose-channel-hint-copy">
+                                <strong>Reply channel</strong>
+                                <span>Use Template for approved API outbound messages, Flow for automation, and AI Assist for drafting help.</span>
+                              </div>
+                              <button type="button" className="compose-channel-hint-close" aria-label="Close reply guide" onClick={() => setShowReplyGuide(false)}>×</button>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Attachment previews */}
                         {attachedFiles.length > 0 && (
@@ -1489,7 +1498,10 @@ export function Component() {
                           )}
 
                           <div className="compose-channel-row">
-                            <span className="compose-channel-row-label">Reply tools</span>
+                            <div className="compose-channel-row-copy">
+                              <span className="compose-channel-row-label">Reply tools</span>
+                              <span className="compose-channel-row-subtitle">Choose how you want to respond.</span>
+                            </div>
                             <div className="compose-channel-row-actions">
                               <button
                                 type="button"
@@ -1561,10 +1573,17 @@ export function Component() {
                       </form>
                       ) : (
                         <>
-                          <div className="compose-channel-hint">
-                            <strong>Reply channel</strong>
-                            <span>AI is still active on this chat. Take over when you want to send a personal reply.</span>
-                          </div>
+                          {showReplyGuide && (
+                            <div className="compose-channel-hint compose-channel-hint-warning">
+                              <div className="compose-channel-hint-head">
+                                <div className="compose-channel-hint-copy">
+                                  <strong>Reply channel</strong>
+                                  <span>AI is still active on this chat. Take over when you want to send a personal reply.</span>
+                                </div>
+                                <button type="button" className="compose-channel-hint-close" aria-label="Close reply guide" onClick={() => setShowReplyGuide(false)}>×</button>
+                              </div>
+                            </div>
+                          )}
                           <div className="inbox-manual-hint">
                             <span>AI is handling this conversation.</span>
                             <button type="button" className="ghost-btn" onClick={() => { toggleMutation.mutate({ conversationId: selectedConversation.id, paused: true, durationMinutes: null }); setManualComposeConversationId(selectedConversation.id); }}>
