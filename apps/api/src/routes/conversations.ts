@@ -12,6 +12,10 @@ import {
   setConversationAIPaused,
   setManualTakeover,
 } from "../services/conversation-service.js";
+import {
+  createConversationNote,
+  listConversationNotes
+} from "../services/conversation-notes-service.js";
 
 const ToggleSchema = z.object({
   enabled: z.boolean().optional(),
@@ -27,6 +31,10 @@ const ManualMessageSchema = z.object({
   mediaUrl: z.string().optional(),
   mediaMimeType: z.string().optional(),
   lockToManual: z.boolean().optional()
+});
+
+const ConversationNoteSchema = z.object({
+  content: z.string().trim().min(1).max(4000)
 });
 
 const LeadsQuerySchema = z.object({
@@ -182,6 +190,60 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       );
 
       return { ok: true };
+    }
+  );
+
+  fastify.get(
+    "/api/conversations/:conversationId/notes",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [params.conversationId, request.authUser.userId]
+      );
+
+      if ((exists.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+
+      const notes = await listConversationNotes(request.authUser.userId, params.conversationId);
+      return { notes };
+    }
+  );
+
+  fastify.post(
+    "/api/conversations/:conversationId/notes",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const parsed = ConversationNoteSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid note payload" });
+      }
+
+      try {
+        const userRow = await pool.query<{ name: string }>(
+          `SELECT name FROM users WHERE id = $1 LIMIT 1`,
+          [request.authUser.userId]
+        );
+        const authorName = userRow.rows[0]?.name?.trim() || request.authUser.email.split("@")[0] || "Agent";
+
+        const note = await createConversationNote({
+          userId: request.authUser.userId,
+          conversationId: params.conversationId,
+          authorName,
+          content: parsed.data.content
+        });
+
+        return reply.status(201).send({ note });
+      } catch (error) {
+        const message = (error as Error).message;
+        if (message.toLowerCase().includes("not found")) {
+          return reply.status(404).send({ error: message });
+        }
+        return reply.status(400).send({ error: message });
+      }
     }
   );
 

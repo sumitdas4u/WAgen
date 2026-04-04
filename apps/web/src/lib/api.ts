@@ -1702,6 +1702,28 @@ export function fetchConversationMessages(token: string, conversationId: string)
   return apiRequest<{ messages: ConversationMessage[] }>(`/api/conversations/${conversationId}/messages`, { token });
 }
 
+export interface ConversationNote {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  author_name: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function fetchConversationNotes(token: string, conversationId: string) {
+  return apiRequest<{ notes: ConversationNote[] }>(`/api/conversations/${conversationId}/notes`, { token });
+}
+
+export function createConversationNote(token: string, conversationId: string, content: string) {
+  return apiRequest<{ note: ConversationNote }>(`/api/conversations/${conversationId}/notes`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ content })
+  });
+}
+
 export function setManualTakeover(token: string, conversationId: string, enabled: boolean) {
   return apiRequest<{ ok: boolean }>(`/api/conversations/${conversationId}/manual-takeover`, {
     method: "PATCH",

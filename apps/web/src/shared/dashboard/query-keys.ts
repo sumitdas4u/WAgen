@@ -19,6 +19,7 @@ export const dashboardQueryKeys = {
   inboxConversations: (filters: Record<string, string | boolean>) =>
     [...dashboardInboxRoot, "conversations", filters] as const,
   inboxMessages: (conversationId: string) => [...dashboardInboxRoot, "messages", conversationId] as const,
+  inboxNotes: (conversationId: string) => [...dashboardInboxRoot, "notes", conversationId] as const,
   inboxPublishedFlows: [...dashboardInboxRoot, "published-flows"] as const,
   contactsRoot: dashboardContactsRoot,
   contacts: (filters: Record<string, string | boolean>) => [...dashboardContactsRoot, filters] as const,

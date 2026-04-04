@@ -1,6 +1,8 @@
 import {
   assignFlowToConversation,
+  createConversationNote,
   fetchConversationMessages,
+  fetchConversationNotes,
   fetchConversations,
   fetchPublishedFlows,
   fetchTemplates,
@@ -12,6 +14,7 @@ import {
   setConversationPaused,
   setManualTakeover,
   type Conversation,
+  type ConversationNote,
   type ConversationMessage,
   API_URL
 } from "../../../lib/api";
@@ -24,6 +27,16 @@ export async function fetchInboxConversations(token: string): Promise<Conversati
 export async function fetchInboxMessages(token: string, conversationId: string): Promise<ConversationMessage[]> {
   const response = await fetchConversationMessages(token, conversationId);
   return response.messages;
+}
+
+export async function fetchInboxNotes(token: string, conversationId: string): Promise<ConversationNote[]> {
+  const response = await fetchConversationNotes(token, conversationId);
+  return response.notes;
+}
+
+export async function createInboxNote(token: string, conversationId: string, content: string): Promise<ConversationNote> {
+  const response = await createConversationNote(token, conversationId, content);
+  return response.note;
 }
 
 export function fetchInboxPublishedFlows(token: string): Promise<PublishedFlowSummary[]> {

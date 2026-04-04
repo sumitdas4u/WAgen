@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Conversation, ConversationMessage, MessageTemplate } from "../../../lib/api";
-import { fetchContactByConversation } from "../../../lib/api";
+import { fetchContactByConversation, listContactFields } from "../../../lib/api";
 import { normalizeMessage, renderMessage } from "./message-renderer";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
@@ -10,6 +10,7 @@ import { useDashboardShell } from "../../../shared/dashboard/shell-context";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import {
   assignInboxFlow,
+  createInboxNote,
   sendManualConversationMessage,
   updateConversationAiMode,
   aiAssistText,
@@ -19,6 +20,7 @@ import {
   buildInboxConversationsQueryOptions,
   useInboxConversationsQuery,
   useInboxMessagesQuery,
+  useInboxNotesQuery,
   useInboxPublishedFlowsQuery,
   useInboxTemplatesQuery
 } from "./queries";
@@ -35,6 +37,8 @@ type LeadKindFilter = "all" | "lead" | "feedback" | "complaint" | "other";
 type ChatFolderFilter = "all" | "unassigned" | "mine" | "bot";
 type ChatAiTimedAction = { switchToPaused: boolean; executeAt: number };
 type AttachedFile = { file: File; previewUrl: string; name: string; type: string };
+type ActiveFilterChip = { key: string; label: string };
+type ComposeFormatStyle = "bold" | "italic" | "strike" | "monospace";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -130,6 +134,19 @@ function formatDateTime(value: string | null | undefined): string {
   const t = Date.parse(value);
   if (!Number.isFinite(t)) return "Not available";
   return new Date(t).toLocaleString();
+}
+
+function formatContactFieldValue(fieldType: string, value: string | null | undefined): string {
+  if (fieldType === "SWITCH") {
+    if (value === "true") return "Yes";
+    if (value === "false") return "No";
+    return "Not captured yet";
+  }
+  if (fieldType === "DATE") {
+    const parsed = value ? Date.parse(value) : Number.NaN;
+    return Number.isFinite(parsed) ? new Date(parsed).toLocaleDateString() : "Not captured yet";
+  }
+  return value?.trim() ? value : "Not captured yet";
 }
 
 function formatRelativeTime(value: string | null | undefined, now: number): string {
@@ -355,8 +372,8 @@ export function Component() {
   const [flowMenuOpen, setFlowMenuOpen] = useState(false);
   const [chatAiTimers, setChatAiTimers] = useState<Record<string, ChatAiTimedAction>>({});
   const [manualComposeConversationId, setManualComposeConversationId] = useState<string | null>(null);
-  const [agentReplyText, setAgentReplyText] = useState("");
-  const [showAiSuggestions, setShowAiSuggestions] = useState(false);
+  const [replyDraftText, setReplyDraftText] = useState("");
+  const [noteDraftText, setNoteDraftText] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -366,6 +383,7 @@ export function Component() {
   const [showToolbarFlowMenu, setShowToolbarFlowMenu] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showTranslateSubmenu, setShowTranslateSubmenu] = useState(false);
+  const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [isAiRewriting, setIsAiRewriting] = useState(false);
   const [templateVarsDialog, setTemplateVarsDialog] = useState<{ template: MessageTemplate; vars: string[]; values: Record<string, string> } | null>(null);
 
@@ -404,12 +422,18 @@ export function Component() {
   // ─── Queries ──────────────────────────────────────────────────────────────
   const conversationsQuery = useInboxConversationsQuery(token, { folder: "all", search });
   const messagesQuery = useInboxMessagesQuery(token, selectedConversationId);
+  const notesQuery = useInboxNotesQuery(token, selectedConversationId);
   const publishedFlowsQuery = useInboxPublishedFlowsQuery(token);
   const contactQuery = useQuery({
     queryKey: selectedConversationId ? dashboardQueryKeys.contactByConversation(selectedConversationId) : ["disabled"],
     queryFn: () => (selectedConversationId ? fetchContactByConversation(token, selectedConversationId).then((r) => r.contact) : Promise.resolve(null)),
     enabled: Boolean(selectedConversationId),
     staleTime: 30_000
+  });
+  const contactFieldsQuery = useQuery({
+    queryKey: dashboardQueryKeys.contactFields,
+    queryFn: () => listContactFields(token).then((response) => response.fields),
+    staleTime: 60_000
   });
   const linkedContact = contactQuery.data ?? null;
   const templatesQuery = useInboxTemplatesQuery(token);
@@ -440,8 +464,10 @@ export function Component() {
   );
 
   const selectedConversationMessages = messagesQuery.data ?? [];
+  const selectedConversationNotes = notesQuery.data ?? [];
   const selectedConversationLabel = selectedConversation ? getConversationDisplayName(selectedConversation) : "Select a conversation";
   const selectedConversationStage = selectedConversation ? normalizeStage(selectedConversation.stage) : "cold";
+  const activeDraftText = composeTab === "notes" ? noteDraftText : replyDraftText;
   const availableTemplates = useMemo(() => {
     if (!selectedConversation || selectedConversation.channel_type !== "api") {
       return [];
@@ -465,6 +491,26 @@ export function Component() {
   const replySuggestions = useMemo(() => (selectedConversation ? getReplySuggestions(selectedConversation) : []), [selectedConversation]);
   const conversationTags = useMemo(() => (selectedConversation ? getConversationTags(selectedConversation) : []), [selectedConversation]);
   const timelineItems = useMemo(() => (selectedConversation ? buildTimeline(selectedConversation, selectedConversationMessages) : []), [selectedConversation, selectedConversationMessages]);
+  const visibleCustomFields = useMemo(() => {
+    const fieldDefinitions = contactFieldsQuery.data ?? [];
+    const valueRows = linkedContact?.custom_field_values ?? [];
+    const valueMap = new Map(valueRows.map((fieldValue) => [fieldValue.field_id, fieldValue]));
+
+    const merged = fieldDefinitions.map((field) => {
+      const currentValue = valueMap.get(field.id);
+      return {
+        field_id: field.id,
+        field_name: field.name,
+        field_label: field.label,
+        field_type: field.field_type,
+        value: currentValue?.value ?? null
+      };
+    });
+
+    const knownIds = new Set(fieldDefinitions.map((field) => field.id));
+    const orphanValues = valueRows.filter((fieldValue) => !knownIds.has(fieldValue.field_id));
+    return [...merged, ...orphanValues];
+  }, [contactFieldsQuery.data, linkedContact]);
 
   const inboxStats = useMemo(() => ({
     total: allConversations.length,
@@ -474,21 +520,21 @@ export function Component() {
   }), [allConversations]);
 
   const activeFilterChips = useMemo(() => {
-    const chips: string[] = [];
-    if (stageFilter !== "all") chips.push(`Status: ${getOptionLabel(LEAD_STAGE_OPTIONS, stageFilter)}`);
-    if (channelFilter !== "all") chips.push(`Source: ${getOptionLabel(CHANNEL_OPTIONS, channelFilter)}`);
-    if (scoreFilter !== "all") chips.push(`AI score: ${getOptionLabel(SCORE_OPTIONS, scoreFilter)}`);
-    if (leadKindFilter !== "all") chips.push(`Type: ${getOptionLabel(LEAD_KIND_OPTIONS, leadKindFilter)}`);
-    if (assignmentFilter !== "all") chips.push(`Assigned: ${getOptionLabel(ASSIGNMENT_OPTIONS, assignmentFilter)}`);
-    if (aiModeFilter !== "all") chips.push(`AI status: ${getOptionLabel(AI_MODE_OPTIONS, aiModeFilter)}`);
-    if (dateRangeFilter !== "all") chips.push(`Date: ${getOptionLabel(DATE_RANGE_OPTIONS, dateRangeFilter)}`);
-    if (search.trim()) chips.push(`Search: "${search.trim()}"`);
+    const chips: ActiveFilterChip[] = [];
+    if (stageFilter !== "all") chips.push({ key: "stage", label: `Status: ${getOptionLabel(LEAD_STAGE_OPTIONS, stageFilter)}` });
+    if (channelFilter !== "all") chips.push({ key: "channel", label: `Source: ${getOptionLabel(CHANNEL_OPTIONS, channelFilter)}` });
+    if (scoreFilter !== "all") chips.push({ key: "score", label: `AI score: ${getOptionLabel(SCORE_OPTIONS, scoreFilter)}` });
+    if (leadKindFilter !== "all") chips.push({ key: "kind", label: `Type: ${getOptionLabel(LEAD_KIND_OPTIONS, leadKindFilter)}` });
+    if (assignmentFilter !== "all") chips.push({ key: "assignment", label: `Assigned: ${getOptionLabel(ASSIGNMENT_OPTIONS, assignmentFilter)}` });
+    if (aiModeFilter !== "all") chips.push({ key: "ai", label: `AI status: ${getOptionLabel(AI_MODE_OPTIONS, aiModeFilter)}` });
+    if (dateRangeFilter !== "all") chips.push({ key: "range", label: `Date: ${getOptionLabel(DATE_RANGE_OPTIONS, dateRangeFilter)}` });
+    if (search.trim()) chips.push({ key: "q", label: `Search: "${search.trim()}"` });
     return chips;
   }, [aiModeFilter, assignmentFilter, channelFilter, dateRangeFilter, leadKindFilter, scoreFilter, search, stageFilter]);
 
   const activeFilterCount = activeFilterChips.length;
 
-  const showManualComposer = Boolean(
+  const canManualReply = Boolean(
     selectedConversation &&
       (selectedConversation.ai_paused ||
         selectedConversation.manual_takeover ||
@@ -538,7 +584,7 @@ export function Component() {
 
   // Close menus on outside click / escape
   useEffect(() => {
-    if (!chatAiMenuOpen && !flowMenuOpen && !showEmojiPicker && !showAiAssistPopup && !showToolbarFlowMenu && !showTemplateMenu && !showTranslateSubmenu) return;
+    if (!chatAiMenuOpen && !flowMenuOpen && !showEmojiPicker && !showAiAssistPopup && !showToolbarFlowMenu && !showTemplateMenu && !showTranslateSubmenu && !showFormatMenu) return;
     const onOutside = (e: MouseEvent) => {
       if (chatAiMenuRef.current && e.target instanceof Node && !chatAiMenuRef.current.contains(e.target)) {
         setChatAiMenuOpen(false);
@@ -552,26 +598,27 @@ export function Component() {
         setShowToolbarFlowMenu(false);
         setShowTemplateMenu(false);
         setShowTranslateSubmenu(false);
+        setShowFormatMenu(false);
       }
     };
     const onEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setChatAiMenuOpen(false); setFlowMenuOpen(false); setShowEmojiPicker(false);
-        setShowAiAssistPopup(false); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false);
+        setShowAiAssistPopup(false); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); setShowFormatMenu(false);
       }
     };
     window.addEventListener("mousedown", onOutside);
     window.addEventListener("keydown", onEscape);
     return () => { window.removeEventListener("mousedown", onOutside); window.removeEventListener("keydown", onEscape); };
-  }, [chatAiMenuOpen, flowMenuOpen, showEmojiPicker, showAiAssistPopup, showToolbarFlowMenu, showTemplateMenu, showTranslateSubmenu]);
+  }, [chatAiMenuOpen, flowMenuOpen, showEmojiPicker, showAiAssistPopup, showToolbarFlowMenu, showTemplateMenu, showTranslateSubmenu, showFormatMenu]);
 
   // Reset chat UI when conversation changes
   useEffect(() => {
     setChatAiMenuOpen(false);
     setFlowMenuOpen(false);
-    setAgentReplyText("");
+    setReplyDraftText("");
+    setNoteDraftText("");
     setManualComposeConversationId(null);
-    setShowAiSuggestions(true);
     setShowEmojiPicker(false);
     setAttachedFiles([]);
     setIsScrolledToBottom(true);
@@ -580,7 +627,17 @@ export function Component() {
     setShowToolbarFlowMenu(false);
     setShowTemplateMenu(false);
     setShowTranslateSubmenu(false);
+    setShowFormatMenu(false);
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    setShowAiAssistPopup(false);
+    setShowToolbarFlowMenu(false);
+    setShowTemplateMenu(false);
+    setShowTranslateSubmenu(false);
+    setShowFormatMenu(false);
+    setShowEmojiPicker(false);
+  }, [composeTab]);
 
   // Scroll to bottom when conversation is first opened or messages load
   useEffect(() => {
@@ -604,7 +661,7 @@ export function Component() {
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
-  }, [agentReplyText]);
+  }, [activeDraftText]);
 
   // Clock ticker + AI timer scheduler
   useEffect(() => {
@@ -656,7 +713,7 @@ export function Component() {
       return { flowName };
     },
     onSuccess: async ({ flowName }) => {
-      setFlowMenuOpen(false); setChatAiMenuOpen(false); setManualComposeConversationId(null); setAgentReplyText("");
+      setFlowMenuOpen(false); setChatAiMenuOpen(false); setManualComposeConversationId(null); setReplyDraftText("");
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
       if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
       setInfo(`Assigned flow "${flowName}".`);
@@ -670,10 +727,25 @@ export function Component() {
       await sendManualConversationMessage(token, selectedConversationId, text, mediaUrl, mediaMimeType);
     },
     onSuccess: async () => {
-      setAgentReplyText("");
+      setReplyDraftText("");
       setAttachedFiles([]);
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
       if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
+    },
+    onError: (e) => setError((e as Error).message)
+  });
+
+  const saveNoteMutation = useMutation({
+    mutationFn: async (content: string) => {
+      if (!selectedConversationId) throw new Error("No conversation selected.");
+      await createInboxNote(token, selectedConversationId, content);
+    },
+    onSuccess: async () => {
+      setNoteDraftText("");
+      if (selectedConversationId) {
+        await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxNotes(selectedConversationId) });
+      }
+      setInfo("Internal note saved.");
     },
     onError: (e) => setError((e as Error).message)
   });
@@ -708,6 +780,12 @@ export function Component() {
   }, [searchParams, setSearchParams]);
 
   const clearFilters = useCallback(() => setSearchParams(new URLSearchParams(), { replace: true }), [setSearchParams]);
+  const clearFilterChip = useCallback((key: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("folder");
+    next.delete(key);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const openConversation = useCallback((conversationId: string) => {
     navigate({ pathname: `/dashboard/inbox/${conversationId}`, search: searchParamString ? `?${searchParamString}` : "" });
@@ -756,6 +834,7 @@ export function Component() {
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (composeTab !== "reply") return;
     const items = Array.from(e.clipboardData.items);
     const imageItem = items.find((item) => item.type.startsWith("image/"));
     if (!imageItem) return;
@@ -766,15 +845,56 @@ export function Component() {
     setAttachedFiles((prev) => [...prev, {
       file: named, previewUrl: URL.createObjectURL(named), name: named.name, type: named.type
     }].slice(0, 5));
-  }, []);
+  }, [composeTab]);
+
+  const handleInsertReplySuggestion = useCallback((suggestion: string) => {
+    if (!selectedConversation) return;
+    setComposeTab("reply");
+    setManualComposeConversationId(selectedConversation.id);
+    setReplyDraftText(suggestion);
+    setShowAiAssistPopup(false);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [selectedConversation]);
+
+  const handleApplyFormatting = useCallback((style: ComposeFormatStyle) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const marker = style === "bold" ? "*" : style === "italic" ? "_" : style === "strike" ? "~" : "```";
+    const currentText = composeTab === "notes" ? noteDraftText : replyDraftText;
+    const selectionStart = textarea.selectionStart ?? currentText.length;
+    const selectionEnd = textarea.selectionEnd ?? currentText.length;
+    const selectedText = currentText.slice(selectionStart, selectionEnd);
+    const replacement = `${marker}${selectedText}${marker}`;
+    const nextText = `${currentText.slice(0, selectionStart)}${replacement}${currentText.slice(selectionEnd)}`;
+    const nextCursorStart = selectionStart + marker.length;
+    const nextCursorEnd = nextCursorStart + selectedText.length;
+
+    if (composeTab === "notes") {
+      setNoteDraftText(nextText);
+    } else {
+      setReplyDraftText(nextText);
+      if (selectedConversation) setManualComposeConversationId(selectedConversation.id);
+    }
+
+    setShowFormatMenu(false);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      if (selectedText.length > 0) {
+        textarea.setSelectionRange(nextCursorStart, nextCursorEnd);
+      } else {
+        textarea.setSelectionRange(nextCursorStart, nextCursorStart);
+      }
+    });
+  }, [composeTab, noteDraftText, replyDraftText, selectedConversation]);
 
   const handleAiRewrite = useCallback(async () => {
-    const text = agentReplyText.trim();
+    const text = replyDraftText.trim();
     if (!text || isAiRewriting) return;
     setIsAiRewriting(true);
     try {
       const result = await aiAssistText(token, text, "rewrite");
-      setAgentReplyText(result.text);
+      setReplyDraftText(result.text);
       textareaRef.current?.focus();
     } catch (e) {
       setError((e as Error).message);
@@ -782,15 +902,15 @@ export function Component() {
       setIsAiRewriting(false);
       setShowAiAssistPopup(false);
     }
-  }, [agentReplyText, isAiRewriting, token]);
+  }, [replyDraftText, isAiRewriting, token]);
 
   const handleAiTranslate = useCallback(async (language: string) => {
-    const text = agentReplyText.trim();
+    const text = replyDraftText.trim();
     if (!text || isAiRewriting) return;
     setIsAiRewriting(true);
     try {
       const result = await aiAssistText(token, text, "translate", language);
-      setAgentReplyText(result.text);
+      setReplyDraftText(result.text);
       textareaRef.current?.focus();
     } catch (e) {
       setError((e as Error).message);
@@ -799,7 +919,7 @@ export function Component() {
       setShowAiAssistPopup(false);
       setShowTranslateSubmenu(false);
     }
-  }, [agentReplyText, isAiRewriting, token]);
+  }, [replyDraftText, isAiRewriting, token]);
 
   const handleSelectTemplate = useCallback((template: MessageTemplate) => {
     if (!selectedConversation) return;
@@ -827,7 +947,7 @@ export function Component() {
 
   const handleSendMessage = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const text = agentReplyText.trim();
+    const text = replyDraftText.trim();
     if (!text && attachedFiles.length === 0) return;
     if (sendMessageMutation.isPending || uploadMutation.isPending) return;
 
@@ -844,23 +964,40 @@ export function Component() {
       }
     }
     sendMessageMutation.mutate({ text, mediaUrl, mediaMimeType });
-  }, [agentReplyText, attachedFiles, sendMessageMutation, uploadMutation]);
+  }, [replyDraftText, attachedFiles, sendMessageMutation, uploadMutation]);
+
+  const handleSaveNote = useCallback((e?: React.FormEvent) => {
+    e?.preventDefault();
+    const text = noteDraftText.trim();
+    if (!text || saveNoteMutation.isPending) return;
+    saveNoteMutation.mutate(text);
+  }, [noteDraftText, saveNoteMutation]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void handleSendMessage();
+      if (composeTab === "notes") {
+        handleSaveNote();
+      } else {
+        void handleSendMessage();
+      }
     }
-  }, [handleSendMessage]);
+  }, [composeTab, handleSaveNote, handleSendMessage]);
 
   const handleEmojiSelect = useCallback((emoji: string) => {
-    setAgentReplyText((prev) => prev + emoji);
+    if (composeTab === "notes") {
+      setNoteDraftText((prev) => prev + emoji);
+    } else {
+      setReplyDraftText((prev) => prev + emoji);
+      if (selectedConversation) setManualComposeConversationId(selectedConversation.id);
+    }
     setShowEmojiPicker(false);
     textareaRef.current?.focus();
-  }, []);
+  }, [composeTab, selectedConversation]);
 
   const publishedFlows = publishedFlowsQuery.data ?? [];
-  const isSendDisabled = sendMessageMutation.isPending || uploadMutation.isPending || (!agentReplyText.trim() && attachedFiles.length === 0);
+  const isReplySendDisabled = sendMessageMutation.isPending || uploadMutation.isPending || (!replyDraftText.trim() && attachedFiles.length === 0);
+  const isNoteSendDisabled = saveNoteMutation.isPending || !noteDraftText.trim();
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -930,7 +1067,12 @@ export function Component() {
                     </div>
                     {activeFilterChips.length > 0 && (
                       <div className="inbox-active-filter-chips">
-                        {activeFilterChips.map((chip) => <span key={chip} className="inbox-active-filter-chip">{chip}</span>)}
+                        {activeFilterChips.map((chip) => (
+                          <button key={chip.key} type="button" className="inbox-active-filter-chip" onClick={() => clearFilterChip(chip.key)}>
+                            <span>{chip.label}</span>
+                            <strong>×</strong>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </section>
@@ -1136,6 +1278,7 @@ export function Component() {
                     selectedConversationMessages.map((msg, idx) => {
                       const prevMsg = idx > 0 ? selectedConversationMessages[idx - 1] : null;
                       const showDate = !prevMsg || !isSameDay(prevMsg.created_at, msg.created_at);
+                      const normalizedMessage = normalizeMessage(msg);
 
                       // Identify sender type:
                       // - AI: outbound + ai_model is set
@@ -1145,6 +1288,7 @@ export function Component() {
                       const isAi = isOutbound && Boolean(msg.ai_model);
                       const isFlow = isOutbound && !isAi && !msg.sender_name;
                       const isManual = isOutbound && !isAi && Boolean(msg.sender_name);
+                      const isTemplate = normalizedMessage.type === "template";
 
                       const bubbleClass = [
                         "bubble",
@@ -1162,11 +1306,12 @@ export function Component() {
                           )}
                           <div className={bubbleClass}>
                             <div className="bubble-content">
-                              {renderMessage(normalizeMessage(msg))}
+                              {renderMessage(normalizedMessage)}
                             </div>
                             <div className="bubble-meta">
                               {isAi && <span className="bubble-ai-badge">AI</span>}
                               {isFlow && <span className="bubble-flow-badge">Flow</span>}
+                              {isTemplate && <span className="bubble-template-badge">Template</span>}
                               {isManual && msg.sender_name && (
                                 <span className="bubble-sender">{msg.sender_name}</span>
                               )}
@@ -1201,12 +1346,17 @@ export function Component() {
                 {/* Compose area */}
                 {selectedConversation && (
                   <div className="inbox-compose-stack">
-                    {showManualComposer ? (
+                    <div className="compose-tabs">
+                      <button type="button" className={`compose-tab${composeTab === "reply" ? " active" : ""}`} onClick={() => setComposeTab("reply")}>Reply</button>
+                      <button type="button" className={`compose-tab${composeTab === "notes" ? " active" : ""}`} onClick={() => setComposeTab("notes")}>Notes</button>
+                    </div>
+
+                    {composeTab === "reply" ? (
+                      canManualReply ? (
                       <form className="chat-compose-form" onSubmit={(e) => { e.preventDefault(); void handleSendMessage(); }}>
-                        {/* Reply / Notes tabs */}
-                        <div className="compose-tabs">
-                          <button type="button" className={`compose-tab${composeTab === "reply" ? " active" : ""}`} onClick={() => setComposeTab("reply")}>Reply</button>
-                          <button type="button" className={`compose-tab${composeTab === "notes" ? " active" : ""}`} onClick={() => setComposeTab("notes")}>Notes</button>
+                        <div className="compose-channel-hint">
+                          <strong>Reply channel</strong>
+                          <span>Use Template for approved API outbound messages, Flow for automation, and AI Assist for drafting help.</span>
                         </div>
 
                         {/* Attachment previews */}
@@ -1229,12 +1379,12 @@ export function Component() {
                         {/* Textarea */}
                         <textarea
                           ref={textareaRef}
-                          className={`chat-compose-textarea${composeTab === "notes" ? " notes-mode" : ""}`}
-                          value={agentReplyText}
-                          onChange={(e) => { setAgentReplyText(e.target.value); if (selectedConversation) setManualComposeConversationId(selectedConversation.id); }}
+                          className="chat-compose-textarea"
+                          value={replyDraftText}
+                          onChange={(e) => { setReplyDraftText(e.target.value); setManualComposeConversationId(selectedConversation.id); }}
                           onKeyDown={handleKeyDown}
                           onPaste={handlePaste}
-                          placeholder={composeTab === "notes" ? "Add an internal note… (visible to agents only)" : `Message ${selectedConversationLabel}…`}
+                          placeholder={`Message ${selectedConversationLabel}…`}
                           rows={2}
                           maxLength={4000}
                           disabled={!isAnyChannelConnected}
@@ -1246,36 +1396,48 @@ export function Component() {
                           {showAiAssistPopup && (
                             <div className="ai-assist-popup">
                               <div className="ai-assist-popup-header">
-                                <span>AI Assist <kbd>Ctrl ⇧ A</kbd></span>
+                                <span>AI Assist</span>
                                 <button type="button" className="ai-assist-popup-close" onClick={() => setShowAiAssistPopup(false)}>✕</button>
                               </div>
                               <button
                                 type="button"
                                 className="ai-assist-popup-item"
-                                disabled={!agentReplyText.trim() || isAiRewriting}
+                                disabled={!replyDraftText.trim() || isAiRewriting}
                                 onClick={() => { void handleAiRewrite(); }}
                               >
                                 <span className="ai-assist-item-icon">✨</span>
-                                <span className="ai-assist-item-label">{isAiRewriting ? "Rewriting…" : "AI Rewrite"}</span>
+                                <span className="ai-assist-item-label">{isAiRewriting ? "Rewriting…" : "Rewrite current draft"}</span>
                                 <span className="ai-assist-item-arrow">›</span>
                               </button>
                               <div className="ai-assist-popup-item ai-assist-translate-row" onMouseEnter={() => setShowTranslateSubmenu(true)} onMouseLeave={() => setShowTranslateSubmenu(false)}>
                                 <span className="ai-assist-item-icon">🔤</span>
-                                <span className="ai-assist-item-label">AI Translate</span>
+                                <span className="ai-assist-item-label">Translate current draft</span>
                                 <span className="ai-assist-item-arrow">›</span>
                                 {showTranslateSubmenu && (
                                   <div className="ai-translate-submenu">
                                     {TRANSLATE_LANGUAGES.map((lang) => (
-                                      <button key={lang} type="button" disabled={!agentReplyText.trim() || isAiRewriting} onClick={() => { void handleAiTranslate(lang); }}>
+                                      <button key={lang} type="button" disabled={!replyDraftText.trim() || isAiRewriting} onClick={() => { void handleAiTranslate(lang); }}>
                                         {lang}
                                       </button>
                                     ))}
                                   </div>
                                 )}
                               </div>
+                              {replySuggestions.length > 0 && (
+                                <div className="ai-assist-section">
+                                  <div className="ai-assist-section-label">Suggested replies</div>
+                                  <div className="ai-assist-suggestion-list">
+                                    {replySuggestions.map((suggestion) => (
+                                      <button key={suggestion} type="button" className="ai-assist-suggestion-btn" onClick={() => handleInsertReplySuggestion(suggestion)}>
+                                        {suggestion}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               <div className="ai-assist-popup-footer">
-                                <span>⬆⬇ Move</span>
-                                <span>↵ Select</span>
+                                <span>{getLeadIntentLabel(selectedConversation)}</span>
+                                <span>{getLeadSuggestedAction(selectedConversation)}</span>
                               </div>
                             </div>
                           )}
@@ -1317,8 +1479,50 @@ export function Component() {
                             </div>
                           )}
 
+                          {showFormatMenu && (
+                            <div className="compose-format-menu">
+                              <button type="button" onClick={() => handleApplyFormatting("bold")}><strong>B</strong><span>Bold</span></button>
+                              <button type="button" onClick={() => handleApplyFormatting("italic")}><em>I</em><span>Italic</span></button>
+                              <button type="button" onClick={() => handleApplyFormatting("strike")}><span style={{ textDecoration: "line-through" }}>S</span><span>Strike</span></button>
+                              <button type="button" onClick={() => handleApplyFormatting("monospace")}><code>{`{ }`}</code><span>Monospace</span></button>
+                            </div>
+                          )}
+
+                          <div className="compose-channel-row">
+                            <span className="compose-channel-row-label">Reply tools</span>
+                            <div className="compose-channel-row-actions">
+                              <button
+                                type="button"
+                                className={`compose-action-btn${showToolbarFlowMenu ? " active" : ""}`}
+                                disabled={!isAnyChannelConnected || assignFlowMutation.isPending}
+                                onClick={() => { setShowToolbarFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
+                              >
+                                ⚡ Flow
+                              </button>
+
+                              {selectedConversation.channel_type === "api" && (
+                                <button
+                                  type="button"
+                                  className={`compose-action-btn${showTemplateMenu ? " active" : ""}`}
+                                  disabled={!isAnyChannelConnected || sendTemplateMutation.isPending}
+                                  onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
+                                >
+                                  {sendTemplateMutation.isPending ? "… Template" : "📋 Template"}
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                className={`compose-ai-assist-btn${showAiAssistPopup ? " active" : ""}`}
+                                disabled={!isAnyChannelConnected}
+                                onClick={() => { setShowAiAssistPopup((v) => !v); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
+                              >
+                                ✨ AI Assist
+                              </button>
+                            </div>
+                          </div>
+
                           <div className="compose-toolbar">
-                            {/* Left tools */}
                             <div className="compose-toolbar-left">
                               <button type="button" className="compose-tool" title="Attach file" disabled={!isAnyChannelConnected || attachedFiles.length >= 5} onClick={() => fileInputRef.current?.click()}>＋</button>
                               <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt" style={{ display: "none" }} multiple onChange={handleFileSelect} />
@@ -1334,86 +1538,127 @@ export function Component() {
                                 )}
                               </div>
 
-                              <button type="button" className="compose-tool compose-tool-aa" title="Font">Aa</button>
-
-                              <span className="compose-toolbar-sep" />
-
-                              <button
-                                type="button"
-                                className={`compose-tool${showToolbarFlowMenu ? " active" : ""}`}
-                                title="Assign flow bot"
-                                disabled={assignFlowMutation.isPending}
-                                onClick={() => { setShowToolbarFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); }}
-                              >⚡</button>
-
-                              {selectedConversation.channel_type === "api" && (
-                                <button
-                                  type="button"
-                                  className={`compose-tool${showTemplateMenu ? " active" : ""}`}
-                                  title="Send approved template"
-                                  disabled={sendTemplateMutation.isPending}
-                                  onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); }}
-                                >{sendTemplateMutation.isPending ? "…" : "📋"}</button>
-                              )}
+                              <button type="button" className={`compose-tool compose-tool-aa${showFormatMenu ? " active" : ""}`} title="Formatting" onClick={() => { setShowFormatMenu((v) => !v); setShowAiAssistPopup(false); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); }}>Aa</button>
                             </div>
 
-                            {/* Right tools */}
                             <div className="compose-toolbar-right">
-                              {agentReplyText.length > 0 && (
-                                <span className={`chat-char-count${agentReplyText.length > 3800 ? " near-limit" : ""}`}>{agentReplyText.length}/4000</span>
+                              {replyDraftText.length > 0 && (
+                                <span className={`chat-char-count${replyDraftText.length > 3800 ? " near-limit" : ""}`}>{replyDraftText.length}/4000</span>
                               )}
 
-                              <button
-                                type="button"
-                                className={`compose-ai-assist-btn${showAiAssistPopup ? " active" : ""}`}
-                                onClick={() => { setShowAiAssistPopup((v) => !v); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); }}
-                              >
-                                ✨ AI Assist
-                              </button>
-
-                              <button type="button" className="compose-tool" title="Clear message" onClick={() => setAgentReplyText("")}>↩</button>
+                              <button type="button" className="compose-tool" title="Clear message" onClick={() => setReplyDraftText("")}>↩</button>
 
                               {!isAnyChannelConnected ? (
                                 <span className="chat-compose-offline-note">Connect a channel</span>
                               ) : (
-                                <button type="submit" className="compose-send-btn" disabled={isSendDisabled}>
+                                <button type="submit" className="compose-send-btn" disabled={isReplySendDisabled}>
                                   {uploadMutation.isPending ? "Uploading…" : sendMessageMutation.isPending ? "Sending…" : "Send"}
                                 </button>
                               )}
                             </div>
                           </div>
                         </div>
-
-                        {/* AI suggested replies — below toolbar */}
-                        {replySuggestions.length > 0 && (
-                          showAiSuggestions ? (
-                            <div className="compose-suggestions">
-                              <div className="compose-suggestions-head">
-                                <span>💡 {getLeadIntentLabel(selectedConversation)} — {getLeadSuggestedAction(selectedConversation)}</span>
-                                <button type="button" onClick={() => setShowAiSuggestions(false)}>✕</button>
-                              </div>
-                              <div className="compose-suggestions-strip">
-                                {replySuggestions.map((s) => (
-                                  <button key={s} type="button" onClick={() => { setManualComposeConversationId(selectedConversation.id); setAgentReplyText(s); textareaRef.current?.focus(); }}>
-                                    {s}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : (
-                            <button type="button" className="compose-suggestions-show" onClick={() => setShowAiSuggestions(true)}>
-                              💡 AI Suggestions
-                            </button>
-                          )
-                        )}
                       </form>
+                      ) : (
+                        <>
+                          <div className="compose-channel-hint">
+                            <strong>Reply channel</strong>
+                            <span>AI is still active on this chat. Take over when you want to send a personal reply.</span>
+                          </div>
+                          <div className="inbox-manual-hint">
+                            <span>AI is handling this conversation.</span>
+                            <button type="button" className="ghost-btn" onClick={() => { toggleMutation.mutate({ conversationId: selectedConversation.id, paused: true, durationMinutes: null }); setManualComposeConversationId(selectedConversation.id); }}>
+                              Take over &amp; reply manually
+                            </button>
+                          </div>
+                        </>
+                      )
                     ) : (
-                      <div className="inbox-manual-hint">
-                        <span>AI is handling this conversation.</span>
-                        <button type="button" className="ghost-btn" onClick={() => { toggleMutation.mutate({ conversationId: selectedConversation.id, paused: true, durationMinutes: null }); setManualComposeConversationId(selectedConversation.id); }}>
-                          Take over &amp; reply manually
-                        </button>
-                      </div>
+                      <form className="chat-compose-form" onSubmit={(e) => { e.preventDefault(); handleSaveNote(); }}>
+                        <div className="compose-note-intro">
+                          <strong>Internal session notes</strong>
+                          <span>Notes stay inside this chat for your team and are never sent to the contact.</span>
+                        </div>
+
+                        <div className="compose-notes-panel">
+                          {notesQuery.isLoading ? (
+                            <p className="empty-note">Loading notes…</p>
+                          ) : notesQuery.isError ? (
+                            <p className="empty-note" style={{ color: "#c0392b" }}>Could not load notes.</p>
+                          ) : selectedConversationNotes.length === 0 ? (
+                            <p className="empty-note">No internal notes yet.</p>
+                          ) : (
+                            <div className="compose-note-list">
+                              {selectedConversationNotes.map((note) => (
+                                <article key={note.id} className="compose-note-item">
+                                  <div className="compose-note-meta">
+                                    <strong>{note.author_name}</strong>
+                                    <time title={formatDateTime(note.created_at)}>{formatDateTime(note.created_at)}</time>
+                                  </div>
+                                  <p className="compose-note-text">{note.content}</p>
+                                </article>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <textarea
+                          ref={textareaRef}
+                          className="chat-compose-textarea notes-mode"
+                          value={noteDraftText}
+                          onChange={(e) => setNoteDraftText(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          placeholder="Add an internal note… (visible to agents only)"
+                          rows={2}
+                          maxLength={4000}
+                        />
+
+                        <div className="compose-toolbar-wrap" ref={toolbarWrapRef}>
+                          {showFormatMenu && (
+                            <div className="compose-format-menu">
+                              <button type="button" onClick={() => handleApplyFormatting("bold")}><strong>B</strong><span>Bold</span></button>
+                              <button type="button" onClick={() => handleApplyFormatting("italic")}><em>I</em><span>Italic</span></button>
+                              <button type="button" onClick={() => handleApplyFormatting("strike")}><span style={{ textDecoration: "line-through" }}>S</span><span>Strike</span></button>
+                              <button type="button" onClick={() => handleApplyFormatting("monospace")}><code>{`{ }`}</code><span>Monospace</span></button>
+                            </div>
+                          )}
+
+                          <div className="compose-channel-row compose-channel-row-notes">
+                            <span className="compose-channel-row-label">Notes only</span>
+                            <div className="compose-channel-row-actions">
+                              <span className="compose-note-pill">Not sent to customer</span>
+                            </div>
+                          </div>
+
+                          <div className="compose-toolbar">
+                            <div className="compose-toolbar-left">
+                              <div className="chat-emoji-wrap" ref={emojiPickerRef}>
+                                <button type="button" className="compose-tool" title="Emoji" onClick={() => setShowEmojiPicker((v) => !v)}>😊</button>
+                                {showEmojiPicker && (
+                                  <div className="chat-emoji-picker">
+                                    {QUICK_EMOJIS.map((emoji) => (
+                                      <button key={emoji} type="button" onClick={() => handleEmojiSelect(emoji)}>{emoji}</button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <button type="button" className={`compose-tool compose-tool-aa${showFormatMenu ? " active" : ""}`} title="Formatting" onClick={() => { setShowFormatMenu((v) => !v); setShowAiAssistPopup(false); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); }}>Aa</button>
+                            </div>
+
+                            <div className="compose-toolbar-right">
+                              {noteDraftText.length > 0 && (
+                                <span className={`chat-char-count${noteDraftText.length > 3800 ? " near-limit" : ""}`}>{noteDraftText.length}/4000</span>
+                              )}
+
+                              <button type="button" className="compose-tool" title="Clear note" onClick={() => setNoteDraftText("")}>↩</button>
+                              <button type="submit" className="compose-send-btn" disabled={isNoteSendDisabled}>
+                                {saveNoteMutation.isPending ? "Saving…" : "Save Note"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </form>
                     )}
                   </div>
                 )}
@@ -1523,19 +1768,13 @@ export function Component() {
                             <div><dt>Source</dt><dd>{linkedContact.source_type}</dd></div>
                           )}
                           {/* Custom fields */}
-                          {linkedContact?.custom_field_values && linkedContact.custom_field_values.length > 0 && (
+                          {visibleCustomFields.length > 0 && (
                             <>
                               <div className="inbox-detail-divider"><span>Custom Fields</span></div>
-                              {linkedContact.custom_field_values.map((fv) => (
+                              {visibleCustomFields.map((fv) => (
                                 <div key={fv.field_id}>
                                   <dt>{fv.field_label}</dt>
-                                  <dd>
-                                    {fv.field_type === "SWITCH"
-                                      ? (fv.value === "true" ? "Yes" : fv.value === "false" ? "No" : "-")
-                                      : fv.field_type === "DATE" && fv.value
-                                        ? new Date(fv.value).toLocaleDateString()
-                                        : fv.value || "-"}
-                                  </dd>
+                                  <dd>{formatContactFieldValue(fv.field_type, fv.value)}</dd>
                                 </div>
                               ))}
                             </>
