@@ -39,6 +39,17 @@ type ChatAiTimedAction = { switchToPaused: boolean; executeAt: number };
 type AttachedFile = { file: File; previewUrl: string; name: string; type: string };
 type ActiveFilterChip = { key: string; label: string };
 type ComposeFormatStyle = "bold" | "italic" | "strike" | "monospace";
+type TemplateDialogMediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
+type TemplateDialogField =
+  | { key: string; label: string; kind: "text"; placeholder: string }
+  | { key: string; label: string; kind: "media"; mediaType: TemplateDialogMediaType; description: string };
+type TemplateDialogUpload = { fileName: string; mimeType: string; previewUrl: string | null };
+type TemplateVarsDialogState = {
+  template: MessageTemplate;
+  fields: TemplateDialogField[];
+  values: Record<string, string>;
+  uploads: Record<string, TemplateDialogUpload>;
+};
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -104,9 +115,103 @@ const CHAT_AI_DURATION_OPTIONS: Array<{ label: string; minutes: number | null }>
 const QUICK_EMOJIS = ["👍", "😊", "🙏", "✅", "🔥", "💯", "👋", "😄", "❤️", "🎉", "⚡", "📞", "📧", "💬", "🏷️", "🔔"];
 
 const TRANSLATE_LANGUAGES = ["English", "Hindi", "Spanish", "French", "Arabic", "Portuguese", "Bengali", "Urdu", "Gujarati", "Marathi", "Tamil", "Telugu"];
+const TEMPLATE_PLACEHOLDER_PATTERN = /\{\{\s*([^}]+?)\s*\}\}/g;
+const TEMPLATE_MEDIA_INPUT_CONFIG: Record<
+  TemplateDialogMediaType,
+  { label: string; accept: string; allowedMimeTypes: string[]; extensions: string[]; maxMb: number }
+> = {
+  IMAGE: {
+    label: "Image",
+    accept: "image/jpeg,image/png",
+    allowedMimeTypes: ["image/jpeg", "image/png"],
+    extensions: [".jpg", ".jpeg", ".png"],
+    maxMb: 5
+  },
+  VIDEO: {
+    label: "Video",
+    accept: "video/mp4",
+    allowedMimeTypes: ["video/mp4"],
+    extensions: [".mp4"],
+    maxMb: 16
+  },
+  DOCUMENT: {
+    label: "Document",
+    accept: "application/pdf",
+    allowedMimeTypes: ["application/pdf"],
+    extensions: [".pdf"],
+    maxMb: 10
+  }
+};
 
 function getTemplateBodyText(template: MessageTemplate): string {
   return template.components.find((c) => c.type === "BODY")?.text ?? template.name;
+}
+
+function extractTemplatePlaceholders(text: string | null | undefined): string[] {
+  if (!text) {
+    return [];
+  }
+
+  const matches = [...text.matchAll(TEMPLATE_PLACEHOLDER_PATTERN)];
+  return [...new Set(matches.map((match) => `{{${(match[1] ?? "").trim()}}}`))];
+}
+
+function buildTemplateDialogFields(template: MessageTemplate): TemplateDialogField[] {
+  const fields: TemplateDialogField[] = [];
+  const header = template.components.find((component) => component.type === "HEADER");
+  if (header?.format === "IMAGE" || header?.format === "VIDEO" || header?.format === "DOCUMENT") {
+    const config = TEMPLATE_MEDIA_INPUT_CONFIG[header.format];
+    fields.push({
+      key: "headerMediaUrl",
+      label: `${config.label} header`,
+      kind: "media",
+      mediaType: header.format,
+      description: `Upload a ${config.label.toLowerCase()} file (${config.extensions.join(", ")}, up to ${config.maxMb}MB).`
+    });
+  }
+
+  const placeholders = new Set<string>();
+  for (const component of template.components) {
+    extractTemplatePlaceholders(component.text).forEach((placeholder) => placeholders.add(placeholder));
+    if (component.type === "BUTTONS") {
+      (component.buttons ?? []).forEach((button) => {
+        extractTemplatePlaceholders(button.url).forEach((placeholder) => placeholders.add(placeholder));
+      });
+    }
+  }
+
+  fields.push(
+    ...Array.from(placeholders).map((placeholder) => ({
+      key: placeholder,
+      label: placeholder,
+      kind: "text" as const,
+      placeholder: `Value for ${placeholder}`
+    }))
+  );
+
+  return fields;
+}
+
+function getTemplateFileExtension(fileName: string): string {
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : "";
+}
+
+function validateTemplateMediaFile(mediaType: TemplateDialogMediaType, file: File): string | null {
+  const config = TEMPLATE_MEDIA_INPUT_CONFIG[mediaType];
+  if (file.size > config.maxMb * 1024 * 1024) {
+    return `${config.label} files must be ${config.maxMb}MB or smaller.`;
+  }
+
+  const normalizedMimeType = file.type.trim().toLowerCase();
+  const extension = getTemplateFileExtension(file.name);
+  const matchesMimeType = normalizedMimeType ? config.allowedMimeTypes.includes(normalizedMimeType) : false;
+  const matchesExtension = config.extensions.includes(extension);
+  if (!matchesMimeType && !matchesExtension) {
+    return `${config.label} uploads must use ${config.extensions.join(", ")} files.`;
+  }
+
+  return null;
 }
 
 
@@ -385,8 +490,10 @@ export function Component() {
   const [showTranslateSubmenu, setShowTranslateSubmenu] = useState(false);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [isAiRewriting, setIsAiRewriting] = useState(false);
-  const [showReplyGuide, setShowReplyGuide] = useState(true);
-  const [templateVarsDialog, setTemplateVarsDialog] = useState<{ template: MessageTemplate; vars: string[]; values: Record<string, string> } | null>(null);
+  const [showReplyGuide, setShowReplyGuide] = useState(false);
+  const [templateVarsDialog, setTemplateVarsDialog] = useState<TemplateVarsDialogState | null>(null);
+  const [templateUploadError, setTemplateUploadError] = useState<string | null>(null);
+  const [templateUploadingFieldKey, setTemplateUploadingFieldKey] = useState<string | null>(null);
 
   // Toast
   const [info, setInfo] = useState<string | null>(null);
@@ -650,6 +757,13 @@ export function Component() {
     setIsScrolledToBottom(true);
   }, [selectedConversationId, messagesQuery.isLoading]);
 
+  useEffect(() => {
+    if (!templateVarsDialog) {
+      setTemplateUploadError(null);
+      setTemplateUploadingFieldKey(null);
+    }
+  }, [templateVarsDialog]);
+
   // Auto-scroll when new messages arrive (only if already at bottom)
   useEffect(() => {
     if (!isScrolledToBottom) return;
@@ -758,6 +872,16 @@ export function Component() {
     }
   });
 
+  const templateUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const uploaded = await uploadInboxMediaToSupabase(file);
+      return {
+        ...uploaded,
+        fileName: file.name
+      };
+    }
+  });
+
   const sendTemplateMutation = useMutation({
     mutationFn: async ({ conversationId, templateId, variableValues }: { conversationId: string; templateId: string; variableValues: Record<string, string> }) => {
       return sendInboxConversationTemplate(token, conversationId, templateId, variableValues);
@@ -765,6 +889,8 @@ export function Component() {
     onSuccess: async () => {
       setShowTemplateMenu(false);
       setTemplateVarsDialog(null);
+      setTemplateUploadError(null);
+      setTemplateUploadingFieldKey(null);
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
       if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
       setInfo("Template sent.");
@@ -930,20 +1056,18 @@ export function Component() {
       setError("Templates can only be sent on the WhatsApp API channel.");
       return;
     }
-    // Collect unique {{N}} placeholders from all text components
-    const allText = template.components
-      .filter((c) => c.text)
-      .map((c) => c.text ?? "")
-      .join("\n");
-    const vars = [...new Set([...allText.matchAll(/\{\{([^}]+)\}\}/g)].map((m) => m[0]))];
-    if (vars.length === 0 && template.category !== "MARKETING") {
+    // Build the dialog fields from the approved template structure.
+    const fields = buildTemplateDialogFields(template);
+    if (fields.length === 0 && template.category !== "MARKETING") {
       // No variables — send immediately
       sendTemplateMutation.mutate({ conversationId: selectedConversation.id, templateId: template.id, variableValues: {} });
     } else {
       // Open variable-fill dialog, and require confirmation for marketing templates even without variables.
       const initialValues: Record<string, string> = {};
-      vars.forEach((v) => { initialValues[v] = ""; });
-      setTemplateVarsDialog({ template, vars, values: initialValues });
+      fields.forEach((field) => { initialValues[field.key] = ""; });
+      setTemplateUploadError(null);
+      setTemplateUploadingFieldKey(null);
+      setTemplateVarsDialog({ template, fields, values: initialValues, uploads: {} });
     }
   }, [selectedConversation, sendTemplateMutation]);
 
@@ -1000,6 +1124,60 @@ export function Component() {
   const publishedFlows = publishedFlowsQuery.data ?? [];
   const isReplySendDisabled = sendMessageMutation.isPending || uploadMutation.isPending || (!replyDraftText.trim() && attachedFiles.length === 0);
   const isNoteSendDisabled = saveNoteMutation.isPending || !noteDraftText.trim();
+  const isTemplateDialogReady = templateVarsDialog ? templateVarsDialog.fields.every((field) => Boolean(templateVarsDialog.values[field.key]?.trim())) : false;
+
+  const closeTemplateDialog = () => {
+    setTemplateVarsDialog(null);
+    setTemplateUploadError(null);
+    setTemplateUploadingFieldKey(null);
+  };
+
+  const updateTemplateDialogValue = (fieldKey: string, value: string) => {
+    setTemplateVarsDialog((prev) => (
+      prev ? { ...prev, values: { ...prev.values, [fieldKey]: value } } : prev
+    ));
+  };
+
+  const handleTemplateFieldFileSelect = async (
+    field: Extract<TemplateDialogField, { kind: "media" }>,
+    file: File | null | undefined
+  ) => {
+    if (!file) {
+      return;
+    }
+
+    const validationError = validateTemplateMediaFile(field.mediaType, file);
+    if (validationError) {
+      setTemplateUploadError(validationError);
+      return;
+    }
+
+    setTemplateUploadError(null);
+    setTemplateUploadingFieldKey(field.key);
+    try {
+      const uploaded = await templateUploadMutation.mutateAsync(file);
+      setTemplateVarsDialog((prev) => (
+        prev
+          ? {
+              ...prev,
+              values: { ...prev.values, [field.key]: uploaded.url },
+              uploads: {
+                ...prev.uploads,
+                [field.key]: {
+                  fileName: uploaded.fileName,
+                  mimeType: uploaded.mimeType,
+                  previewUrl: field.mediaType === "IMAGE" ? uploaded.url : null
+                }
+              }
+            }
+          : prev
+      ));
+    } catch (err) {
+      setTemplateUploadError((err as Error).message);
+    } finally {
+      setTemplateUploadingFieldKey(null);
+    }
+  };
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -1685,12 +1863,12 @@ export function Component() {
 
               {/* ── Template variable fill dialog ── */}
               {templateVarsDialog && (
-                <div className="tmpl-dialog-overlay" onClick={() => setTemplateVarsDialog(null)}>
+                <div className="tmpl-dialog-overlay" onClick={closeTemplateDialog}>
                   <div className="tmpl-dialog" onClick={(e) => e.stopPropagation()}>
                     <div className="tmpl-dialog-head">
                       <strong>Fill template variables</strong>
                       <span className="tmpl-dialog-name">{templateVarsDialog.template.name}</span>
-                      <button type="button" className="tmpl-dialog-close" onClick={() => setTemplateVarsDialog(null)}>✕</button>
+                      <button type="button" className="tmpl-dialog-close" onClick={closeTemplateDialog}>✕</button>
                     </div>
                     <div className="tmpl-dialog-preview">
                       {templateVarsDialog.template.category === "MARKETING" && (
@@ -1713,27 +1891,74 @@ export function Component() {
                       ))}
                     </div>
                     <div className="tmpl-dialog-fields">
-                      {templateVarsDialog.vars.map((v) => (
-                        <label key={v} className="tmpl-dialog-field">
-                          <span>{v}</span>
-                          <input
-                            type="text"
-                            placeholder={`Value for ${v}`}
-                            value={templateVarsDialog.values[v] ?? ""}
-                            onChange={(e) => setTemplateVarsDialog((prev) => prev ? { ...prev, values: { ...prev.values, [v]: e.target.value } } : prev)}
-                          />
+                      {templateVarsDialog.fields.length === 0 && (
+                        <div className="tmpl-dialog-empty-state">
+                          No extra input is needed for this template. Review the preview and send when ready.
+                        </div>
+                      )}
+                      {templateVarsDialog.fields.map((field) => (
+                        <label key={field.key} className="tmpl-dialog-field">
+                          <span>{field.label}</span>
+                          {field.kind === "text" ? (
+                            <input
+                              type="text"
+                              placeholder={field.placeholder}
+                              value={templateVarsDialog.values[field.key] ?? ""}
+                              onChange={(e) => updateTemplateDialogValue(field.key, e.target.value)}
+                            />
+                          ) : (
+                            <div className={`tmpl-dialog-upload${templateVarsDialog.values[field.key] ? " uploaded" : ""}`}>
+                              <div className="tmpl-dialog-upload-main">
+                                <div>
+                                  <strong>{TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].label} upload</strong>
+                                  <p>{field.description}</p>
+                                </div>
+                                <label className="tmpl-dialog-upload-btn">
+                                  <input
+                                    type="file"
+                                    accept={TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].accept}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      void handleTemplateFieldFileSelect(field, file);
+                                      e.target.value = "";
+                                    }}
+                                  />
+                                  {templateUploadingFieldKey === field.key ? "Uploading..." : templateVarsDialog.values[field.key] ? "Replace file" : "Upload file"}
+                                </label>
+                              </div>
+                              {templateVarsDialog.uploads[field.key] && (
+                                <div className="tmpl-dialog-upload-meta">
+                                  {templateVarsDialog.uploads[field.key]?.previewUrl ? (
+                                    <img
+                                      src={templateVarsDialog.uploads[field.key]?.previewUrl ?? ""}
+                                      alt={templateVarsDialog.uploads[field.key]?.fileName}
+                                      className="tmpl-dialog-upload-preview"
+                                    />
+                                  ) : (
+                                    <div className="tmpl-dialog-upload-file">{templateVarsDialog.uploads[field.key]?.fileName}</div>
+                                  )}
+                                  <div className="tmpl-dialog-upload-caption">
+                                    Ready to send: {templateVarsDialog.uploads[field.key]?.fileName}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </label>
                       ))}
                     </div>
                     <div className="tmpl-dialog-actions">
+                      {templateUploadError && (
+                        <div className="tmpl-dialog-error">{templateUploadError}</div>
+                      )}
                       {sendTemplateMutation.isError && (
                         <div className="tmpl-dialog-error">{(sendTemplateMutation.error as Error).message}</div>
                       )}
-                      <button type="button" className="ghost-btn" onClick={() => setTemplateVarsDialog(null)}>Cancel</button>
+                      <button type="button" className="ghost-btn" onClick={closeTemplateDialog}>Cancel</button>
                       <button
                         type="button"
                         className="compose-send-btn"
-                        disabled={sendTemplateMutation.isPending}
+                        disabled={sendTemplateMutation.isPending || templateUploadMutation.isPending || !isTemplateDialogReady}
                         onClick={() => {
                           if (!selectedConversation) return;
                           sendTemplateMutation.mutate({
@@ -1743,7 +1968,7 @@ export function Component() {
                           });
                         }}
                       >
-                        {sendTemplateMutation.isPending ? "Sending…" : "Send Template"}
+                        {templateUploadMutation.isPending ? "Uploading..." : sendTemplateMutation.isPending ? "Sending..." : "Send Template"}
                       </button>
                     </div>
                   </div>

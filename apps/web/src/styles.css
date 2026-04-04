@@ -2670,6 +2670,107 @@
   box-shadow: 0 0 0 3px rgba(45, 107, 228, 0.12);
 }
 
+.tmpl-dialog-empty-state {
+  border: 1px dashed #c8d6e2;
+  border-radius: 10px;
+  padding: 0.9rem;
+  background: #f8fbff;
+  color: #51697f;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.tmpl-dialog-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px dashed #c8d6e2;
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: #f8fbff;
+}
+
+.tmpl-dialog-upload.uploaded {
+  border-style: solid;
+  border-color: #9fc5f8;
+  background: #f5f9ff;
+}
+
+.tmpl-dialog-upload-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.tmpl-dialog-upload-main strong {
+  display: block;
+  color: #1a2c38;
+  font-size: 0.85rem;
+}
+
+.tmpl-dialog-upload-main p {
+  margin: 0.2rem 0 0;
+  color: #5a7899;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.tmpl-dialog-upload-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 110px;
+  padding: 0.58rem 0.85rem;
+  border-radius: 999px;
+  background: #2d6be4;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tmpl-dialog-upload-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.tmpl-dialog-upload-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.tmpl-dialog-upload-preview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #dbe5f0;
+  background: #fff;
+}
+
+.tmpl-dialog-upload-file {
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid #dbe5f0;
+  background: #fff;
+  color: #2b3f5f;
+  font-size: 0.82rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.tmpl-dialog-upload-caption {
+  color: #2b3f5f;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .tmpl-dialog-actions {
   display: flex;
   align-items: center;
@@ -2677,6 +2778,14 @@
   gap: 0.6rem;
   padding: 0.75rem 1.1rem 0.9rem;
   border-top: 1px solid #edf2f8;
+  flex-wrap: wrap;
+}
+
+.tmpl-dialog-error {
+  margin-right: auto;
+  color: #c62828;
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .message-inline-code {

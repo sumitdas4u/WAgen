@@ -785,39 +785,60 @@ function getSpecialValue(
   return null;
 }
 
-function resolveHeaderMediaId(
+function resolveHeaderMediaReference(
   component: TemplateComponent,
   specials: Record<string, string>,
   missing: Set<string>
-): string {
+): { kind: "id" | "link"; value: string } | null {
   const format = component.format as TemplateMediaFormat | undefined;
   if (!format) {
-    missing.add("headerMediaId");
-    return "";
+    missing.add("headerMedia");
+    return null;
   }
 
   const mediaType = format.toLowerCase();
-  const explicit =
-    getSpecialValue(specials, [
-      "headerMediaId",
-      "header_media_id",
-      `${mediaType}HeaderMediaId`,
-      `${mediaType}_header_media_id`,
-      `${mediaType}Id`,
-      `${mediaType}_id`
-    ]) ??
-    ((component.example as { header_handle?: string[] } | undefined)?.header_handle?.[0] ?? null);
+  const explicitId = getSpecialValue(specials, [
+    "headerMediaId",
+    "header_media_id",
+    `${mediaType}HeaderMediaId`,
+    `${mediaType}_header_media_id`,
+    `${mediaType}Id`,
+    `${mediaType}_id`
+  ]);
+  const explicitUrl = getSpecialValue(specials, [
+    "headerMediaUrl",
+    "header_media_url",
+    `${mediaType}HeaderMediaUrl`,
+    `${mediaType}_header_media_url`,
+    `${mediaType}Url`,
+    `${mediaType}_url`,
+    "headerMediaPreviewUrl",
+    "header_media_preview_url",
+    "headerPreviewUrl",
+    "header_preview_url"
+  ]);
+  const fallback =
+    explicitId ??
+    explicitUrl ??
+    ((component.example as { header_handle?: string[]; header_url?: string[] } | undefined)?.header_url?.[0] ??
+      (component.example as { header_handle?: string[]; header_url?: string[] } | undefined)?.header_handle?.[0] ??
+      null);
 
-  if (!explicit?.trim()) {
-    missing.add("headerMediaId");
-    return "";
+  if (!fallback?.trim()) {
+    missing.add("headerMedia");
+    return null;
   }
 
-  return explicit.trim();
+  const trimmed = fallback.trim();
+  return /^https?:\/\//i.test(trimmed)
+    ? { kind: "link", value: trimmed }
+    : { kind: "id", value: trimmed };
 }
 
 function resolveHeaderPreviewUrl(component: TemplateComponent, specials: Record<string, string>): string | undefined {
   const explicit = getSpecialValue(specials, [
+    "headerMediaUrl",
+    "header_media_url",
     "headerMediaPreviewUrl",
     "header_media_preview_url",
     "headerPreviewUrl",
@@ -891,19 +912,23 @@ export function resolveTemplatePayload(
       }
 
       if (component.format === "IMAGE" || component.format === "VIDEO" || component.format === "DOCUMENT") {
-        const mediaId = resolveHeaderMediaId(component, specials, missing);
+        const mediaReference = resolveHeaderMediaReference(component, specials, missing);
         const mediaType = component.format.toLowerCase() as "image" | "video" | "document";
         headerMediaType = mediaType;
         headerMediaUrl = resolveHeaderPreviewUrl(component, specials);
 
-        if (mediaId) {
+        if (!headerMediaUrl && mediaReference?.kind === "link") {
+          headerMediaUrl = mediaReference.value;
+        }
+
+        if (mediaReference) {
           sendComponents.push({
             type: "header",
             parameters: [
               {
                 type: mediaType,
                 [mediaType]: {
-                  id: mediaId
+                  [mediaReference.kind]: mediaReference.value
                 }
               }
             ]
