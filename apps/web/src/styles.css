@@ -1562,6 +1562,32 @@
   min-width: 0;
 }
 
+.chat-compose-rich-wrap {
+  position: relative;
+}
+
+.chat-compose-rich-preview,
+.chat-compose-rich-placeholder {
+  position: absolute;
+  inset: 0;
+  padding: 0.82rem 0.95rem;
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.chat-compose-rich-preview {
+  color: #1a2c38;
+}
+
+.chat-compose-rich-placeholder {
+  color: #9aaab8;
+}
+
 .chat-compose-textarea {
   width: 100%;
   box-sizing: border-box;
@@ -1580,6 +1606,22 @@
   color: #1a2c38;
 }
 
+.chat-compose-textarea-rich {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: #1a2c38;
+}
+
+.chat-compose-textarea-rich::selection {
+  background: rgba(45, 107, 228, 0.18);
+}
+
+.chat-compose-textarea-rich::-moz-selection {
+  background: rgba(45, 107, 228, 0.18);
+}
+
 .chat-compose-textarea:focus {
   outline: none;
   border-color: #2d6be4;
@@ -1591,10 +1633,19 @@
   font-size: 0.84rem;
 }
 
+.chat-compose-textarea-rich::placeholder {
+  color: transparent;
+}
+
 .chat-compose-textarea:disabled {
   background: #f3f6fa;
   color: #9aaab8;
   cursor: not-allowed;
+}
+
+.chat-compose-rich-wrap.is-disabled .chat-compose-rich-preview,
+.chat-compose-rich-wrap.is-disabled .chat-compose-rich-placeholder {
+  opacity: 0.55;
 }
 
 .chat-compose-footer {
@@ -9960,6 +10011,25 @@ select:focus {
   white-space: pre-wrap;
 }
 .msg-line { display: block; }
+.msg-inline-bold {
+  font-weight: 700;
+}
+.msg-inline-italic {
+  font-style: italic;
+}
+.msg-inline-strike {
+  text-decoration: line-through;
+}
+.msg-inline-code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.92em;
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  padding: 0.05rem 0.32rem;
+}
+.bubble.outbound .msg-inline-code {
+  background: rgba(255, 255, 255, 0.18);
+}
 .msg-link {
   color: inherit;
   text-decoration: underline;

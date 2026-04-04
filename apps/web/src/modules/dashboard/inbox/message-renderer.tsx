@@ -14,6 +14,7 @@
  *   4. (Backend) payloadToMessageType() maps to that type
  */
 
+import type { ReactNode } from "react";
 import type { ConversationMessage } from "../../../lib/api";
 import { API_URL } from "../../../lib/api";
 
@@ -385,22 +386,61 @@ export function normalizeMessage(msg: ConversationMessage): UniversalMessage {
 
 // ─── Individual Message Components ───────────────────────────────────────────
 
-function TextMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
-  const text = msg.content.text ?? "";
-  const URL_RE = /(https?:\/\/[^\s<>"]+)/g;
-  const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i;
+const URL_RE = /(https?:\/\/[^\s<>"]+)/g;
+const IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i;
+const WHATSAPP_FORMAT_RE = /```([\s\S]+?)```|\*([^*\n]+)\*|_([^_\n]+)_|~([^~\n]+)~/g;
 
-  // Render with URL detection
+function renderInlineFormattedSegment(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  WHATSAPP_FORMAT_RE.lastIndex = 0;
+  while ((match = WHATSAPP_FORMAT_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const [fullMatch, monospace, bold, italic, strike] = match;
+    const key = `${keyPrefix}-${match.index}`;
+
+    if (monospace !== undefined) {
+      nodes.push(<code key={key} className="msg-inline-code">{monospace}</code>);
+    } else if (bold !== undefined) {
+      nodes.push(<strong key={key} className="msg-inline-bold">{bold}</strong>);
+    } else if (italic !== undefined) {
+      nodes.push(<em key={key} className="msg-inline-italic">{italic}</em>);
+    } else if (strike !== undefined) {
+      nodes.push(<span key={key} className="msg-inline-strike">{strike}</span>);
+    } else {
+      nodes.push(fullMatch);
+    }
+
+    lastIndex = match.index + fullMatch.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+export function renderFormattedText(text: string, keyPrefix = "fmt"): ReactNode[] {
   const lines = text.split("\n");
-  const nodes: JSX.Element[] = [];
+  const nodes: ReactNode[] = [];
 
   lines.forEach((line, li) => {
-    const parts: (string | JSX.Element)[] = [];
+    const parts: ReactNode[] = [];
     let last = 0;
     let match: RegExpExecArray | null;
     URL_RE.lastIndex = 0;
+
     while ((match = URL_RE.exec(line)) !== null) {
-      if (match.index > last) parts.push(line.slice(last, match.index));
+      if (match.index > last) {
+        parts.push(...renderInlineFormattedSegment(line.slice(last, match.index), `${keyPrefix}-${li}-${match.index}-text`));
+      }
+
       const url = match[0];
       if (IMAGE_EXT.test(url)) {
         parts.push(<img key={`img-${li}-${match.index}`} className="msg-inline-image" src={url} alt="Image" loading="lazy" />);
@@ -409,12 +449,21 @@ function TextMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
       }
       last = match.index + match[0].length;
     }
-    if (last < line.length) parts.push(line.slice(last));
+
+    if (last < line.length) {
+      parts.push(...renderInlineFormattedSegment(line.slice(last), `${keyPrefix}-${li}-tail`));
+    }
+
     nodes.push(<span key={li} className="msg-line">{parts}</span>);
     if (li < lines.length - 1) nodes.push(<br key={`br-${li}`} />);
   });
 
-  return <div className="msg-text">{nodes}</div>;
+  return nodes;
+}
+
+function TextMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
+  const text = msg.content.text ?? "";
+  return <div className="msg-text">{renderFormattedText(text, `msg-${msg.id}`)}</div>;
 }
 
 function ImageMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
@@ -432,7 +481,7 @@ function ImageMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
       <a href={media_url} target="_blank" rel="noopener noreferrer">
         <img className="msg-image" src={media_url} alt={text || "Image"} loading="lazy" />
       </a>
-      {text && <p className="msg-caption">{text}</p>}
+      {text && <p className="msg-caption">{renderFormattedText(text, `img-${msg.id}`)}</p>}
     </div>
   );
 }
@@ -453,7 +502,7 @@ function VideoMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
         <source src={media_url} />
         Your browser does not support video.
       </video>
-      {text && <p className="msg-caption">{text}</p>}
+      {text && <p className="msg-caption">{renderFormattedText(text, `video-${msg.id}`)}</p>}
     </div>
   );
 }
@@ -471,7 +520,7 @@ function AudioMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
   return (
     <div className="msg-audio-wrap">
       <audio className="msg-audio" controls preload="metadata" src={media_url} />
-      {text && <p className="msg-caption">{text}</p>}
+      {text && <p className="msg-caption">{renderFormattedText(text, `audio-${msg.id}`)}</p>}
     </div>
   );
 }
@@ -503,7 +552,7 @@ function ButtonsMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
           <img className="msg-bleed-image" src={media_url} alt="Media" loading="lazy" />
         </a>
       )}
-      {text && <p className="msg-buttons-body">{text}</p>}
+      {text && <p className="msg-buttons-body">{renderFormattedText(text, `buttons-${msg.id}`)}</p>}
       {buttons.length > 0 && (
         <div className="msg-action-rows">
           {buttons.map((btn) => (
@@ -520,11 +569,11 @@ function ButtonsMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
 
 function ListMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
   const list = msg.content.list;
-  if (!list) return <div className="msg-text">{msg.content.text ?? ""}</div>;
+  if (!list) return <div className="msg-text">{renderFormattedText(msg.content.text ?? "", `list-fallback-${msg.id}`)}</div>;
 
   return (
     <div className="msg-list-wrap">
-      {list.title && <p className="msg-list-title">{list.title}</p>}
+      {list.title && <p className="msg-list-title">{renderFormattedText(list.title, `list-${msg.id}`)}</p>}
       {list.items.length > 0 && (
         <div className="msg-action-rows">
           {list.items.map((item) => (
@@ -541,7 +590,7 @@ function ListMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
 
 function TemplateMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
   const tmpl = msg.content.template;
-  if (!tmpl) return <div className="msg-text">{msg.content.text ?? ""}</div>;
+  if (!tmpl) return <div className="msg-text">{renderFormattedText(msg.content.text ?? "", `template-fallback-${msg.id}`)}</div>;
 
   return (
     <div className="msg-template-wrap">
@@ -550,9 +599,9 @@ function TemplateMessage({ msg }: { msg: UniversalMessage }): JSX.Element {
           <img className="msg-bleed-image" src={tmpl.image} alt="Template header" loading="lazy" />
         </a>
       )}
-      {tmpl.headerText && <p className="msg-template-body"><strong>{tmpl.headerText}</strong></p>}
-      {tmpl.text && <p className="msg-template-body">{tmpl.text}</p>}
-      {tmpl.footerText && <p className="msg-caption">{tmpl.footerText}</p>}
+      {tmpl.headerText && <p className="msg-template-body"><strong>{renderFormattedText(tmpl.headerText, `template-header-${msg.id}`)}</strong></p>}
+      {tmpl.text && <p className="msg-template-body">{renderFormattedText(tmpl.text, `template-body-${msg.id}`)}</p>}
+      {tmpl.footerText && <p className="msg-caption">{renderFormattedText(tmpl.footerText, `template-footer-${msg.id}`)}</p>}
       {tmpl.buttons && tmpl.buttons.length > 0 && (
         <div className="msg-action-rows">
           {tmpl.buttons.map((btn) => (

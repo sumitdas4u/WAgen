@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Conversation, ConversationMessage, MessageTemplate } from "../../../lib/api";
 import { fetchContactByConversation, listContactFields } from "../../../lib/api";
-import { normalizeMessage, renderMessage } from "./message-renderer";
+import { normalizeMessage, renderFormattedText, renderMessage } from "./message-renderer";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
@@ -1564,18 +1564,25 @@ export function Component() {
                         )}
 
                         {/* Textarea */}
-                        <textarea
-                          ref={textareaRef}
-                          className="chat-compose-textarea"
-                          value={replyDraftText}
-                          onChange={(e) => { setReplyDraftText(e.target.value); setManualComposeConversationId(selectedConversation.id); }}
-                          onKeyDown={handleKeyDown}
-                          onPaste={handlePaste}
-                          placeholder={`Message ${selectedConversationLabel}…`}
-                          rows={2}
-                          maxLength={4000}
-                          disabled={!isAnyChannelConnected}
-                        />
+                        <div className={`chat-compose-rich-wrap${replyDraftText ? " has-value" : ""}${!isAnyChannelConnected ? " is-disabled" : ""}`}>
+                          <div className="chat-compose-rich-preview">
+                            {replyDraftText ? renderFormattedText(replyDraftText, "compose-reply") : null}
+                          </div>
+                          {!replyDraftText && (
+                            <div className="chat-compose-rich-placeholder">{`Message ${selectedConversationLabel}…`}</div>
+                          )}
+                          <textarea
+                            ref={textareaRef}
+                            className="chat-compose-textarea chat-compose-textarea-rich"
+                            value={replyDraftText}
+                            onChange={(e) => { setReplyDraftText(e.target.value); setManualComposeConversationId(selectedConversation.id); }}
+                            onKeyDown={handleKeyDown}
+                            onPaste={handlePaste}
+                            rows={2}
+                            maxLength={4000}
+                            disabled={!isAnyChannelConnected}
+                          />
+                        </div>
 
                         {/* Toolbar row */}
                         <div className="compose-toolbar-wrap" ref={toolbarWrapRef}>
@@ -1791,16 +1798,23 @@ export function Component() {
                           )}
                         </div>
 
-                        <textarea
-                          ref={textareaRef}
-                          className="chat-compose-textarea notes-mode"
-                          value={noteDraftText}
-                          onChange={(e) => setNoteDraftText(e.target.value)}
-                          onKeyDown={handleKeyDown}
-                          placeholder="Add an internal note… (visible to agents only)"
-                          rows={2}
-                          maxLength={4000}
-                        />
+                        <div className={`chat-compose-rich-wrap chat-compose-rich-wrap-notes${noteDraftText ? " has-value" : ""}`}>
+                          <div className="chat-compose-rich-preview">
+                            {noteDraftText ? renderFormattedText(noteDraftText, "compose-note") : null}
+                          </div>
+                          {!noteDraftText && (
+                            <div className="chat-compose-rich-placeholder">Add an internal note... (visible to agents only)</div>
+                          )}
+                          <textarea
+                            ref={textareaRef}
+                            className="chat-compose-textarea chat-compose-textarea-rich notes-mode"
+                            value={noteDraftText}
+                            onChange={(e) => setNoteDraftText(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            rows={2}
+                            maxLength={4000}
+                          />
+                        </div>
 
                         <div className="compose-toolbar-wrap" ref={toolbarWrapRef}>
                           {showFormatMenu && (
