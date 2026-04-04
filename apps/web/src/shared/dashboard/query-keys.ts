@@ -12,6 +12,7 @@ const dashboardCampaignsRoot = ["dashboard", "campaigns"] as const;
 const dashboardContactFieldsRoot = ["dashboard", "contact-fields"] as const;
 const dashboardContactSegmentsRoot = ["dashboard", "contact-segments"] as const;
 const dashboardAnalyticsRoot = ["dashboard", "analytics"] as const;
+const dashboardBroadcastRoot = ["dashboard", "broadcast"] as const;
 
 export const dashboardQueryKeys = {
   bootstrap: dashboardBootstrapRoot,
@@ -45,6 +46,13 @@ export const dashboardQueryKeys = {
   campaignMessages: (campaignId: string, status: string, page: number) =>
     [...dashboardCampaignsRoot, "messages", campaignId, status, page] as const,
   analyticsRoot: dashboardAnalyticsRoot,
+  broadcastRoot: dashboardBroadcastRoot,
+  broadcasts: [...dashboardBroadcastRoot, "list"] as const,
+  broadcastSummary: [...dashboardBroadcastRoot, "summary"] as const,
+  broadcastReport: (campaignId: string, status: string, page: number) =>
+    [...dashboardBroadcastRoot, "report", campaignId, status, page] as const,
+  broadcastRetargetPreview: (campaignId: string, status: string) =>
+    [...dashboardBroadcastRoot, "retarget-preview", campaignId, status] as const,
   deliverySummary: (days: number, channelKey: string) => [...dashboardAnalyticsRoot, "summary", days, channelKey] as const,
   deliveryNotifications: (days: number, channelKey: string, status: string, page: number) =>
     [...dashboardAnalyticsRoot, "notifications", days, channelKey, status, page] as const,

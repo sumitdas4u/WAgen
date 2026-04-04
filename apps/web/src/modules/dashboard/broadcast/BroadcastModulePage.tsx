@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   API_URL,
   cancelCampaignRun,
   createCampaignDraft,
+  downloadContactsTemplate,
   fetchBroadcastReport,
   fetchBroadcastRetargetPreview,
   fetchBroadcasts,
@@ -145,7 +146,7 @@ function formatCampaignStatus(status: Campaign["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function cardStyle(selected = false): React.CSSProperties {
+function cardStyle(selected = false): CSSProperties {
   return {
     border: selected ? "1px solid #60a5fa" : "1px solid #e5e7eb",
     borderRadius: "16px",
@@ -153,6 +154,17 @@ function cardStyle(selected = false): React.CSSProperties {
     background: selected ? "#eff6ff" : "#fff",
     cursor: "pointer"
   };
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function SummaryCards({ report }: { report: BroadcastReport }) {
@@ -403,6 +415,7 @@ function BroadcastWizardPage({
   const [scheduledAt, setScheduledAt] = useState("");
   const [uploadingAudience, setUploadingAudience] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retargetStatus, setRetargetStatus] = useState<RetargetStatus>("sent");
@@ -519,6 +532,19 @@ function BroadcastWizardPage({
     }
   }
 
+  async function handleDownloadAudienceTemplate() {
+    setDownloadingTemplate(true);
+    setError(null);
+    try {
+      const result = await downloadContactsTemplate(token);
+      downloadBlob(result.blob, result.filename);
+    } catch (downloadError) {
+      setError((downloadError as Error).message);
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  }
+
   async function handleMediaUpload(file: File) {
     setUploadingMedia(true);
     setError(null);
@@ -583,6 +609,8 @@ function BroadcastWizardPage({
               onSelectSegment={setSelectedSegmentId}
               onUpload={handleAudienceUpload}
               uploadingAudience={uploadingAudience}
+              onDownloadTemplate={handleDownloadAudienceTemplate}
+              downloadingTemplate={downloadingTemplate}
               onBack={() => setStep(1)}
               onContinue={() => setStep(3)}
               canContinue={canContinueStep2 && Boolean(name.trim())}
@@ -658,19 +686,320 @@ function BroadcastWizardPage({
   );
 }
 
-export function BroadcastModulePage({
-  token,
-  mode
+function TemplateSelectionStep({
+  name,
+  onNameChange,
+  templates,
+  selectedTemplateId,
+  onSelect,
+  onBack,
+  onContinue,
+  canContinue
 }: {
-  token: string;
-  mode: ModuleMode;
+  name?: string;
+  onNameChange?: (value: string) => void;
+  templates: MessageTemplate[];
+  selectedTemplateId: string;
+  onSelect: (templateId: string) => void;
+  onBack?: () => void;
+  onContinue: () => void;
+  canContinue: boolean;
 }) {
-  const params = useParams<{ campaignId?: string }>();
-  const campaignId = params.campaignId ?? "";
+  return (
+    <section style={{ display: "grid", gap: "14px" }}>
+      <div style={{ fontWeight: 700, fontSize: "18px" }}>Select Template</div>
+      {onNameChange ? (
+        <label style={{ display: "grid", gap: "8px" }}>
+          <span style={{ fontWeight: 600 }}>Broadcast name</span>
+          <input value={name ?? ""} onChange={(event) => onNameChange(event.target.value)} placeholder="Broadcast name" style={{ border: "1px solid #d1d5db", borderRadius: "12px", padding: "10px 12px" }} />
+        </label>
+      ) : null}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "14px" }}>
+        {templates.map((template) => (
+          <button key={template.id} type="button" onClick={() => onSelect(template.id)} style={cardStyle(selectedTemplateId === template.id)}>
+            <div style={{ textAlign: "left", display: "grid", gap: "10px" }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{template.name}</div>
+                <div style={{ fontSize: "12px", color: "#64748b" }}>{template.category} • {template.language}</div>
+              </div>
+              <TemplatePreviewPanel components={template.components} businessName={template.displayPhoneNumber ?? template.name} />
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: "10px" }}>
+        {onBack ? <button type="button" className="ghost-btn" onClick={onBack}>Back</button> : null}
+        <button type="button" onClick={onContinue} disabled={!canContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700, cursor: canContinue ? "pointer" : "not-allowed" }}>
+          Continue
+        </button>
+      </div>
+    </section>
+  );
+}
 
+function RetargetAudienceStep({
+  retargetStatus,
+  onRetargetStatusChange,
+  preview,
+  onContinue,
+  canContinue
+}: {
+  retargetStatus: RetargetStatus;
+  onRetargetStatusChange: (status: RetargetStatus) => void;
+  preview: { recipients: ContactRecord[]; count: number; status: RetargetStatus } | undefined;
+  onContinue: () => void;
+  canContinue: boolean;
+}) {
+  return (
+    <section style={{ display: "grid", gap: "14px" }}>
+      <div style={{ fontWeight: 700, fontSize: "18px" }}>Select Retarget Audience</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "12px" }}>
+        {RETARGET_OPTIONS.map((option) => (
+          <button key={option.value} type="button" onClick={() => onRetargetStatusChange(option.value)} style={cardStyle(retargetStatus === option.value)}>
+            <div style={{ fontSize: "12px", color: "#64748b" }}>{option.label}</div>
+            <div style={{ marginTop: "6px", fontWeight: 700, fontSize: "24px" }}>
+              {preview?.status === option.value ? preview.count : "—"}
+            </div>
+          </button>
+        ))}
+      </div>
+      <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", overflow: "hidden", background: "#fff" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#f8fafc" }}>
+              {["Recipient", "Phone"].map((heading) => (
+                <th key={heading} style={{ padding: "12px 14px", textAlign: "left", fontSize: "11px", color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #e5e7eb" }}>
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(preview?.recipients ?? []).slice(0, 50).map((contact) => (
+              <tr key={contact.id}>
+                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{contact.display_name || "Unknown"}</td>
+                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{contact.phone_number}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <div>
+        <button type="button" onClick={onContinue} disabled={!canContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700, cursor: canContinue ? "pointer" : "not-allowed" }}>
+          Continue
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function AudienceSelectionStep({
+  name,
+  onNameChange,
+  segments,
+  selectedSegmentId,
+  onSelectSegment,
+  onUpload,
+  uploadingAudience,
+  onDownloadTemplate,
+  downloadingTemplate,
+  onBack,
+  onContinue,
+  canContinue
+}: {
+  name: string;
+  onNameChange: (value: string) => void;
+  segments: Array<{ id: string; name: string; created_at: string }>;
+  selectedSegmentId: string;
+  onSelectSegment: (segmentId: string) => void;
+  onUpload: (file: File) => Promise<void>;
+  uploadingAudience: boolean;
+  onDownloadTemplate: () => Promise<void>;
+  downloadingTemplate: boolean;
+  onBack: () => void;
+  onContinue: () => void;
+  canContinue: boolean;
+}) {
+  return (
+    <section style={{ display: "grid", gap: "16px" }}>
+      <div style={{ fontWeight: 700, fontSize: "18px" }}>Select Audience</div>
+      <label style={{ display: "grid", gap: "8px" }}>
+        <span style={{ fontWeight: 600 }}>Broadcast name</span>
+        <input value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="April promotion" style={{ border: "1px solid #d1d5db", borderRadius: "12px", padding: "10px 12px" }} />
+      </label>
+      <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", padding: "16px", background: "#fff", display: "grid", gap: "12px" }}>
+        <div style={{ fontWeight: 700 }}>Upload contacts from Excel</div>
+        <div style={{ color: "#64748b", fontSize: "14px" }}>
+          Upload a workbook to import or update contacts and create a reusable segment for this broadcast.
+        </div>
+        <div>
+          <button type="button" className="ghost-btn" onClick={() => void onDownloadTemplate()} disabled={downloadingTemplate}>
+            {downloadingTemplate ? "Downloading..." : "Download sample file"}
+          </button>
+        </div>
+        <input
+          type="file"
+          accept=".xlsx"
+          disabled={uploadingAudience}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void onUpload(file);
+            }
+          }}
+        />
+      </section>
+      <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", padding: "16px", background: "#fff", display: "grid", gap: "10px" }}>
+        <div style={{ fontWeight: 700 }}>Pick existing segment</div>
+        {segments.map((segment) => (
+          <button key={segment.id} type="button" onClick={() => onSelectSegment(segment.id)} style={cardStyle(selectedSegmentId === segment.id)}>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontWeight: 700 }}>{segment.name}</div>
+              <div style={{ color: "#64748b", fontSize: "12px" }}>Created {new Date(segment.created_at).toLocaleDateString()}</div>
+            </div>
+          </button>
+        ))}
+      </section>
+      <div style={{ display: "flex", gap: "10px" }}>
+        <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
+        <button type="button" onClick={onContinue} disabled={!canContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700, cursor: canContinue ? "pointer" : "not-allowed" }}>
+          Continue
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function VariableMappingStep({
+  placeholders,
+  bindings,
+  setBindings,
+  fieldOptions,
+  headerMediaType,
+  mediaOverrides,
+  setMediaOverrides,
+  onMediaUpload,
+  uploadingMedia,
+  onBack,
+  onContinue
+}: {
+  placeholders: string[];
+  bindings: CampaignTemplateVariables;
+  setBindings: Dispatch<SetStateAction<CampaignTemplateVariables>>;
+  fieldOptions: Array<{ value: string; label: string }>;
+  headerMediaType: "IMAGE" | "VIDEO" | "DOCUMENT" | null;
+  mediaOverrides: CampaignMediaOverrides;
+  setMediaOverrides: Dispatch<SetStateAction<CampaignMediaOverrides>>;
+  onMediaUpload: (file: File) => Promise<void>;
+  uploadingMedia: boolean;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <section style={{ display: "grid", gap: "16px" }}>
+      <div style={{ fontWeight: 700, fontSize: "18px" }}>Map Variables & Media</div>
+      {placeholders.length === 0 ? (
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: "14px", padding: "14px", background: "#fff", color: "#64748b" }}>
+          This template does not have dynamic variables.
+        </div>
+      ) : (
+        placeholders.map((placeholder) => {
+          const binding = bindings[placeholder] ?? { source: "contact" as const, field: "display_name", fallback: "" };
+          return (
+            <div key={placeholder} style={{ display: "grid", gap: "10px", gridTemplateColumns: "140px 120px minmax(0, 1fr) minmax(0, 1fr)", alignItems: "center", border: "1px solid #e5e7eb", borderRadius: "14px", padding: "14px", background: "#fff" }}>
+              <strong>{placeholder}</strong>
+              <select value={binding.source} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, source: event.target.value as "contact" | "static" } }))} style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}>
+                <option value="contact">Contact field</option>
+                <option value="static">Static value</option>
+              </select>
+              {binding.source === "contact" ? (
+                <select value={binding.field ?? "display_name"} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, field: event.target.value } }))} style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}>
+                  {fieldOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <input value={binding.value ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, value: event.target.value } }))} placeholder="Static replacement" style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }} />
+              )}
+              <input value={binding.fallback ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, fallback: event.target.value } }))} placeholder="Fallback if empty" style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }} />
+            </div>
+          );
+        })
+      )}
+      {headerMediaType ? (
+        <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", padding: "16px", background: "#fff", display: "grid", gap: "12px" }}>
+          <div style={{ fontWeight: 700 }}>Media</div>
+          <div style={{ color: "#64748b", fontSize: "14px" }}>
+            This template uses a {headerMediaType.toLowerCase()} header. Upload a file or provide a public media URL for this broadcast.
+          </div>
+          <input type="file" disabled={uploadingMedia} onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void onMediaUpload(file);
+            }
+          }} />
+          <input value={mediaOverrides.headerMediaUrl ?? ""} onChange={(event) => setMediaOverrides((current) => ({ ...current, headerMediaUrl: event.target.value }))} placeholder="https://example.com/media.jpg" style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }} />
+        </section>
+      ) : null}
+      <div style={{ display: "flex", gap: "10px" }}>
+        <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
+        <button type="button" onClick={onContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700 }}>
+          Continue
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ScheduleStep({
+  scheduledAt,
+  onScheduledAtChange,
+  onBack,
+  onSave,
+  onLaunch,
+  saving
+}: {
+  scheduledAt: string;
+  onScheduledAtChange: (value: string) => void;
+  onBack: () => void;
+  onSave: () => void;
+  onLaunch: () => void;
+  saving: boolean;
+}) {
+  return (
+    <section style={{ display: "grid", gap: "16px" }}>
+      <div style={{ fontWeight: 700, fontSize: "18px" }}>Schedule Broadcast</div>
+      <label style={{ display: "grid", gap: "8px" }}>
+        <span style={{ fontWeight: 600 }}>Launch time</span>
+        <input type="datetime-local" value={scheduledAt} onChange={(event) => onScheduledAtChange(event.target.value)} style={{ border: "1px solid #d1d5db", borderRadius: "12px", padding: "10px 12px" }} />
+      </label>
+      <div style={{ color: "#64748b", fontSize: "14px" }}>
+        Leave empty to launch immediately. If you save with a future time, the worker will launch it once the scheduled time arrives.
+      </div>
+      <div style={{ display: "flex", gap: "10px" }}>
+        <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
+        <button type="button" className="ghost-btn" onClick={onSave} disabled={saving}>
+          {saving ? "Saving..." : "Save Broadcast"}
+        </button>
+        <button type="button" onClick={onLaunch} disabled={saving} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700 }}>
+          {saving ? "Launching..." : "Launch Now"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function BroadcastModulePage({ token, mode }: { token: string; mode: ModuleMode }) {
+  const { campaignId } = useParams<{ campaignId: string }>();
+
+  if (mode === "list") {
+    return <BroadcastListPage token={token} />;
+  }
   if (mode === "detail" && campaignId) {
     return <BroadcastDetailPage token={token} campaignId={campaignId} />;
   }
-
-  return <BroadcastListPage token={token} />;
+  if (mode === "retarget" && campaignId) {
+    return <BroadcastWizardPage token={token} mode="retarget" sourceCampaignId={campaignId} />;
+  }
+  return <BroadcastWizardPage token={token} mode="new" />;
 }

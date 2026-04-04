@@ -2001,6 +2001,8 @@ export function sendTestTemplateMessage(
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
 export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
 export type CampaignTemplateVariableSource = "contact" | "static";
+export type BroadcastType = "standard" | "retarget";
+export type RetargetStatus = "sent" | "delivered" | "read" | "failed" | "skipped";
 
 export interface CampaignTemplateVariableBinding {
   source: CampaignTemplateVariableSource;
@@ -2010,15 +2012,22 @@ export interface CampaignTemplateVariableBinding {
 }
 
 export type CampaignTemplateVariables = Record<string, CampaignTemplateVariableBinding>;
+export type CampaignAudienceSource = Record<string, unknown>;
+export type CampaignMediaOverrides = Record<string, string>;
 
 export interface Campaign {
   id: string;
   user_id: string;
   name: string;
   status: CampaignStatus;
+  broadcast_type: BroadcastType;
   template_id: string | null;
   template_variables: CampaignTemplateVariables;
   target_segment_id: string | null;
+  source_campaign_id: string | null;
+  retarget_status: RetargetStatus | null;
+  audience_source_json: CampaignAudienceSource;
+  media_overrides_json: CampaignMediaOverrides;
   scheduled_at: string | null;
   started_at: string | null;
   completed_at: string | null;
@@ -2049,6 +2058,38 @@ export interface CampaignMessage {
   read_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface BroadcastSummary {
+  totalBroadcasts: number;
+  recipients: number;
+  sent: number;
+  delivered: number;
+  engaged: number;
+  failed: number;
+  suppressed: number;
+  frequencyLimited: number;
+}
+
+export interface BroadcastReport {
+  campaign: Campaign;
+  messages: CampaignMessage[];
+  total: number;
+  buckets: Record<RetargetStatus, number>;
+}
+
+export interface BroadcastRetargetPreview {
+  campaign: Campaign;
+  status: RetargetStatus;
+  recipients: ContactRecord[];
+  count: number;
+}
+
+export interface BroadcastAudienceImportResponse {
+  ok: boolean;
+  importResult: ContactImportResult;
+  segment: ContactSegment;
+  batchTag: string;
 }
 
 export interface CampaignDeliveryAnalytics {
@@ -2177,9 +2218,14 @@ export function createCampaignDraft(
   token: string,
   payload: {
     name: string;
+    broadcastType?: BroadcastType;
     templateId?: string | null;
     templateVariables?: CampaignTemplateVariables;
     targetSegmentId?: string | null;
+    sourceCampaignId?: string | null;
+    retargetStatus?: RetargetStatus | null;
+    audienceSource?: CampaignAudienceSource;
+    mediaOverrides?: CampaignMediaOverrides;
     scheduledAt?: string | null;
   }
 ) {
@@ -2195,9 +2241,14 @@ export function updateCampaignDraft(
   campaignId: string,
   payload: Partial<{
     name: string;
+    broadcastType: BroadcastType;
     templateId: string | null;
     templateVariables: CampaignTemplateVariables;
     targetSegmentId: string | null;
+    sourceCampaignId: string | null;
+    retargetStatus: RetargetStatus | null;
+    audienceSource: CampaignAudienceSource;
+    mediaOverrides: CampaignMediaOverrides;
     scheduledAt: string | null;
   }>
 ) {
@@ -2244,6 +2295,77 @@ export function fetchCampaignMessages(
 
 export function fetchCampaignDeliveryAnalytics(token: string, campaignId: string) {
   return apiRequest<{ analytics: CampaignDeliveryAnalytics }>(`/api/campaigns/${campaignId}/analytics`, { token });
+}
+
+export function fetchBroadcasts(token: string) {
+  return apiRequest<{ broadcasts: Campaign[]; summary: BroadcastSummary }>("/api/broadcasts", { token });
+}
+
+export function fetchBroadcastSummary(token: string) {
+  return apiRequest<{ summary: BroadcastSummary }>("/api/broadcasts/summary", { token });
+}
+
+export function fetchBroadcastReport(
+  token: string,
+  campaignId: string,
+  options?: { limit?: number; offset?: number; status?: CampaignMessageStatus }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (typeof options?.offset === "number") {
+    params.set("offset", String(options.offset));
+  }
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  const query = params.toString();
+  const path = query ? `/api/broadcasts/${campaignId}/report?${query}` : `/api/broadcasts/${campaignId}/report`;
+  return apiRequest<{ report: BroadcastReport }>(path, { token });
+}
+
+export function fetchBroadcastRetargetPreview(
+  token: string,
+  campaignId: string,
+  status: RetargetStatus
+) {
+  return apiRequest<{ preview: BroadcastRetargetPreview }>(
+    `/api/broadcasts/${campaignId}/retarget-preview?status=${encodeURIComponent(status)}`,
+    { token }
+  );
+}
+
+export async function importBroadcastAudienceWorkbook(
+  token: string,
+  file: File,
+  segmentName?: string
+): Promise<BroadcastAudienceImportResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (segmentName?.trim()) {
+    form.append("segmentName", segmentName.trim());
+  }
+  return apiRequest<BroadcastAudienceImportResponse>("/api/broadcasts/audience/import", {
+    method: "POST",
+    token,
+    body: form,
+    timeoutMs: 120_000
+  });
+}
+
+export async function uploadBroadcastMedia(
+  token: string,
+  file: File
+): Promise<{ mediaId: string; url: string; mimeType: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<{ mediaId: string; url: string; mimeType: string }>("/api/broadcasts/media/upload", {
+    method: "POST",
+    token,
+    body: form,
+    timeoutMs: 120_000
+  });
 }
 
 export function fetchDeliveryOverview(token: string) {

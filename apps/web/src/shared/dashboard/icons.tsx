@@ -29,6 +29,14 @@ export function DashboardIcon({ name }: { name: DashboardIconName }) {
           <rect x="13.5" y="4.5" width="2.5" height="11" rx="1" />
         </svg>
       );
+    case "broadcast":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
+          <path d="M4.5 10h4.2l5.8-3.2v6.4L8.7 10H4.5Z" />
+          <path d="M6.5 12.2v1.6a1.7 1.7 0 0 0 1.7 1.7h.8" />
+          <path d="M13.8 6.6a4.5 4.5 0 0 1 0 6.8M15.6 4.7a7 7 0 0 1 0 10.6" />
+        </svg>
+      );
     case "billing":
       return (
         <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">

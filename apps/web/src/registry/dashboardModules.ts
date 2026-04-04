@@ -31,12 +31,25 @@ export const dashboardModules: DashboardModuleDefinition[] = [
   {
     id: "templates",
     path: "templates/*",
-    navTo: "/dashboard/templates",
+    navTo: "/dashboard/settings/templates",
     navLabel: "Templates",
-    subtitle: "Broadcast templates",
+    subtitle: "Redirect to WhatsApp templates",
     icon: "templates",
     section: "main",
     lazyRoute: () => import("../modules/dashboard/templates/route"),
+    featureFlag: "dashboard.templates",
+    prefetchStrategy: "code+data",
+    requiresAuth: true
+  },
+  {
+    id: "broadcast",
+    path: "broadcast/*",
+    navTo: "/dashboard/broadcast",
+    navLabel: "Broadcast",
+    subtitle: "Campaigns and retargeting",
+    icon: "broadcast",
+    section: "main",
+    lazyRoute: () => import("../modules/dashboard/broadcast/route"),
     featureFlag: "dashboard.templates",
     prefetchStrategy: "code+data",
     requiresAuth: true

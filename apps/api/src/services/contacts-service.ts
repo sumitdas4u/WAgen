@@ -391,7 +391,7 @@ async function syncConversationKindFromContact(
 async function upsertContact(
   db: DbExecutor,
   input: ContactWriteInput,
-  options?: { rejectOnDuplicate?: boolean }
+  options?: { rejectOnDuplicate?: boolean; mergeTags?: boolean }
 ): Promise<{ contact: Contact; action: "created" | "updated" | "skipped" }> {
   const phoneNumber = normalizePhoneNumber(input.phoneNumber);
   if (!phoneNumber) {
@@ -455,7 +455,12 @@ async function upsertContact(
       : getContactTypeWeight(contactType) >= getContactTypeWeight(existing.contact_type)
         ? contactType
         : existing.contact_type;
-  const nextTags = tags === undefined ? existing.tags : tags;
+  const nextTags =
+    tags === undefined
+      ? existing.tags
+      : options?.mergeTags
+        ? mergeTags(existing.tags, tags)
+        : tags;
   const nextOrderDate = orderDate === undefined ? existing.order_date : orderDate;
   const nextSourceType = preserveSource ? existing.source_type : sourceType;
   const nextSourceId = preserveSource ? existing.source_id : sourceId === undefined ? existing.source_id : sourceId;
@@ -692,7 +697,11 @@ export async function reconcileContactPhone(
   });
 }
 
-export async function importContactsWorkbook(userId: string, fileBuffer: Buffer): Promise<ContactImportResult> {
+export async function importContactsWorkbook(
+  userId: string,
+  fileBuffer: Buffer,
+  options?: { extraTags?: string[] }
+): Promise<ContactImportResult> {
   const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true });
   const sheetName = workbook.Sheets.Contacts ? "Contacts" : workbook.SheetNames[0];
   const worksheet = sheetName ? workbook.Sheets[sheetName] : undefined;
@@ -708,6 +717,8 @@ export async function importContactsWorkbook(userId: string, fileBuffer: Buffer)
   let updated = 0;
   let skipped = 0;
   const errors: ContactImportError[] = [];
+
+  const extraTags = normalizeTags(options?.extraTags ?? []);
 
   for (const [index, row] of rows.entries()) {
     const rowNumber = index + 2;
@@ -754,6 +765,7 @@ export async function importContactsWorkbook(userId: string, fileBuffer: Buffer)
       continue;
     }
 
+    const parsedTags = String(tagsCell ?? "").trim() ? parseTagCell(tagsCell) : [];
     const result = await withTransaction(async (client) =>
       upsertContact(client, {
         userId,
@@ -761,12 +773,12 @@ export async function importContactsWorkbook(userId: string, fileBuffer: Buffer)
         phoneNumber,
         email: email || undefined,
         contactType: contactType ?? undefined,
-        tags: String(tagsCell ?? "").trim() ? parseTagCell(tagsCell) : undefined,
+        tags: parsedTags.length > 0 || extraTags.length > 0 ? [...parsedTags, ...extraTags] : undefined,
         orderDate: orderDateCell ? parseOrderDate(orderDateCell) : undefined,
         sourceType: sourceType ?? "import",
         sourceId: sourceId || undefined,
         sourceUrl: sourceUrl || undefined
-      })
+      }, { mergeTags: true })
     );
 
     if (result.action === "created") {

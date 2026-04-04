@@ -29,6 +29,7 @@ import { contactFieldRoutes } from "./routes/contact-fields.js";
 import { contactSegmentRoutes } from "./routes/contact-segments.js";
 import { templateRoutes } from "./routes/templates.js";
 import { campaignRoutes } from "./routes/campaigns.js";
+import { broadcastRoutes } from "./routes/broadcasts.js";
 import { deliveryRoutes } from "./routes/delivery.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
@@ -172,6 +173,7 @@ export async function buildApp() {
   await contactFieldRoutes(app);
   await contactSegmentRoutes(app);
   await campaignRoutes(app);
+  await broadcastRoutes(app);
   await deliveryRoutes(app);
   await flowRoutes(app);
   await registerRealtimeRoutes(app);

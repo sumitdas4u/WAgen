@@ -7,6 +7,8 @@ import { getMessageTemplate, resolveTemplatePayload } from "./template-service.j
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
 export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
 export type CampaignTemplateVariableSource = "contact" | "static";
+export type BroadcastType = "standard" | "retarget";
+export type RetargetStatus = Extract<CampaignMessageStatus, "sent" | "delivered" | "read" | "failed" | "skipped">;
 
 export interface CampaignTemplateVariableBinding {
   source: CampaignTemplateVariableSource;
@@ -16,15 +18,22 @@ export interface CampaignTemplateVariableBinding {
 }
 
 export type CampaignTemplateVariables = Record<string, CampaignTemplateVariableBinding>;
+export type CampaignAudienceSource = Record<string, unknown>;
+export type CampaignMediaOverrides = Record<string, string>;
 
 export interface Campaign {
   id: string;
   user_id: string;
   name: string;
   status: CampaignStatus;
+  broadcast_type: BroadcastType;
   template_id: string | null;
   template_variables: CampaignTemplateVariables;
   target_segment_id: string | null;
+  source_campaign_id: string | null;
+  retarget_status: RetargetStatus | null;
+  audience_source_json: CampaignAudienceSource;
+  media_overrides_json: CampaignMediaOverrides;
   scheduled_at: string | null;
   started_at: string | null;
   completed_at: string | null;
@@ -59,9 +68,14 @@ export interface CampaignMessage {
 
 export interface CreateCampaignInput {
   name: string;
+  broadcastType?: BroadcastType;
   templateId?: string | null;
   templateVariables?: CampaignTemplateVariables;
   targetSegmentId?: string | null;
+  sourceCampaignId?: string | null;
+  retargetStatus?: RetargetStatus | null;
+  audienceSource?: CampaignAudienceSource;
+  mediaOverrides?: CampaignMediaOverrides;
   scheduledAt?: string | null;
 }
 
@@ -73,6 +87,48 @@ function normalizePlaceholderKey(raw: string): string {
 function trimToNull(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? "";
   return trimmed ? trimmed : null;
+}
+
+function buildRetargetClause(status: RetargetStatus): string {
+  switch (status) {
+    case "sent":
+      return "cm.sent_at IS NOT NULL";
+    case "delivered":
+      return "(cm.delivered_at IS NOT NULL OR cm.status IN ('delivered', 'read'))";
+    case "read":
+      return "(cm.read_at IS NOT NULL OR cm.status = 'read')";
+    case "failed":
+      return "cm.status = 'failed'";
+    case "skipped":
+      return "cm.status = 'skipped'";
+    default:
+      return "FALSE";
+  }
+}
+
+async function getCampaignAudienceContacts(userId: string, campaign: Campaign): Promise<Contact[]> {
+  if (campaign.source_campaign_id && campaign.retarget_status) {
+    const clause = buildRetargetClause(campaign.retarget_status);
+    const result = await pool.query<Contact>(
+      `SELECT DISTINCT c.*
+       FROM campaign_messages cm
+       JOIN contacts c ON c.id = cm.contact_id
+       JOIN campaigns src ON src.id = cm.campaign_id
+       WHERE src.user_id = $1
+         AND src.id = $2
+         AND ${clause}
+       ORDER BY c.updated_at DESC, c.created_at DESC
+       LIMIT 1000`,
+      [userId, campaign.source_campaign_id]
+    );
+    return result.rows;
+  }
+
+  if (!campaign.target_segment_id) {
+    throw new Error("Campaign has no target audience.");
+  }
+
+  return getSegmentContacts(userId, campaign.target_segment_id);
 }
 
 function getContactFieldValue(contact: Contact, field: string): string | null {
@@ -159,15 +215,34 @@ function resolveCampaignVariablesForContact(
 
 export async function createCampaign(userId: string, input: CreateCampaignInput): Promise<Campaign> {
   const result = await pool.query<Campaign>(
-    `INSERT INTO campaigns (user_id, name, template_id, template_variables, target_segment_id, scheduled_at)
-     VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+    `INSERT INTO campaigns (
+       user_id,
+       name,
+       status,
+       broadcast_type,
+       template_id,
+       template_variables,
+       target_segment_id,
+       source_campaign_id,
+       retarget_status,
+       audience_source_json,
+       media_overrides_json,
+       scheduled_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11::jsonb, $12)
      RETURNING *`,
     [
       userId,
       input.name,
+      input.scheduledAt ? "scheduled" : "draft",
+      input.broadcastType ?? "standard",
       input.templateId ?? null,
       JSON.stringify(input.templateVariables ?? {}),
       input.targetSegmentId ?? null,
+      input.sourceCampaignId ?? null,
+      input.retargetStatus ?? null,
+      JSON.stringify(input.audienceSource ?? {}),
+      JSON.stringify(input.mediaOverrides ?? {}),
       input.scheduledAt ?? null
     ]
   );
@@ -193,20 +268,29 @@ export async function getCampaign(userId: string, campaignId: string): Promise<C
 export async function updateCampaign(
   userId: string,
   campaignId: string,
-  patch: Partial<Pick<CreateCampaignInput, "name" | "templateId" | "templateVariables" | "targetSegmentId" | "scheduledAt">>
+  patch: Partial<Pick<CreateCampaignInput, "name" | "broadcastType" | "templateId" | "templateVariables" | "targetSegmentId" | "sourceCampaignId" | "retargetStatus" | "audienceSource" | "mediaOverrides" | "scheduledAt">>
 ): Promise<Campaign | null> {
   const current = await getCampaign(userId, campaignId);
-  if (!current || current.status !== "draft") {
+  if (!current || (current.status !== "draft" && current.status !== "scheduled")) {
     return null;
   }
 
   const result = await pool.query<Campaign>(
     `UPDATE campaigns
      SET name = COALESCE($3, name),
-         template_id = COALESCE($4, template_id),
-         template_variables = COALESCE($5::jsonb, template_variables),
-         target_segment_id = COALESCE($6, target_segment_id),
-         scheduled_at = COALESCE($7, scheduled_at)
+         broadcast_type = COALESCE($4, broadcast_type),
+         template_id = COALESCE($5, template_id),
+         template_variables = COALESCE($6::jsonb, template_variables),
+         target_segment_id = COALESCE($7, target_segment_id),
+         source_campaign_id = COALESCE($8, source_campaign_id),
+         retarget_status = COALESCE($9, retarget_status),
+         audience_source_json = COALESCE($10::jsonb, audience_source_json),
+         media_overrides_json = COALESCE($11::jsonb, media_overrides_json),
+         status = CASE
+           WHEN COALESCE($12, scheduled_at) IS NOT NULL THEN 'scheduled'
+           ELSE 'draft'
+         END,
+         scheduled_at = COALESCE($12, scheduled_at)
      WHERE user_id = $1
        AND id = $2
      RETURNING *`,
@@ -214,9 +298,14 @@ export async function updateCampaign(
       userId,
       campaignId,
       patch.name ?? null,
+      patch.broadcastType ?? null,
       patch.templateId ?? null,
       patch.templateVariables != null ? JSON.stringify(patch.templateVariables) : null,
       patch.targetSegmentId ?? null,
+      patch.sourceCampaignId ?? null,
+      patch.retargetStatus ?? null,
+      patch.audienceSource != null ? JSON.stringify(patch.audienceSource) : null,
+      patch.mediaOverrides != null ? JSON.stringify(patch.mediaOverrides) : null,
       patch.scheduledAt ?? null
     ]
   );
@@ -228,16 +317,13 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   if (!campaign || (campaign.status !== "draft" && campaign.status !== "scheduled")) {
     return null;
   }
-  if (!campaign.target_segment_id) {
-    throw new Error("Campaign has no target segment.");
-  }
   if (!campaign.template_id) {
     throw new Error("Campaign has no template selected.");
   }
 
-  const contacts = await getSegmentContacts(userId, campaign.target_segment_id);
+  const contacts = await getCampaignAudienceContacts(userId, campaign);
   if (contacts.length === 0) {
-    throw new Error("Target segment has no contacts.");
+    throw new Error("Target audience has no contacts.");
   }
 
   const eligibleContacts = contacts.filter((contact) => trimToNull(contact.phone_number));
@@ -268,7 +354,10 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
 
     let status: CampaignMessageStatus = "queued";
     let errorMessage: string | null = null;
-    let resolvedVariablesJson: Record<string, string> = resolved.values;
+    let resolvedVariablesJson: Record<string, string> = {
+      ...resolved.values,
+      ...(campaign.media_overrides_json ?? {})
+    };
     const normalizedPhoneNumber = phoneNumber.replace(/\D/g, "");
     const suppression = suppressedRecipients.get(normalizedPhoneNumber);
 

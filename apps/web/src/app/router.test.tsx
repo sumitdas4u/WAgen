@@ -328,9 +328,11 @@ describe("dashboard router", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "Chats" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Waiting for agent to connect" })).toBeInTheDocument();
     expect(
-      screen.getByText("No agent found yet. Create or activate an agent workflow, then connect a channel to start receiving chats.")
+      await screen.findByText("No agent found yet. Create one to start receiving chats.")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("No live channel connected.")
     ).toBeInTheDocument();
     expect(screen.queryByText("Connect to Website")).not.toBeInTheDocument();
   });

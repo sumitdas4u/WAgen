@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "analytics" | "billing" | "knowledge" | "settings";
+type PrimaryNavId = "conversations" | "leads" | "broadcast" | "analytics" | "billing" | "knowledge" | "settings";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -52,6 +52,13 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "leads",
     title: "Contacts",
     defaultModuleIds: ["leads"]
+  },
+  {
+    id: "broadcast",
+    label: "Broadcast",
+    icon: "broadcast",
+    title: "Broadcast",
+    defaultModuleIds: ["broadcast"]
   },
   {
     id: "analytics",
@@ -117,6 +124,7 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   inbox: { label: "Chats", subtitle: "Live Inbox" },
   leads: { label: "Contacts", subtitle: "Customer Directory" },
   billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
+  broadcast: { label: "Broadcast", subtitle: "Broadcast campaigns, audiences, and retargeting" },
   analytics: { label: "Analytics", subtitle: "Message delivery and reporting" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
   "studio-flows": { label: "Flows", subtitle: "Build chatbot workflows visually" },
@@ -222,9 +230,11 @@ function DashboardShellLayout() {
           ? "/dashboard/inbox"
           : item.id === "leads"
             ? "/dashboard/leads"
+            : item.id === "broadcast"
+              ? "/dashboard/broadcast"
             : item.id === "analytics"
               ? "/dashboard/analytics"
-            : item.id === "billing"
+              : item.id === "billing"
                 ? "/dashboard/billing"
                 : item.id === "knowledge"
                   ? studioDefaultTo
@@ -236,13 +246,15 @@ function DashboardShellLayout() {
       ? "conversations"
       : currentModuleId === "leads"
         ? "leads"
-        : currentModuleId === "analytics"
-          ? "analytics"
-        : currentModuleId === "billing"
-            ? "billing"
-            : currentModuleId.startsWith("settings-")
-              ? "settings"
-              : "knowledge";
+        : currentModuleId === "broadcast"
+          ? "broadcast"
+          : currentModuleId === "analytics"
+            ? "analytics"
+            : currentModuleId === "billing"
+              ? "billing"
+              : currentModuleId.startsWith("settings-")
+                ? "settings"
+                : "knowledge";
 
   const handleModulePrefetch = async (moduleId: string) => {
     const module = dashboardModules.find((definition) => definition.id === moduleId);

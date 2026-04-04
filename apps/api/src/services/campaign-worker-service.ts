@@ -2,6 +2,7 @@ import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import {
   claimQueuedCampaignMessages,
+  launchCampaign,
   markCampaignCompleted,
   type Campaign
 } from "./campaign-service.js";
@@ -119,6 +120,26 @@ export function enqueueCampaign(campaignId: string, userId: string): void {
 
 async function retrySweep(): Promise<void> {
   try {
+    const scheduledCampaigns = await pool.query<{ id: string; user_id: string }>(
+      `SELECT id, user_id
+       FROM campaigns
+       WHERE status = 'scheduled'
+         AND scheduled_at IS NOT NULL
+         AND scheduled_at <= NOW()
+       ORDER BY scheduled_at ASC
+       LIMIT 50`
+    );
+    for (const row of scheduledCampaigns.rows) {
+      try {
+        const launched = await launchCampaign(row.user_id, row.id);
+        if (launched) {
+          enqueueCampaign(row.id, row.user_id);
+        }
+      } catch (error) {
+        console.error(`[CampaignWorker] scheduled launch failed for campaign=${row.id}`, error);
+      }
+    }
+
     const result = await pool.query<{ campaign_id: string; user_id: string }>(
       `SELECT DISTINCT cm.campaign_id, c.user_id
        FROM campaign_messages cm

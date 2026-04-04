@@ -1,13 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dashboardModules } from "./dashboardModules";
+
+vi.mock("../lib/firebase", () => ({
+  firebaseAuth: {}
+}));
 
 describe("dashboard module registry", () => {
   it("provides a prefetch hook for every code+data module", async () => {
     const loadedModules = await Promise.all(
-      dashboardModules.map(async (definition) => ({
-        definition,
-        routeModule: await definition.lazyRoute()
-      }))
+      dashboardModules
+        .filter((definition) => definition.prefetchStrategy === "code+data")
+        .map(async (definition) => ({
+          definition,
+          routeModule: await definition.lazyRoute()
+        }))
     );
 
     for (const { definition, routeModule } of loadedModules) {
