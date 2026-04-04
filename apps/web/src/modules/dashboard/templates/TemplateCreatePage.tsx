@@ -97,6 +97,55 @@ function isPositiveIntegerToken(value: string): boolean {
   return /^[1-9]\d*$/.test(value.trim());
 }
 
+function normalizeTemplatePhoneDraft(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return `+${trimmed.replace(/\D/g, "")}`;
+}
+
+function validateTemplatePhoneDraft(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Please fill this phone number.";
+  }
+  if (!trimmed.startsWith("+")) {
+    return "Use international format with country code, for example +919804735837.";
+  }
+  const normalized = normalizeTemplatePhoneDraft(trimmed);
+  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
+    return "Phone number must contain 8 to 15 digits with country code, for example +919804735837.";
+  }
+  return null;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+type DraftButton = { type: string; text: string; url?: string; phone?: string; coupon?: string };
+
+type DraftButtonValidation = {
+  text: string | null;
+  url: string | null;
+  phone: string | null;
+  coupon: string | null;
+};
+
+type TemplateDraftValidation = {
+  formError: string | null;
+  footerError: string | null;
+  bodyError: string | null;
+  headerError: string | null;
+  buttonErrors: DraftButtonValidation[];
+};
+
 function validateTemplateDraft(input: {
   category: TemplateCategory;
   headerFormat: string;
@@ -104,29 +153,60 @@ function validateTemplateDraft(input: {
   headerText: string;
   bodyText: string;
   footerText: string;
-  buttons: Array<{ type: string; text: string; url?: string; phone?: string }>;
-}): { formError: string | null; footerError: string | null; bodyError: string | null } {
+  buttons: DraftButton[];
+}): TemplateDraftValidation {
+  const buttonErrors: DraftButtonValidation[] = input.buttons.map(() => ({
+    text: null,
+    url: null,
+    phone: null,
+    coupon: null
+  }));
+
   if (input.category === "AUTHENTICATION") {
     return {
       formError:
         "Authentication templates need Meta's dedicated authentication-template format and are not supported in this builder yet.",
+      headerError: null,
       footerError: null,
-      bodyError: null
+      bodyError: null,
+      buttonErrors
     };
   }
 
   if (["IMAGE", "VIDEO", "DOCUMENT"].includes(input.headerFormat) && !input.headerHandle.trim()) {
     return {
       formError: "Upload a sample media file for the header before submitting this template.",
+      headerError: "Please upload the sample media for this header.",
       footerError: null,
-      bodyError: null
+      bodyError: null,
+      buttonErrors
     };
   }
   if (["IMAGE", "VIDEO", "DOCUMENT"].includes(input.headerFormat) && /^https?:\/\//i.test(input.headerHandle.trim())) {
     return {
       formError: "Media headers must use the Meta sample handle from Upload Sample Media. Public URLs are not accepted here.",
+      headerError: "Public URLs are not accepted. Upload the media here to generate a Meta sample handle.",
       footerError: null,
-      bodyError: null
+      bodyError: null,
+      buttonErrors
+    };
+  }
+  if (input.headerFormat === "TEXT" && !input.headerText.trim()) {
+    return {
+      formError: "Please fill the header text or switch the header format to None.",
+      headerError: "Please fill the header text.",
+      footerError: null,
+      bodyError: null,
+      buttonErrors
+    };
+  }
+  if (!input.bodyText.trim()) {
+    return {
+      formError: "Please fill the message body before submitting.",
+      headerError: null,
+      footerError: null,
+      bodyError: "Please fill the message body.",
+      buttonErrors
     };
   }
 
@@ -135,15 +215,19 @@ function validateTemplateDraft(input: {
     if (detectVariables(footerText).length > 0) {
       return {
         formError: "Footer text cannot contain variables. Move dynamic values into the body instead.",
+        headerError: null,
         footerError: "Footer text cannot contain variables.",
-        bodyError: null
+        bodyError: null,
+        buttonErrors
       };
     }
     if (EMOJI_PATTERN.test(footerText)) {
       return {
         formError: "Footer text cannot contain emojis. Remove the emoji from the footer and try again.",
+        headerError: null,
         footerError: "Footer text cannot contain emojis.",
-        bodyError: null
+        bodyError: null,
+        buttonErrors
       };
     }
   }
@@ -165,8 +249,10 @@ function validateTemplateDraft(input: {
   if (invalidPlaceholders.length > 0) {
     return {
       formError: `Use numbered variables like {{1}}, {{2}}, {{3}}. Invalid variable(s): ${invalidPlaceholders.join(", ")}.`,
+      headerError: null,
       footerError: null,
-      bodyError: "Use numbered variables like {{1}}, {{2}}, {{3}}."
+      bodyError: "Use numbered variables like {{1}}, {{2}}, {{3}}.",
+      buttonErrors
     };
   }
 
@@ -183,36 +269,67 @@ function validateTemplateDraft(input: {
     if (numericPlaceholders[index] !== expected) {
       return {
         formError: `Template variables must be sequential with no gaps. Add {{${expected}}} before using higher numbers.`,
+        headerError: null,
         footerError: null,
-        bodyError: "Template variables must be sequential with no gaps."
+        bodyError: "Template variables must be sequential with no gaps.",
+        buttonErrors
       };
     }
   }
 
-  const missingButtonConfig = input.buttons.findIndex((button) => {
+  let buttonFormError: string | null = null;
+  for (const [index, button] of input.buttons.entries()) {
     if (!button.text.trim()) {
-      return true;
+      buttonErrors[index]!.text = "Please fill this button label.";
+      buttonFormError ??= `Complete the configuration for button ${index + 1} before submitting.`;
     }
-    if (button.type === "URL" && !button.url?.trim()) {
-      return true;
+    if (button.type === "URL") {
+      const url = button.url?.trim() ?? "";
+      if (!url) {
+        buttonErrors[index]!.url = "Please fill this URL.";
+        buttonFormError ??= `Complete the configuration for button ${index + 1} before submitting.`;
+      } else if (!isValidHttpUrl(url.replace(/\{\{[^}]+\}\}$/, "sample"))) {
+        buttonErrors[index]!.url = "Enter a full URL starting with http:// or https://.";
+        buttonFormError ??= `URL button ${index + 1} needs a valid URL.`;
+      } else {
+        const urlVars = detectVariables(url);
+        if (urlVars.length > 1) {
+          buttonErrors[index]!.url = "Only one variable is allowed in a button URL.";
+          buttonFormError ??= `URL button ${index + 1} can only use one variable.`;
+        } else if (urlVars.length === 1 && !url.endsWith(urlVars[0]!)) {
+          buttonErrors[index]!.url = "The variable must be at the end of the URL.";
+          buttonFormError ??= `URL button ${index + 1} must place its variable at the end of the URL.`;
+        }
+      }
     }
-    if (button.type === "PHONE_NUMBER" && !button.phone?.trim()) {
-      return true;
+    if (button.type === "PHONE_NUMBER") {
+      const phoneError = validateTemplatePhoneDraft(button.phone ?? "");
+      if (phoneError) {
+        buttonErrors[index]!.phone = phoneError;
+        buttonFormError ??= `Phone button ${index + 1}: ${phoneError}`;
+      }
     }
-    return false;
-  });
-  if (missingButtonConfig >= 0) {
+    if (button.type === "COPY_CODE" && !button.coupon?.trim()) {
+      buttonErrors[index]!.coupon = "Please fill the sample coupon code.";
+      buttonFormError ??= `Coupon code button ${index + 1} needs a sample coupon code.`;
+    }
+  }
+  if (buttonFormError) {
     return {
-      formError: `Complete the configuration for button ${missingButtonConfig + 1} before submitting.`,
+      formError: buttonFormError,
+      headerError: null,
       footerError: null,
-      bodyError: null
+      bodyError: null,
+      buttonErrors
     };
   }
 
   return {
     formError: null,
+    headerError: null,
     footerError: null,
-    bodyError: null
+    bodyError: null,
+    buttonErrors
   };
 }
 
@@ -273,7 +390,7 @@ function buildComponents(
           btn.example = [variableMapping[urlVars[0]!] || urlVars[0]!.replace(/\{\{|\}\}/g, "")];
         }
       }
-      if (b.phone) btn.phone_number = b.phone;
+      if (b.phone) btn.phone_number = normalizeTemplatePhoneDraft(b.phone);
       if (b.coupon) btn.example = [b.coupon];
       return btn;
     });
@@ -335,6 +452,13 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
       setFormError(null);
     }
   }, [draftValidation.formError, formError]);
+
+  useEffect(() => {
+    if (!createMutation.isError) {
+      return;
+    }
+    createMutation.reset();
+  }, [name, category, language, headerFormat, headerText, headerHandle, bodyText, footerText, JSON.stringify(buttons), JSON.stringify(variableMapping)]);
 
   const previewComponents = buildComponents(
     name, headerFormat, headerText, headerHandle,
@@ -554,21 +678,26 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             This builder supports text, image, video, and document headers. Use JPG or PNG for image headers, MP4 for video headers, and PDF for document headers. Location headers are still not supported here.
           </div>
           {headerFormat === "TEXT" && (
-            <input
-              value={headerText}
-              onChange={(e) => setHeaderText(e.target.value.slice(0, 60))}
-              placeholder="Header text (max 60 chars)"
-              maxLength={60}
-              style={{
-                marginTop: "12px",
-                width: "100%",
-                borderRadius: "8px",
-                border: "1.5px solid #e0e0e0",
-                padding: "10px 12px",
-                fontSize: "14px",
-                boxSizing: "border-box"
-              }}
-            />
+            <>
+              <input
+                value={headerText}
+                onChange={(e) => setHeaderText(e.target.value.slice(0, 60))}
+                placeholder="Header text * (max 60 chars)"
+                maxLength={60}
+                style={{
+                  marginTop: "12px",
+                  width: "100%",
+                  borderRadius: "8px",
+                  border: `1.5px solid ${draftValidation.headerError ? "#dc2626" : "#e0e0e0"}`,
+                  padding: "10px 12px",
+                  fontSize: "14px",
+                  boxSizing: "border-box"
+                }}
+              />
+              {draftValidation.headerError && (
+                <div style={{ marginTop: "8px", color: "#dc2626", fontSize: "12px" }}>{draftValidation.headerError}</div>
+              )}
+            </>
           )}
           {["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat) && (
             <div style={{ marginTop: "12px" }}>
@@ -581,6 +710,9 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                   if (headerFormat === "IMAGE") setHeaderImageUrl(localPreviewUrl ?? url);
                 }}
               />
+              {draftValidation.headerError && (
+                <div style={{ marginTop: "8px", color: "#dc2626", fontSize: "12px" }}>{draftValidation.headerError}</div>
+              )}
             </div>
           )}
         </div>
@@ -600,7 +732,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
               style={{
                 width: "100%",
                 borderRadius: "8px",
-                border: "1.5px solid #e0e0e0",
+                border: `1.5px solid ${draftValidation.bodyError ? "#dc2626" : "#e0e0e0"}`,
                 padding: "10px 12px",
                 fontSize: "14px",
                 boxSizing: "border-box",
@@ -710,40 +842,67 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             If you add more than three buttons, they will appear in a list.
           </p>
 
-          {buttons.map((btn, idx) => (
-            <div key={idx} style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px" }}>
+          {buttons.map((btn, idx) => {
+            const buttonError = draftValidation.buttonErrors[idx] ?? { text: null, url: null, phone: null, coupon: null };
+            return (
+            <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               <div style={{ width: "20px", fontSize: "14px" }}>
                 {btn.type === "URL" ? "↗" : btn.type === "PHONE_NUMBER" ? "📞" : btn.type === "COPY_CODE" ? "📋" : "↩"}
               </div>
               <input
                 value={btn.text}
                 onChange={(e) => setButtons((prev) => prev.map((b, i) => i === idx ? { ...b, text: e.target.value } : b))}
-                placeholder="Button text"
+                placeholder="Button label *"
                 maxLength={25}
-                style={{ flex: 1, borderRadius: "6px", border: "1.5px solid #e0e0e0", padding: "7px 10px", fontSize: "13px" }}
+                style={{
+                  flex: 1,
+                  borderRadius: "6px",
+                  border: `1.5px solid ${buttonError.text ? "#dc2626" : "#e0e0e0"}`,
+                  padding: "7px 10px",
+                  fontSize: "13px"
+                }}
               />
               {btn.type === "URL" && (
                 <input
                   value={btn.url ?? ""}
                   onChange={(e) => setButtons((prev) => prev.map((b, i) => i === idx ? { ...b, url: e.target.value } : b))}
-                  placeholder="https://..."
-                  style={{ flex: 1, borderRadius: "6px", border: "1.5px solid #e0e0e0", padding: "7px 10px", fontSize: "13px" }}
+                  placeholder="https://example.com/path *"
+                  style={{
+                    flex: 1,
+                    borderRadius: "6px",
+                    border: `1.5px solid ${buttonError.url ? "#dc2626" : "#e0e0e0"}`,
+                    padding: "7px 10px",
+                    fontSize: "13px"
+                  }}
                 />
               )}
               {btn.type === "PHONE_NUMBER" && (
                 <input
                   value={btn.phone ?? ""}
                   onChange={(e) => setButtons((prev) => prev.map((b, i) => i === idx ? { ...b, phone: e.target.value } : b))}
-                  placeholder="+1234567890"
-                  style={{ flex: 1, borderRadius: "6px", border: "1.5px solid #e0e0e0", padding: "7px 10px", fontSize: "13px" }}
+                  placeholder="+919804735837 *"
+                  style={{
+                    flex: 1,
+                    borderRadius: "6px",
+                    border: `1.5px solid ${buttonError.phone ? "#dc2626" : "#e0e0e0"}`,
+                    padding: "7px 10px",
+                    fontSize: "13px"
+                  }}
                 />
               )}
               {btn.type === "COPY_CODE" && (
                 <input
                   value={btn.coupon ?? ""}
                   onChange={(e) => setButtons((prev) => prev.map((b, i) => i === idx ? { ...b, coupon: e.target.value } : b))}
-                  placeholder="SUMMER25"
-                  style={{ flex: 1, borderRadius: "6px", border: "1.5px solid #e0e0e0", padding: "7px 10px", fontSize: "13px" }}
+                  placeholder="Coupon sample *"
+                  style={{
+                    flex: 1,
+                    borderRadius: "6px",
+                    border: `1.5px solid ${buttonError.coupon ? "#dc2626" : "#e0e0e0"}`,
+                    padding: "7px 10px",
+                    fontSize: "13px"
+                  }}
                 />
               )}
               <button
@@ -754,7 +913,22 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                 ×
               </button>
             </div>
-          ))}
+              {(buttonError.text || buttonError.url || buttonError.phone || buttonError.coupon) && (
+                <div style={{ marginLeft: "28px", color: "#dc2626", fontSize: "12px", display: "flex", flexDirection: "column", gap: "2px" }}>
+                  {buttonError.text && <span>{buttonError.text}</span>}
+                  {buttonError.url && <span>{buttonError.url}</span>}
+                  {buttonError.phone && <span>{buttonError.phone}</span>}
+                  {buttonError.coupon && <span>{buttonError.coupon}</span>}
+                </div>
+              )}
+              {btn.type === "PHONE_NUMBER" && !buttonError.phone && (
+                <div style={{ marginLeft: "28px", color: "#64748b", fontSize: "12px" }}>
+                  Use full international format with country code, for example +919804735837.
+                </div>
+              )}
+            </div>
+            );
+          })}
 
           <div style={{ position: "relative" }}>
             <button
@@ -836,6 +1010,11 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
         {(formError || createMutation.isError) && (
           <div style={{ padding: "12px", borderRadius: "8px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: "13px" }}>
             {formError ?? (createMutation.error as Error).message}
+          </div>
+        )}
+        {!formError && !createMutation.isError && !isValid && (
+          <div style={{ padding: "12px", borderRadius: "8px", background: "#fff7ed", color: "#9a3412", border: "1px solid #fdba74", fontSize: "13px" }}>
+            Fill all required fields and fix the highlighted inputs before submitting this template.
           </div>
         )}
 

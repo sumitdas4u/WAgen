@@ -268,6 +268,12 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
       if (button.type === "PHONE_NUMBER" && !button.phone_number?.trim()) {
         errors.push(`Phone button ${index + 1} needs a phone number.`);
       }
+      if (button.type === "PHONE_NUMBER" && button.phone_number?.trim()) {
+        const phoneError = validateTemplatePhoneNumber(button.phone_number);
+        if (phoneError) {
+          errors.push(`Phone button ${index + 1}: ${phoneError}`);
+        }
+      }
     }
   }
 
@@ -334,6 +340,29 @@ function normalizeButtonExampleValues(button: TemplateComponentButton): string[]
   return normalizeStringList(button.example);
 }
 
+function normalizeTemplatePhoneNumber(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return `+${trimmed.replace(/\D/g, "")}`;
+}
+
+function validateTemplatePhoneNumber(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Please fill the phone number for this phone button.";
+  }
+  if (!trimmed.startsWith("+")) {
+    return "Phone buttons must use international format with country code, for example +919804735837.";
+  }
+  const normalized = normalizeTemplatePhoneNumber(trimmed);
+  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
+    return "Phone buttons must use a valid international number with 8 to 15 digits, for example +919804735837.";
+  }
+  return null;
+}
+
 function decodeTemplateHandleSegment(value: string): string | null {
   if (!/^[A-Za-z0-9+/=]+$/.test(value)) {
     return null;
@@ -367,16 +396,6 @@ function inspectTemplateHeaderHandle(handle: string): {
     isUrl: false,
     mimeType: decodeTemplateHandleSegment(segments[2] ?? "")
   };
-}
-
-function normalizeTemplatePhoneNumber(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-  const prefix = trimmed.startsWith("+") ? "+" : "";
-  const digits = trimmed.replace(/\D/g, "");
-  return `${prefix}${digits}`;
 }
 
 function buildTemplateExampleValue(
@@ -578,11 +597,13 @@ function normalizeCreateTemplateComponents(components: TemplateComponent[]): Tem
       }
 
       if (button.type === "PHONE_NUMBER") {
-        const phone = normalizeTemplatePhoneNumber(button.phone_number ?? "");
-        if (!phone) {
-          errors.push(`Phone button ${index + 1} needs a phone number.`);
+        const rawPhone = button.phone_number ?? "";
+        const phoneError = validateTemplatePhoneNumber(rawPhone);
+        if (phoneError) {
+          errors.push(`Phone button ${index + 1}: ${phoneError}`);
           continue;
         }
+        const phone = normalizeTemplatePhoneNumber(rawPhone);
 
         ctaButtons.push({
           type: "PHONE_NUMBER",
@@ -641,11 +662,38 @@ function normalizeCreateTemplateComponents(components: TemplateComponent[]): Tem
 
 function improveTemplateCreateErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "Failed to create template.");
+  const buttonFieldMatch = message.match(/components\[(\d+)\]\['buttons'\]\[(\d+)\]\['([^']+)'\]/i);
+  if (buttonFieldMatch) {
+    const buttonIndex = Number(buttonFieldMatch[2]) + 1;
+    const field = buttonFieldMatch[3]?.toLowerCase();
+    if (field === "phone_number") {
+      return `Phone button ${buttonIndex} must use a valid international number with country code, for example +919804735837.`;
+    }
+    if (field === "url") {
+      return `URL button ${buttonIndex} has an invalid URL. Use a full URL that starts with https:// and keep any variable at the end.`;
+    }
+    if (field === "text") {
+      return `Button ${buttonIndex} has invalid text. Keep button labels short and fill every required field before submitting.`;
+    }
+  }
+  const componentFieldMatch = message.match(/components\[(\d+)\]\['([^']+)'\]/i);
+  if (componentFieldMatch) {
+    const field = componentFieldMatch[2]?.toLowerCase();
+    if (field === "text") {
+      return "One of the template text fields is invalid. Review the header, body, and footer text and try again.";
+    }
+    if (field === "example") {
+      return "Meta rejected the sample example data for this template. Fill every variable example and re-upload media samples from WAgen before submitting.";
+    }
+  }
   if (/\bsubcode=2388273\b/i.test(message)) {
     return `${message} Meta rejected the media sample reference. Upload the sample file in WAgen and use the returned Meta header handle; public URLs are not accepted for template media headers.`;
   }
   if (/\bsubcode=2388084\b/i.test(message)) {
     return `${message} Meta rejected the uploaded media sample for this header type. Use JPG or PNG for image headers, MP4 for video headers, and PDF for document headers.`;
+  }
+  if (/\bcode=192\b/i.test(message) && /phone number/i.test(message)) {
+    return "Meta rejected the phone button number. Use a full international number with country code, for example +919804735837.";
   }
   if (!/\bcode=131009\b/i.test(message) && !/\bcode=100\b/i.test(message)) {
     return message;
