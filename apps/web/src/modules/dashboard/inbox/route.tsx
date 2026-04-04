@@ -1675,43 +1675,6 @@ export function Component() {
                             </div>
                           )}
 
-                          <div className="compose-channel-row">
-                            <div className="compose-channel-row-copy">
-                              <span className="compose-channel-row-label">Reply tools</span>
-                              <span className="compose-channel-row-subtitle">Choose how you want to respond.</span>
-                            </div>
-                            <div className="compose-channel-row-actions">
-                              <button
-                                type="button"
-                                className={`compose-action-btn${showToolbarFlowMenu ? " active" : ""}`}
-                                disabled={!isAnyChannelConnected || assignFlowMutation.isPending}
-                                onClick={() => { setShowToolbarFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
-                              >
-                                ⚡ Flow
-                              </button>
-
-                              {selectedConversation.channel_type === "api" && (
-                                <button
-                                  type="button"
-                                  className={`compose-action-btn${showTemplateMenu ? " active" : ""}`}
-                                  disabled={!isAnyChannelConnected || sendTemplateMutation.isPending}
-                                  onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
-                                >
-                                  {sendTemplateMutation.isPending ? "… Template" : "📋 Template"}
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                className={`compose-ai-assist-btn${showAiAssistPopup ? " active" : ""}`}
-                                disabled={!isAnyChannelConnected}
-                                onClick={() => { setShowAiAssistPopup((v) => !v); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
-                              >
-                                ✨ AI Assist
-                              </button>
-                            </div>
-                          </div>
-
                           <div className="compose-toolbar">
                             <div className="compose-toolbar-left">
                               <button type="button" className="compose-tool" title="Attach file" disabled={!isAnyChannelConnected || attachedFiles.length >= 5} onClick={() => fileInputRef.current?.click()}>＋</button>
@@ -1729,6 +1692,35 @@ export function Component() {
                               </div>
 
                               <button type="button" className={`compose-tool compose-tool-aa${showFormatMenu ? " active" : ""}`} title="Formatting" onClick={() => { setShowFormatMenu((v) => !v); setShowAiAssistPopup(false); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); }}>Aa</button>
+
+                              <button
+                                type="button"
+                                className={`compose-action-btn compose-toolbar-pill${showToolbarFlowMenu ? " active" : ""}`}
+                                disabled={!isAnyChannelConnected || assignFlowMutation.isPending}
+                                onClick={() => { setShowToolbarFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
+                              >
+                                Flow
+                              </button>
+
+                              {selectedConversation.channel_type === "api" && (
+                                <button
+                                  type="button"
+                                  className={`compose-action-btn compose-toolbar-pill${showTemplateMenu ? " active" : ""}`}
+                                  disabled={!isAnyChannelConnected || sendTemplateMutation.isPending}
+                                  onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
+                                >
+                                  {sendTemplateMutation.isPending ? "Template..." : "Template"}
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                className={`compose-ai-assist-btn compose-toolbar-pill${showAiAssistPopup ? " active" : ""}`}
+                                disabled={!isAnyChannelConnected}
+                                onClick={() => { setShowAiAssistPopup((v) => !v); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
+                              >
+                                AI Assist
+                              </button>
                             </div>
 
                             <div className="compose-toolbar-right">

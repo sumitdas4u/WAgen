@@ -1565,18 +1565,18 @@
 .chat-compose-textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #c8d6e2;
-  border-radius: 12px;
+  border: 1px solid #cfdaf0;
+  border-radius: 18px;
   background: #ffffff;
-  padding: 0.6rem 0.75rem;
+  padding: 0.82rem 0.95rem;
   font: inherit;
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.92rem;
+  line-height: 1.55;
   resize: none;
-  min-height: 40px;
-  max-height: 160px;
+  min-height: 74px;
+  max-height: 180px;
   overflow-y: auto;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   color: #1a2c38;
 }
 
@@ -1970,14 +1970,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.3rem;
-  padding: 0.28rem 0;
+  gap: 0.55rem;
+  padding: 0.28rem 0 0;
+  flex-wrap: wrap;
 }
 
 .compose-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 0.15rem;
+  gap: 0.24rem;
+  flex-wrap: wrap;
 }
 
 .compose-toolbar-right {
@@ -2070,8 +2072,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  min-height: 36px;
-  padding: 0.38rem 0.82rem;
+  min-height: 34px;
+  padding: 0.34rem 0.8rem;
   font-size: 0.8rem;
   font-weight: 700;
   color: #365447;
@@ -2080,6 +2082,10 @@
   border-radius: 999px;
   cursor: pointer;
   transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.compose-toolbar-pill {
+  min-width: unset;
 }
 
 .compose-action-btn:hover:not(:disabled) {
@@ -2164,8 +2170,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  min-height: 36px;
-  padding: 0.38rem 0.82rem;
+  min-height: 34px;
+  padding: 0.34rem 0.8rem;
   font-size: 0.8rem;
   font-weight: 600;
   color: #5a3abf;

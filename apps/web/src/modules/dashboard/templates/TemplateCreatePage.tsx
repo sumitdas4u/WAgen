@@ -14,6 +14,7 @@ import { useCreateTemplateMutation } from "./queries";
 
 const PLACEHOLDER_PATTERN = /\{\{\s*([^}]+?)\s*\}\}/g;
 const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
+const EMOJI_GLOBAL_PATTERN = /\p{Extended_Pictographic}/gu;
 
 function extractPrefillState(t: MessageTemplate) {
   const header = t.components.find((c) => c.type === "HEADER");
@@ -77,6 +78,10 @@ const HEADER_FORMAT_OPTIONS = [
 function detectVariables(text: string): string[] {
   const matches = [...text.matchAll(PLACEHOLDER_PATTERN)];
   return [...new Set(matches.map((m) => `{{${(m[1] ?? "").trim()}}}`))];
+}
+
+function stripEmojiText(value: string): string {
+  return value.replace(EMOJI_GLOBAL_PATTERN, "");
 }
 
 function collectDraftVariables(input: {
@@ -195,6 +200,15 @@ function validateTemplateDraft(input: {
     return {
       formError: "Please fill the header text or switch the header format to None.",
       headerError: "Please fill the header text.",
+      footerError: null,
+      bodyError: null,
+      buttonErrors
+    };
+  }
+  if (input.headerFormat === "TEXT" && EMOJI_PATTERN.test(input.headerText.trim())) {
+    return {
+      formError: "Header text cannot contain emojis. Remove the emoji from the header and try again.",
+      headerError: "Header text cannot contain emojis.",
       footerError: null,
       bodyError: null,
       buttonErrors
@@ -425,6 +439,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const [showAI, setShowAI] = useState(false);
   const [nameError, setNameError] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [headerFooterSanitizeNotice, setHeaderFooterSanitizeNotice] = useState<string | null>(null);
 
   const createMutation = useCreateTemplateMutation(token);
   const connectionId = metaStatus?.connection?.id ?? "";
@@ -681,7 +696,12 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             <>
               <input
                 value={headerText}
-                onChange={(e) => setHeaderText(e.target.value.slice(0, 60))}
+                onChange={(e) => {
+                  const rawValue = e.target.value.slice(0, 60);
+                  const cleanedValue = stripEmojiText(rawValue);
+                  setHeaderText(cleanedValue);
+                  setHeaderFooterSanitizeNotice(cleanedValue !== rawValue ? "Emojis are not allowed in template header or footer text, so they were removed." : null);
+                }}
                 placeholder="Header text * (max 60 chars)"
                 maxLength={60}
                 style={{
@@ -696,6 +716,11 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
               />
               {draftValidation.headerError && (
                 <div style={{ marginTop: "8px", color: "#dc2626", fontSize: "12px" }}>{draftValidation.headerError}</div>
+              )}
+              {!draftValidation.headerError && (
+                <div style={{ marginTop: "8px", color: "#64748b", fontSize: "12px" }}>
+                  Plain text only. Emojis are removed automatically here.
+                </div>
               )}
             </>
           )}
@@ -809,7 +834,10 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
           <input
             value={footerText}
             onChange={(e) => {
-              setFooterText(e.target.value.slice(0, 60));
+              const rawValue = e.target.value.slice(0, 60);
+              const cleanedValue = stripEmojiText(rawValue);
+              setFooterText(cleanedValue);
+              setHeaderFooterSanitizeNotice(cleanedValue !== rawValue ? "Emojis are not allowed in template header or footer text, so they were removed." : null);
               if (formError) {
                 setFormError(null);
               }
@@ -828,6 +856,12 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             {draftValidation.footerError ?? "Meta commonly rejects footer text with emojis or variables. Keep the footer plain."}
           </div>
         </div>
+
+        {headerFooterSanitizeNotice && (
+          <div style={{ padding: "12px", borderRadius: "8px", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", fontSize: "13px" }}>
+            {headerFooterSanitizeNotice}
+          </div>
+        )}
 
         {/* Buttons card */}
         <div style={{ border: "1.5px solid #e0e0e0", borderRadius: "12px", padding: "16px" }}>
