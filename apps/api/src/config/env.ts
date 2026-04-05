@@ -54,6 +54,10 @@ const BaseEnvSchema = z.object({
   META_GRAPH_VERSION: z.string().default("v19.0"),
   META_STATUS_SYNC_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
   META_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  META_SYSTEM_USER_TOKEN: z.string().optional(),
+  META_PARTNER_BUSINESS_ID: z.string().optional(),
+  META_SHARED_BILLING_REQUIRED: z.enum(["true", "false"]).default("false"),
+  META_SHARED_BILLING_CURRENCY: z.string().default("INR"),
   DELIVERY_RATE_LIMIT_PER_SECOND: z.coerce.number().int().positive().default(8),
   DELIVERY_FAILURE_ALERT_THRESHOLD_PERCENT: z.coerce.number().min(0).max(100).default(5),
   DELIVERY_ALERT_WINDOW_SECONDS: z.coerce.number().int().positive().default(300),
@@ -183,6 +187,23 @@ const EnvSchema = BaseEnvSchema.superRefine((data, ctx) => {
       message: "META_PHONE_REGISTRATION_PIN must be a 6-digit numeric PIN"
     });
   }
+
+  const sharedBillingConfigured = Boolean(
+    data.META_SYSTEM_USER_TOKEN || data.META_PARTNER_BUSINESS_ID || data.META_SHARED_BILLING_REQUIRED === "true"
+  );
+  if (sharedBillingConfigured && !data.META_SYSTEM_USER_TOKEN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "META_SYSTEM_USER_TOKEN is required when Meta shared billing is configured"
+    });
+  }
+
+  if (sharedBillingConfigured && !data.META_PARTNER_BUSINESS_ID) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "META_PARTNER_BUSINESS_ID is required when Meta shared billing is configured"
+    });
+  }
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -221,5 +242,6 @@ export const env = {
   DASHBOARD_BILLING_CENTER: parsed.data.DASHBOARD_BILLING_CENTER === "true",
   DASHBOARD_FEATURE_FLAGS: parseDashboardFeatureFlags(parsed.data.DASHBOARD_FEATURE_FLAGS),
   AUTO_RECHARGE_CRON_ENABLED: parsed.data.AUTO_RECHARGE_CRON_ENABLED === "true",
-  METRICS_ENABLED: parsed.data.METRICS_ENABLED === "true"
+  METRICS_ENABLED: parsed.data.METRICS_ENABLED === "true",
+  META_SHARED_BILLING_REQUIRED: parsed.data.META_SHARED_BILLING_REQUIRED === "true"
 };

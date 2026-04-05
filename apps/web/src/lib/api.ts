@@ -1062,6 +1062,10 @@ export interface MetaBusinessConfig {
   redirectUri: string;
   graphVersion: string;
   webhookPath: string;
+  sharedBillingSupported: boolean;
+  sharedBillingRequired: boolean;
+  sharedBillingCurrency: string | null;
+  partnerBusinessId: string | null;
   pricing: {
     platformFeeInrMonthly: number;
     metaConversationChargesSeparate: boolean;
@@ -1079,6 +1083,14 @@ export interface MetaBusinessConnection {
   tokenExpiresAt: string | null;
   subscriptionStatus: string;
   status: string;
+  billingMode: string;
+  billingStatus: string;
+  billingOwnerBusinessId: string | null;
+  billingAttachedAt: string | null;
+  billingError: string | null;
+  billingCreditLineId: string | null;
+  billingAllocationConfigId: string | null;
+  billingCurrency: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;

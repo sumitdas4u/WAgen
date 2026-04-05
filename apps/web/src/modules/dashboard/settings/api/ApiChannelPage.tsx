@@ -162,6 +162,12 @@ export function ApiChannelPage() {
   const lastMetaSyncLabel = parseMetaTimestamp(readMetaString(metaHealthRecord, "syncedAt"));
   const businessVerificationLower = (businessVerificationStatus ?? "").toLowerCase();
   const businessVerificationPending = !/(verified|approved|complete)/.test(businessVerificationLower);
+  const sharedBillingSupported = Boolean(metaConfig?.sharedBillingSupported);
+  const sharedBillingRequired = Boolean(metaConfig?.sharedBillingRequired);
+  const billingStatusLabel = formatMetaStatusLabel(
+    metaStatus.connection?.billingStatus,
+    sharedBillingSupported ? "Pending" : "Not configured"
+  );
 
   const updateShellState = async () => {
     await Promise.all([
@@ -255,6 +261,16 @@ export function ApiChannelPage() {
           <p>Connect Meta Embedded Signup for stable production messaging at scale, then configure business profile.</p>
         </header>
 
+        {sharedBillingSupported ? (
+          <div className="api-setup-alert">
+            <strong>Shared Meta Billing Enabled</strong>
+            <p>
+              New numbers onboarded here will try to use WAgen&apos;s Meta billing in {metaConfig?.sharedBillingCurrency ?? "your configured currency"}.
+              {sharedBillingRequired ? " Billing attachment must succeed before the channel is treated as fully connected." : ""}
+            </p>
+          </div>
+        ) : null}
+
         {setupLoading && (
           <div className="dashboard-connection-loading api-setup-loading-card" role="status" aria-live="polite">
             <p className="dashboard-connection-loading-title">Syncing Meta channel...</p>
@@ -279,6 +295,17 @@ export function ApiChannelPage() {
           <div><h3>Linked Number</h3><p>{metaStatus.connection?.linkedNumber ? formatPhone(metaStatus.connection.linkedNumber) : (metaStatus.connection?.displayPhoneNumber ?? "Not linked")}</p></div>
           <div><h3>WABA ID</h3><p>{metaStatus.connection?.wabaId ?? "Not connected"}</p></div>
         </div>
+        <div className="clone-channel-meta">
+          <div><h3>Billing Mode</h3><p>{formatMetaStatusLabel(metaStatus.connection?.billingMode, sharedBillingSupported ? "Partner" : "None")}</p></div>
+          <div><h3>Billing Status</h3><p>{billingStatusLabel}</p></div>
+          <div><h3>Billing Currency</h3><p>{metaStatus.connection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}</p></div>
+        </div>
+        {metaStatus.connection?.billingError ? (
+          <div className="api-setup-alert">
+            <strong>Billing attachment needs attention</strong>
+            <p>{metaStatus.connection.billingError}</p>
+          </div>
+        ) : null}
         <div className="clone-channel-meta">
           <div><h3>Quality Rating</h3><p>{formatMetaStatusLabel(qualityRating)}</p></div>
           <div><h3>Message Limit</h3><p>{formatMetaStatusLabel(messagingLimitTier)}</p></div>

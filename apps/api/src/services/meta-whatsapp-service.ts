@@ -22,6 +22,14 @@ interface MetaConnectionRow {
   token_expires_at: string | null;
   subscription_status: string;
   status: string;
+  billing_mode: string;
+  billing_status: string;
+  billing_owner_business_id: string | null;
+  billing_attached_at: string | null;
+  billing_error: string | null;
+  billing_credit_line_id: string | null;
+  billing_allocation_config_id: string | null;
+  billing_currency: string | null;
   metadata_json: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -38,6 +46,14 @@ export interface MetaConnection {
   tokenExpiresAt: string | null;
   subscriptionStatus: string;
   status: string;
+  billingMode: string;
+  billingStatus: string;
+  billingOwnerBusinessId: string | null;
+  billingAttachedAt: string | null;
+  billingError: string | null;
+  billingCreditLineId: string | null;
+  billingAllocationConfigId: string | null;
+  billingCurrency: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -84,6 +100,18 @@ type MetaStatusSnapshot = {
   webhookAppSubscribed: boolean | null;
   displayPhoneNumber: string | null;
   syncedAt: string;
+};
+
+type SharedBillingAttachmentResult = {
+  mode: "none" | "partner";
+  status: "not_configured" | "pending" | "attached" | "failed";
+  ownerBusinessId: string | null;
+  attachedAt: string | null;
+  error: string | null;
+  creditLineId: string | null;
+  allocationConfigId: string | null;
+  currency: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 interface WebhookMessage {
@@ -159,6 +187,14 @@ function mapConnection(row: MetaConnectionRow): MetaConnection {
     tokenExpiresAt: row.token_expires_at,
     subscriptionStatus: row.subscription_status,
     status: row.status,
+    billingMode: row.billing_mode,
+    billingStatus: row.billing_status,
+    billingOwnerBusinessId: row.billing_owner_business_id,
+    billingAttachedAt: row.billing_attached_at,
+    billingError: row.billing_error,
+    billingCreditLineId: row.billing_credit_line_id,
+    billingAllocationConfigId: row.billing_allocation_config_id,
+    billingCurrency: row.billing_currency,
     metadata: row.metadata_json ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -210,6 +246,14 @@ function ensureMetaCoreConfig(): void {
   if (!env.META_APP_ID || !env.META_APP_SECRET) {
     throw new Error("Meta App is not configured. Set META_APP_ID and META_APP_SECRET.");
   }
+}
+
+function isSharedBillingConfigured(): boolean {
+  return Boolean(env.META_SYSTEM_USER_TOKEN?.trim() && env.META_PARTNER_BUSINESS_ID?.trim());
+}
+
+function getSharedBillingCurrency(): string {
+  return env.META_SHARED_BILLING_CURRENCY.trim().toUpperCase();
 }
 
 function getMetaRedirectUri(override?: string): string {
@@ -303,6 +347,29 @@ export async function graphDelete<T>(
     headers: {
       Authorization: `Bearer ${accessToken}`
     }
+  });
+  return parseGraphResponse<T>(response);
+}
+
+async function graphPostForm<T>(
+  path: string,
+  accessToken: string,
+  body: Record<string, string | number | boolean | undefined>
+): Promise<T> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(body)) {
+    if (value !== undefined && value !== null) {
+      params.set(key, String(value));
+    }
+  }
+
+  const response = await fetch(buildGraphUrl(path), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: params.toString()
   });
   return parseGraphResponse<T>(response);
 }
@@ -458,6 +525,102 @@ async function subscribeAppToWabaWebhook(accessToken: string, wabaId: string): P
       success: false,
       reason: "failed",
       error: message
+    };
+  }
+}
+
+async function attachSharedBillingToWaba(input: {
+  metaBusinessId: string | null;
+  wabaId: string;
+}): Promise<SharedBillingAttachmentResult> {
+  if (!isSharedBillingConfigured()) {
+    return {
+      mode: "none",
+      status: "not_configured",
+      ownerBusinessId: env.META_PARTNER_BUSINESS_ID?.trim() || null,
+      attachedAt: null,
+      error: null,
+      creditLineId: null,
+      allocationConfigId: null,
+      currency: null
+    };
+  }
+
+  const systemUserToken = env.META_SYSTEM_USER_TOKEN!.trim();
+  const ownerBusinessId = env.META_PARTNER_BUSINESS_ID!.trim();
+  const currency = getSharedBillingCurrency();
+
+  try {
+    const creditLines = await graphGet<GraphListResponse<Record<string, unknown>>>(
+      `/${ownerBusinessId}/extendedcredits`,
+      systemUserToken,
+      { fields: "id,legal_entity_name", limit: 25 }
+    );
+    const creditLine = creditLines.data?.find((entry) => pickStringField(entry, ["id"])) ?? null;
+    const creditLineId = pickStringField(creditLine, ["id"]);
+    if (!creditLineId) {
+      throw new Error("No extended credit line found on the partner business.");
+    }
+
+    const attachResponse = await graphPostForm<Record<string, unknown>>(
+      `/${creditLineId}/whatsapp_credit_sharing_and_attach`,
+      systemUserToken,
+      {
+        waba_id: input.wabaId,
+        waba_currency: currency
+      }
+    );
+
+    const allocationConfigId =
+      pickStringField(getRecord(attachResponse.allocation_config), ["id"]) ??
+      pickStringField(attachResponse, [
+        "id",
+        "allocation_config_id",
+        "credit_allocation_config_id",
+        "owning_credit_allocation_config_id"
+      ]);
+    let verification: Record<string, unknown> | null = null;
+    if (allocationConfigId) {
+      verification = await graphGet<Record<string, unknown>>(`/${allocationConfigId}`, systemUserToken, {
+        fields: "receiving_credential{id},id,primary_funding_id"
+      }).catch(() => null);
+    }
+    const attachedAt = new Date().toISOString();
+
+    return {
+      mode: "partner",
+      status: "attached",
+      ownerBusinessId,
+      attachedAt,
+      error: null,
+      creditLineId,
+      allocationConfigId,
+      currency,
+      metadata: {
+        sharedBilling: {
+          attachedAt,
+          metaBusinessId: input.metaBusinessId,
+          attachResponse,
+          verification
+        }
+      }
+    };
+  } catch (error) {
+    return {
+      mode: "partner",
+      status: "failed",
+      ownerBusinessId,
+      attachedAt: null,
+      error: (error as Error).message,
+      creditLineId: null,
+      allocationConfigId: null,
+      currency,
+      metadata: {
+        sharedBilling: {
+          failedAt: new Date().toISOString(),
+          metaBusinessId: input.metaBusinessId
+        }
+      }
     };
   }
 }
@@ -748,6 +911,14 @@ async function upsertConnection(args: {
   expiresInSeconds: number | null;
   subscriptionStatus?: string;
   status?: string;
+  billingMode?: string;
+  billingStatus?: string;
+  billingOwnerBusinessId?: string | null;
+  billingAttachedAt?: string | null;
+  billingError?: string | null;
+  billingCreditLineId?: string | null;
+  billingAllocationConfigId?: string | null;
+  billingCurrency?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<MetaConnection> {
   const linkedNumber = normalizePhoneDigits(args.displayPhoneNumber);
@@ -768,9 +939,17 @@ async function upsertConnection(args: {
        token_expires_at,
        subscription_status,
        status,
+       billing_mode,
+       billing_status,
+       billing_owner_business_id,
+       billing_attached_at,
+       billing_error,
+       billing_credit_line_id,
+       billing_allocation_config_id,
+       billing_currency,
        metadata_json
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb)
      ON CONFLICT (phone_number_id)
      DO UPDATE SET
        meta_business_id = EXCLUDED.meta_business_id,
@@ -781,6 +960,14 @@ async function upsertConnection(args: {
        token_expires_at = EXCLUDED.token_expires_at,
        subscription_status = EXCLUDED.subscription_status,
        status = EXCLUDED.status,
+       billing_mode = EXCLUDED.billing_mode,
+       billing_status = EXCLUDED.billing_status,
+       billing_owner_business_id = EXCLUDED.billing_owner_business_id,
+       billing_attached_at = EXCLUDED.billing_attached_at,
+       billing_error = EXCLUDED.billing_error,
+       billing_credit_line_id = EXCLUDED.billing_credit_line_id,
+       billing_allocation_config_id = EXCLUDED.billing_allocation_config_id,
+       billing_currency = EXCLUDED.billing_currency,
        metadata_json = COALESCE(whatsapp_business_connections.metadata_json, '{}'::jsonb) || EXCLUDED.metadata_json
      WHERE whatsapp_business_connections.user_id = EXCLUDED.user_id
      RETURNING id,
@@ -794,6 +981,14 @@ async function upsertConnection(args: {
                token_expires_at::text,
                subscription_status,
                status,
+               billing_mode,
+               billing_status,
+               billing_owner_business_id,
+               billing_attached_at::text,
+               billing_error,
+               billing_credit_line_id,
+               billing_allocation_config_id,
+               billing_currency,
                metadata_json,
                created_at::text,
                updated_at::text`,
@@ -808,6 +1003,14 @@ async function upsertConnection(args: {
       tokenExpiresAt,
       args.subscriptionStatus ?? "pending",
       args.status ?? "pending",
+      args.billingMode ?? "none",
+      args.billingStatus ?? "unknown",
+      args.billingOwnerBusinessId ?? null,
+      args.billingAttachedAt ?? null,
+      args.billingError ?? null,
+      args.billingCreditLineId ?? null,
+      args.billingAllocationConfigId ?? null,
+      args.billingCurrency ?? null,
       JSON.stringify(args.metadata ?? {})
     ]
   );
@@ -844,6 +1047,16 @@ function deriveConnectionStatusFromSubscription(
   return "pending";
 }
 
+function isSharedBillingSatisfied(row: Pick<MetaConnectionRow, "billing_mode" | "billing_status">): boolean {
+  if (!env.META_SHARED_BILLING_REQUIRED) {
+    return true;
+  }
+  if (row.billing_mode === "none") {
+    return false;
+  }
+  return row.billing_status === "attached";
+}
+
 async function getConnectionRowByPhoneNumberId(
   phoneNumberId: string,
   options?: { includePending?: boolean }
@@ -861,6 +1074,14 @@ async function getConnectionRowByPhoneNumberId(
             token_expires_at::text,
             subscription_status,
             status,
+            billing_mode,
+            billing_status,
+            billing_owner_business_id,
+            billing_attached_at::text,
+            billing_error,
+            billing_credit_line_id,
+            billing_allocation_config_id,
+            billing_currency,
             metadata_json,
             created_at::text,
             updated_at::text
@@ -892,6 +1113,14 @@ async function getLatestConnectionRowByUserId(userId: string): Promise<MetaConne
             token_expires_at::text,
             subscription_status,
             status,
+            billing_mode,
+            billing_status,
+            billing_owner_business_id,
+            billing_attached_at::text,
+            billing_error,
+            billing_credit_line_id,
+            billing_allocation_config_id,
+            billing_currency,
             metadata_json,
             created_at::text,
             updated_at::text
@@ -928,6 +1157,14 @@ async function getConnectionRowByUserAndLinkedNumber(
             token_expires_at::text,
             subscription_status,
             status,
+            billing_mode,
+            billing_status,
+            billing_owner_business_id,
+            billing_attached_at::text,
+            billing_error,
+            billing_credit_line_id,
+            billing_allocation_config_id,
+            billing_currency,
             metadata_json,
             created_at::text,
             updated_at::text
@@ -1052,7 +1289,11 @@ async function persistMetaStatusSnapshot(
   const nextDisplayPhone = snapshot.displayPhoneNumber ?? row.display_phone_number;
   const nextLinkedNumber = normalizePhoneDigits(nextDisplayPhone) ?? row.linked_number;
   const nextSubscriptionStatus = deriveSubscriptionStatusFromMeta(row.subscription_status, snapshot);
-  const nextConnectionStatus = deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status);
+  const nextConnectionStatus =
+    deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status) === "connected" &&
+    !isSharedBillingSatisfied(row)
+      ? "pending"
+      : deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status);
   const metadataPatch: Record<string, unknown> = {
     metaHealth: snapshot,
     lastMetaSyncAt: snapshot.syncedAt,
@@ -1078,6 +1319,14 @@ async function persistMetaStatusSnapshot(
                token_expires_at::text,
                subscription_status,
                status,
+               billing_mode,
+               billing_status,
+               billing_owner_business_id,
+               billing_attached_at::text,
+               billing_error,
+               billing_credit_line_id,
+               billing_allocation_config_id,
+               billing_currency,
                metadata_json,
                created_at::text,
                updated_at::text`,
@@ -1116,12 +1365,99 @@ async function refreshConnectionStatusFromMeta(
     }
   }
 
+  if (row.billing_mode === "partner" && row.billing_status !== "attached") {
+    const billingAttempt = await attachSharedBillingToWaba({
+      metaBusinessId: row.meta_business_id,
+      wabaId: row.waba_id
+    });
+    if (billingAttempt.metadata) {
+      Object.assign(metadataPatch, billingAttempt.metadata);
+    }
+    if (billingAttempt.status === "attached") {
+      const billingResult = await pool.query<MetaConnectionRow>(
+        `UPDATE whatsapp_business_connections
+         SET billing_status = $2,
+             billing_owner_business_id = $3,
+             billing_attached_at = $4::timestamptz,
+             billing_error = NULL,
+             billing_credit_line_id = COALESCE($5, billing_credit_line_id),
+             billing_allocation_config_id = COALESCE($6, billing_allocation_config_id),
+             billing_currency = COALESCE($7, billing_currency)
+         WHERE id = $1
+         RETURNING id,
+                   user_id,
+                   meta_business_id,
+                   waba_id,
+                   phone_number_id,
+                   display_phone_number,
+                   linked_number,
+                   access_token_encrypted,
+                   token_expires_at::text,
+                   subscription_status,
+                   status,
+                   billing_mode,
+                   billing_status,
+                   billing_owner_business_id,
+                   billing_attached_at::text,
+                   billing_error,
+                   billing_credit_line_id,
+                   billing_allocation_config_id,
+                   billing_currency,
+                   metadata_json,
+                   created_at::text,
+                   updated_at::text`,
+        [
+          row.id,
+          billingAttempt.status,
+          billingAttempt.ownerBusinessId,
+          billingAttempt.attachedAt,
+          billingAttempt.creditLineId,
+          billingAttempt.allocationConfigId,
+          billingAttempt.currency
+        ]
+      );
+      row = billingResult.rows[0] ?? row;
+    } else if (billingAttempt.status === "failed") {
+      const billingResult = await pool.query<MetaConnectionRow>(
+        `UPDATE whatsapp_business_connections
+         SET billing_error = $2,
+             billing_currency = COALESCE($3, billing_currency)
+         WHERE id = $1
+         RETURNING id,
+                   user_id,
+                   meta_business_id,
+                   waba_id,
+                   phone_number_id,
+                   display_phone_number,
+                   linked_number,
+                   access_token_encrypted,
+                   token_expires_at::text,
+                   subscription_status,
+                   status,
+                   billing_mode,
+                   billing_status,
+                   billing_owner_business_id,
+                   billing_attached_at::text,
+                   billing_error,
+                   billing_credit_line_id,
+                   billing_allocation_config_id,
+                   billing_currency,
+                   metadata_json,
+                   created_at::text,
+                   updated_at::text`,
+        [row.id, billingAttempt.error, billingAttempt.currency]
+      );
+      row = billingResult.rows[0] ?? row;
+    }
+  }
+
   return persistMetaStatusSnapshot(row, snapshot, {
     metadataPatch: Object.keys(metadataPatch).length > 0 ? metadataPatch : undefined
   });
 }
 
 export function getMetaBusinessConfig() {
+  const sharedBillingConfigured = isSharedBillingConfigured();
   return {
     configured: Boolean(env.META_APP_ID && env.META_APP_SECRET && env.META_EMBEDDED_SIGNUP_CONFIG_ID),
     appId: env.META_APP_ID ?? null,
@@ -1129,6 +1465,10 @@ export function getMetaBusinessConfig() {
     redirectUri: getMetaRedirectUri(),
     graphVersion: env.META_GRAPH_VERSION,
     webhookPath: "/meta-webhook",
+    sharedBillingSupported: sharedBillingConfigured,
+    sharedBillingRequired: env.META_SHARED_BILLING_REQUIRED,
+    sharedBillingCurrency: sharedBillingConfigured ? getSharedBillingCurrency() : null,
+    partnerBusinessId: sharedBillingConfigured ? env.META_PARTNER_BUSINESS_ID ?? null : null,
     pricing: {
       platformFeeInrMonthly: 249,
       metaConversationChargesSeparate: true
@@ -1156,7 +1496,7 @@ export async function getMetaBusinessStatus(
     }
   }
   return {
-    connected: row?.status === "connected",
+    connected: row?.status === "connected" && (row ? isSharedBillingSatisfied(row) : true),
     connection: row ? mapConnection(row) : null
   };
 }
@@ -1270,12 +1610,24 @@ export async function completeMetaEmbeddedSignup(
 
   const registration = await registerPhoneNumberIfConfigured(resolvedToken, discovered.phoneNumberId);
   const webhookSubscription = await subscribeAppToWabaWebhook(resolvedToken, discovered.wabaId);
+  const sharedBilling = await attachSharedBillingToWaba({
+    metaBusinessId: discovered.metaBusinessId,
+    wabaId: discovered.wabaId
+  });
   if (!webhookSubscription.success) {
     console.warn(
       `[MetaConnect] webhook subscribe failed user=${userId} wabaId=${discovered.wabaId}: ${webhookSubscription.error ?? "unknown error"}`
     );
   }
-  const isConnected = registration.success && webhookSubscription.success;
+  if (sharedBilling.status === "failed") {
+    console.warn(
+      `[MetaConnect] shared billing attach failed user=${userId} wabaId=${discovered.wabaId}: ${sharedBilling.error ?? "unknown error"}`
+    );
+  }
+  const sharedBillingReady =
+    sharedBilling.status === "attached" ||
+    (!env.META_SHARED_BILLING_REQUIRED && sharedBilling.status !== "failed");
+  const isConnected = registration.success && webhookSubscription.success && sharedBillingReady;
   const connection = await upsertConnection({
     userId,
     metaBusinessId: discovered.metaBusinessId,
@@ -1286,10 +1638,19 @@ export async function completeMetaEmbeddedSignup(
     expiresInSeconds: resolvedExpiry,
     subscriptionStatus: isConnected ? "active" : "pending",
     status: isConnected ? "connected" : "pending",
+    billingMode: sharedBilling.mode,
+    billingStatus: sharedBilling.status,
+    billingOwnerBusinessId: sharedBilling.ownerBusinessId,
+    billingAttachedAt: sharedBilling.attachedAt,
+    billingError: sharedBilling.error,
+    billingCreditLineId: sharedBilling.creditLineId,
+    billingAllocationConfigId: sharedBilling.allocationConfigId,
+    billingCurrency: sharedBilling.currency,
     metadata: {
       source: "embedded_signup",
       connectedAt: new Date().toISOString(),
       ...buildWebhookSubscriptionMetadata(webhookSubscription, "embedded_signup"),
+      ...(sharedBilling.metadata ?? {}),
       registration: {
         ...registration,
         attemptedAt: new Date().toISOString()
@@ -1328,6 +1689,11 @@ export async function completeMetaEmbeddedSignup(
         `Webhook subscription failed for this number: ${webhookSubscription.error ?? "unknown error"}. Please reconnect.`
       );
     }
+    if (env.META_SHARED_BILLING_REQUIRED && sharedBilling.status !== "attached") {
+      throw new Error(
+        `Shared billing attachment failed for this number: ${sharedBilling.error ?? "Meta did not confirm the billing attachment."}`
+      );
+    }
     if (initialSyncError) {
       throw new Error(
         `Meta setup completed but status sync failed: ${initialSyncError}. Please click Refresh status in Settings.`
@@ -1351,6 +1717,14 @@ async function listDisconnectTargetConnections(userId: string, connectionId?: st
             token_expires_at::text,
             subscription_status,
             status,
+            billing_mode,
+            billing_status,
+            billing_owner_business_id,
+            billing_attached_at::text,
+            billing_error,
+            billing_credit_line_id,
+            billing_allocation_config_id,
+            billing_currency,
             metadata_json,
             created_at::text,
             updated_at::text
@@ -1379,6 +1753,14 @@ async function listConnectionsByWabaIds(userId: string, wabaIds: string[]): Prom
             token_expires_at::text,
             subscription_status,
             status,
+            billing_mode,
+            billing_status,
+            billing_owner_business_id,
+            billing_attached_at::text,
+            billing_error,
+            billing_credit_line_id,
+            billing_allocation_config_id,
+            billing_currency,
             metadata_json,
             created_at::text,
             updated_at::text
