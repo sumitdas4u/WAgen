@@ -24,6 +24,9 @@ import {
   createManualContact,
   downloadContactsTemplate,
   exportContactsWorkbook,
+  previewContactsWorkbookUpload,
+  type ContactImportColumnMapping,
+  type ContactImportPreview,
   type ContactImportResult,
   type ContactSourceType,
   type ContactType,
@@ -98,6 +101,18 @@ const SEGMENT_OP_OPTIONS: Array<{ value: SegmentFilterOp; label: string; onlyDat
   { value: "after", label: "after", onlyDate: true },
   { value: "is_empty", label: "is empty", noValue: true },
   { value: "is_not_empty", label: "is not empty", noValue: true }
+];
+
+const CONTACT_IMPORT_STANDARD_FIELDS: Array<{ key: string; label: string; required?: boolean }> = [
+  { key: "display_name", label: "Contact name" },
+  { key: "phone_number", label: "Phone number", required: true },
+  { key: "email", label: "Email" },
+  { key: "contact_type", label: "Contact type" },
+  { key: "tags", label: "Tags" },
+  { key: "order_date", label: "Order date" },
+  { key: "source_type", label: "Source type" },
+  { key: "source_id", label: "Source ID" },
+  { key: "source_url", label: "Source URL" }
 ];
 
 // ─── Column definitions ───────────────────────────────────────────────────────
@@ -499,6 +514,94 @@ function SegmentModal({
   );
 }
 
+function ContactsImportModal({
+  customFields,
+  preview,
+  mapping,
+  onMappingChange,
+  onClose,
+  onImport,
+  importing
+}: {
+  customFields: ContactField[];
+  preview: ContactImportPreview;
+  mapping: ContactImportColumnMapping;
+  onMappingChange: (key: string, value: string) => void;
+  onClose: () => void;
+  onImport: () => void;
+  importing: boolean;
+}) {
+  const mappingFields = [
+    ...CONTACT_IMPORT_STANDARD_FIELDS,
+    ...customFields
+      .filter((field) => field.is_active)
+      .map((field) => ({ key: `custom:${field.name}`, label: `${field.label} (custom)` }))
+  ];
+  const canImport = Boolean(mapping.phone_number);
+
+  return (
+    <div className="kb-modal-backdrop" onClick={onClose}>
+      <div className="kb-modal kb-modal-wide" onClick={(event) => event.stopPropagation()}>
+        <h3>Map Excel Columns</h3>
+        <p className="empty-note" style={{ marginTop: "-0.2rem", marginBottom: "1rem" }}>
+          Select which Excel column should fill each contact field.
+        </p>
+
+        <div className="contacts-form-grid">
+          {mappingFields.map((field) => (
+            <label key={field.key}>
+              {field.label}{field.required ? " *" : ""}
+              <select
+                value={mapping[field.key] ?? ""}
+                onChange={(event) => onMappingChange(field.key, event.target.value)}
+              >
+                <option value="">Do not import</option>
+                {preview.columns.map((column) => (
+                  <option key={`${field.key}-${column}`} value={column}>
+                    {column}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+
+        {preview.sampleRows.length > 0 ? (
+          <div className="contacts-table-wrap" style={{ marginTop: "1rem" }}>
+            <table className="contacts-table">
+              <thead>
+                <tr>
+                  {preview.columns.map((column) => (
+                    <th key={column}>{column}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.sampleRows.map((row, index) => (
+                  <tr key={`sample-${index}`}>
+                    {preview.columns.map((column) => (
+                      <td key={`${index}-${column}`}>{row[column] || "—"}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {!canImport ? <p className="error-text">Phone number mapping is required.</p> : null}
+
+        <div className="kb-modal-actions">
+          <button type="button" className="ghost-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="primary-btn" disabled={importing || !canImport} onClick={onImport}>
+            {importing ? "Importing..." : "Import Contacts"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Contacts Tab ─────────────────────────────────────────────────────────────
 
 function ContactsTab({
@@ -520,6 +623,9 @@ function ContactsTab({
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ContactImportResult | null>(null);
+  const [importPreview, setImportPreview] = useState<ContactImportPreview | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importMapping, setImportMapping] = useState<ContactImportColumnMapping>({});
   const [formState, setFormState] = useState<ContactFormState>(DEFAULT_FORM_STATE);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(loadVisibleColumns);
@@ -640,15 +746,35 @@ function ContactsTab({
     setInfo(null);
     setImportResult(null);
     try {
-      const result = await uploadContactsWorkbook(token, file);
-      await invalidateContacts();
-      setImportResult(result);
-      setInfo(`Import complete. Created ${result.created}, updated ${result.updated}, skipped ${result.skipped}.`);
+      const preview = await previewContactsWorkbookUpload(token, file);
+      setImportFile(file);
+      setImportPreview(preview);
+      setImportMapping(preview.suggestedMapping ?? {});
     } catch (importError) {
       setError((importError as Error).message);
     } finally {
       setSubmitting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRunImport = async () => {
+    if (!importFile) return;
+    setSubmitting(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const result = await uploadContactsWorkbook(token, importFile, { mapping: importMapping });
+      await invalidateContacts();
+      setImportResult(result);
+      setInfo(`Import complete. Created ${result.created}, updated ${result.updated}, skipped ${result.skipped}.`);
+      setImportPreview(null);
+      setImportFile(null);
+      setImportMapping({});
+    } catch (importError) {
+      setError((importError as Error).message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1040,6 +1166,31 @@ function ContactsTab({
             </div>
           </div>
         </div>
+      )}
+
+      {importPreview && (
+        <ContactsImportModal
+          customFields={customFields}
+          preview={importPreview}
+          mapping={importMapping}
+          onMappingChange={(key, value) =>
+            setImportMapping((current) => {
+              if (!value) {
+                const next = { ...current };
+                delete next[key];
+                return next;
+              }
+              return { ...current, [key]: value };
+            })
+          }
+          onClose={() => {
+            setImportPreview(null);
+            setImportFile(null);
+            setImportMapping({});
+          }}
+          onImport={() => void handleRunImport()}
+          importing={submitting}
+        />
       )}
     </>
   );

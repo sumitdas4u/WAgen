@@ -4,6 +4,9 @@ import {
   exportContactsWorkbook,
   fetchContacts,
   importContactsWorkbook,
+  previewContactsImportWorkbook,
+  type ContactImportColumnMapping,
+  type ContactImportPreview,
   type ContactImportResult,
   type ContactRecord,
   type ContactSourceType,
@@ -38,9 +41,24 @@ export function createManualContact(
   return createContact(token, payload).then((response) => response.contact);
 }
 
-export function uploadContactsWorkbook(token: string, file: File): Promise<ContactImportResult> {
-  return importContactsWorkbook(token, file);
+export function previewContactsWorkbookUpload(token: string, file: File): Promise<ContactImportPreview> {
+  return previewContactsImportWorkbook(token, file).then((response) => response.preview);
+}
+
+export function uploadContactsWorkbook(
+  token: string,
+  file: File,
+  options?: { mapping?: ContactImportColumnMapping }
+): Promise<ContactImportResult> {
+  return importContactsWorkbook(token, file, options);
 }
 
 export { downloadContactsTemplate, exportContactsWorkbook };
-export type { ContactImportResult, ContactRecord, ContactSourceType, ContactType };
+export type {
+  ContactImportColumnMapping,
+  ContactImportPreview,
+  ContactImportResult,
+  ContactRecord,
+  ContactSourceType,
+  ContactType
+};

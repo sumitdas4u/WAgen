@@ -5,6 +5,7 @@ import {
   getBroadcastSummary,
   importBroadcastAudienceWorkbook,
   listBroadcasts,
+  previewBroadcastAudienceWorkbookImport,
   previewRetargetAudience,
   uploadBroadcastMedia
 } from "../services/broadcast-service.js";
@@ -21,6 +22,28 @@ const RetargetPreviewQuerySchema = z.object({
 });
 
 export async function broadcastRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.post(
+    "/api/broadcasts/audience/import/preview",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const file = await request.file();
+      if (!file) {
+        return reply.status(400).send({ error: "XLSX file is required." });
+      }
+      if (!file.filename.toLowerCase().endsWith(".xlsx")) {
+        return reply.status(400).send({ error: "Only .xlsx files are supported." });
+      }
+
+      try {
+        const buffer = await file.toBuffer();
+        const preview = previewBroadcastAudienceWorkbookImport(buffer);
+        return { ok: true, preview };
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message });
+      }
+    }
+  );
+
   fastify.get(
     "/api/broadcasts",
     { preHandler: [fastify.requireAuth] },
@@ -116,10 +139,16 @@ export async function broadcastRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const buffer = await file.toBuffer();
+        const mappingRaw = file.fields.mapping;
+        let mapping: Record<string, string> | undefined;
+        if (mappingRaw && "value" in mappingRaw && typeof mappingRaw.value === "string" && mappingRaw.value.trim()) {
+          mapping = JSON.parse(mappingRaw.value) as Record<string, string>;
+        }
         const result = await importBroadcastAudienceWorkbook(request.authUser.userId, buffer, segmentName, {
           marketingOptIn,
           phoneNumberFormat,
-          defaultCountryCode
+          defaultCountryCode,
+          columnMapping: mapping
         });
         return {
           ok: true,

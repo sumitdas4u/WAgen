@@ -65,11 +65,18 @@ export interface ContactImportResult {
   errors: ContactImportError[];
 }
 
+export interface ContactImportPreview {
+  columns: string[];
+  sampleRows: Array<Record<string, string>>;
+  suggestedMapping: Record<string, string>;
+}
+
 interface ContactImportWorkbookOptions {
   extraTags?: string[];
   phoneNumberFormat?: "with_country_code" | "without_country_code";
   defaultCountryCode?: string | null;
   marketingOptIn?: boolean;
+  columnMapping?: Record<string, string>;
 }
 
 function normalizePhoneNumber(value: string | null | undefined): string | null {
@@ -78,6 +85,108 @@ function normalizePhoneNumber(value: string | null | undefined): string | null {
     return null;
   }
   return digits;
+}
+
+function normalizeHeader(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getContactImportAliases(): Record<string, string[]> {
+  return {
+    display_name: ["name", "contact name", "full name", "customer name"],
+    phone_number: ["phone", "phone number", "mobile", "mobile number", "whatsapp", "whatsapp number"],
+    email: ["email", "email address"],
+    contact_type: ["type", "contact type", "lead type"],
+    tags: ["tags", "tag"],
+    order_date: ["order date", "date", "purchase date"],
+    source_type: ["contact created source", "source", "source type"],
+    source_id: ["source id", "external id"],
+    source_url: ["source url", "url", "source link"]
+  };
+}
+
+function readContactsWorkbookSheet(fileBuffer: Buffer): {
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  sampleRows: Array<Record<string, string>>;
+} {
+  const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true });
+  const sheetName = workbook.Sheets.Contacts ? "Contacts" : workbook.SheetNames[0];
+  const worksheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+  if (!worksheet) {
+    throw new Error("Workbook does not contain a Contacts sheet.");
+  }
+
+  const matrix = XLSX.utils.sheet_to_json<(string | number | Date | null)[]>(worksheet, {
+    header: 1,
+    defval: ""
+  });
+
+  const headerRow = (matrix[0] ?? []).map((cell) => String(cell ?? "").trim());
+  const columns = headerRow.filter(Boolean);
+  if (columns.length === 0) {
+    throw new Error("Workbook must include a header row with column names.");
+  }
+
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
+    defval: ""
+  });
+  const sampleRows = rows.slice(0, 5).map((row) =>
+    Object.fromEntries(
+      columns.map((column) => {
+        const raw = row[column];
+        if (raw instanceof Date) {
+          return [column, raw.toISOString()];
+        }
+        return [column, String(raw ?? "")];
+      })
+    )
+  );
+
+  return { columns, rows, sampleRows };
+}
+
+function buildSuggestedContactImportMapping(columns: string[]): Record<string, string> {
+  const aliases = getContactImportAliases();
+  const suggestions: Record<string, string> = {};
+
+  for (const [fieldKey, knownAliases] of Object.entries(aliases)) {
+    const match = columns.find((column) => {
+      const normalized = normalizeHeader(column);
+      return knownAliases.includes(normalized);
+    });
+    if (match) {
+      suggestions[fieldKey] = match;
+    }
+  }
+
+  return suggestions;
+}
+
+function getMappedWorkbookValue(
+  row: Record<string, unknown>,
+  mapping: Record<string, string>,
+  fieldKey: string
+): unknown {
+  const column = mapping[fieldKey];
+  if (!column) {
+    return "";
+  }
+  return row[column];
+}
+
+export function previewContactsWorkbookImport(fileBuffer: Buffer): ContactImportPreview {
+  const { columns, sampleRows } = readContactsWorkbookSheet(fileBuffer);
+  return {
+    columns,
+    sampleRows,
+    suggestedMapping: buildSuggestedContactImportMapping(columns)
+  };
 }
 
 function normalizeImportedPhoneNumber(
@@ -767,16 +876,12 @@ export async function importContactsWorkbook(
   fileBuffer: Buffer,
   options?: ContactImportWorkbookOptions
 ): Promise<ContactImportResult> {
-  const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true });
-  const sheetName = workbook.Sheets.Contacts ? "Contacts" : workbook.SheetNames[0];
-  const worksheet = sheetName ? workbook.Sheets[sheetName] : undefined;
-  if (!worksheet) {
-    throw new Error("Workbook does not contain a Contacts sheet.");
-  }
-
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-    defval: ""
-  });
+  const { columns, rows } = readContactsWorkbookSheet(fileBuffer);
+  const defaultMapping = buildSuggestedContactImportMapping(columns);
+  const mapping = {
+    ...defaultMapping,
+    ...(options?.columnMapping ?? {})
+  };
 
   let created = 0;
   let updated = 0;
@@ -790,15 +895,21 @@ export async function importContactsWorkbook(
 
   for (const [index, row] of rows.entries()) {
     const rowNumber = index + 2;
-    const name = String(row.Name ?? "");
-    const phone = String(row.Phone ?? "");
-    const email = String(row.Email ?? "");
-    const typeCell = String(row.Type ?? "");
-    const tagsCell = row.Tags;
-    const orderDateCell = row["Order Date"];
-    const sourceCell = String(row["Contact Created Source"] ?? "");
-    const sourceId = String(row["Source ID"] ?? "");
-    const sourceUrl = String(row["Source URL"] ?? "");
+    const name = String(getMappedWorkbookValue(row, mapping, "display_name") ?? "");
+    const phone = String(getMappedWorkbookValue(row, mapping, "phone_number") ?? "");
+    const email = String(getMappedWorkbookValue(row, mapping, "email") ?? "");
+    const typeCell = String(getMappedWorkbookValue(row, mapping, "contact_type") ?? "");
+    const tagsCell = getMappedWorkbookValue(row, mapping, "tags");
+    const orderDateCell = getMappedWorkbookValue(row, mapping, "order_date");
+    const sourceCell = String(getMappedWorkbookValue(row, mapping, "source_type") ?? "");
+    const sourceId = String(getMappedWorkbookValue(row, mapping, "source_id") ?? "");
+    const sourceUrl = String(getMappedWorkbookValue(row, mapping, "source_url") ?? "");
+    const customFieldValues = Object.fromEntries(
+      Object.entries(mapping)
+        .filter(([fieldKey, columnName]) => fieldKey.startsWith("custom:") && columnName)
+        .map(([fieldKey, columnName]) => [fieldKey.slice("custom:".length), String(row[columnName] ?? "").trim()])
+        .filter(([, value]) => value)
+    );
 
     if (![name, phone, email, typeCell, String(tagsCell ?? ""), String(orderDateCell ?? ""), sourceCell, sourceId, sourceUrl].some((value) => value.trim())) {
       skipped += 1;
@@ -837,8 +948,8 @@ export async function importContactsWorkbook(
     }
 
     const parsedTags = String(tagsCell ?? "").trim() ? parseTagCell(tagsCell) : [];
-    const result = await withTransaction(async (client) =>
-      upsertContact(client, {
+    const result = await withTransaction(async (client) => {
+      const upserted = await upsertContact(client, {
         userId,
         displayName: name || undefined,
         phoneNumber,
@@ -849,8 +960,14 @@ export async function importContactsWorkbook(
         sourceType: sourceType ?? "import",
         sourceId: sourceId || undefined,
         sourceUrl: sourceUrl || undefined
-      }, { mergeTags: true })
-    );
+      }, { mergeTags: true });
+
+      if (Object.keys(customFieldValues).length > 0) {
+        await saveFieldValues(client, upserted.contact.id, customFieldValues);
+      }
+
+      return upserted;
+    });
 
     if (result.action === "created") {
       created += 1;

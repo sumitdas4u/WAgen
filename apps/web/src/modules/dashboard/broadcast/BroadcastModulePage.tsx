@@ -13,8 +13,11 @@ import {
   launchCampaignDraft,
   listContactFields,
   listContactSegments,
+  previewBroadcastAudienceWorkbookImport,
   type BroadcastReport,
   type Campaign,
+  type ContactImportColumnMapping,
+  type ContactImportPreview,
   type CampaignMediaOverrides,
   type CampaignTemplateVariables,
   type ContactRecord,
@@ -50,6 +53,18 @@ const RETARGET_OPTIONS: Array<{ value: RetargetStatus; label: string }> = [
   { value: "read", label: "Read" },
   { value: "failed", label: "Failed" },
   { value: "skipped", label: "Not delivered" }
+];
+
+const CONTACT_IMPORT_STANDARD_FIELDS: Array<{ key: string; label: string; required?: boolean }> = [
+  { key: "display_name", label: "Contact name" },
+  { key: "phone_number", label: "Phone number", required: true },
+  { key: "email", label: "Email" },
+  { key: "contact_type", label: "Contact type" },
+  { key: "tags", label: "Tags" },
+  { key: "order_date", label: "Order date" },
+  { key: "source_type", label: "Source type" },
+  { key: "source_id", label: "Source ID" },
+  { key: "source_url", label: "Source URL" }
 ];
 
 function extractTemplatePlaceholders(template: MessageTemplate | null): string[] {
@@ -473,6 +488,9 @@ function BroadcastWizardPage({
   const [uploadingAudience, setUploadingAudience] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [audienceImportPreview, setAudienceImportPreview] = useState<ContactImportPreview | null>(null);
+  const [audienceImportFile, setAudienceImportFile] = useState<File | null>(null);
+  const [audienceImportMapping, setAudienceImportMapping] = useState<ContactImportColumnMapping>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retargetStatus, setRetargetStatus] = useState<RetargetStatus>("sent");
@@ -620,15 +638,37 @@ function BroadcastWizardPage({
     setUploadingAudience(true);
     setError(null);
     try {
-      const result = await importBroadcastAudienceWorkbook(token, file, {
+      const preview = await previewBroadcastAudienceWorkbookImport(token, file);
+      setAudienceImportFile(file);
+      setAudienceImportPreview(preview.preview);
+      setAudienceImportMapping(preview.preview.suggestedMapping ?? {});
+      setUploadedFileName(file.name);
+      setUploadStep("upload");
+    } catch (uploadError) {
+      setError((uploadError as Error).message);
+    } finally {
+      setUploadingAudience(false);
+    }
+  }
+
+  async function handleConfirmAudienceImport() {
+    if (!audienceImportFile) return;
+    setUploadingAudience(true);
+    setError(null);
+    try {
+      const result = await importBroadcastAudienceWorkbook(token, audienceImportFile, {
         segmentName: `${name.trim() || "Broadcast"} audience`,
         marketingOptIn,
         phoneNumberFormat,
-        defaultCountryCode
+        defaultCountryCode,
+        mapping: audienceImportMapping
       });
       setSelectedSegmentId(result.segment.id);
-      setUploadedFileName(file.name);
+      setUploadedFileName(audienceImportFile.name);
       setUploadStep("preview");
+      setAudienceImportPreview(null);
+      setAudienceImportFile(null);
+      setAudienceImportMapping({});
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactSegments });
       setMessage(`Imported audience and created segment "${result.segment.name}".`);
     } catch (uploadError) {
@@ -713,12 +753,17 @@ function BroadcastWizardPage({
             <AudienceSelectionStep
               name={name}
               onNameChange={setName}
+              customFields={fields}
               segments={segments}
               selectedSegmentId={selectedSegmentId}
               onSelectSegment={setSelectedSegmentId}
               onUpload={handleAudienceUpload}
               uploadingAudience={uploadingAudience}
               uploadedFileName={uploadedFileName}
+              importPreview={audienceImportPreview}
+              importMapping={audienceImportMapping}
+              onImportMappingChange={setAudienceImportMapping}
+              onConfirmImport={() => void handleConfirmAudienceImport()}
               marketingOptIn={marketingOptIn}
               onMarketingOptInChange={setMarketingOptIn}
               phoneNumberFormat={phoneNumberFormat}
@@ -940,12 +985,17 @@ function RetargetAudienceStep({
 function AudienceSelectionStep({
   name,
   onNameChange,
+  customFields,
   segments,
   selectedSegmentId,
   onSelectSegment,
   onUpload,
   uploadingAudience,
   uploadedFileName,
+  importPreview,
+  importMapping,
+  onImportMappingChange,
+  onConfirmImport,
   marketingOptIn,
   onMarketingOptInChange,
   phoneNumberFormat,
@@ -962,12 +1012,17 @@ function AudienceSelectionStep({
 }: {
   name: string;
   onNameChange: (value: string) => void;
+  customFields: Array<{ id: string; label: string; name: string; is_active: boolean }>;
   segments: Array<{ id: string; name: string; created_at: string }>;
   selectedSegmentId: string;
   onSelectSegment: (segmentId: string) => void;
   onUpload: (file: File) => Promise<void>;
   uploadingAudience: boolean;
   uploadedFileName: string;
+  importPreview: ContactImportPreview | null;
+  importMapping: ContactImportColumnMapping;
+  onImportMappingChange: Dispatch<SetStateAction<ContactImportColumnMapping>>;
+  onConfirmImport: () => void;
   marketingOptIn: boolean;
   onMarketingOptInChange: (value: boolean) => void;
   phoneNumberFormat: "with_country_code" | "without_country_code";
@@ -982,6 +1037,12 @@ function AudienceSelectionStep({
   onContinue: () => void;
   canContinue: boolean;
 }) {
+  const mappingFields = [
+    ...CONTACT_IMPORT_STANDARD_FIELDS,
+    ...customFields
+      .filter((field) => field.is_active)
+      .map((field) => ({ key: `custom:${field.name}`, label: `${field.label} (custom)` }))
+  ];
   return (
     <section className="broadcast-step-section">
       <div className="broadcast-section-heading">
@@ -1065,6 +1126,76 @@ function AudienceSelectionStep({
                 </label>
               ) : null}
             </div>
+            {importPreview ? (
+              <>
+                <div className="broadcast-card-title" style={{ marginTop: "0.25rem" }}>Map Excel fields</div>
+                <div className="broadcast-muted-copy">
+                  Match each contact field to the correct Excel column before creating the audience segment.
+                </div>
+                {mappingFields.map((field) => (
+                  <div key={field.key} className="broadcast-binding-card">
+                    <strong className="broadcast-binding-token">{field.label}{field.required ? " *" : ""}</strong>
+                    <select
+                      className="broadcast-input"
+                      value={importMapping[field.key] ?? ""}
+                      onChange={(event) =>
+                        onImportMappingChange((current) => {
+                          if (!event.target.value) {
+                            const next = { ...current };
+                            delete next[field.key];
+                            return next;
+                          }
+                          return { ...current, [field.key]: event.target.value };
+                        })
+                      }
+                    >
+                      <option value="">Do not import</option>
+                      {importPreview.columns.map((column) => (
+                        <option key={`${field.key}-${column}`} value={column}>{column}</option>
+                      ))}
+                    </select>
+                    <div className="broadcast-row-meta">Detected from workbook</div>
+                    <div className="broadcast-row-meta">{importMapping[field.key] || "No column selected"}</div>
+                  </div>
+                ))}
+                <div className="broadcast-table-shell compact">
+                  <div className="broadcast-table-header">
+                    <div>
+                      <h3 className="broadcast-section-title">Workbook preview</h3>
+                      <p className="broadcast-section-text">First rows from the uploaded Excel file.</p>
+                    </div>
+                  </div>
+                  <table className="broadcast-table">
+                    <thead>
+                      <tr>
+                        {importPreview.columns.map((column) => (
+                          <th key={column}>{column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.sampleRows.map((row, index) => (
+                        <tr key={`sample-${index}`}>
+                          {importPreview.columns.map((column) => (
+                            <td key={`${index}-${column}`}>{row[column] || "—"}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="broadcast-upload-actions">
+                  <button
+                    type="button"
+                    className="broadcast-primary-btn"
+                    disabled={uploadingAudience || !importMapping.phone_number}
+                    onClick={onConfirmImport}
+                  >
+                    {uploadingAudience ? "Importing..." : "Import audience & create segment"}
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
 

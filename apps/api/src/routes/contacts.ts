@@ -6,6 +6,7 @@ import {
   generateContactsTemplateWorkbook,
   getContactByConversationId,
   importContactsWorkbook,
+  previewContactsWorkbookImport,
   listContacts
 } from "../services/contacts-service.js";
 
@@ -37,6 +38,30 @@ const ExportContactsBodySchema = z.object({
 });
 
 export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.post(
+    "/api/contacts/import/preview",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const file = await request.file();
+      if (!file) {
+        return reply.status(400).send({ error: "XLSX file is required." });
+      }
+
+      const filename = file.filename.toLowerCase();
+      if (!filename.endsWith(".xlsx")) {
+        return reply.status(400).send({ error: "Only .xlsx files are supported." });
+      }
+
+      try {
+        const buffer = await file.toBuffer();
+        const preview = previewContactsWorkbookImport(buffer);
+        return { ok: true, preview };
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message });
+      }
+    }
+  );
+
   fastify.get(
     "/api/contacts",
     { preHandler: [fastify.requireAuth] },
@@ -98,7 +123,14 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const buffer = await file.toBuffer();
-        const result = await importContactsWorkbook(request.authUser.userId, buffer);
+        const mappingRaw = file.fields.mapping;
+        let mapping: Record<string, string> | undefined;
+        if (mappingRaw && "value" in mappingRaw && typeof mappingRaw.value === "string" && mappingRaw.value.trim()) {
+          mapping = JSON.parse(mappingRaw.value) as Record<string, string>;
+        }
+        const result = await importContactsWorkbook(request.authUser.userId, buffer, {
+          columnMapping: mapping
+        });
         return { ok: true, ...result };
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message });

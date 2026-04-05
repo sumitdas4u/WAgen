@@ -10,7 +10,12 @@ import {
   type CampaignMessageStatus,
   type RetargetStatus
 } from "./campaign-service.js";
-import { importContactsWorkbook, type ContactImportResult } from "./contacts-service.js";
+import {
+  importContactsWorkbook,
+  previewContactsWorkbookImport,
+  type ContactImportPreview,
+  type ContactImportResult
+} from "./contacts-service.js";
 import type { Contact } from "../types/models.js";
 
 export interface BroadcastSummary {
@@ -178,6 +183,7 @@ export async function importBroadcastAudienceWorkbook(
     phoneNumberFormat?: "with_country_code" | "without_country_code";
     defaultCountryCode?: string | null;
     marketingOptIn?: boolean;
+    columnMapping?: Record<string, string>;
   }
 ): Promise<{ importResult: ContactImportResult; segment: ContactSegment; batchTag: string }> {
   const batchTag = `broadcast-audience-${randomUUID().slice(0, 8)}`;
@@ -185,7 +191,8 @@ export async function importBroadcastAudienceWorkbook(
     extraTags: [batchTag],
     phoneNumberFormat: options?.phoneNumberFormat,
     defaultCountryCode: options?.defaultCountryCode,
-    marketingOptIn: options?.marketingOptIn
+    marketingOptIn: options?.marketingOptIn,
+    columnMapping: options?.columnMapping
   });
 
   const finalName =
@@ -199,6 +206,10 @@ export async function importBroadcastAudienceWorkbook(
     segment,
     batchTag
   };
+}
+
+export function previewBroadcastAudienceWorkbookImport(fileBuffer: Buffer): ContactImportPreview {
+  return previewContactsWorkbookImport(fileBuffer);
 }
 
 export async function uploadBroadcastMedia(
