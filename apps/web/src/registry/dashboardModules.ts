@@ -227,5 +227,17 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     lazyRoute: () => import("../modules/dashboard/settings/contact-fields/route"),
     prefetchStrategy: "code",
     requiresAuth: true
+  },
+  {
+    id: "settings-webhooks",
+    path: "settings/webhooks",
+    navTo: "/dashboard/settings/webhooks",
+    navLabel: "Generic Webhooks",
+    subtitle: "Webhook automations",
+    icon: "settings",
+    section: "settings",
+    lazyRoute: () => import("../modules/dashboard/settings/webhooks/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
   }
 ];

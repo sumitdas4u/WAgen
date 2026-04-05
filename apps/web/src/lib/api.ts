@@ -2612,3 +2612,150 @@ export function previewSegmentContacts(token: string, filters: SegmentFilter[]) 
     body: JSON.stringify({ filters })
   });
 }
+
+// ── Generic Webhooks ─────────────────────────────────────────────────────────
+
+export type GenericWebhookConditionOperator = "is_not_empty" | "is_empty" | "equals" | "not_equals";
+export type GenericWebhookMatchMode = "all" | "any";
+export type GenericWebhookTagOperation = "append" | "replace" | "add_if_empty";
+export type GenericWebhookLogStatus = "completed" | "skipped" | "failed";
+
+export interface GenericWebhookCondition {
+  comparator: string;
+  operator: GenericWebhookConditionOperator;
+  value?: string;
+}
+
+export interface GenericWebhookContactFieldMapping {
+  contactFieldName: string;
+  payloadPath: string;
+}
+
+export interface GenericWebhookContactAction {
+  tagOperation?: GenericWebhookTagOperation;
+  tags?: string[];
+  fieldMappings?: GenericWebhookContactFieldMapping[];
+}
+
+export interface GenericWebhookTemplateAction {
+  templateId: string;
+  recipientNamePath: string;
+  recipientPhonePath: string;
+  variableMappings: Record<string, { source: "payload"; path: string }>;
+  fallbackValues?: Record<string, string>;
+}
+
+export interface GenericWebhookIntegration {
+  id: string;
+  userId: string;
+  webhookKey: string;
+  secretToken: string;
+  enabled: boolean;
+  endpointUrlPath: string;
+  lastPayloadJson: Record<string, unknown>;
+  lastPayloadFlatJson: Record<string, string>;
+  lastReceivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenericWebhookWorkflow {
+  id: string;
+  userId: string;
+  integrationId: string;
+  name: string;
+  enabled: boolean;
+  matchMode: GenericWebhookMatchMode;
+  conditions: GenericWebhookCondition[];
+  contactAction: GenericWebhookContactAction;
+  templateAction: GenericWebhookTemplateAction;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenericWebhookLog {
+  id: string;
+  requestId: string;
+  workflowId: string | null;
+  status: GenericWebhookLogStatus;
+  customerName: string | null;
+  customerPhone: string | null;
+  contactId: string | null;
+  templateId: string | null;
+  providerMessageId: string | null;
+  errorMessage: string | null;
+  payloadJson: Record<string, unknown>;
+  resultJson: Record<string, unknown>;
+  createdAt: string;
+}
+
+export function fetchGenericWebhookIntegration(token: string) {
+  return apiRequest<{ integration: GenericWebhookIntegration }>("/api/integrations/webhooks", { token });
+}
+
+export function updateGenericWebhookIntegration(token: string, patch: { enabled?: boolean }) {
+  return apiRequest<{ integration: GenericWebhookIntegration }>("/api/integrations/webhooks", {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(patch)
+  });
+}
+
+export function rotateGenericWebhookSecret(token: string) {
+  return apiRequest<{ integration: GenericWebhookIntegration }>("/api/integrations/webhooks/rotate-secret", {
+    method: "POST",
+    token
+  });
+}
+
+export function fetchGenericWebhookWorkflows(token: string) {
+  return apiRequest<{ workflows: GenericWebhookWorkflow[] }>("/api/integrations/webhooks/workflows", { token });
+}
+
+export function createGenericWebhookWorkflow(
+  token: string,
+  payload: {
+    name: string;
+    enabled?: boolean;
+    matchMode: GenericWebhookMatchMode;
+    conditions: GenericWebhookCondition[];
+    contactAction?: GenericWebhookContactAction;
+    templateAction: GenericWebhookTemplateAction;
+  }
+) {
+  return apiRequest<{ workflow: GenericWebhookWorkflow }>("/api/integrations/webhooks/workflows", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateGenericWebhookWorkflow(
+  token: string,
+  workflowId: string,
+  patch: Partial<{
+    name: string;
+    enabled: boolean;
+    matchMode: GenericWebhookMatchMode;
+    conditions: GenericWebhookCondition[];
+    contactAction: GenericWebhookContactAction;
+    templateAction: GenericWebhookTemplateAction;
+  }>
+) {
+  return apiRequest<{ workflow: GenericWebhookWorkflow }>(`/api/integrations/webhooks/workflows/${workflowId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteGenericWebhookWorkflow(token: string, workflowId: string) {
+  return apiRequest<void>(`/api/integrations/webhooks/workflows/${workflowId}`, {
+    method: "DELETE",
+    token
+  });
+}
+
+export function fetchGenericWebhookLogs(token: string) {
+  return apiRequest<{ logs: GenericWebhookLog[] }>("/api/integrations/webhooks/logs", { token });
+}

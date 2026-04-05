@@ -86,7 +86,7 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     label: "Settings",
     icon: "settings",
     title: "Settings",
-    defaultModuleIds: ["settings-web", "settings-qr", "settings-api", "settings-templates", "settings-contact-fields"]
+    defaultModuleIds: ["settings-web", "settings-qr", "settings-api", "settings-templates", "settings-contact-fields", "settings-webhooks"]
   }
 ];
 
@@ -109,7 +109,8 @@ const SETTINGS_MENU_ITEMS: SettingsNavItem[] = [
   { moduleId: "settings-web", label: "Web Channel", icon: "settings", to: "/dashboard/settings/web" },
   { moduleId: "settings-api", label: "WhatsApp API Channel", icon: "settings", to: "/dashboard/settings/api" },
   { moduleId: "settings-qr", label: "WhatsApp QR", icon: "chats", to: "/dashboard/settings/qr" },
-  { moduleId: "settings-contact-fields", label: "Contact Fields", icon: "leads", to: "/dashboard/settings/contact-fields" }
+  { moduleId: "settings-contact-fields", label: "Contact Fields", icon: "leads", to: "/dashboard/settings/contact-fields" },
+  { moduleId: "settings-webhooks", label: "Generic Webhooks", icon: "settings", to: "/dashboard/settings/webhooks" }
 ];
 
 const ANALYTICS_MENU_ITEMS: AnalyticsNavItem[] = [
@@ -139,7 +140,8 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   "settings-qr": { label: "Settings", subtitle: "Configure QR and Business API channels" },
   "settings-api": { label: "Settings", subtitle: "Configure QR and Business API channels" },
   "settings-templates": { label: "Settings", subtitle: "Manage WhatsApp message templates" },
-  "settings-contact-fields": { label: "Settings", subtitle: "Manage contact fields" }
+  "settings-contact-fields": { label: "Settings", subtitle: "Manage contact fields" },
+  "settings-webhooks": { label: "Settings", subtitle: "Configure generic webhook automations" }
 };
 
 function DashboardShellLayout() {

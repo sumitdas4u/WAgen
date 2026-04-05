@@ -251,6 +251,16 @@ function BroadcastListPage({ token }: { token: string }) {
             <h3 className="broadcast-section-title">All broadcasts</h3>
             <p className="broadcast-section-text">Recent runs, outcomes, and retarget actions in one clean table.</p>
           </div>
+          <div className="broadcast-table-header-actions">
+            <button
+              type="button"
+              className="broadcast-secondary-btn broadcast-refresh-btn"
+              onClick={() => void broadcastsQuery.refetch()}
+              disabled={broadcastsQuery.isFetching}
+            >
+              {broadcastsQuery.isFetching ? "Refreshing..." : "Refresh status"}
+            </button>
+          </div>
         </div>
         <table className="broadcast-table">
           <thead>
@@ -356,6 +366,16 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
           <div>
             <h3 className="broadcast-section-title">Recipient delivery log</h3>
             <p className="broadcast-section-text">Every recipient status and message failure, in a clearer audit trail.</p>
+          </div>
+          <div className="broadcast-table-header-actions">
+            <button
+              type="button"
+              className="broadcast-secondary-btn broadcast-refresh-btn"
+              onClick={() => void reportQuery.refetch()}
+              disabled={reportQuery.isFetching}
+            >
+              {reportQuery.isFetching ? "Refreshing..." : "Refresh status"}
+            </button>
           </div>
         </div>
         <table className="broadcast-table">

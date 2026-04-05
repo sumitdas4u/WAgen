@@ -621,6 +621,43 @@ export async function createManualContact(userId: string, input: CreateManualCon
   return { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
 }
 
+export async function upsertWebhookContact(input: {
+  userId: string;
+  displayName?: string | null;
+  phoneNumber: string;
+  email?: string | null;
+  tags?: string[];
+  customFields?: Record<string, string>;
+  sourceId?: string | null;
+  sourceUrl?: string | null;
+}): Promise<Contact> {
+  const result = await withTransaction(async (client) => {
+    const upsertResult = await upsertContact(
+      client,
+      {
+        userId: input.userId,
+        displayName: input.displayName ?? undefined,
+        phoneNumber: input.phoneNumber,
+        email: input.email ?? undefined,
+        tags: input.tags ?? [],
+        sourceType: "api",
+        sourceId: input.sourceId ?? undefined,
+        sourceUrl: input.sourceUrl ?? undefined
+      },
+      { mergeTags: false }
+    );
+
+    if (input.customFields && Object.keys(input.customFields).length > 0) {
+      await saveFieldValues(client, upsertResult.contact.id, input.customFields);
+    }
+
+    return upsertResult;
+  });
+
+  const fieldValuesMap = await loadFieldValues(pool, [result.contact.id]);
+  return { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
+}
+
 export async function syncConversationContact(input: {
   userId: string;
   phoneNumber: string;
