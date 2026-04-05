@@ -1047,16 +1047,6 @@ function deriveConnectionStatusFromSubscription(
   return "pending";
 }
 
-function isSharedBillingSatisfied(row: Pick<MetaConnectionRow, "billing_mode" | "billing_status">): boolean {
-  if (!env.META_SHARED_BILLING_REQUIRED) {
-    return true;
-  }
-  if (row.billing_mode === "none") {
-    return false;
-  }
-  return row.billing_status === "attached";
-}
-
 async function getConnectionRowByPhoneNumberId(
   phoneNumberId: string,
   options?: { includePending?: boolean }
@@ -1289,11 +1279,7 @@ async function persistMetaStatusSnapshot(
   const nextDisplayPhone = snapshot.displayPhoneNumber ?? row.display_phone_number;
   const nextLinkedNumber = normalizePhoneDigits(nextDisplayPhone) ?? row.linked_number;
   const nextSubscriptionStatus = deriveSubscriptionStatusFromMeta(row.subscription_status, snapshot);
-  const nextConnectionStatus =
-    deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status) === "connected" &&
-    !isSharedBillingSatisfied(row)
-      ? "pending"
-      : deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status);
+  const nextConnectionStatus = deriveConnectionStatusFromSubscription(nextSubscriptionStatus, row.status);
   const metadataPatch: Record<string, unknown> = {
     metaHealth: snapshot,
     lastMetaSyncAt: snapshot.syncedAt,
@@ -1496,7 +1482,7 @@ export async function getMetaBusinessStatus(
     }
   }
   return {
-    connected: row?.status === "connected" && (row ? isSharedBillingSatisfied(row) : true),
+    connected: row?.status === "connected",
     connection: row ? mapConnection(row) : null
   };
 }
@@ -1624,10 +1610,7 @@ export async function completeMetaEmbeddedSignup(
       `[MetaConnect] shared billing attach failed user=${userId} wabaId=${discovered.wabaId}: ${sharedBilling.error ?? "unknown error"}`
     );
   }
-  const sharedBillingReady =
-    sharedBilling.status === "attached" ||
-    (!env.META_SHARED_BILLING_REQUIRED && sharedBilling.status !== "failed");
-  const isConnected = registration.success && webhookSubscription.success && sharedBillingReady;
+  const isConnected = registration.success && webhookSubscription.success;
   const connection = await upsertConnection({
     userId,
     metaBusinessId: discovered.metaBusinessId,
@@ -1687,11 +1670,6 @@ export async function completeMetaEmbeddedSignup(
     if (!webhookSubscription.success) {
       throw new Error(
         `Webhook subscription failed for this number: ${webhookSubscription.error ?? "unknown error"}. Please reconnect.`
-      );
-    }
-    if (env.META_SHARED_BILLING_REQUIRED && sharedBilling.status !== "attached") {
-      throw new Error(
-        `Shared billing attachment failed for this number: ${sharedBilling.error ?? "Meta did not confirm the billing attachment."}`
       );
     }
     if (initialSyncError) {

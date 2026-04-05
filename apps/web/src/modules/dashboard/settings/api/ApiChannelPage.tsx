@@ -266,7 +266,7 @@ export function ApiChannelPage() {
             <strong>Shared Meta Billing Enabled</strong>
             <p>
               New numbers onboarded here will try to use WAgen&apos;s Meta billing in {metaConfig?.sharedBillingCurrency ?? "your configured currency"}.
-              {sharedBillingRequired ? " Billing attachment must succeed before the channel is treated as fully connected." : ""}
+              {sharedBillingRequired ? " If billing attachment fails, the API channel can still connect and the billing issue will be shown separately." : ""}
             </p>
           </div>
         ) : null}
