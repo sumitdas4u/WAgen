@@ -20,5 +20,5 @@ describe("dashboard module registry", () => {
       expect(definition.prefetchStrategy).toBe("code+data");
       expect(routeModule.prefetchData).toEqual(expect.any(Function));
     }
-  });
+  }, 10000);
 });

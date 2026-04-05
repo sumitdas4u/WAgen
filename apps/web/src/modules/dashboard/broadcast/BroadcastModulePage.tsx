@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -26,6 +26,7 @@ import {
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import { useTemplatesQuery } from "../templates/queries";
+import "./broadcast.css";
 
 type ModuleMode = "list" | "new" | "detail" | "retarget";
 type WizardStep = 1 | 2 | 3 | 4;
@@ -145,14 +146,14 @@ function formatCampaignStatus(status: Campaign["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function cardStyle(selected = false): CSSProperties {
-  return {
-    border: selected ? "1px solid #60a5fa" : "1px solid #e5e7eb",
-    borderRadius: "16px",
-    padding: "16px",
-    background: selected ? "#eff6ff" : "#fff",
-    cursor: "pointer"
-  };
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -168,20 +169,20 @@ function downloadBlob(blob: Blob, filename: string) {
 
 function SummaryCards({ report }: { report: BroadcastReport }) {
   const items = [
-    { label: "Recipients", value: report.campaign.total_count },
-    { label: "Sent", value: report.buckets.sent },
-    { label: "Delivered", value: report.buckets.delivered },
-    { label: "Read", value: report.buckets.read },
-    { label: "Failed", value: report.buckets.failed },
-    { label: "Not delivered", value: report.buckets.skipped }
+    { label: "Recipients", value: report.campaign.total_count, tone: "neutral" },
+    { label: "Sent", value: report.buckets.sent, tone: "blue" },
+    { label: "Delivered", value: report.buckets.delivered, tone: "green" },
+    { label: "Read", value: report.buckets.read, tone: "teal" },
+    { label: "Failed", value: report.buckets.failed, tone: "rose" },
+    { label: "Not delivered", value: report.buckets.skipped, tone: "amber" }
   ];
 
   return (
-    <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}>
+    <div className="broadcast-stat-grid">
       {items.map((item) => (
-        <div key={item.label} style={{ border: "1px solid #e5e7eb", borderRadius: "14px", padding: "14px", background: "#fff" }}>
-          <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.label}</div>
-          <div style={{ marginTop: "8px", fontSize: "28px", fontWeight: 700, color: "#0f172a" }}>{item.value}</div>
+        <div key={item.label} className={`broadcast-stat-card tone-${item.tone}`}>
+          <div className="broadcast-stat-label">{item.label}</div>
+          <div className="broadcast-stat-value">{item.value}</div>
         </div>
       ))}
     </div>
@@ -198,47 +199,54 @@ function BroadcastListPage({ token }: { token: string }) {
   const data = broadcastsQuery.data;
 
   return (
-    <section style={{ display: "grid", gap: "20px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: "28px", fontWeight: 700 }}>Broadcasts</h2>
-          <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+    <section className="broadcast-page">
+      <div className="broadcast-hero">
+        <div className="broadcast-hero-copy">
+          <span className="broadcast-eyebrow">Campaign control room</span>
+          <h2 className="broadcast-hero-title">Broadcasts</h2>
+          <p className="broadcast-hero-text">
             Manage broadcast sends, delivery performance, and retargeting from one workspace.
           </p>
         </div>
         <button
           type="button"
           onClick={() => navigate("/dashboard/broadcast/new")}
-          style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "12px 18px", fontWeight: 700, cursor: "pointer" }}
+          className="broadcast-primary-btn"
         >
           New Broadcast
         </button>
       </div>
 
       {data?.summary ? (
-        <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}>
+        <div className="broadcast-stat-grid">
           {[
-            ["Recipients", data.summary.recipients],
-            ["Sent", data.summary.sent],
-            ["Delivered", data.summary.delivered],
-            ["Engaged", data.summary.engaged],
-            ["Failed", data.summary.failed],
-            ["Suppressed", data.summary.suppressed]
-          ].map(([label, value]) => (
-            <div key={String(label)} style={{ border: "1px solid #e5e7eb", borderRadius: "14px", padding: "14px", background: "#fff" }}>
-              <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
-              <div style={{ marginTop: "8px", fontSize: "28px", fontWeight: 700 }}>{value}</div>
+            ["Recipients", data.summary.recipients, "neutral"],
+            ["Sent", data.summary.sent, "blue"],
+            ["Delivered", data.summary.delivered, "green"],
+            ["Engaged", data.summary.engaged, "teal"],
+            ["Failed", data.summary.failed, "rose"],
+            ["Suppressed", data.summary.suppressed, "amber"]
+          ].map(([label, value, tone]) => (
+            <div key={String(label)} className={`broadcast-stat-card tone-${String(tone)}`}>
+              <div className="broadcast-stat-label">{label}</div>
+              <div className="broadcast-stat-value">{value}</div>
             </div>
           ))}
         </div>
       ) : null}
 
-      <section style={{ border: "1px solid #e5e7eb", borderRadius: "18px", overflow: "hidden", background: "#fff" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <section className="broadcast-table-shell">
+        <div className="broadcast-table-header">
+          <div>
+            <h3 className="broadcast-section-title">All broadcasts</h3>
+            <p className="broadcast-section-text">Recent runs, outcomes, and retarget actions in one clean table.</p>
+          </div>
+        </div>
+        <table className="broadcast-table">
           <thead>
-            <tr style={{ background: "#f8fafc" }}>
+            <tr>
               {["Broadcast", "Status", "Recipients", "Sent", "Delivered", "Read", "Failed", "Created", "Actions"].map((heading) => (
-                <th key={heading} style={{ padding: "12px 14px", textAlign: "left", fontSize: "11px", color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #e5e7eb" }}>
+                <th key={heading}>
                   {heading}
                 </th>
               ))}
@@ -247,30 +255,32 @@ function BroadcastListPage({ token }: { token: string }) {
           <tbody>
             {(data?.broadcasts ?? []).map((broadcast) => (
               <tr key={broadcast.id}>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>
-                  <div style={{ fontWeight: 700 }}>{broadcast.name}</div>
-                  <div style={{ color: "#64748b", fontSize: "12px" }}>
+                <td>
+                  <div className="broadcast-row-name">{broadcast.name}</div>
+                  <div className="broadcast-row-meta">
                     {broadcast.broadcast_type === "retarget" ? "Retarget broadcast" : "Standard broadcast"}
                   </div>
                 </td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{formatCampaignStatus(broadcast.status)}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{broadcast.total_count}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{broadcast.sent_count}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{broadcast.delivered_count}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{broadcast.read_count}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{broadcast.failed_count}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{new Date(broadcast.created_at).toLocaleString()}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                    <button type="button" className="ghost-btn" onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}`)}>View</button>
-                    <button type="button" className="ghost-btn" onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}/retarget`)}>Retarget</button>
+                <td>
+                  <span className={`broadcast-status-pill status-${broadcast.status}`}>{formatCampaignStatus(broadcast.status)}</span>
+                </td>
+                <td>{broadcast.total_count}</td>
+                <td>{broadcast.sent_count}</td>
+                <td>{broadcast.delivered_count}</td>
+                <td>{broadcast.read_count}</td>
+                <td>{broadcast.failed_count}</td>
+                <td>{formatDateTime(broadcast.created_at)}</td>
+                <td>
+                  <div className="broadcast-table-actions">
+                    <button type="button" className="broadcast-secondary-btn" onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}`)}>View</button>
+                    <button type="button" className="broadcast-secondary-btn" onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}/retarget`)}>Retarget</button>
                   </div>
                 </td>
               </tr>
             ))}
             {!broadcastsQuery.isLoading && (data?.broadcasts ?? []).length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ padding: "28px", textAlign: "center", color: "#64748b" }}>
+                <td colSpan={9} className="broadcast-empty-state">
                   No broadcasts created yet.
                 </td>
               </tr>
@@ -302,22 +312,23 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
 
   const report = reportQuery.data;
   if (!report) {
-    return <div style={{ color: "#64748b" }}>Loading broadcast report…</div>;
+    return <div className="broadcast-loading">Loading broadcast report…</div>;
   }
 
   return (
-    <section style={{ display: "grid", gap: "20px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: "28px", fontWeight: 700 }}>{report.campaign.name}</h2>
-          <p style={{ margin: "6px 0 0", color: "#64748b" }}>
-            {formatCampaignStatus(report.campaign.status)} • Created {new Date(report.campaign.created_at).toLocaleString()}
+    <section className="broadcast-page">
+      <div className="broadcast-hero">
+        <div className="broadcast-hero-copy">
+          <span className="broadcast-eyebrow">Broadcast report</span>
+          <h2 className="broadcast-hero-title">{report.campaign.name}</h2>
+          <p className="broadcast-hero-text">
+            {formatCampaignStatus(report.campaign.status)} • Created {formatDateTime(report.campaign.created_at)}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button type="button" className="ghost-btn" onClick={() => navigate(`/dashboard/broadcast/${campaignId}/retarget`)}>Retarget</button>
+        <div className="broadcast-table-actions">
+          <button type="button" className="broadcast-secondary-btn" onClick={() => navigate(`/dashboard/broadcast/${campaignId}/retarget`)}>Retarget</button>
           {(report.campaign.status === "running" || report.campaign.status === "scheduled" || report.campaign.status === "draft") ? (
-            <button type="button" className="ghost-btn" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+            <button type="button" className="broadcast-secondary-btn" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
               {cancelMutation.isPending ? "Cancelling..." : "Cancel"}
             </button>
           ) : null}
@@ -326,12 +337,18 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
 
       <SummaryCards report={report} />
 
-      <section style={{ border: "1px solid #e5e7eb", borderRadius: "18px", overflow: "hidden", background: "#fff" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <section className="broadcast-table-shell">
+        <div className="broadcast-table-header">
+          <div>
+            <h3 className="broadcast-section-title">Recipient delivery log</h3>
+            <p className="broadcast-section-text">Every recipient status and message failure, in a clearer audit trail.</p>
+          </div>
+        </div>
+        <table className="broadcast-table">
           <thead>
-            <tr style={{ background: "#f8fafc" }}>
+            <tr>
               {["Phone", "Status", "Sent", "Delivered", "Read", "Error"].map((heading) => (
-                <th key={heading} style={{ padding: "12px 14px", textAlign: "left", fontSize: "11px", color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #e5e7eb" }}>
+                <th key={heading}>
                   {heading}
                 </th>
               ))}
@@ -340,12 +357,16 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
           <tbody>
             {report.messages.map((message) => (
               <tr key={message.id}>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{message.phone_number}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{formatCampaignStatus(message.status as Campaign["status"])}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{message.sent_at ? new Date(message.sent_at).toLocaleString() : "—"}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{message.delivered_at ? new Date(message.delivered_at).toLocaleString() : "—"}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{message.read_at ? new Date(message.read_at).toLocaleString() : "—"}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9", color: "#b91c1c" }}>{message.error_message || "—"}</td>
+                <td>{message.phone_number}</td>
+                <td>
+                  <span className={`broadcast-status-pill status-${String(message.status)}`}>
+                    {formatCampaignStatus(message.status as Campaign["status"])}
+                  </span>
+                </td>
+                <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
+                <td>{message.delivered_at ? formatDateTime(message.delivered_at) : "—"}</td>
+                <td>{message.read_at ? formatDateTime(message.read_at) : "—"}</td>
+                <td className="broadcast-error-cell">{message.error_message || "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -368,15 +389,16 @@ function WizardStepHeader({
       : ["Select Template", "Select Audience", "Map Variables & Media", "Schedule"];
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "12px" }}>
+    <div className="broadcast-stepper">
       {labels.map((label, index) => {
         const current = (index + 1) as WizardStep;
         const active = current === step;
         const complete = current < step;
         return (
-          <div key={label} style={{ ...cardStyle(active), background: complete ? "#f0fdf4" : active ? "#eff6ff" : "#fff", cursor: "default" }}>
-            <div style={{ fontSize: "12px", color: "#64748b" }}>Step {current}</div>
-            <div style={{ marginTop: "6px", fontWeight: 700 }}>{label}</div>
+          <div key={label} className={`broadcast-step ${active ? "is-active" : ""} ${complete ? "is-complete" : ""}`}>
+            <div className="broadcast-step-rail" />
+            <div className="broadcast-step-badge">{complete ? "✓" : current}</div>
+            <div className="broadcast-step-label">{label}</div>
           </div>
         );
       })}
@@ -418,6 +440,13 @@ function BroadcastWizardPage({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retargetStatus, setRetargetStatus] = useState<RetargetStatus>("sent");
+  const [sendMode, setSendMode] = useState<"now" | "schedule">("now");
+  const [retryEnabled, setRetryEnabled] = useState(false);
+  const [retryType, setRetryType] = useState<"smart" | "manual">("smart");
+  const [retryUntil, setRetryUntil] = useState("");
+  const [policyEnabled, setPolicyEnabled] = useState(true);
+  const [assigneeType, setAssigneeType] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
 
   const approvedTemplates = useMemo(
     () => (templatesQuery.data ?? []).filter((template) => template.status === "APPROVED"),
@@ -453,6 +482,14 @@ function BroadcastWizardPage({
     mode === "retarget"
       ? retargetPreviewQuery.data?.recipients?.[0] ?? null
       : selectedSegmentContactsQuery.data?.[0] ?? null;
+  const targetAudienceCount =
+    mode === "retarget"
+      ? retargetPreviewQuery.data?.count ?? 0
+      : selectedSegmentContactsQuery.data?.length ?? 0;
+  const selectedSegmentName =
+    mode === "new"
+      ? segments.find((segment) => segment.id === selectedSegmentId)?.name ?? "No segment selected"
+      : `Retarget: ${RETARGET_OPTIONS.find((option) => option.value === retargetStatus)?.label ?? "Audience"}`;
 
   const previewComponents = useMemo(
     () => buildPreviewComponents(selectedTemplate, bindings, sampleContact),
@@ -473,6 +510,12 @@ function BroadcastWizardPage({
       ? header.format
       : null;
   }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (sendMode === "now") {
+      setScheduledAt("");
+    }
+  }, [sendMode]);
 
   const saveMutation = useMutation({
     mutationFn: async (launchNow: boolean) => {
@@ -562,23 +605,26 @@ function BroadcastWizardPage({
   }
 
   return (
-    <section style={{ display: "grid", gap: "20px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: "28px", fontWeight: 700 }}>
+    <section className="broadcast-page">
+      <div className="broadcast-hero">
+        <div className="broadcast-hero-copy">
+          <span className="broadcast-eyebrow">
+            {mode === "retarget" ? "Bring back missed recipients" : "Design and launch"}
+          </span>
+          <h2 className="broadcast-hero-title">
             {mode === "retarget" ? "Retarget Broadcast" : "New Broadcast"}
           </h2>
-          <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+          <p className="broadcast-hero-text">
             Select a template, choose an audience, map variables, then schedule or launch.
           </p>
         </div>
-        <button type="button" className="ghost-btn" onClick={() => navigate("/dashboard/broadcast")}>Back to Broadcasts</button>
+        <button type="button" className="broadcast-secondary-btn" onClick={() => navigate("/dashboard/broadcast")}>Back to Broadcasts</button>
       </div>
 
       <WizardStepHeader mode={mode} step={step} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) 340px", gap: "20px" }}>
-        <section style={{ display: "grid", gap: "16px" }}>
+      <div className="broadcast-wizard-layout">
+        <section className="broadcast-wizard-main">
           {step === 1 && mode === "new" ? (
             <TemplateSelectionStep
               templates={approvedTemplates}
@@ -647,8 +693,25 @@ function BroadcastWizardPage({
 
           {step === 4 ? (
             <ScheduleStep
+              name={name}
+              sendMode={sendMode}
+              onSendModeChange={setSendMode}
               scheduledAt={scheduledAt}
               onScheduledAtChange={setScheduledAt}
+              retryEnabled={retryEnabled}
+              onRetryEnabledChange={setRetryEnabled}
+              retryType={retryType}
+              onRetryTypeChange={setRetryType}
+              retryUntil={retryUntil}
+              onRetryUntilChange={setRetryUntil}
+              policyEnabled={policyEnabled}
+              onPolicyEnabledChange={setPolicyEnabled}
+              audienceCount={targetAudienceCount}
+              selectedAudienceLabel={selectedSegmentName}
+              assigneeType={assigneeType}
+              onAssigneeTypeChange={setAssigneeType}
+              assigneeId={assigneeId}
+              onAssigneeIdChange={setAssigneeId}
               onBack={() => setStep(3)}
               onSave={() => saveMutation.mutate(false)}
               onLaunch={() => saveMutation.mutate(true)}
@@ -656,26 +719,28 @@ function BroadcastWizardPage({
             />
           ) : null}
 
-          {message ? <div style={{ color: "#166534" }}>{message}</div> : null}
-          {error ? <div style={{ color: "#b91c1c" }}>{error}</div> : null}
+          {message ? <div className="broadcast-feedback success">{message}</div> : null}
+          {error ? <div className="broadcast-feedback error">{error}</div> : null}
         </section>
 
-        <aside style={{ border: "1px solid #e5e7eb", borderRadius: "18px", padding: "18px", background: "#fff", display: "grid", gap: "14px", alignSelf: "start" }}>
+        <aside className="broadcast-preview-shell">
           <div>
-            <div style={{ fontWeight: 700 }}>Live Preview</div>
-            <div style={{ marginTop: "4px", color: "#64748b", fontSize: "13px" }}>
+            <div className="broadcast-preview-title">Live Preview</div>
+            <div className="broadcast-preview-copy">
               {sampleContact
                 ? `Previewing with ${sampleContact.display_name || sampleContact.phone_number}`
                 : "Select an audience to preview variable mappings."}
             </div>
           </div>
           {selectedTemplate ? (
-            <TemplatePreviewPanel
-              components={previewComponents}
-              businessName={selectedTemplate.displayPhoneNumber ?? selectedTemplate.name}
-            />
+            <div className="broadcast-preview-panel">
+              <TemplatePreviewPanel
+                components={previewComponents}
+                businessName={selectedTemplate.displayPhoneNumber ?? selectedTemplate.name}
+              />
+            </div>
           ) : (
-            <div style={{ minHeight: "280px", border: "1px dashed #cbd5e1", borderRadius: "14px", display: "grid", placeItems: "center", color: "#64748b", fontSize: "13px" }}>
+            <div className="broadcast-preview-empty">
               Choose a template to preview the broadcast.
             </div>
           )}
@@ -705,30 +770,33 @@ function TemplateSelectionStep({
   canContinue: boolean;
 }) {
   return (
-    <section style={{ display: "grid", gap: "14px" }}>
-      <div style={{ fontWeight: 700, fontSize: "18px" }}>Select Template</div>
+    <section className="broadcast-step-section">
+      <div className="broadcast-section-heading">
+        <h3 className="broadcast-section-title">Select Template</h3>
+        <p className="broadcast-section-text">Choose the approved WhatsApp template you want to send.</p>
+      </div>
       {onNameChange ? (
-        <label style={{ display: "grid", gap: "8px" }}>
-          <span style={{ fontWeight: 600 }}>Broadcast name</span>
-          <input value={name ?? ""} onChange={(event) => onNameChange(event.target.value)} placeholder="Broadcast name" style={{ border: "1px solid #d1d5db", borderRadius: "12px", padding: "10px 12px" }} />
+        <label className="broadcast-field">
+          <span className="broadcast-label">Broadcast name</span>
+          <input className="broadcast-input" value={name ?? ""} onChange={(event) => onNameChange(event.target.value)} placeholder="Broadcast name" />
         </label>
       ) : null}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "14px" }}>
+      <div className="broadcast-template-grid">
         {templates.map((template) => (
-          <button key={template.id} type="button" onClick={() => onSelect(template.id)} style={cardStyle(selectedTemplateId === template.id)}>
-            <div style={{ textAlign: "left", display: "grid", gap: "10px" }}>
+          <button key={template.id} type="button" onClick={() => onSelect(template.id)} className={`broadcast-template-card ${selectedTemplateId === template.id ? "is-selected" : ""}`}>
+            <div className="broadcast-template-card-inner">
               <div>
-                <div style={{ fontWeight: 700 }}>{template.name}</div>
-                <div style={{ fontSize: "12px", color: "#64748b" }}>{template.category} • {template.language}</div>
+                <div className="broadcast-template-name">{template.name}</div>
+                <div className="broadcast-template-meta">{template.category} • {template.language}</div>
               </div>
               <TemplatePreviewPanel components={template.components} businessName={template.displayPhoneNumber ?? template.name} />
             </div>
           </button>
         ))}
       </div>
-      <div style={{ display: "flex", gap: "10px" }}>
-        {onBack ? <button type="button" className="ghost-btn" onClick={onBack}>Back</button> : null}
-        <button type="button" onClick={onContinue} disabled={!canContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700, cursor: canContinue ? "pointer" : "not-allowed" }}>
+      <div className="broadcast-actions">
+        {onBack ? <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button> : null}
+        <button type="button" onClick={onContinue} disabled={!canContinue} className="broadcast-primary-btn">
           Continue
         </button>
       </div>
@@ -750,24 +818,27 @@ function RetargetAudienceStep({
   canContinue: boolean;
 }) {
   return (
-    <section style={{ display: "grid", gap: "14px" }}>
-      <div style={{ fontWeight: 700, fontSize: "18px" }}>Select Retarget Audience</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "12px" }}>
+    <section className="broadcast-step-section">
+      <div className="broadcast-section-heading">
+        <h3 className="broadcast-section-title">Select Retarget Audience</h3>
+        <p className="broadcast-section-text">Choose one outcome bucket from the previous run and preview the matched recipients.</p>
+      </div>
+      <div className="broadcast-retarget-grid">
         {RETARGET_OPTIONS.map((option) => (
-          <button key={option.value} type="button" onClick={() => onRetargetStatusChange(option.value)} style={cardStyle(retargetStatus === option.value)}>
-            <div style={{ fontSize: "12px", color: "#64748b" }}>{option.label}</div>
-            <div style={{ marginTop: "6px", fontWeight: 700, fontSize: "24px" }}>
+          <button key={option.value} type="button" onClick={() => onRetargetStatusChange(option.value)} className={`broadcast-retarget-card ${retargetStatus === option.value ? "is-selected" : ""}`}>
+            <div className="broadcast-retarget-label">{option.label}</div>
+            <div className="broadcast-retarget-value">
               {preview?.status === option.value ? preview.count : "—"}
             </div>
           </button>
         ))}
       </div>
-      <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", overflow: "hidden", background: "#fff" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <section className="broadcast-table-shell compact">
+        <table className="broadcast-table">
           <thead>
-            <tr style={{ background: "#f8fafc" }}>
+            <tr>
               {["Recipient", "Phone"].map((heading) => (
-                <th key={heading} style={{ padding: "12px 14px", textAlign: "left", fontSize: "11px", color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #e5e7eb" }}>
+                <th key={heading}>
                   {heading}
                 </th>
               ))}
@@ -776,15 +847,15 @@ function RetargetAudienceStep({
           <tbody>
             {(preview?.recipients ?? []).slice(0, 50).map((contact) => (
               <tr key={contact.id}>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{contact.display_name || "Unknown"}</td>
-                <td style={{ padding: "14px", borderBottom: "1px solid #f1f5f9" }}>{contact.phone_number}</td>
+                <td>{contact.display_name || "Unknown"}</td>
+                <td>{contact.phone_number}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
-      <div>
-        <button type="button" onClick={onContinue} disabled={!canContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700, cursor: canContinue ? "pointer" : "not-allowed" }}>
+      <div className="broadcast-actions">
+        <button type="button" onClick={onContinue} disabled={!canContinue} className="broadcast-primary-btn">
           Continue
         </button>
       </div>
@@ -820,48 +891,53 @@ function AudienceSelectionStep({
   canContinue: boolean;
 }) {
   return (
-    <section style={{ display: "grid", gap: "16px" }}>
-      <div style={{ fontWeight: 700, fontSize: "18px" }}>Select Audience</div>
-      <label style={{ display: "grid", gap: "8px" }}>
-        <span style={{ fontWeight: 600 }}>Broadcast name</span>
-        <input value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="April promotion" style={{ border: "1px solid #d1d5db", borderRadius: "12px", padding: "10px 12px" }} />
+    <section className="broadcast-step-section">
+      <div className="broadcast-section-heading">
+        <h3 className="broadcast-section-title">Select Audience</h3>
+        <p className="broadcast-section-text">Import a fresh audience from Excel or pick a reusable segment.</p>
+      </div>
+      <label className="broadcast-field">
+        <span className="broadcast-label">Broadcast name</span>
+        <input className="broadcast-input" value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="April promotion" />
       </label>
-      <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", padding: "16px", background: "#fff", display: "grid", gap: "12px" }}>
-        <div style={{ fontWeight: 700 }}>Upload contacts from Excel</div>
-        <div style={{ color: "#64748b", fontSize: "14px" }}>
+      <section className="broadcast-surface-card">
+        <div className="broadcast-card-title">Upload contacts from Excel</div>
+        <div className="broadcast-muted-copy">
           Upload a workbook to import or update contacts and create a reusable segment for this broadcast.
         </div>
-        <div>
-          <button type="button" className="ghost-btn" onClick={() => void onDownloadTemplate()} disabled={downloadingTemplate}>
+        <div className="broadcast-upload-actions">
+          <button type="button" className="broadcast-secondary-btn" onClick={() => void onDownloadTemplate()} disabled={downloadingTemplate}>
             {downloadingTemplate ? "Downloading..." : "Download sample file"}
           </button>
+          <label className="broadcast-upload-btn">
+            {uploadingAudience ? "Uploading..." : "Upload contacts"}
+            <input
+              type="file"
+              accept=".xlsx"
+              disabled={uploadingAudience}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  void onUpload(file);
+                }
+              }}
+            />
+          </label>
         </div>
-        <input
-          type="file"
-          accept=".xlsx"
-          disabled={uploadingAudience}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) {
-              void onUpload(file);
-            }
-          }}
-        />
       </section>
-      <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", padding: "16px", background: "#fff", display: "grid", gap: "10px" }}>
-        <div style={{ fontWeight: 700 }}>Pick existing segment</div>
+      <section className="broadcast-surface-card">
+        <div className="broadcast-card-title">Pick existing segment</div>
         {segments.map((segment) => (
-          <button key={segment.id} type="button" onClick={() => onSelectSegment(segment.id)} style={cardStyle(selectedSegmentId === segment.id)}>
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontWeight: 700 }}>{segment.name}</div>
-              <div style={{ color: "#64748b", fontSize: "12px" }}>Created {new Date(segment.created_at).toLocaleDateString()}</div>
-            </div>
+          <button key={segment.id} type="button" onClick={() => onSelectSegment(segment.id)} className={`broadcast-segment-card ${selectedSegmentId === segment.id ? "is-selected" : ""}`}>
+            <div className="broadcast-segment-name">{segment.name}</div>
+            <div className="broadcast-row-meta">Created {new Date(segment.created_at).toLocaleDateString()}</div>
+            <span className="broadcast-segment-check">{selectedSegmentId === segment.id ? "Selected" : "Select"}</span>
           </button>
         ))}
       </section>
-      <div style={{ display: "flex", gap: "10px" }}>
-        <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
-        <button type="button" onClick={onContinue} disabled={!canContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700, cursor: canContinue ? "pointer" : "not-allowed" }}>
+      <div className="broadcast-actions">
+        <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button>
+        <button type="button" onClick={onContinue} disabled={!canContinue} className="broadcast-primary-btn">
           Continue
         </button>
       </div>
@@ -895,54 +971,60 @@ function VariableMappingStep({
   onContinue: () => void;
 }) {
   return (
-    <section style={{ display: "grid", gap: "16px" }}>
-      <div style={{ fontWeight: 700, fontSize: "18px" }}>Map Variables & Media</div>
+    <section className="broadcast-step-section">
+      <div className="broadcast-section-heading">
+        <h3 className="broadcast-section-title">Map Variables & Media</h3>
+        <p className="broadcast-section-text">Connect template placeholders to contact fields or static values, then attach media if needed.</p>
+      </div>
       {placeholders.length === 0 ? (
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: "14px", padding: "14px", background: "#fff", color: "#64748b" }}>
+        <div className="broadcast-note-card">
           This template does not have dynamic variables.
         </div>
       ) : (
         placeholders.map((placeholder) => {
           const binding = bindings[placeholder] ?? { source: "contact" as const, field: "display_name", fallback: "" };
           return (
-            <div key={placeholder} style={{ display: "grid", gap: "10px", gridTemplateColumns: "140px 120px minmax(0, 1fr) minmax(0, 1fr)", alignItems: "center", border: "1px solid #e5e7eb", borderRadius: "14px", padding: "14px", background: "#fff" }}>
-              <strong>{placeholder}</strong>
-              <select value={binding.source} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, source: event.target.value as "contact" | "static" } }))} style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}>
+            <div key={placeholder} className="broadcast-binding-card">
+              <strong className="broadcast-binding-token">{placeholder}</strong>
+              <select className="broadcast-input" value={binding.source} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, source: event.target.value as "contact" | "static" } }))}>
                 <option value="contact">Contact field</option>
                 <option value="static">Static value</option>
               </select>
               {binding.source === "contact" ? (
-                <select value={binding.field ?? "display_name"} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, field: event.target.value } }))} style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}>
+                <select className="broadcast-input" value={binding.field ?? "display_name"} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, field: event.target.value } }))}>
                   {fieldOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               ) : (
-                <input value={binding.value ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, value: event.target.value } }))} placeholder="Static replacement" style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }} />
+                <input className="broadcast-input" value={binding.value ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, value: event.target.value } }))} placeholder="Static replacement" />
               )}
-              <input value={binding.fallback ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, fallback: event.target.value } }))} placeholder="Fallback if empty" style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }} />
+              <input className="broadcast-input" value={binding.fallback ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, fallback: event.target.value } }))} placeholder="Fallback if empty" />
             </div>
           );
         })
       )}
       {headerMediaType ? (
-        <section style={{ border: "1px solid #e5e7eb", borderRadius: "16px", padding: "16px", background: "#fff", display: "grid", gap: "12px" }}>
-          <div style={{ fontWeight: 700 }}>Media</div>
-          <div style={{ color: "#64748b", fontSize: "14px" }}>
+        <section className="broadcast-surface-card">
+          <div className="broadcast-card-title">Media</div>
+          <div className="broadcast-muted-copy">
             This template uses a {headerMediaType.toLowerCase()} header. Upload a file or provide a public media URL for this broadcast.
           </div>
-          <input type="file" disabled={uploadingMedia} onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) {
-              void onMediaUpload(file);
-            }
-          }} />
-          <input value={mediaOverrides.headerMediaUrl ?? ""} onChange={(event) => setMediaOverrides((current) => ({ ...current, headerMediaUrl: event.target.value }))} placeholder="https://example.com/media.jpg" style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }} />
+          <label className="broadcast-upload-btn slim">
+            {uploadingMedia ? "Uploading..." : `Upload ${headerMediaType.toLowerCase()}`}
+            <input type="file" disabled={uploadingMedia} onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void onMediaUpload(file);
+              }
+            }} />
+          </label>
+          <input className="broadcast-input" value={mediaOverrides.headerMediaUrl ?? ""} onChange={(event) => setMediaOverrides((current) => ({ ...current, headerMediaUrl: event.target.value }))} placeholder="https://example.com/media.jpg" />
         </section>
       ) : null}
-      <div style={{ display: "flex", gap: "10px" }}>
-        <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
-        <button type="button" onClick={onContinue} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700 }}>
+      <div className="broadcast-actions">
+        <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button>
+        <button type="button" onClick={onContinue} className="broadcast-primary-btn">
           Continue
         </button>
       </div>
@@ -951,37 +1033,168 @@ function VariableMappingStep({
 }
 
 function ScheduleStep({
+  name,
+  sendMode,
+  onSendModeChange,
   scheduledAt,
   onScheduledAtChange,
+  retryEnabled,
+  onRetryEnabledChange,
+  retryType,
+  onRetryTypeChange,
+  retryUntil,
+  onRetryUntilChange,
+  policyEnabled,
+  onPolicyEnabledChange,
+  audienceCount,
+  selectedAudienceLabel,
+  assigneeType,
+  onAssigneeTypeChange,
+  assigneeId,
+  onAssigneeIdChange,
   onBack,
   onSave,
   onLaunch,
   saving
 }: {
+  name: string;
+  sendMode: "now" | "schedule";
+  onSendModeChange: (value: "now" | "schedule") => void;
   scheduledAt: string;
   onScheduledAtChange: (value: string) => void;
+  retryEnabled: boolean;
+  onRetryEnabledChange: (value: boolean) => void;
+  retryType: "smart" | "manual";
+  onRetryTypeChange: (value: "smart" | "manual") => void;
+  retryUntil: string;
+  onRetryUntilChange: (value: string) => void;
+  policyEnabled: boolean;
+  onPolicyEnabledChange: (value: boolean) => void;
+  audienceCount: number;
+  selectedAudienceLabel: string;
+  assigneeType: string;
+  onAssigneeTypeChange: (value: string) => void;
+  assigneeId: string;
+  onAssigneeIdChange: (value: string) => void;
   onBack: () => void;
   onSave: () => void;
   onLaunch: () => void;
   saving: boolean;
 }) {
   return (
-    <section style={{ display: "grid", gap: "16px" }}>
-      <div style={{ fontWeight: 700, fontSize: "18px" }}>Schedule Broadcast</div>
-      <label style={{ display: "grid", gap: "8px" }}>
-        <span style={{ fontWeight: 600 }}>Launch time</span>
-        <input type="datetime-local" value={scheduledAt} onChange={(event) => onScheduledAtChange(event.target.value)} style={{ border: "1px solid #d1d5db", borderRadius: "12px", padding: "10px 12px" }} />
-      </label>
-      <div style={{ color: "#64748b", fontSize: "14px" }}>
-        Leave empty to launch immediately. If you save with a future time, the worker will launch it once the scheduled time arrives.
+    <section className="broadcast-step-section">
+      <div className="broadcast-section-heading">
+        <h3 className="broadcast-section-title">Schedule Broadcast</h3>
+        <p className="broadcast-section-text">Review the final send settings, timing, retry behavior, and audience rules before launch.</p>
       </div>
-      <div style={{ display: "flex", gap: "10px" }}>
-        <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
-        <button type="button" className="ghost-btn" onClick={onSave} disabled={saving}>
-          {saving ? "Saving..." : "Save Broadcast"}
+
+      <section className="broadcast-surface-card">
+        <div className="broadcast-card-title">Broadcast details</div>
+        <div className="broadcast-form-grid">
+          <label className="broadcast-field">
+            <span className="broadcast-label">Broadcast name</span>
+            <input className="broadcast-input" value={name} readOnly />
+          </label>
+          <label className="broadcast-field">
+            <span className="broadcast-label">Send broadcast</span>
+            <select className="broadcast-input" value={sendMode} onChange={(event) => onSendModeChange(event.target.value as "now" | "schedule")}>
+              <option value="now">Send immediately</option>
+              <option value="schedule">Schedule for later</option>
+            </select>
+          </label>
+          {sendMode === "schedule" ? (
+            <label className="broadcast-field broadcast-form-span">
+              <span className="broadcast-label">Schedule date and time</span>
+              <input className="broadcast-input" type="datetime-local" value={scheduledAt} onChange={(event) => onScheduledAtChange(event.target.value)} />
+            </label>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="broadcast-surface-card">
+        <div className="broadcast-card-row">
+          <div className="broadcast-card-title">Retry Mode</div>
+          <label className="broadcast-switch">
+            <input type="checkbox" checked={retryEnabled} onChange={(event) => onRetryEnabledChange(event.target.checked)} />
+            <span />
+          </label>
+        </div>
+        <div className={`broadcast-retry-grid ${retryEnabled ? "" : "is-disabled"}`}>
+          <div className="broadcast-radio-row">
+            <label className="broadcast-radio-card">
+              <input type="radio" checked={retryType === "smart"} onChange={() => onRetryTypeChange("smart")} />
+              <span>Smart retry</span>
+              <em>Recommended</em>
+            </label>
+            <label className="broadcast-radio-card">
+              <input type="radio" checked={retryType === "manual"} onChange={() => onRetryTypeChange("manual")} />
+              <span>Manual retry</span>
+            </label>
+          </div>
+          <label className="broadcast-field">
+            <span className="broadcast-label">Retry until</span>
+            <input className="broadcast-input" type="datetime-local" value={retryUntil} onChange={(event) => onRetryUntilChange(event.target.value)} disabled={!retryEnabled} />
+          </label>
+        </div>
+      </section>
+
+      <section className="broadcast-surface-card">
+        <div className="broadcast-card-title">Target audience</div>
+        <div className="broadcast-audience-summary">
+          <div className="broadcast-audience-row">
+            <span>Total contacts</span>
+            <strong>{audienceCount}</strong>
+          </div>
+          <div className="broadcast-audience-row">
+            <span>Selected audience</span>
+            <strong>{selectedAudienceLabel}</strong>
+          </div>
+        </div>
+        <div className="broadcast-policy-row">
+          <div>
+            <div className="broadcast-policy-title">Follow WhatsApp Business Policy</div>
+            <div className="broadcast-muted-copy">
+              We'll only message contacts who have opted in for marketing messages.
+            </div>
+          </div>
+          <label className="broadcast-switch">
+            <input type="checkbox" checked={policyEnabled} onChange={(event) => onPolicyEnabledChange(event.target.checked)} />
+            <span />
+          </label>
+        </div>
+      </section>
+
+      <section className="broadcast-surface-card">
+        <div className="broadcast-card-row">
+          <div className="broadcast-card-title">Broadcast reply settings</div>
+          <span className="broadcast-optional-badge">Optional</span>
+        </div>
+        <div className="broadcast-muted-copy">
+          Set how replies to your broadcast messages are managed when contacts interact with them.
+        </div>
+        <div className="broadcast-form-grid two-up">
+          <label className="broadcast-field">
+            <span className="broadcast-label">Assign conversations to</span>
+            <select className="broadcast-input" value={assigneeType} onChange={(event) => onAssigneeTypeChange(event.target.value)}>
+              <option value="">Select assignee</option>
+              <option value="agent">Agent</option>
+              <option value="team">Team</option>
+            </select>
+          </label>
+          <label className="broadcast-field">
+            <span className="broadcast-label">Target</span>
+            <input className="broadcast-input" value={assigneeId} onChange={(event) => onAssigneeIdChange(event.target.value)} placeholder="---Select---" />
+          </label>
+        </div>
+      </section>
+
+      <div className="broadcast-actions">
+        <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button>
+        <button type="button" className="broadcast-secondary-btn" onClick={onSave} disabled={saving}>
+          {saving ? "Saving..." : sendMode === "schedule" ? "Save Scheduled Broadcast" : "Save Broadcast"}
         </button>
-        <button type="button" onClick={onLaunch} disabled={saving} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: "12px", padding: "11px 16px", fontWeight: 700 }}>
-          {saving ? "Launching..." : "Launch Now"}
+        <button type="button" onClick={onLaunch} disabled={saving} className="broadcast-primary-btn">
+          {saving ? "Launching..." : sendMode === "schedule" ? "Save & Launch" : "Launch Now"}
         </button>
       </div>
     </section>
