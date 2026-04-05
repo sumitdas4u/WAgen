@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  API_URL,
   cancelCampaignRun,
   createCampaignDraft,
   downloadContactsTemplate,
@@ -20,16 +19,18 @@ import {
   type CampaignTemplateVariables,
   type ContactRecord,
   type MessageTemplate,
-  type RetargetStatus,
-  uploadBroadcastMedia
+  type RetargetStatus
 } from "../../../lib/api";
+import { uploadBroadcastMedia as uploadBroadcastMediaToSupabase } from "../../../lib/supabase";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
+import { useInboxPublishedFlowsQuery } from "../inbox/queries";
 import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import { useTemplatesQuery } from "../templates/queries";
 import "./broadcast.css";
 
 type ModuleMode = "list" | "new" | "detail" | "retarget";
 type WizardStep = 1 | 2 | 3 | 4;
+type BroadcastReplyMode = "ai" | "flow";
 
 const STANDARD_CONTACT_FIELDS = [
   { value: "display_name", label: "Contact name" },
@@ -460,6 +461,7 @@ function BroadcastWizardPage({
     queryKey: dashboardQueryKeys.contactFields,
     queryFn: () => listContactFields(token).then((response) => response.fields)
   });
+  const publishedFlowsQuery = useInboxPublishedFlowsQuery(token);
 
   const [step, setStep] = useState<WizardStep>(1);
   const [name, setName] = useState("");
@@ -479,8 +481,8 @@ function BroadcastWizardPage({
   const [retryType, setRetryType] = useState<"smart" | "manual">("smart");
   const [retryUntil, setRetryUntil] = useState("");
   const [policyEnabled, setPolicyEnabled] = useState(true);
-  const [assigneeType, setAssigneeType] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
+  const [replyMode, setReplyMode] = useState<BroadcastReplyMode>("ai");
+  const [replyFlowId, setReplyFlowId] = useState("");
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [marketingOptIn, setMarketingOptIn] = useState(true);
   const [phoneNumberFormat, setPhoneNumberFormat] = useState<"with_country_code" | "without_country_code">("with_country_code");
@@ -495,6 +497,7 @@ function BroadcastWizardPage({
   const placeholders = useMemo(() => extractTemplatePlaceholders(selectedTemplate), [selectedTemplate]);
   const fields = fieldsQuery.data ?? [];
   const segments = segmentsQuery.data ?? [];
+  const publishedFlows = publishedFlowsQuery.data ?? [];
 
   const selectedSegmentContactsQuery = useQuery({
     queryKey: dashboardQueryKeys.segmentContacts(selectedSegmentId || "none"),
@@ -568,8 +571,23 @@ function BroadcastWizardPage({
         retargetStatus: mode === "retarget" ? retargetStatus : null,
         audienceSource:
           mode === "retarget"
-            ? { kind: "retarget", sourceCampaignId, status: retargetStatus }
-            : { kind: "segment", segmentId: selectedSegmentId },
+            ? {
+                kind: "retarget",
+                sourceCampaignId,
+                status: retargetStatus,
+                replyRouting: {
+                  mode: replyMode,
+                  flowId: replyMode === "flow" ? replyFlowId || null : null
+                }
+              }
+            : {
+                kind: "segment",
+                segmentId: selectedSegmentId,
+                replyRouting: {
+                  mode: replyMode,
+                  flowId: replyMode === "flow" ? replyFlowId || null : null
+                }
+              },
         mediaOverrides,
         scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null
       });
@@ -637,12 +655,12 @@ function BroadcastWizardPage({
     setUploadingMedia(true);
     setError(null);
     try {
-      const uploaded = await uploadBroadcastMedia(token, file);
+      const uploaded = await uploadBroadcastMediaToSupabase(file);
       setMediaOverrides((current) => ({
         ...current,
-        headerMediaUrl: `${API_URL}${uploaded.url}`
+        headerMediaUrl: uploaded.url
       }));
-      setMessage("Media uploaded for this broadcast.");
+      setMessage("Media uploaded to Supabase for this broadcast.");
     } catch (uploadError) {
       setError((uploadError as Error).message);
     } finally {
@@ -763,10 +781,11 @@ function BroadcastWizardPage({
               onPolicyEnabledChange={setPolicyEnabled}
               audienceCount={targetAudienceCount}
               selectedAudienceLabel={selectedSegmentName}
-              assigneeType={assigneeType}
-              onAssigneeTypeChange={setAssigneeType}
-              assigneeId={assigneeId}
-              onAssigneeIdChange={setAssigneeId}
+              replyMode={replyMode}
+              onReplyModeChange={setReplyMode}
+              replyFlowId={replyFlowId}
+              onReplyFlowIdChange={setReplyFlowId}
+              availableFlows={publishedFlows}
               onBack={() => setStep(3)}
               onSave={() => saveMutation.mutate(false)}
               onLaunch={() => saveMutation.mutate(true)}
@@ -1186,10 +1205,11 @@ function ScheduleStep({
   onPolicyEnabledChange,
   audienceCount,
   selectedAudienceLabel,
-  assigneeType,
-  onAssigneeTypeChange,
-  assigneeId,
-  onAssigneeIdChange,
+  replyMode,
+  onReplyModeChange,
+  replyFlowId,
+  onReplyFlowIdChange,
+  availableFlows,
   onBack,
   onSave,
   onLaunch,
@@ -1210,15 +1230,18 @@ function ScheduleStep({
   onPolicyEnabledChange: (value: boolean) => void;
   audienceCount: number;
   selectedAudienceLabel: string;
-  assigneeType: string;
-  onAssigneeTypeChange: (value: string) => void;
-  assigneeId: string;
-  onAssigneeIdChange: (value: string) => void;
+  replyMode: BroadcastReplyMode;
+  onReplyModeChange: (value: BroadcastReplyMode) => void;
+  replyFlowId: string;
+  onReplyFlowIdChange: (value: string) => void;
+  availableFlows: Array<{ id: string; name: string }>;
   onBack: () => void;
   onSave: () => void;
   onLaunch: () => void;
   saving: boolean;
 }) {
+  const replyConfigValid = replyMode !== "flow" || Boolean(replyFlowId);
+
   return (
     <section className="broadcast-step-section">
       <div className="broadcast-section-heading">
@@ -1313,25 +1336,43 @@ function ScheduleStep({
         <div className="broadcast-form-grid two-up">
           <label className="broadcast-field">
             <span className="broadcast-label">Assign conversations to</span>
-            <select className="broadcast-input" value={assigneeType} onChange={(event) => onAssigneeTypeChange(event.target.value)}>
-              <option value="">Select assignee</option>
-              <option value="agent">Agent</option>
-              <option value="team">Team</option>
+            <select className="broadcast-input" value={replyMode} onChange={(event) => onReplyModeChange(event.target.value as BroadcastReplyMode)}>
+              <option value="ai">AI</option>
+              <option value="flow">Flow</option>
             </select>
           </label>
           <label className="broadcast-field">
             <span className="broadcast-label">Target</span>
-            <input className="broadcast-input" value={assigneeId} onChange={(event) => onAssigneeIdChange(event.target.value)} placeholder="---Select---" />
+            <select
+              className="broadcast-input"
+              value={replyFlowId}
+              onChange={(event) => onReplyFlowIdChange(event.target.value)}
+              disabled={replyMode !== "flow"}
+            >
+              <option value="">
+                {replyMode === "flow" ? "--Select flow--" : "AI handles replies automatically"}
+              </option>
+              {availableFlows.map((flow) => (
+                <option key={flow.id} value={flow.id}>
+                  {flow.name}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
+        {replyMode === "flow" && availableFlows.length === 0 ? (
+          <div className="broadcast-muted-copy">
+            No published flows are available yet. Publish a flow first to route broadcast replies into it.
+          </div>
+        ) : null}
       </section>
 
       <div className="broadcast-actions">
         <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button>
-        <button type="button" className="broadcast-secondary-btn" onClick={onSave} disabled={saving}>
+        <button type="button" className="broadcast-secondary-btn" onClick={onSave} disabled={saving || !replyConfigValid}>
           {saving ? "Saving..." : sendMode === "schedule" ? "Save Scheduled Broadcast" : "Save Broadcast"}
         </button>
-        <button type="button" onClick={onLaunch} disabled={saving} className="broadcast-primary-btn">
+        <button type="button" onClick={onLaunch} disabled={saving || !replyConfigValid} className="broadcast-primary-btn">
           {saving ? "Launching..." : sendMode === "schedule" ? "Save & Launch" : "Launch Now"}
         </button>
       </div>

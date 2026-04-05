@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  createGenericWebhookIntegration,
   createGenericWebhookWorkflow,
+  deleteGenericWebhookIntegration,
   deleteGenericWebhookWorkflow,
-  fetchGenericWebhookIntegration,
+  fetchGenericWebhookIntegrations,
   fetchGenericWebhookLogs,
   fetchGenericWebhookWorkflows,
   fetchTemplates,
@@ -43,6 +45,8 @@ export function GenericWebhooksPage() {
   const { token } = useDashboardShell();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
+  const [selectedIntegrationId, setSelectedIntegrationId] = useState("");
+  const [newIntegrationName, setNewIntegrationName] = useState("");
   const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -59,20 +63,36 @@ export function GenericWebhooksPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const integrationQuery = useQuery({
-    queryKey: dashboardQueryKeys.webhookIntegration,
-    queryFn: () => fetchGenericWebhookIntegration(token).then((response) => response.integration),
+  const integrationsQuery = useQuery({
+    queryKey: dashboardQueryKeys.webhookIntegrations,
+    queryFn: () => fetchGenericWebhookIntegrations(token).then((response) => response.integrations),
     enabled: Boolean(token)
   });
+
+  const integration = useMemo(
+    () => (integrationsQuery.data ?? []).find((item) => item.id === selectedIntegrationId) ?? null,
+    [integrationsQuery.data, selectedIntegrationId]
+  );
+
+  useEffect(() => {
+    if (!selectedIntegrationId && (integrationsQuery.data?.length ?? 0) > 0) {
+      setSelectedIntegrationId(integrationsQuery.data![0].id);
+      return;
+    }
+    if (selectedIntegrationId && integrationsQuery.data && !integrationsQuery.data.some((item) => item.id === selectedIntegrationId)) {
+      setSelectedIntegrationId(integrationsQuery.data[0]?.id ?? "");
+    }
+  }, [integrationsQuery.data, selectedIntegrationId]);
+
   const workflowsQuery = useQuery({
-    queryKey: dashboardQueryKeys.webhookWorkflows,
-    queryFn: () => fetchGenericWebhookWorkflows(token).then((response) => response.workflows),
-    enabled: Boolean(token)
+    queryKey: dashboardQueryKeys.webhookWorkflows(selectedIntegrationId || "none"),
+    queryFn: () => fetchGenericWebhookWorkflows(token, selectedIntegrationId).then((response) => response.workflows),
+    enabled: Boolean(token && selectedIntegrationId)
   });
   const logsQuery = useQuery({
-    queryKey: dashboardQueryKeys.webhookLogs,
-    queryFn: () => fetchGenericWebhookLogs(token).then((response) => response.logs),
-    enabled: Boolean(token)
+    queryKey: dashboardQueryKeys.webhookLogs(selectedIntegrationId || "none"),
+    queryFn: () => fetchGenericWebhookLogs(token, selectedIntegrationId).then((response) => response.logs),
+    enabled: Boolean(token && selectedIntegrationId)
   });
   const templatesQuery = useQuery({
     queryKey: dashboardQueryKeys.templates,
@@ -85,7 +105,7 @@ export function GenericWebhooksPage() {
     enabled: Boolean(token)
   });
 
-  const integration = integrationQuery.data;
+  const integrations = integrationsQuery.data ?? [];
   const workflows = workflowsQuery.data ?? [];
   const logs = logsQuery.data ?? [];
   const approvedTemplates = useMemo(
@@ -98,7 +118,7 @@ export function GenericWebhooksPage() {
   );
   const selectedTemplate = approvedTemplates.find((template) => template.id === templateId) ?? null;
   const templatePlaceholders = useMemo(() => extractPlaceholders(selectedTemplate), [selectedTemplate]);
-  const endpointUrl = integration ? `${window.location.origin}${integration.endpointUrlPath}` : "";
+  const endpointUrl = integration ? `${window.location.origin}${integration.endpointUrlPath}/incoming` : "";
 
   const invalidate = async () => {
     await Promise.all([
@@ -107,6 +127,18 @@ export function GenericWebhooksPage() {
       queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactFieldsRoot })
     ]);
   };
+
+  const createIntegrationMutation = useMutation({
+    mutationFn: () => createGenericWebhookIntegration(token, { name: newIntegrationName.trim() }).then((response) => response.integration),
+    onSuccess: async (created) => {
+      await invalidate();
+      setSelectedIntegrationId(created.id);
+      setNewIntegrationName("");
+      setMessage("Webhook created.");
+      setError(null);
+    },
+    onError: (mutationError) => setError((mutationError as Error).message)
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -137,9 +169,9 @@ export function GenericWebhooksPage() {
         templateAction
       };
       if (editingWorkflowId) {
-        return updateGenericWebhookWorkflow(token, editingWorkflowId, payload).then((response) => response.workflow);
+        return updateGenericWebhookWorkflow(token, selectedIntegrationId, editingWorkflowId, payload).then((response) => response.workflow);
       }
-      return createGenericWebhookWorkflow(token, payload).then((response) => response.workflow);
+      return createGenericWebhookWorkflow(token, selectedIntegrationId, payload).then((response) => response.workflow);
     },
     onSuccess: async () => {
       await invalidate();
@@ -155,14 +187,14 @@ export function GenericWebhooksPage() {
   });
 
   const toggleIntegrationMutation = useMutation({
-    mutationFn: (nextEnabled: boolean) => updateGenericWebhookIntegration(token, { enabled: nextEnabled }),
+    mutationFn: (nextEnabled: boolean) => updateGenericWebhookIntegration(token, selectedIntegrationId, { enabled: nextEnabled }),
     onSuccess: async () => {
       await invalidate();
     }
   });
 
   const rotateSecretMutation = useMutation({
-    mutationFn: () => rotateGenericWebhookSecret(token),
+    mutationFn: () => rotateGenericWebhookSecret(token, selectedIntegrationId),
     onSuccess: async () => {
       await invalidate();
       setMessage("Webhook secret rotated.");
@@ -171,8 +203,19 @@ export function GenericWebhooksPage() {
     onError: (mutationError) => setError((mutationError as Error).message)
   });
 
+  const deleteIntegrationMutation = useMutation({
+    mutationFn: () => deleteGenericWebhookIntegration(token, selectedIntegrationId),
+    onSuccess: async () => {
+      await invalidate();
+      resetForm();
+      setMessage("Webhook deleted.");
+      setError(null);
+    },
+    onError: (mutationError) => setError((mutationError as Error).message)
+  });
+
   const deleteMutation = useMutation({
-    mutationFn: (workflowId: string) => deleteGenericWebhookWorkflow(token, workflowId),
+    mutationFn: (workflowId: string) => deleteGenericWebhookWorkflow(token, selectedIntegrationId, workflowId),
     onSuccess: async () => {
       await invalidate();
       resetForm();
@@ -182,7 +225,7 @@ export function GenericWebhooksPage() {
 
   const toggleWorkflowMutation = useMutation({
     mutationFn: ({ workflowId, nextEnabled }: { workflowId: string; nextEnabled: boolean }) =>
-      updateGenericWebhookWorkflow(token, workflowId, { enabled: nextEnabled }),
+      updateGenericWebhookWorkflow(token, selectedIntegrationId, workflowId, { enabled: nextEnabled }),
     onSuccess: async () => {
       await invalidate();
     }
@@ -229,19 +272,48 @@ export function GenericWebhooksPage() {
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
           <div>
             <h3>Generic Webhooks</h3>
-            <p>Capture JSON payloads from external apps, update contacts, tag them, and send approved WhatsApp templates.</p>
+            <p>Create separate webhook integrations for forms, CRMs, checkout events, and any other external system.</p>
           </div>
-          {integration && (
-            <button
-              type="button"
-              className={integration.enabled ? "primary-btn" : "ghost-btn"}
-              onClick={() => toggleIntegrationMutation.mutate(!integration.enabled)}
-            >
-              {integration.enabled ? "Connected" : "Disabled"}
-            </button>
-          )}
         </header>
 
+        <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0, 1fr)", gap: "1rem", alignItems: "start", marginBottom: "1rem" }}>
+          <aside style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12, display: "grid", gap: "0.75rem" }}>
+            <div style={{ fontWeight: 700 }}>Webhook Integrations</div>
+            <div style={{ display: "grid", gap: "0.5rem" }}>
+              {integrations.length === 0 && <p style={{ margin: 0, color: "#6b7280" }}>No webhooks yet.</p>}
+              {integrations.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={selectedIntegrationId === item.id ? "primary-btn" : "ghost-btn"}
+                  style={{ display: "flex", justifyContent: "space-between", width: "100%" }}
+                  onClick={() => {
+                    setSelectedIntegrationId(item.id);
+                    resetForm();
+                  }}
+                >
+                  <span>{item.name}</span>
+                  <span style={{ opacity: 0.7 }}>{item.enabled ? "On" : "Off"}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: "0.75rem", display: "grid", gap: "0.5rem" }}>
+              <label>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>New webhook</div>
+                <input value={newIntegrationName} onChange={(event) => setNewIntegrationName(event.target.value)} placeholder="Website forms" />
+              </label>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => createIntegrationMutation.mutate()}
+                disabled={createIntegrationMutation.isPending || !newIntegrationName.trim()}
+              >
+                {createIntegrationMutation.isPending ? "Creating..." : "Create Webhook"}
+              </button>
+            </div>
+          </aside>
+
+          <div>
         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
           {(["overview", "configuration", "workflows", "logs"] as ActiveTab[]).map((tab) => (
             <button
@@ -258,7 +330,13 @@ export function GenericWebhooksPage() {
         {message && <p style={{ color: "#166534", marginBottom: "0.75rem" }}>{message}</p>}
         {error && <p style={{ color: "#dc2626", marginBottom: "0.75rem" }}>{error}</p>}
 
-        {activeTab === "overview" && (
+        {!integration && (
+          <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
+            <p style={{ margin: 0, color: "#6b7280" }}>Create a webhook integration to configure its endpoint, workflows, and logs.</p>
+          </div>
+        )}
+
+        {integration && activeTab === "overview" && (
           <div style={{ display: "grid", gap: "1rem" }}>
             <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
               <h4 style={{ marginBottom: "0.5rem" }}>What this does</h4>
@@ -276,7 +354,7 @@ export function GenericWebhooksPage() {
           </div>
         )}
 
-        {activeTab === "configuration" && (
+        {integration && activeTab === "configuration" && (
           <div style={{ display: "grid", gap: "1rem" }}>
             <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
               <div style={{ display: "grid", gap: "0.75rem" }}>
@@ -290,9 +368,25 @@ export function GenericWebhooksPage() {
                 </label>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                   <button type="button" className="ghost-btn" onClick={() => navigator.clipboard.writeText(endpointUrl)}>Copy URL</button>
-                  <button type="button" className="ghost-btn" onClick={() => navigator.clipboard.writeText(integration?.secretToken ?? "")}>Copy Secret</button>
+                  <button type="button" className="ghost-btn" onClick={() => navigator.clipboard.writeText(integration.secretToken)}>Copy Secret</button>
                   <button type="button" className="primary-btn" onClick={() => rotateSecretMutation.mutate()} disabled={rotateSecretMutation.isPending}>
                     {rotateSecretMutation.isPending ? "Rotating..." : "Rotate Secret"}
+                  </button>
+                  <button
+                    type="button"
+                    className={integration.enabled ? "primary-btn" : "ghost-btn"}
+                    onClick={() => toggleIntegrationMutation.mutate(!integration.enabled)}
+                  >
+                    {integration.enabled ? "Connected" : "Disabled"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    style={{ color: "#dc2626" }}
+                    onClick={() => deleteIntegrationMutation.mutate()}
+                    disabled={deleteIntegrationMutation.isPending}
+                  >
+                    Delete
                   </button>
                 </div>
               </div>
@@ -325,11 +419,11 @@ export function GenericWebhooksPage() {
           </div>
         )}
 
-        {activeTab === "workflows" && (
+        {integration && activeTab === "workflows" && (
           <div style={{ display: "grid", gap: "1rem" }}>
             <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center", marginBottom: "1rem" }}>
-                <h4 style={{ margin: 0 }}>{editingWorkflowId ? "Edit Workflow" : "Create Workflow"}</h4>
+                <h4 style={{ margin: 0 }}>{editingWorkflowId ? `Edit Workflow for ${integration.name}` : `Create Workflow for ${integration.name}`}</h4>
                 {editingWorkflowId && <button type="button" className="ghost-btn" onClick={resetForm}>Cancel Edit</button>}
               </div>
 
@@ -532,7 +626,7 @@ export function GenericWebhooksPage() {
           </div>
         )}
 
-        {activeTab === "logs" && (
+        {integration && activeTab === "logs" && (
           <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
             <h4 style={{ marginBottom: "0.75rem" }}>Webhook Logs</h4>
             {logs.length === 0 ? (
@@ -567,6 +661,8 @@ export function GenericWebhooksPage() {
             )}
           </div>
         )}
+          </div>
+        </div>
       </article>
     </section>
   );

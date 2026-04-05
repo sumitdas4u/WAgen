@@ -2648,6 +2648,7 @@ export interface GenericWebhookTemplateAction {
 export interface GenericWebhookIntegration {
   id: string;
   userId: string;
+  name: string;
   webhookKey: string;
   secretToken: string;
   enabled: boolean;
@@ -2689,31 +2690,51 @@ export interface GenericWebhookLog {
   createdAt: string;
 }
 
-export function fetchGenericWebhookIntegration(token: string) {
-  return apiRequest<{ integration: GenericWebhookIntegration }>("/api/integrations/webhooks", { token });
+export function fetchGenericWebhookIntegrations(token: string) {
+  return apiRequest<{ integrations: GenericWebhookIntegration[] }>("/api/integrations/webhooks", { token });
 }
 
-export function updateGenericWebhookIntegration(token: string, patch: { enabled?: boolean }) {
+export function fetchGenericWebhookIntegration(token: string, integrationId: string) {
+  return apiRequest<{ integration: GenericWebhookIntegration }>(`/api/integrations/webhooks/${integrationId}`, { token });
+}
+
+export function createGenericWebhookIntegration(token: string, payload: { name: string }) {
   return apiRequest<{ integration: GenericWebhookIntegration }>("/api/integrations/webhooks", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateGenericWebhookIntegration(token: string, integrationId: string, patch: { name?: string; enabled?: boolean }) {
+  return apiRequest<{ integration: GenericWebhookIntegration }>(`/api/integrations/webhooks/${integrationId}`, {
     method: "PATCH",
     token,
     body: JSON.stringify(patch)
   });
 }
 
-export function rotateGenericWebhookSecret(token: string) {
-  return apiRequest<{ integration: GenericWebhookIntegration }>("/api/integrations/webhooks/rotate-secret", {
+export function deleteGenericWebhookIntegration(token: string, integrationId: string) {
+  return apiRequest<void>(`/api/integrations/webhooks/${integrationId}`, {
+    method: "DELETE",
+    token
+  });
+}
+
+export function rotateGenericWebhookSecret(token: string, integrationId: string) {
+  return apiRequest<{ integration: GenericWebhookIntegration }>(`/api/integrations/webhooks/${integrationId}/rotate-secret`, {
     method: "POST",
     token
   });
 }
 
-export function fetchGenericWebhookWorkflows(token: string) {
-  return apiRequest<{ workflows: GenericWebhookWorkflow[] }>("/api/integrations/webhooks/workflows", { token });
+export function fetchGenericWebhookWorkflows(token: string, integrationId: string) {
+  return apiRequest<{ workflows: GenericWebhookWorkflow[] }>(`/api/integrations/webhooks/${integrationId}/workflows`, { token });
 }
 
 export function createGenericWebhookWorkflow(
   token: string,
+  integrationId: string,
   payload: {
     name: string;
     enabled?: boolean;
@@ -2723,7 +2744,7 @@ export function createGenericWebhookWorkflow(
     templateAction: GenericWebhookTemplateAction;
   }
 ) {
-  return apiRequest<{ workflow: GenericWebhookWorkflow }>("/api/integrations/webhooks/workflows", {
+  return apiRequest<{ workflow: GenericWebhookWorkflow }>(`/api/integrations/webhooks/${integrationId}/workflows`, {
     method: "POST",
     token,
     body: JSON.stringify(payload)
@@ -2732,6 +2753,7 @@ export function createGenericWebhookWorkflow(
 
 export function updateGenericWebhookWorkflow(
   token: string,
+  integrationId: string,
   workflowId: string,
   patch: Partial<{
     name: string;
@@ -2742,20 +2764,20 @@ export function updateGenericWebhookWorkflow(
     templateAction: GenericWebhookTemplateAction;
   }>
 ) {
-  return apiRequest<{ workflow: GenericWebhookWorkflow }>(`/api/integrations/webhooks/workflows/${workflowId}`, {
+  return apiRequest<{ workflow: GenericWebhookWorkflow }>(`/api/integrations/webhooks/${integrationId}/workflows/${workflowId}`, {
     method: "PATCH",
     token,
     body: JSON.stringify(patch)
   });
 }
 
-export function deleteGenericWebhookWorkflow(token: string, workflowId: string) {
-  return apiRequest<void>(`/api/integrations/webhooks/workflows/${workflowId}`, {
+export function deleteGenericWebhookWorkflow(token: string, integrationId: string, workflowId: string) {
+  return apiRequest<void>(`/api/integrations/webhooks/${integrationId}/workflows/${workflowId}`, {
     method: "DELETE",
     token
   });
 }
 
-export function fetchGenericWebhookLogs(token: string) {
-  return apiRequest<{ logs: GenericWebhookLog[] }>("/api/integrations/webhooks/logs", { token });
+export function fetchGenericWebhookLogs(token: string, integrationId: string) {
+  return apiRequest<{ logs: GenericWebhookLog[] }>(`/api/integrations/webhooks/${integrationId}/logs`, { token });
 }

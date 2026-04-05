@@ -36,6 +36,7 @@ export interface GenericWebhookTemplateAction {
 export interface GenericWebhookIntegration {
   id: string;
   userId: string;
+  name: string;
   webhookKey: string;
   secretToken: string;
   enabled: boolean;
@@ -80,6 +81,7 @@ export interface GenericWebhookLog {
 interface GenericWebhookIntegrationRow {
   id: string;
   user_id: string;
+  name: string;
   webhook_key: string;
   secret_token: string;
   enabled: boolean;
@@ -182,6 +184,7 @@ function mapIntegration(row: GenericWebhookIntegrationRow): GenericWebhookIntegr
   return {
     id: row.id,
     userId: row.user_id,
+    name: row.name,
     webhookKey: row.webhook_key,
     secretToken: row.secret_token,
     enabled: row.enabled,
@@ -226,14 +229,6 @@ function mapLog(row: GenericWebhookLogRow): GenericWebhookLog {
     resultJson: row.result_json ?? {},
     createdAt: row.created_at
   };
-}
-
-async function getIntegrationByUserId(userId: string): Promise<GenericWebhookIntegration | null> {
-  const result = await pool.query<GenericWebhookIntegrationRow>(
-    `SELECT * FROM generic_webhook_integrations WHERE user_id = $1 LIMIT 1`,
-    [userId]
-  );
-  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
 }
 
 async function getIntegrationByWebhookKey(webhookKey: string): Promise<GenericWebhookIntegration | null> {
@@ -351,57 +346,100 @@ async function updateIntegrationCapture(integrationId: string, payload: JsonReco
   );
 }
 
-export async function getOrCreateGenericWebhookIntegration(userId: string): Promise<GenericWebhookIntegration> {
-  const existing = await getIntegrationByUserId(userId);
-  if (existing) return existing;
+export async function listGenericWebhookIntegrations(userId: string): Promise<GenericWebhookIntegration[]> {
   const result = await pool.query<GenericWebhookIntegrationRow>(
-    `INSERT INTO generic_webhook_integrations (user_id, webhook_key, secret_token)
-     VALUES ($1, $2, $3)
+    `SELECT *
+     FROM generic_webhook_integrations
+     WHERE user_id = $1
+     ORDER BY updated_at DESC, created_at DESC`,
+    [userId]
+  );
+  return result.rows.map(mapIntegration);
+}
+
+export async function getGenericWebhookIntegration(userId: string, integrationId: string): Promise<GenericWebhookIntegration | null> {
+  const result = await pool.query<GenericWebhookIntegrationRow>(
+    `SELECT *
+     FROM generic_webhook_integrations
+     WHERE id = $1
+       AND user_id = $2
+     LIMIT 1`,
+    [integrationId, userId]
+  );
+  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
+}
+
+export async function createGenericWebhookIntegration(
+  userId: string,
+  input: { name: string }
+): Promise<GenericWebhookIntegration> {
+  const name = input.name.trim();
+  if (!name) {
+    throw new Error("Webhook name is required.");
+  }
+  const result = await pool.query<GenericWebhookIntegrationRow>(
+    `INSERT INTO generic_webhook_integrations (user_id, name, webhook_key, secret_token)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [userId, buildWebhookKey(), buildWebhookSecret()]
+    [userId, name, buildWebhookKey(), buildWebhookSecret()]
   );
   return mapIntegration(result.rows[0]!);
 }
 
-export async function updateGenericWebhookIntegration(userId: string, patch: { enabled?: boolean }): Promise<GenericWebhookIntegration> {
-  const current = await getOrCreateGenericWebhookIntegration(userId);
+export async function updateGenericWebhookIntegration(
+  userId: string,
+  integrationId: string,
+  patch: { name?: string; enabled?: boolean }
+): Promise<GenericWebhookIntegration | null> {
   const result = await pool.query<GenericWebhookIntegrationRow>(
     `UPDATE generic_webhook_integrations
-     SET enabled = COALESCE($2, enabled)
+     SET name = COALESCE($3, name),
+         enabled = COALESCE($4, enabled)
      WHERE id = $1
+       AND user_id = $2
      RETURNING *`,
-    [current.id, patch.enabled ?? null]
+    [integrationId, userId, patch.name?.trim() || null, patch.enabled ?? null]
   );
-  return mapIntegration(result.rows[0]!);
+  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
 }
 
-export async function rotateGenericWebhookSecret(userId: string): Promise<GenericWebhookIntegration> {
-  const current = await getOrCreateGenericWebhookIntegration(userId);
+export async function rotateGenericWebhookSecret(userId: string, integrationId: string): Promise<GenericWebhookIntegration | null> {
   const result = await pool.query<GenericWebhookIntegrationRow>(
     `UPDATE generic_webhook_integrations
-     SET secret_token = $2
+     SET secret_token = $3
      WHERE id = $1
+       AND user_id = $2
      RETURNING *`,
-    [current.id, buildWebhookSecret()]
+    [integrationId, userId, buildWebhookSecret()]
   );
-  return mapIntegration(result.rows[0]!);
+  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
 }
 
-export async function listGenericWebhookWorkflows(userId: string): Promise<GenericWebhookWorkflow[]> {
-  const integration = await getOrCreateGenericWebhookIntegration(userId);
+export async function deleteGenericWebhookIntegration(userId: string, integrationId: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM generic_webhook_integrations
+     WHERE id = $1
+       AND user_id = $2`,
+    [integrationId, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function listGenericWebhookWorkflows(userId: string, integrationId: string): Promise<GenericWebhookWorkflow[]> {
   const result = await pool.query<GenericWebhookWorkflowRow>(
     `SELECT *
      FROM generic_webhook_workflows
      WHERE user_id = $1
        AND integration_id = $2
      ORDER BY sort_order ASC, created_at ASC`,
-    [userId, integration.id]
+    [userId, integrationId]
   );
   return result.rows.map(mapWorkflow);
 }
 
 export async function createGenericWebhookWorkflow(
   userId: string,
+  integrationId: string,
   input: {
     name: string;
     enabled?: boolean;
@@ -412,7 +450,10 @@ export async function createGenericWebhookWorkflow(
   }
 ): Promise<GenericWebhookWorkflow> {
   validateWorkflowPayload(input);
-  const integration = await getOrCreateGenericWebhookIntegration(userId);
+  const integration = await getGenericWebhookIntegration(userId, integrationId);
+  if (!integration) {
+    throw new Error("Webhook integration not found.");
+  }
   await getMessageTemplate(userId, input.templateAction.templateId);
   const sortOrderResult = await pool.query<{ max: number | null }>(
     `SELECT MAX(sort_order) AS max FROM generic_webhook_workflows WHERE integration_id = $1`,
@@ -442,6 +483,7 @@ export async function createGenericWebhookWorkflow(
 
 export async function updateGenericWebhookWorkflow(
   userId: string,
+  integrationId: string,
   workflowId: string,
   patch: Partial<{
     name: string;
@@ -458,8 +500,9 @@ export async function updateGenericWebhookWorkflow(
      FROM generic_webhook_workflows
      WHERE id = $1
        AND user_id = $2
+       AND integration_id = $3
      LIMIT 1`,
-    [workflowId, userId]
+    [workflowId, userId, integrationId]
   );
   if (!currentResult.rows[0]) return null;
   if (patch.templateAction?.templateId) {
@@ -467,19 +510,21 @@ export async function updateGenericWebhookWorkflow(
   }
   const result = await pool.query<GenericWebhookWorkflowRow>(
     `UPDATE generic_webhook_workflows
-     SET name = COALESCE($3, name),
-         enabled = COALESCE($4, enabled),
-         match_mode = COALESCE($5, match_mode),
-         conditions_json = COALESCE($6::jsonb, conditions_json),
-         contact_action_json = COALESCE($7::jsonb, contact_action_json),
-         template_action_json = COALESCE($8::jsonb, template_action_json)
+     SET name = COALESCE($4, name),
+         enabled = COALESCE($5, enabled),
+         match_mode = COALESCE($6, match_mode),
+         conditions_json = COALESCE($7::jsonb, conditions_json),
+         contact_action_json = COALESCE($8::jsonb, contact_action_json),
+         template_action_json = COALESCE($9::jsonb, template_action_json)
      WHERE id = $1
        AND user_id = $2
+       AND integration_id = $3
      RETURNING *`,
     [
       workflowId,
       userId,
-      patch.name?.trim() ?? null,
+      integrationId,
+      patch.name?.trim() || null,
       patch.enabled ?? null,
       patch.matchMode ?? null,
       patch.conditions ? JSON.stringify(patch.conditions) : null,
@@ -490,18 +535,18 @@ export async function updateGenericWebhookWorkflow(
   return result.rows[0] ? mapWorkflow(result.rows[0]) : null;
 }
 
-export async function deleteGenericWebhookWorkflow(userId: string, workflowId: string): Promise<boolean> {
+export async function deleteGenericWebhookWorkflow(userId: string, integrationId: string, workflowId: string): Promise<boolean> {
   const result = await pool.query(
     `DELETE FROM generic_webhook_workflows
      WHERE id = $1
-       AND user_id = $2`,
-    [workflowId, userId]
+       AND user_id = $2
+       AND integration_id = $3`,
+    [workflowId, userId, integrationId]
   );
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function listGenericWebhookLogs(userId: string): Promise<GenericWebhookLog[]> {
-  const integration = await getOrCreateGenericWebhookIntegration(userId);
+export async function listGenericWebhookLogs(userId: string, integrationId: string): Promise<GenericWebhookLog[]> {
   const result = await pool.query<GenericWebhookLogRow>(
     `SELECT id, request_id, workflow_id, status, customer_name, customer_phone, contact_id, template_id, provider_message_id, error_message, payload_json, result_json, created_at
      FROM generic_webhook_logs
@@ -509,7 +554,7 @@ export async function listGenericWebhookLogs(userId: string): Promise<GenericWeb
        AND integration_id = $2
      ORDER BY created_at DESC
      LIMIT 100`,
-    [userId, integration.id]
+    [userId, integrationId]
   );
   return result.rows.map(mapLog);
 }
@@ -534,7 +579,7 @@ export async function handleIncomingGenericWebhook(input: {
   const flatPayload = flattenPayload(input.payload);
   await updateIntegrationCapture(integration.id, input.payload, flatPayload);
 
-  const workflows = (await listGenericWebhookWorkflows(integration.userId)).filter((workflow) => workflow.enabled);
+  const workflows = (await listGenericWebhookWorkflows(integration.userId, integration.id)).filter((workflow) => workflow.enabled);
   let matchedWorkflows = 0;
   let completedWorkflows = 0;
   let failedWorkflows = 0;
@@ -627,6 +672,7 @@ export async function handleIncomingGenericWebhook(input: {
         payloadJson: input.payload,
         resultJson: {
           workflowName: workflow.name,
+          integrationName: integration.name,
           contactId: contact.id,
           conversationId: conversation.id,
           variableKeys: Object.keys(variableValues)
@@ -645,7 +691,7 @@ export async function handleIncomingGenericWebhook(input: {
         templateId: workflow.templateAction.templateId,
         errorMessage: (error as Error).message,
         payloadJson: input.payload,
-        resultJson: { workflowName: workflow.name }
+        resultJson: { workflowName: workflow.name, integrationName: integration.name }
       });
     }
   }
@@ -657,7 +703,8 @@ export async function handleIncomingGenericWebhook(input: {
       requestId: input.requestId,
       status: "skipped",
       errorMessage: "No enabled workflow matched this payload.",
-      payloadJson: input.payload
+      payloadJson: input.payload,
+      resultJson: { integrationName: integration.name }
     });
   }
 

@@ -1,10 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
+  createGenericWebhookIntegration,
   createGenericWebhookWorkflow,
+  deleteGenericWebhookIntegration,
   deleteGenericWebhookWorkflow,
-  getOrCreateGenericWebhookIntegration,
+  getGenericWebhookIntegration,
   handleIncomingGenericWebhook,
+  listGenericWebhookIntegrations,
   listGenericWebhookLogs,
   listGenericWebhookWorkflows,
   rotateGenericWebhookSecret,
@@ -15,6 +18,15 @@ import {
 const MatchModeSchema = z.enum(["all", "any"]);
 const ConditionOperatorSchema = z.enum(["is_not_empty", "is_empty", "equals", "not_equals"]);
 const TagOperationSchema = z.enum(["append", "replace", "add_if_empty"]);
+
+const CreateIntegrationBodySchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+
+const IntegrationPatchSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  enabled: z.boolean().optional()
+});
 
 const ConditionSchema = z.object({
   comparator: z.string().trim().min(1).max(200),
@@ -54,61 +66,111 @@ const WorkflowBodySchema = z.object({
 });
 
 const WorkflowPatchSchema = WorkflowBodySchema.partial();
-const IntegrationPatchSchema = z.object({
-  enabled: z.boolean().optional()
-});
 
 export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/api/integrations/webhooks",
     { preHandler: [fastify.requireAuth] },
     async (request) => {
-      const integration = await getOrCreateGenericWebhookIntegration(request.authUser.userId);
+      const integrations = await listGenericWebhookIntegrations(request.authUser.userId);
+      return { integrations };
+    }
+  );
+
+  fastify.post(
+    "/api/integrations/webhooks",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = CreateIntegrationBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid webhook integration payload" });
+      }
+      try {
+        const integration = await createGenericWebhookIntegration(request.authUser.userId, parsed.data);
+        return reply.status(201).send({ integration });
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message });
+      }
+    }
+  );
+
+  fastify.get(
+    "/api/integrations/webhooks/:integrationId",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { integrationId } = request.params as { integrationId: string };
+      const integration = await getGenericWebhookIntegration(request.authUser.userId, integrationId);
+      if (!integration) {
+        return reply.status(404).send({ error: "Webhook integration not found" });
+      }
       return { integration };
     }
   );
 
   fastify.patch(
-    "/api/integrations/webhooks",
+    "/api/integrations/webhooks/:integrationId",
     { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
+      const { integrationId } = request.params as { integrationId: string };
       const parsed = IntegrationPatchSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         return reply.status(400).send({ error: "Invalid webhook integration payload" });
       }
-      const integration = await updateGenericWebhookIntegration(request.authUser.userId, parsed.data);
+      const integration = await updateGenericWebhookIntegration(request.authUser.userId, integrationId, parsed.data);
+      if (!integration) {
+        return reply.status(404).send({ error: "Webhook integration not found" });
+      }
       return { integration };
     }
   );
 
-  fastify.post(
-    "/api/integrations/webhooks/rotate-secret",
+  fastify.delete(
+    "/api/integrations/webhooks/:integrationId",
     { preHandler: [fastify.requireAuth] },
-    async (request) => {
-      const integration = await rotateGenericWebhookSecret(request.authUser.userId);
+    async (request, reply) => {
+      const { integrationId } = request.params as { integrationId: string };
+      const deleted = await deleteGenericWebhookIntegration(request.authUser.userId, integrationId);
+      if (!deleted) {
+        return reply.status(404).send({ error: "Webhook integration not found" });
+      }
+      return reply.status(204).send();
+    }
+  );
+
+  fastify.post(
+    "/api/integrations/webhooks/:integrationId/rotate-secret",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { integrationId } = request.params as { integrationId: string };
+      const integration = await rotateGenericWebhookSecret(request.authUser.userId, integrationId);
+      if (!integration) {
+        return reply.status(404).send({ error: "Webhook integration not found" });
+      }
       return { integration };
     }
   );
 
   fastify.get(
-    "/api/integrations/webhooks/workflows",
+    "/api/integrations/webhooks/:integrationId/workflows",
     { preHandler: [fastify.requireAuth] },
     async (request) => {
-      const workflows = await listGenericWebhookWorkflows(request.authUser.userId);
+      const { integrationId } = request.params as { integrationId: string };
+      const workflows = await listGenericWebhookWorkflows(request.authUser.userId, integrationId);
       return { workflows };
     }
   );
 
   fastify.post(
-    "/api/integrations/webhooks/workflows",
+    "/api/integrations/webhooks/:integrationId/workflows",
     { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
+      const { integrationId } = request.params as { integrationId: string };
       const parsed = WorkflowBodySchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         return reply.status(400).send({ error: "Invalid workflow payload" });
       }
       try {
-        const workflow = await createGenericWebhookWorkflow(request.authUser.userId, parsed.data);
+        const workflow = await createGenericWebhookWorkflow(request.authUser.userId, integrationId, parsed.data);
         return reply.status(201).send({ workflow });
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message });
@@ -117,16 +179,16 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
   );
 
   fastify.patch(
-    "/api/integrations/webhooks/workflows/:workflowId",
+    "/api/integrations/webhooks/:integrationId/workflows/:workflowId",
     { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
-      const { workflowId } = request.params as { workflowId: string };
+      const { integrationId, workflowId } = request.params as { integrationId: string; workflowId: string };
       const parsed = WorkflowPatchSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         return reply.status(400).send({ error: "Invalid workflow payload" });
       }
       try {
-        const workflow = await updateGenericWebhookWorkflow(request.authUser.userId, workflowId, parsed.data);
+        const workflow = await updateGenericWebhookWorkflow(request.authUser.userId, integrationId, workflowId, parsed.data);
         if (!workflow) {
           return reply.status(404).send({ error: "Workflow not found" });
         }
@@ -138,11 +200,11 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
   );
 
   fastify.delete(
-    "/api/integrations/webhooks/workflows/:workflowId",
+    "/api/integrations/webhooks/:integrationId/workflows/:workflowId",
     { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
-      const { workflowId } = request.params as { workflowId: string };
-      const deleted = await deleteGenericWebhookWorkflow(request.authUser.userId, workflowId);
+      const { integrationId, workflowId } = request.params as { integrationId: string; workflowId: string };
+      const deleted = await deleteGenericWebhookWorkflow(request.authUser.userId, integrationId, workflowId);
       if (!deleted) {
         return reply.status(404).send({ error: "Workflow not found" });
       }
@@ -151,16 +213,17 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
   );
 
   fastify.get(
-    "/api/integrations/webhooks/logs",
+    "/api/integrations/webhooks/:integrationId/logs",
     { preHandler: [fastify.requireAuth] },
     async (request) => {
-      const logs = await listGenericWebhookLogs(request.authUser.userId);
+      const { integrationId } = request.params as { integrationId: string };
+      const logs = await listGenericWebhookLogs(request.authUser.userId, integrationId);
       return { logs };
     }
   );
 
   fastify.post(
-    "/api/integrations/webhooks/:webhookKey",
+    "/api/integrations/webhooks/:webhookKey/incoming",
     async (request, reply) => {
       const { webhookKey } = request.params as { webhookKey: string };
       const query = (request.query ?? {}) as Record<string, unknown>;

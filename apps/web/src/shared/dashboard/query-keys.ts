@@ -55,9 +55,10 @@ export const dashboardQueryKeys = {
   broadcastRetargetPreview: (campaignId: string, status: string) =>
     [...dashboardBroadcastRoot, "retarget-preview", campaignId, status] as const,
   webhooksRoot: dashboardWebhooksRoot,
-  webhookIntegration: [...dashboardWebhooksRoot, "integration"] as const,
-  webhookWorkflows: [...dashboardWebhooksRoot, "workflows"] as const,
-  webhookLogs: [...dashboardWebhooksRoot, "logs"] as const,
+  webhookIntegrations: [...dashboardWebhooksRoot, "integrations"] as const,
+  webhookIntegration: (integrationId: string) => [...dashboardWebhooksRoot, "integration", integrationId] as const,
+  webhookWorkflows: (integrationId: string) => [...dashboardWebhooksRoot, "workflows", integrationId] as const,
+  webhookLogs: (integrationId: string) => [...dashboardWebhooksRoot, "logs", integrationId] as const,
   deliverySummary: (days: number, channelKey: string) => [...dashboardAnalyticsRoot, "summary", days, channelKey] as const,
   deliveryNotifications: (days: number, channelKey: string, status: string, page: number) =>
     [...dashboardAnalyticsRoot, "notifications", days, channelKey, status, page] as const,
