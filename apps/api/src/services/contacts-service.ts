@@ -65,12 +65,40 @@ export interface ContactImportResult {
   errors: ContactImportError[];
 }
 
+interface ContactImportWorkbookOptions {
+  extraTags?: string[];
+  phoneNumberFormat?: "with_country_code" | "without_country_code";
+  defaultCountryCode?: string | null;
+  marketingOptIn?: boolean;
+}
+
 function normalizePhoneNumber(value: string | null | undefined): string | null {
   const digits = (value ?? "").replace(/\D/g, "");
   if (digits.length < 8 || digits.length > 15) {
     return null;
   }
   return digits;
+}
+
+function normalizeImportedPhoneNumber(
+  value: string | null | undefined,
+  options?: Pick<ContactImportWorkbookOptions, "phoneNumberFormat" | "defaultCountryCode">
+): string | null {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (!digits) {
+    return null;
+  }
+
+  if (options?.phoneNumberFormat === "without_country_code") {
+    const countryCode = (options.defaultCountryCode ?? "").replace(/\D/g, "");
+    const combined = `${countryCode}${digits}`;
+    if (combined.length < 8 || combined.length > 15) {
+      return null;
+    }
+    return combined;
+  }
+
+  return normalizePhoneNumber(value);
 }
 
 function normalizeDisplayName(value: string | null | undefined): string | null {
@@ -700,7 +728,7 @@ export async function reconcileContactPhone(
 export async function importContactsWorkbook(
   userId: string,
   fileBuffer: Buffer,
-  options?: { extraTags?: string[] }
+  options?: ContactImportWorkbookOptions
 ): Promise<ContactImportResult> {
   const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true });
   const sheetName = workbook.Sheets.Contacts ? "Contacts" : workbook.SheetNames[0];
@@ -718,7 +746,10 @@ export async function importContactsWorkbook(
   let skipped = 0;
   const errors: ContactImportError[] = [];
 
-  const extraTags = normalizeTags(options?.extraTags ?? []);
+  const extraTags = normalizeTags([
+    ...(options?.extraTags ?? []),
+    ...(options?.marketingOptIn ? ["marketing-opt-in"] : [])
+  ]);
 
   for (const [index, row] of rows.entries()) {
     const rowNumber = index + 2;
@@ -737,7 +768,10 @@ export async function importContactsWorkbook(
       continue;
     }
 
-    const phoneNumber = normalizePhoneNumber(phone);
+    const phoneNumber = normalizeImportedPhoneNumber(phone, {
+      phoneNumberFormat: options?.phoneNumberFormat,
+      defaultCountryCode: options?.defaultCountryCode
+    });
     if (!phoneNumber) {
       errors.push({ row: rowNumber, message: "Phone is required and must contain 8-15 digits." });
       continue;

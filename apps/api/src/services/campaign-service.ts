@@ -371,7 +371,7 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
       errorMessage = `Missing campaign bindings for ${resolved.missing.join(", ")}`;
     } else if (status === "queued") {
       try {
-        const preparedPayload = resolveTemplatePayload(template, resolved.values);
+        const preparedPayload = resolveTemplatePayload(template, resolvedVariablesJson);
         resolvedVariablesJson = preparedPayload.resolvedVariables;
       } catch (error) {
         status = "skipped";

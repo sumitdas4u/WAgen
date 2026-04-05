@@ -93,10 +93,34 @@ export async function broadcastRoutes(fastify: FastifyInstance): Promise<void> {
         segmentNameRaw && "value" in segmentNameRaw && typeof segmentNameRaw.value === "string"
           ? segmentNameRaw.value
           : null;
+      const marketingOptInRaw = file.fields.marketingOptIn;
+      const marketingOptIn =
+        marketingOptInRaw && "value" in marketingOptInRaw && typeof marketingOptInRaw.value === "string"
+          ? marketingOptInRaw.value === "yes"
+          : false;
+      const phoneNumberFormatRaw = file.fields.phoneNumberFormat;
+      const phoneNumberFormat =
+        phoneNumberFormatRaw &&
+        "value" in phoneNumberFormatRaw &&
+        typeof phoneNumberFormatRaw.value === "string" &&
+        phoneNumberFormatRaw.value === "without_country_code"
+          ? "without_country_code"
+          : "with_country_code";
+      const defaultCountryCodeRaw = file.fields.defaultCountryCode;
+      const defaultCountryCode =
+        defaultCountryCodeRaw &&
+        "value" in defaultCountryCodeRaw &&
+        typeof defaultCountryCodeRaw.value === "string"
+          ? defaultCountryCodeRaw.value
+          : null;
 
       try {
         const buffer = await file.toBuffer();
-        const result = await importBroadcastAudienceWorkbook(request.authUser.userId, buffer, segmentName);
+        const result = await importBroadcastAudienceWorkbook(request.authUser.userId, buffer, segmentName, {
+          marketingOptIn,
+          phoneNumberFormat,
+          defaultCountryCode
+        });
         return {
           ok: true,
           importResult: result.importResult,

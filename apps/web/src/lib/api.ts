@@ -2092,6 +2092,13 @@ export interface BroadcastAudienceImportResponse {
   batchTag: string;
 }
 
+export interface BroadcastAudienceImportOptions {
+  segmentName?: string;
+  marketingOptIn?: boolean;
+  phoneNumberFormat?: "with_country_code" | "without_country_code";
+  defaultCountryCode?: string;
+}
+
 export interface CampaignDeliveryAnalytics {
   campaignId: string;
   counts: {
@@ -2339,12 +2346,21 @@ export function fetchBroadcastRetargetPreview(
 export async function importBroadcastAudienceWorkbook(
   token: string,
   file: File,
-  segmentName?: string
+  options?: BroadcastAudienceImportOptions
 ): Promise<BroadcastAudienceImportResponse> {
   const form = new FormData();
   form.append("file", file);
-  if (segmentName?.trim()) {
-    form.append("segmentName", segmentName.trim());
+  if (options?.segmentName?.trim()) {
+    form.append("segmentName", options.segmentName.trim());
+  }
+  if (options?.marketingOptIn !== undefined) {
+    form.append("marketingOptIn", options.marketingOptIn ? "yes" : "no");
+  }
+  if (options?.phoneNumberFormat) {
+    form.append("phoneNumberFormat", options.phoneNumberFormat);
+  }
+  if (options?.defaultCountryCode?.trim()) {
+    form.append("defaultCountryCode", options.defaultCountryCode.trim());
   }
   return apiRequest<BroadcastAudienceImportResponse>("/api/broadcasts/audience/import", {
     method: "POST",

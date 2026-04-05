@@ -146,6 +146,10 @@ function formatCampaignStatus(status: Campaign["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function shouldPollCampaign(status: Campaign["status"]): boolean {
+  return status === "running" || status === "scheduled";
+}
+
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString([], {
     day: "2-digit",
@@ -193,10 +197,15 @@ function BroadcastListPage({ token }: { token: string }) {
   const navigate = useNavigate();
   const broadcastsQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcasts,
-    queryFn: () => fetchBroadcasts(token)
+    queryFn: () => fetchBroadcasts(token),
+    refetchInterval: (query) =>
+      (query.state.data?.broadcasts ?? []).some((broadcast) => shouldPollCampaign(broadcast.status))
+        ? 5000
+        : false
   });
 
   const data = broadcastsQuery.data;
+  const hasLiveBroadcast = (data?.broadcasts ?? []).some((broadcast) => shouldPollCampaign(broadcast.status));
 
   return (
     <section className="broadcast-page">
@@ -207,6 +216,7 @@ function BroadcastListPage({ token }: { token: string }) {
           <p className="broadcast-hero-text">
             Manage broadcast sends, delivery performance, and retargeting from one workspace.
           </p>
+          {hasLiveBroadcast ? <div className="broadcast-live-note">Live status updates are refreshing automatically.</div> : null}
         </div>
         <button
           type="button"
@@ -297,7 +307,9 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   const queryClient = useQueryClient();
   const reportQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcastReport(campaignId, "all", 0),
-    queryFn: () => fetchBroadcastReport(token, campaignId).then((response) => response.report)
+    queryFn: () => fetchBroadcastReport(token, campaignId).then((response) => response.report),
+    refetchInterval: (query) =>
+      query.state.data && shouldPollCampaign(query.state.data.campaign.status) ? 4000 : false
   });
 
   const cancelMutation = useMutation({
@@ -314,6 +326,7 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   if (!report) {
     return <div className="broadcast-loading">Loading broadcast report…</div>;
   }
+  const isLiveUpdating = shouldPollCampaign(report.campaign.status);
 
   return (
     <section className="broadcast-page">
@@ -324,6 +337,7 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
           <p className="broadcast-hero-text">
             {formatCampaignStatus(report.campaign.status)} • Created {formatDateTime(report.campaign.created_at)}
           </p>
+          {isLiveUpdating ? <div className="broadcast-live-note">Status is updating in real time while this broadcast is running.</div> : null}
         </div>
         <div className="broadcast-table-actions">
           <button type="button" className="broadcast-secondary-btn" onClick={() => navigate(`/dashboard/broadcast/${campaignId}/retarget`)}>Retarget</button>
@@ -447,6 +461,11 @@ function BroadcastWizardPage({
   const [policyEnabled, setPolicyEnabled] = useState(true);
   const [assigneeType, setAssigneeType] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const [marketingOptIn, setMarketingOptIn] = useState(true);
+  const [phoneNumberFormat, setPhoneNumberFormat] = useState<"with_country_code" | "without_country_code">("with_country_code");
+  const [defaultCountryCode, setDefaultCountryCode] = useState("91");
+  const [uploadStep, setUploadStep] = useState<"download" | "upload" | "preview">("download");
 
   const approvedTemplates = useMemo(
     () => (templatesQuery.data ?? []).filter((template) => template.status === "APPROVED"),
@@ -563,8 +582,15 @@ function BroadcastWizardPage({
     setUploadingAudience(true);
     setError(null);
     try {
-      const result = await importBroadcastAudienceWorkbook(token, file, `${name.trim() || "Broadcast"} audience`);
+      const result = await importBroadcastAudienceWorkbook(token, file, {
+        segmentName: `${name.trim() || "Broadcast"} audience`,
+        marketingOptIn,
+        phoneNumberFormat,
+        defaultCountryCode
+      });
       setSelectedSegmentId(result.segment.id);
+      setUploadedFileName(file.name);
+      setUploadStep("preview");
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactSegments });
       setMessage(`Imported audience and created segment "${result.segment.name}".`);
     } catch (uploadError) {
@@ -654,6 +680,15 @@ function BroadcastWizardPage({
               onSelectSegment={setSelectedSegmentId}
               onUpload={handleAudienceUpload}
               uploadingAudience={uploadingAudience}
+              uploadedFileName={uploadedFileName}
+              marketingOptIn={marketingOptIn}
+              onMarketingOptInChange={setMarketingOptIn}
+              phoneNumberFormat={phoneNumberFormat}
+              onPhoneNumberFormatChange={setPhoneNumberFormat}
+              defaultCountryCode={defaultCountryCode}
+              onDefaultCountryCodeChange={setDefaultCountryCode}
+              uploadStep={uploadStep}
+              onUploadStepChange={setUploadStep}
               onDownloadTemplate={handleDownloadAudienceTemplate}
               downloadingTemplate={downloadingTemplate}
               onBack={() => setStep(1)}
@@ -871,6 +906,15 @@ function AudienceSelectionStep({
   onSelectSegment,
   onUpload,
   uploadingAudience,
+  uploadedFileName,
+  marketingOptIn,
+  onMarketingOptInChange,
+  phoneNumberFormat,
+  onPhoneNumberFormatChange,
+  defaultCountryCode,
+  onDefaultCountryCodeChange,
+  uploadStep,
+  onUploadStepChange,
   onDownloadTemplate,
   downloadingTemplate,
   onBack,
@@ -884,6 +928,15 @@ function AudienceSelectionStep({
   onSelectSegment: (segmentId: string) => void;
   onUpload: (file: File) => Promise<void>;
   uploadingAudience: boolean;
+  uploadedFileName: string;
+  marketingOptIn: boolean;
+  onMarketingOptInChange: (value: boolean) => void;
+  phoneNumberFormat: "with_country_code" | "without_country_code";
+  onPhoneNumberFormatChange: (value: "with_country_code" | "without_country_code") => void;
+  defaultCountryCode: string;
+  onDefaultCountryCodeChange: (value: string) => void;
+  uploadStep: "download" | "upload" | "preview";
+  onUploadStepChange: (value: "download" | "upload" | "preview") => void;
   onDownloadTemplate: () => Promise<void>;
   downloadingTemplate: boolean;
   onBack: () => void;
@@ -903,26 +956,91 @@ function AudienceSelectionStep({
       <section className="broadcast-surface-card">
         <div className="broadcast-card-title">Upload contacts from Excel</div>
         <div className="broadcast-muted-copy">
-          Upload a workbook to import or update contacts and create a reusable segment for this broadcast.
+          Download the sample first, then upload a prepared workbook so we can read the required fields, create a segment, and use it for this campaign.
         </div>
-        <div className="broadcast-upload-actions">
-          <button type="button" className="broadcast-secondary-btn" onClick={() => void onDownloadTemplate()} disabled={downloadingTemplate}>
-            {downloadingTemplate ? "Downloading..." : "Download sample file"}
+        <div className={`broadcast-upload-stage ${uploadStep !== "download" ? "is-open" : ""}`}>
+          <button type="button" className="broadcast-upload-stage-head" onClick={() => onUploadStepChange("download")}>
+            <span className="broadcast-upload-stage-marker is-complete">✓</span>
+            <span>Download sample file</span>
+            <small>Optional</small>
           </button>
-          <label className="broadcast-upload-btn">
-            {uploadingAudience ? "Uploading..." : "Upload contacts"}
-            <input
-              type="file"
-              accept=".xlsx"
-              disabled={uploadingAudience}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) {
-                  void onUpload(file);
-                }
-              }}
-            />
-          </label>
+          <div className="broadcast-upload-stage-body">
+            <p className="broadcast-muted-copy">
+              Use the sample workbook to prepare columns before uploading. Required columns are read exactly from the file.
+            </p>
+            <div className="broadcast-upload-actions">
+              <button type="button" className="broadcast-secondary-btn" onClick={() => void onDownloadTemplate()} disabled={downloadingTemplate}>
+                {downloadingTemplate ? "Downloading..." : "Download sample file"}
+              </button>
+              <button type="button" className="broadcast-primary-btn" onClick={() => onUploadStepChange("upload")}>
+                I've downloaded
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className={`broadcast-upload-stage ${uploadStep === "upload" || uploadStep === "preview" ? "is-open" : ""}`}>
+          <button type="button" className="broadcast-upload-stage-head" onClick={() => onUploadStepChange("upload")}>
+            <span className={`broadcast-upload-stage-marker ${uploadedFileName ? "is-complete" : ""}`}>{uploadedFileName ? "✓" : "2"}</span>
+            <span>Upload data file</span>
+          </button>
+          <div className="broadcast-upload-stage-body">
+            <p className="broadcast-muted-copy">
+              Please ensure you have updated the workbook with the necessary information before uploading.
+            </p>
+            <label className="broadcast-dropzone">
+              <span className="broadcast-dropzone-title">Drag & drop your file here</span>
+              <span className="broadcast-dropzone-field">{uploadedFileName || "Please upload a file"}</span>
+              <span className="broadcast-dropzone-hint">Accepted file type: XLSX</span>
+              <input
+                type="file"
+                accept=".xlsx"
+                disabled={uploadingAudience}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void onUpload(file);
+                  }
+                }}
+              />
+            </label>
+            <div className="broadcast-form-grid two-up">
+              <label className="broadcast-field">
+                <span className="broadcast-label">Marketing opt-in</span>
+                <select className="broadcast-input" value={marketingOptIn ? "yes" : "no"} onChange={(event) => onMarketingOptInChange(event.target.value === "yes")}>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+              <label className="broadcast-field">
+                <span className="broadcast-label">Phone number format</span>
+                <select className="broadcast-input" value={phoneNumberFormat} onChange={(event) => onPhoneNumberFormatChange(event.target.value as "with_country_code" | "without_country_code")}>
+                  <option value="with_country_code">With country code</option>
+                  <option value="without_country_code">Without country code</option>
+                </select>
+              </label>
+              {phoneNumberFormat === "without_country_code" ? (
+                <label className="broadcast-field">
+                  <span className="broadcast-label">Default country code</span>
+                  <input className="broadcast-input" value={defaultCountryCode} onChange={(event) => onDefaultCountryCodeChange(event.target.value.replace(/\D/g, ""))} placeholder="91" />
+                </label>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className={`broadcast-upload-stage ${uploadStep === "preview" ? "is-open" : ""}`}>
+          <button type="button" className="broadcast-upload-stage-head" onClick={() => onUploadStepChange("preview")}>
+            <span className={`broadcast-upload-stage-marker ${selectedSegmentId ? "is-complete" : ""}`}>{selectedSegmentId ? "✓" : "3"}</span>
+            <span>Preview your target audience</span>
+          </button>
+          <div className="broadcast-upload-stage-body">
+            <p className="broadcast-muted-copy">
+              {selectedSegmentId
+                ? "Your uploaded contacts have been converted into a reusable segment and are ready for this broadcast."
+                : "Upload a workbook to create a segment and preview the audience state here."}
+            </p>
+          </div>
         </div>
       </section>
       <section className="broadcast-surface-card">

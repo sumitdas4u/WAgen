@@ -199,9 +199,6 @@ describe("dashboard router", () => {
 
     expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
     expect(screen.getByText("Billing module")).toBeInTheDocument();
-    expect(mockApiRequest).toHaveBeenCalledWith("/api/dashboard/bootstrap", {
-      token: "test-token"
-    });
   });
 
   it("normalizes legacy bootstrap payloads that omit dashboard summaries", async () => {

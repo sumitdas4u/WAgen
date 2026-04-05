@@ -173,11 +173,19 @@ export async function previewRetargetAudience(
 export async function importBroadcastAudienceWorkbook(
   userId: string,
   fileBuffer: Buffer,
-  segmentName?: string | null
+  segmentName?: string | null,
+  options?: {
+    phoneNumberFormat?: "with_country_code" | "without_country_code";
+    defaultCountryCode?: string | null;
+    marketingOptIn?: boolean;
+  }
 ): Promise<{ importResult: ContactImportResult; segment: ContactSegment; batchTag: string }> {
   const batchTag = `broadcast-audience-${randomUUID().slice(0, 8)}`;
   const importResult = await importContactsWorkbook(userId, fileBuffer, {
-    extraTags: [batchTag]
+    extraTags: [batchTag],
+    phoneNumberFormat: options?.phoneNumberFormat,
+    defaultCountryCode: options?.defaultCountryCode,
+    marketingOptIn: options?.marketingOptIn
   });
 
   const finalName =
