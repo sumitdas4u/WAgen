@@ -13,7 +13,7 @@ export type SegmentFilterOp =
   | "is_not_empty";
 
 export interface SegmentFilter {
-  field: string;   // "display_name" | "phone_number" | "email" | "contact_type" | "tags" | "created_at" | "order_date" | "custom:{name}"
+  field: string;   // "display_name" | "phone_number" | "email" | "contact_type" | "tags" | "created_at" | "custom:{name}"
   op: SegmentFilterOp;
   value: string;
 }
@@ -34,11 +34,10 @@ const STANDARD_FIELDS: Record<string, string> = {
   contact_type: "c.contact_type",
   source_type: "c.source_type",
   tags: "array_to_string(c.tags, ',')",
-  created_at: "c.created_at",
-  order_date: "c.order_date"
+  created_at: "c.created_at"
 };
 
-const DATE_FIELDS = new Set(["created_at", "order_date"]);
+const DATE_FIELDS = new Set(["created_at"]);
 
 function buildFilterSql(
   filters: SegmentFilter[],

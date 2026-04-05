@@ -2008,9 +2008,6 @@ export function Component() {
                               </dd>
                             </div>
                           )}
-                          {linkedContact?.order_date && (
-                            <div><dt>Order Date</dt><dd>{new Date(linkedContact.order_date).toLocaleDateString()}</dd></div>
-                          )}
                           <div><dt>Owner</dt><dd>{selectedConversation.assigned_agent_name || "Unassigned"}</dd></div>
                           <div><dt>Last touch</dt><dd>{formatDateTime(selectedConversation.last_message_at)}</dd></div>
                           <div><dt>Connected number</dt><dd>{selectedConversation.channel_linked_number || "Workspace default"}</dd></div>

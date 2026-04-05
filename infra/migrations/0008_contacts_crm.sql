@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS contacts (
   email TEXT,
   contact_type TEXT NOT NULL DEFAULT 'lead',
   tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-  order_date TIMESTAMPTZ,
   source_type TEXT NOT NULL DEFAULT 'manual',
   source_id TEXT,
   source_url TEXT,

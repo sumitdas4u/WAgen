@@ -26,7 +26,6 @@ const STANDARD_CONTACT_FIELDS = [
   { value: "email", label: "Email" },
   { value: "contact_type", label: "Contact type" },
   { value: "tags", label: "Tags" },
-  { value: "order_date", label: "Order date" },
   { value: "source_type", label: "Source type" },
   { value: "source_id", label: "Source ID" },
   { value: "source_url", label: "Source URL" }
@@ -61,8 +60,6 @@ function resolveContactFieldValue(contact: ContactRecord | null, field: string |
       return contact.contact_type ?? "";
     case "tags":
       return contact.tags.join(", ");
-    case "order_date":
-      return contact.order_date ?? "";
     case "source_type":
       return contact.source_type ?? "";
     default:

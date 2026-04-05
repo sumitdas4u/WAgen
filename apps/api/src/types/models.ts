@@ -57,7 +57,6 @@ export interface Contact {
   email: string | null;
   contact_type: ConversationKind;
   tags: string[];
-  order_date: string | null;
   source_type: ContactSourceType;
   source_id: string | null;
   source_url: string | null;

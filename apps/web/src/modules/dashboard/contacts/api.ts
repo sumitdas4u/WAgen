@@ -32,7 +32,6 @@ export function createManualContact(
     email?: string;
     type?: ContactType;
     tags?: string[];
-    orderDate?: string;
     sourceId?: string;
     sourceUrl?: string;
     customFields?: Record<string, string>;

@@ -46,7 +46,6 @@ type ContactFormState = {
   email: string;
   type: ContactType;
   tags: string;
-  orderDate: string;
   sourceId: string;
   sourceUrl: string;
   customFields: Record<string, string>;
@@ -58,7 +57,6 @@ const DEFAULT_FORM_STATE: ContactFormState = {
   email: "",
   type: "lead",
   tags: "",
-  orderDate: "",
   sourceId: "",
   sourceUrl: "",
   customFields: {}
@@ -88,8 +86,7 @@ const SEGMENT_FIELD_OPTIONS: Array<{ value: string; label: string; isDate?: bool
   { value: "contact_type", label: "Type" },
   { value: "source_type", label: "Source" },
   { value: "tags", label: "Tags" },
-  { value: "created_at", label: "Created Date", isDate: true },
-  { value: "order_date", label: "Order Date", isDate: true }
+  { value: "created_at", label: "Created Date", isDate: true }
 ];
 
 const SEGMENT_OP_OPTIONS: Array<{ value: SegmentFilterOp; label: string; onlyDate?: boolean; noValue?: boolean }> = [
@@ -111,7 +108,6 @@ const CONTACT_IMPORT_STANDARD_FIELDS: ContactImportFieldOption[] = [
   { key: "email", label: "Email" },
   { key: "contact_type", label: "Contact type" },
   { key: "tags", label: "Tags" },
-  { key: "order_date", label: "Order date" },
   { key: "source_type", label: "Source type" },
   { key: "source_id", label: "Source ID" },
   { key: "source_url", label: "Source URL" }
@@ -127,7 +123,6 @@ const STANDARD_COLUMN_DEFS: Array<{ id: string; label: string }> = [
   { id: "email",      label: "Email" },
   { id: "type",       label: "Type" },
   { id: "tags",       label: "Tags" },
-  { id: "order_date", label: "Order Date" },
   { id: "source",     label: "Source" },
   { id: "source_id",  label: "Source ID" },
   { id: "source_url", label: "Source URL" },
@@ -713,7 +708,6 @@ function ContactsTab({
         email: formState.email || undefined,
         type: formState.type,
         tags: normalizeTags(formState.tags),
-        orderDate: formState.orderDate || undefined,
         sourceId: formState.sourceId || undefined,
         sourceUrl: formState.sourceUrl || undefined,
         customFields: Object.fromEntries(
@@ -1045,7 +1039,6 @@ function ContactsTab({
                           </div>
                         </td>
                       );
-                      case "order_date":  return <td key={col.id}>{formatDate(contact.order_date)}</td>;
                       case "source":      return <td key={col.id}>{getSourceLabel(contact.source_type)}</td>;
                       case "source_id":   return <td key={col.id}>{contact.source_id || "—"}</td>;
                       case "source_url":  return <td key={col.id}>{contact.source_url ? <a href={contact.source_url} target="_blank" rel="noreferrer" className="contacts-link">{contact.source_url}</a> : "—"}</td>;
@@ -1099,10 +1092,6 @@ function ContactsTab({
               <label>
                 Tags
                 <input value={formState.tags} onChange={(e) => setFormState((c) => ({ ...c, tags: e.target.value }))} placeholder="VIP, Follow up" />
-              </label>
-              <label>
-                Order Date
-                <input type="datetime-local" value={formState.orderDate} onChange={(e) => setFormState((c) => ({ ...c, orderDate: e.target.value }))} />
               </label>
               <label>
                 Source ID

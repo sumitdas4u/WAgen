@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  createContactSegment,
   cancelCampaignRun,
   createCampaignDraft,
   downloadContactsTemplate,
@@ -13,6 +14,7 @@ import {
   launchCampaignDraft,
   listContactFields,
   listContactSegments,
+  previewSegmentContacts,
   previewBroadcastAudienceWorkbookImport,
   type BroadcastReport,
   type Campaign,
@@ -20,8 +22,11 @@ import {
   type ContactImportPreview,
   type CampaignMediaOverrides,
   type CampaignTemplateVariables,
+  type ContactField,
   type ContactRecord,
   type MessageTemplate,
+  type SegmentFilter,
+  type SegmentFilterOp,
   type RetargetStatus
 } from "../../../lib/api";
 import { uploadBroadcastMedia as uploadBroadcastMediaToSupabase } from "../../../lib/supabase";
@@ -41,7 +46,6 @@ const STANDARD_CONTACT_FIELDS = [
   { value: "email", label: "Email" },
   { value: "contact_type", label: "Contact type" },
   { value: "tags", label: "Tags" },
-  { value: "order_date", label: "Order date" },
   { value: "source_type", label: "Source type" },
   { value: "source_id", label: "Source ID" },
   { value: "source_url", label: "Source URL" }
@@ -55,6 +59,28 @@ const RETARGET_OPTIONS: Array<{ value: RetargetStatus; label: string }> = [
   { value: "skipped", label: "Not delivered" }
 ];
 
+const SEGMENT_FIELD_OPTIONS: Array<{ value: string; label: string; isDate?: boolean }> = [
+  { value: "display_name", label: "Name" },
+  { value: "phone_number", label: "Phone" },
+  { value: "email", label: "Email" },
+  { value: "contact_type", label: "Type" },
+  { value: "source_type", label: "Source" },
+  { value: "tags", label: "Tags" },
+  { value: "created_at", label: "Created Date", isDate: true },
+  { value: "order_date", label: "Order Date", isDate: true }
+];
+
+const SEGMENT_OP_OPTIONS: Array<{ value: SegmentFilterOp; label: string; onlyDate?: boolean; noValue?: boolean }> = [
+  { value: "is", label: "is" },
+  { value: "is_not", label: "is not" },
+  { value: "contains", label: "contains" },
+  { value: "not_contains", label: "does not contain" },
+  { value: "before", label: "before", onlyDate: true },
+  { value: "after", label: "after", onlyDate: true },
+  { value: "is_empty", label: "is empty", noValue: true },
+  { value: "is_not_empty", label: "is not empty", noValue: true }
+];
+
 type ContactImportFieldOption = { key: string; label: string; required?: boolean };
 
 const CONTACT_IMPORT_STANDARD_FIELDS: ContactImportFieldOption[] = [
@@ -63,7 +89,6 @@ const CONTACT_IMPORT_STANDARD_FIELDS: ContactImportFieldOption[] = [
   { key: "email", label: "Email" },
   { key: "contact_type", label: "Contact type" },
   { key: "tags", label: "Tags" },
-  { key: "order_date", label: "Order date" },
   { key: "source_type", label: "Source type" },
   { key: "source_id", label: "Source ID" },
   { key: "source_url", label: "Source URL" }
@@ -98,8 +123,6 @@ function resolveContactFieldValue(contact: ContactRecord | null, field: string |
       return contact.contact_type ?? "";
     case "tags":
       return contact.tags.join(", ");
-    case "order_date":
-      return contact.order_date ?? "";
     case "source_type":
       return contact.source_type ?? "";
     case "source_id":
@@ -508,6 +531,7 @@ function BroadcastWizardPage({
   const [phoneNumberFormat, setPhoneNumberFormat] = useState<"with_country_code" | "without_country_code">("with_country_code");
   const [defaultCountryCode, setDefaultCountryCode] = useState("91");
   const [uploadStep, setUploadStep] = useState<"download" | "upload" | "preview">("download");
+  const [showCreateSegmentModal, setShowCreateSegmentModal] = useState(false);
 
   const approvedTemplates = useMemo(
     () => (templatesQuery.data ?? []).filter((template) => template.status === "APPROVED"),
@@ -774,6 +798,7 @@ function BroadcastWizardPage({
               onDefaultCountryCodeChange={setDefaultCountryCode}
               uploadStep={uploadStep}
               onUploadStepChange={setUploadStep}
+              onOpenCreateSegment={() => setShowCreateSegmentModal(true)}
               onDownloadTemplate={handleDownloadAudienceTemplate}
               downloadingTemplate={downloadingTemplate}
               onBack={() => setStep(1)}
@@ -867,6 +892,20 @@ function BroadcastWizardPage({
           )}
         </aside>
       </div>
+
+      {showCreateSegmentModal ? (
+        <BroadcastCreateSegmentModal
+          token={token}
+          customFields={fields}
+          onClose={() => setShowCreateSegmentModal(false)}
+          onCreated={async (segment) => {
+            setShowCreateSegmentModal(false);
+            setSelectedSegmentId(segment.id);
+            await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactSegments });
+            setMessage(`Created segment "${segment.name}".`);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -984,6 +1023,223 @@ function RetargetAudienceStep({
   );
 }
 
+function BroadcastSegmentFilterRow({
+  filter,
+  index,
+  customFields,
+  onChange,
+  onRemove
+}: {
+  filter: SegmentFilter;
+  index: number;
+  customFields: ContactField[];
+  onChange: (index: number, updated: SegmentFilter) => void;
+  onRemove: (index: number) => void;
+}) {
+  const allFieldOptions = [
+    ...SEGMENT_FIELD_OPTIONS,
+    ...customFields.filter((field) => field.is_active).map((field) => ({
+      value: `custom:${field.name}`,
+      label: field.label,
+      isDate: field.field_type === "DATE"
+    }))
+  ];
+
+  const selectedFieldOption = allFieldOptions.find((option) => option.value === filter.field);
+  const isDateField = selectedFieldOption?.isDate ?? false;
+  const availableOps = SEGMENT_OP_OPTIONS.filter((option) => !option.onlyDate || isDateField);
+  const selectedOp = SEGMENT_OP_OPTIONS.find((option) => option.value === filter.op);
+  const showValue = !selectedOp?.noValue;
+
+  const handleFieldChange = (field: string) => {
+    const newIsDate = allFieldOptions.find((option) => option.value === field)?.isDate ?? false;
+    const currentOpIsDateOnly = SEGMENT_OP_OPTIONS.find((option) => option.value === filter.op)?.onlyDate ?? false;
+    const nextOp = currentOpIsDateOnly && !newIsDate ? "is" : filter.op;
+    onChange(index, { ...filter, field, op: nextOp as SegmentFilterOp });
+  };
+
+  return (
+    <div className="segment-filter-row">
+      {index > 0 ? <span className="segment-filter-connector">AND</span> : null}
+      <select value={filter.field} onChange={(event) => handleFieldChange(event.target.value)} className="segment-filter-field">
+        <optgroup label="Standard Fields">
+          {SEGMENT_FIELD_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </optgroup>
+        {customFields.filter((field) => field.is_active).length > 0 ? (
+          <optgroup label="Custom Fields">
+            {customFields.filter((field) => field.is_active).map((field) => (
+              <option key={field.id} value={`custom:${field.name}`}>{field.label}</option>
+            ))}
+          </optgroup>
+        ) : null}
+      </select>
+
+      <select
+        value={filter.op}
+        onChange={(event) => onChange(index, { ...filter, op: event.target.value as SegmentFilterOp })}
+        className="segment-filter-op"
+      >
+        {availableOps.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+
+      {showValue ? (
+        isDateField ? (
+          <input
+            type="date"
+            value={filter.value}
+            onChange={(event) => onChange(index, { ...filter, value: event.target.value })}
+            className="segment-filter-value"
+          />
+        ) : (
+          <input
+            type="text"
+            value={filter.value}
+            onChange={(event) => onChange(index, { ...filter, value: event.target.value })}
+            placeholder="Value"
+            className="segment-filter-value"
+          />
+        )
+      ) : null}
+
+      <button type="button" className="ghost-btn segment-filter-remove" onClick={() => onRemove(index)}>
+        Remove
+      </button>
+    </div>
+  );
+}
+
+function BroadcastCreateSegmentModal({
+  token,
+  customFields,
+  onClose,
+  onCreated
+}: {
+  token: string;
+  customFields: ContactField[];
+  onClose: () => void;
+  onCreated: (segment: { id: string; name: string }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [filters, setFilters] = useState<SegmentFilter[]>([{ field: "created_at", op: "after", value: "" }]);
+  const [previewContacts, setPreviewContacts] = useState<ContactRecord[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const addFilter = () => {
+    setFilters((current) => [...current, { field: "display_name", op: "contains", value: "" }]);
+  };
+
+  const updateFilter = (index: number, updated: SegmentFilter) => {
+    setFilters((current) => current.map((item, itemIndex) => (itemIndex === index ? updated : item)));
+    setPreviewContacts(null);
+  };
+
+  const removeFilter = (index: number) => {
+    setFilters((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setPreviewContacts(null);
+  };
+
+  const handlePreview = async () => {
+    setPreviewLoading(true);
+    setError(null);
+    try {
+      const result = await previewSegmentContacts(token, filters);
+      setPreviewContacts(result.contacts);
+    } catch (previewError) {
+      setError((previewError as Error).message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!name.trim()) {
+      setError("Segment name is required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await createContactSegment(token, { name: name.trim(), filters });
+      onCreated(result.segment);
+    } catch (createError) {
+      setError((createError as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="kb-modal-backdrop" onClick={onClose}>
+      <div className="kb-modal kb-modal-wide segment-modal" onClick={(event) => event.stopPropagation()}>
+        <h3>Create Segment From Existing Contacts</h3>
+        <div className="segment-modal-body">
+          <label className="segment-name-label">
+            Segment Name
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. April leads" autoFocus />
+          </label>
+
+          <div className="segment-filters-section">
+            <div className="segment-filters-head">
+              <strong>Filters</strong>
+              <button type="button" className="ghost-btn segment-add-filter-btn" onClick={addFilter}>
+                Add Condition
+              </button>
+            </div>
+
+            <div className="segment-filter-list">
+              {filters.map((filter, index) => (
+                <BroadcastSegmentFilterRow
+                  key={`${filter.field}-${index}`}
+                  filter={filter}
+                  index={index}
+                  customFields={customFields}
+                  onChange={updateFilter}
+                  onRemove={removeFilter}
+                />
+              ))}
+            </div>
+
+            <button type="button" className="ghost-btn segment-preview-btn" onClick={() => void handlePreview()} disabled={previewLoading}>
+              {previewLoading ? "Loading..." : "Preview Matching Contacts"}
+            </button>
+
+            {previewContacts ? (
+              <div className="segment-preview-result">
+                <strong>{previewContacts.length} contact{previewContacts.length !== 1 ? "s" : ""} match</strong>
+                {previewContacts.slice(0, 5).map((contact) => (
+                  <div key={contact.id} className="segment-preview-contact">
+                    <span className="contacts-avatar" style={{ width: 26, height: 26, fontSize: "0.75rem" }}>
+                      {(contact.display_name || "U").slice(0, 1).toUpperCase()}
+                    </span>
+                    <span>{contact.display_name || "Unknown"}</span>
+                    <span className="segment-preview-phone">{contact.phone_number}</span>
+                  </div>
+                ))}
+                {previewContacts.length > 5 ? <p className="segment-preview-more">+{previewContacts.length - 5} more</p> : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {error ? <p className="error-text">{error}</p> : null}
+
+        <div className="kb-modal-actions">
+          <button type="button" className="ghost-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="primary-btn" disabled={saving} onClick={() => void handleCreate()}>
+            {saving ? "Creating..." : "Create Segment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AudienceSelectionStep({
   name,
   onNameChange,
@@ -1006,6 +1262,7 @@ function AudienceSelectionStep({
   onDefaultCountryCodeChange,
   uploadStep,
   onUploadStepChange,
+  onOpenCreateSegment,
   onDownloadTemplate,
   downloadingTemplate,
   onBack,
@@ -1033,6 +1290,7 @@ function AudienceSelectionStep({
   onDefaultCountryCodeChange: (value: string) => void;
   uploadStep: "download" | "upload" | "preview";
   onUploadStepChange: (value: "download" | "upload" | "preview") => void;
+  onOpenCreateSegment: () => void;
   onDownloadTemplate: () => Promise<void>;
   downloadingTemplate: boolean;
   onBack: () => void;
@@ -1216,7 +1474,16 @@ function AudienceSelectionStep({
         </div>
       </section>
       <section className="broadcast-surface-card">
-        <div className="broadcast-card-title">Pick existing segment</div>
+        <div className="broadcast-card-row">
+          <div className="broadcast-card-title">Use existing contacts</div>
+          <button type="button" className="broadcast-secondary-btn" onClick={onOpenCreateSegment}>
+            Create Segment
+          </button>
+        </div>
+        <div className="broadcast-muted-copy">
+          Create a new segment from your existing contacts using filters, or pick a segment you already have.
+        </div>
+        <div className="broadcast-card-title" style={{ marginTop: "0.55rem" }}>Pick existing segment</div>
         {segments.map((segment) => (
           <button key={segment.id} type="button" onClick={() => onSelectSegment(segment.id)} className={`broadcast-segment-card ${selectedSegmentId === segment.id ? "is-selected" : ""}`}>
             <div className="broadcast-segment-name">{segment.name}</div>

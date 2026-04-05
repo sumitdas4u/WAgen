@@ -1533,7 +1533,6 @@ export interface ContactRecord {
   email: string | null;
   contact_type: ContactType;
   tags: string[];
-  order_date: string | null;
   source_type: ContactSourceType;
   source_id: string | null;
   source_url: string | null;
@@ -1589,7 +1588,6 @@ export function createContact(
     email?: string;
     type?: ContactType;
     tags?: string[];
-    orderDate?: string;
     sourceId?: string;
     sourceUrl?: string;
     customFields?: Record<string, string>;

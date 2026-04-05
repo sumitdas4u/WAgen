@@ -26,7 +26,6 @@ const CreateContactBodySchema = z.object({
   email: z.string().trim().optional(),
   type: ContactTypeSchema.optional(),
   tags: z.array(z.string().trim().min(1).max(80)).max(24).optional(),
-  orderDate: z.string().trim().optional(),
   sourceId: z.string().trim().optional(),
   sourceUrl: z.string().trim().optional(),
   customFields: z.record(z.string(), z.string()).optional()
@@ -92,7 +91,6 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
           email: parsed.data.email,
           contactType: parsed.data.type,
           tags: parsed.data.tags,
-          orderDate: parsed.data.orderDate,
           sourceId: parsed.data.sourceId,
           sourceUrl: parsed.data.sourceUrl,
           customFields: parsed.data.customFields

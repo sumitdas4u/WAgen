@@ -148,8 +148,6 @@ function getContactFieldValue(contact: Contact, field: string): string | null {
       return trimToNull(contact.contact_type);
     case "tags":
       return trimToNull(contact.tags.join(", "));
-    case "order_date":
-      return trimToNull(contact.order_date);
     case "source_type":
       return trimToNull(contact.source_type);
     case "source_id":

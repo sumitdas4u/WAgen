@@ -12,7 +12,6 @@ const CONTACT_TEMPLATE_HEADERS = [
   "Email",
   "Type",
   "Tags",
-  "Order Date",
   "Contact Created Source",
   "Source ID",
   "Source URL"
@@ -34,7 +33,6 @@ export interface ContactWriteInput {
   email?: string | null;
   contactType?: ConversationKind;
   tags?: string[];
-  orderDate?: string | null;
   sourceType?: ContactSourceType;
   sourceId?: string | null;
   sourceUrl?: string | null;
@@ -47,7 +45,6 @@ export interface CreateManualContactInput {
   email?: string | null;
   contactType?: ConversationKind;
   tags?: string[];
-  orderDate?: string | null;
   sourceId?: string | null;
   sourceUrl?: string | null;
   customFields?: Record<string, string>;
@@ -103,7 +100,6 @@ function getContactImportAliases(): Record<string, string[]> {
     email: ["email", "email address"],
     contact_type: ["type", "contact type", "lead type"],
     tags: ["tags", "tag"],
-    order_date: ["order date", "date", "purchase date"],
     source_type: ["contact created source", "source", "source type"],
     source_id: ["source id", "external id"],
     source_url: ["source url", "url", "source link"]
@@ -254,32 +250,6 @@ function parseTagCell(value: unknown): string[] {
   return normalizeTags(String(value ?? "").split(","));
 }
 
-function parseOrderDate(value: unknown): string | null {
-  if (value instanceof Date && Number.isFinite(value.getTime())) {
-    return value.toISOString();
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (parsed) {
-      const date = new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d, parsed.H, parsed.M, parsed.S));
-      if (Number.isFinite(date.getTime())) {
-        return date.toISOString();
-      }
-    }
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const timestamp = Date.parse(trimmed);
-    if (Number.isFinite(timestamp)) {
-      return new Date(timestamp).toISOString();
-    }
-  }
-  return null;
-}
-
 function isSourcePreserved(existingSource: ContactSourceType | null | undefined): boolean {
   return existingSource ? USER_MANAGED_SOURCES.has(existingSource) : false;
 }
@@ -415,7 +385,6 @@ async function insertContact(db: DbExecutor, input: {
   email: string | null;
   contactType: ConversationKind;
   tags: string[];
-  orderDate: string | null;
   sourceType: ContactSourceType;
   sourceId: string | null;
   sourceUrl: string | null;
@@ -425,18 +394,17 @@ async function insertContact(db: DbExecutor, input: {
     `INSERT INTO contacts (
        user_id,
        display_name,
-       phone_number,
-       email,
-       contact_type,
-       tags,
-       order_date,
-       source_type,
-       source_id,
-       source_url,
-       linked_conversation_id
-     )
-     VALUES ($1, $2, $3, $4, $5, $6::text[], $7::timestamptz, $8, $9, $10, $11)
-     RETURNING *`,
+        phone_number,
+        email,
+        contact_type,
+        tags,
+        source_type,
+        source_id,
+        source_url,
+        linked_conversation_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10)
+      RETURNING *`,
     [
       input.userId,
       input.displayName,
@@ -444,7 +412,6 @@ async function insertContact(db: DbExecutor, input: {
       input.email,
       input.contactType,
       input.tags,
-      input.orderDate,
       input.sourceType,
       input.sourceId,
       input.sourceUrl,
@@ -463,7 +430,6 @@ async function updateContact(
     email: string | null;
     contactType: ConversationKind;
     tags: string[];
-    orderDate: string | null;
     sourceType: ContactSourceType;
     sourceId: string | null;
     sourceUrl: string | null;
@@ -476,20 +442,18 @@ async function updateContact(
          email = $2,
          contact_type = $3,
          tags = $4::text[],
-         order_date = $5::timestamptz,
-         source_type = $6,
-         source_id = $7,
-         source_url = $8,
-         linked_conversation_id = $9,
+         source_type = $5,
+         source_id = $6,
+         source_url = $7,
+         linked_conversation_id = $8,
          updated_at = NOW()
-     WHERE id = $10
+     WHERE id = $9
      RETURNING *`,
     [
       input.displayName,
       input.email,
       input.contactType,
       input.tags,
-      input.orderDate,
       input.sourceType,
       input.sourceId,
       input.sourceUrl,
@@ -553,7 +517,6 @@ async function upsertContact(
   const requestedContactType = input.contactType;
   const contactType = requestedContactType ?? existing?.contact_type ?? "lead";
   const tags = input.tags === undefined ? undefined : normalizeTags(input.tags);
-  const orderDate = input.orderDate === undefined ? undefined : parseOrderDate(input.orderDate);
   const sourceType = input.sourceType ?? existing?.source_type ?? "manual";
   const sourceId = input.sourceId === undefined ? undefined : (input.sourceId?.trim() || null);
   const sourceUrl = input.sourceUrl === undefined ? undefined : (input.sourceUrl?.trim() || null);
@@ -568,7 +531,6 @@ async function upsertContact(
       email: email ?? null,
       contactType,
       tags: tags ?? [],
-      orderDate: orderDate ?? null,
       sourceType,
       sourceId: sourceId ?? null,
       sourceUrl: sourceUrl ?? null,
@@ -598,7 +560,6 @@ async function upsertContact(
       : options?.mergeTags
         ? mergeTags(existing.tags, tags)
         : tags;
-  const nextOrderDate = orderDate === undefined ? existing.order_date : orderDate;
   const nextSourceType = preserveSource ? existing.source_type : sourceType;
   const nextSourceId = preserveSource ? existing.source_id : sourceId === undefined ? existing.source_id : sourceId;
   const nextSourceUrl = preserveSource ? existing.source_url : sourceUrl === undefined ? existing.source_url : sourceUrl;
@@ -609,7 +570,6 @@ async function upsertContact(
     nextEmail !== existing.email ||
     nextContactType !== existing.contact_type ||
     !arraysEqual(nextTags, existing.tags) ||
-    nextOrderDate !== existing.order_date ||
     nextSourceType !== existing.source_type ||
     nextSourceId !== existing.source_id ||
     nextSourceUrl !== existing.source_url ||
@@ -630,7 +590,6 @@ async function upsertContact(
     email: nextEmail,
     contactType: nextContactType,
     tags: nextTags,
-    orderDate: nextOrderDate,
     sourceType: nextSourceType,
     sourceId: nextSourceId,
     sourceUrl: nextSourceUrl,
@@ -713,7 +672,6 @@ export async function createManualContact(userId: string, input: CreateManualCon
         email: input.email ?? undefined,
         contactType: input.contactType ?? "lead",
         tags: input.tags ?? [],
-        orderDate: input.orderDate ?? undefined,
         sourceType: "manual",
         sourceId: input.sourceId ?? undefined,
         sourceUrl: input.sourceUrl ?? undefined
@@ -837,7 +795,6 @@ export async function reconcileContactPhone(
         ? target.contact_type
         : source.contact_type;
     const nextTags = mergeTags(target.tags, source.tags);
-    const nextOrderDate = target.order_date ?? source.order_date;
     const nextSourceType = isSourcePreserved(target.source_type)
       ? target.source_type
       : isSourcePreserved(source.source_type)
@@ -854,7 +811,6 @@ export async function reconcileContactPhone(
       email: nextEmail,
       contactType: nextContactType,
       tags: nextTags,
-      orderDate: nextOrderDate,
       sourceType: nextSourceType,
       sourceId: nextSourceId,
       sourceUrl: nextSourceUrl,
@@ -900,7 +856,6 @@ export async function importContactsWorkbook(
     const email = String(getMappedWorkbookValue(row, mapping, "email") ?? "");
     const typeCell = String(getMappedWorkbookValue(row, mapping, "contact_type") ?? "");
     const tagsCell = getMappedWorkbookValue(row, mapping, "tags");
-    const orderDateCell = getMappedWorkbookValue(row, mapping, "order_date");
     const sourceCell = String(getMappedWorkbookValue(row, mapping, "source_type") ?? "");
     const sourceId = String(getMappedWorkbookValue(row, mapping, "source_id") ?? "");
     const sourceUrl = String(getMappedWorkbookValue(row, mapping, "source_url") ?? "");
@@ -911,7 +866,7 @@ export async function importContactsWorkbook(
         .filter(([, value]) => value)
     );
 
-    if (![name, phone, email, typeCell, String(tagsCell ?? ""), String(orderDateCell ?? ""), sourceCell, sourceId, sourceUrl].some((value) => value.trim())) {
+    if (![name, phone, email, typeCell, String(tagsCell ?? ""), sourceCell, sourceId, sourceUrl].some((value) => value.trim())) {
       skipped += 1;
       continue;
     }
@@ -942,11 +897,6 @@ export async function importContactsWorkbook(
       continue;
     }
 
-    if (orderDateCell && !parseOrderDate(orderDateCell)) {
-      errors.push({ row: rowNumber, message: "Order Date is invalid." });
-      continue;
-    }
-
     const parsedTags = String(tagsCell ?? "").trim() ? parseTagCell(tagsCell) : [];
     const result = await withTransaction(async (client) => {
       const upserted = await upsertContact(client, {
@@ -956,7 +906,6 @@ export async function importContactsWorkbook(
         email: email || undefined,
         contactType: contactType ?? undefined,
         tags: parsedTags.length > 0 || extraTags.length > 0 ? [...parsedTags, ...extraTags] : undefined,
-        orderDate: orderDateCell ? parseOrderDate(orderDateCell) : undefined,
         sourceType: sourceType ?? "import",
         sourceId: sourceId || undefined,
         sourceUrl: sourceUrl || undefined
@@ -1018,7 +967,6 @@ export async function generateContactsExportWorkbook(input: {
     Email: contact.email || "",
     Type: contact.contact_type,
     Tags: contact.tags.join(", "),
-    "Order Date": formatWorkbookDate(contact.order_date),
     "Contact Created Source": contact.source_type,
     "Source ID": contact.source_id || "",
     "Source URL": contact.source_url || "",
