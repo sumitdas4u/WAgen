@@ -18,7 +18,6 @@ import {
   type Campaign,
   type CampaignMediaOverrides,
   type CampaignTemplateVariables,
-  type ContactField,
   type ContactRecord,
   type MessageTemplate,
   type RetargetStatus,
