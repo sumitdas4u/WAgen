@@ -20,6 +20,11 @@ export interface GenericWebhookCondition {
 }
 
 export interface GenericWebhookContactAction {
+  contactPaths?: {
+    displayNamePath?: string;
+    phoneNumberPath?: string;
+    emailPath?: string;
+  };
   tagOperation?: GenericWebhookTagOperation;
   tags?: string[];
   fieldMappings?: Array<{ contactFieldName: string; payloadPath: string }>;
@@ -590,19 +595,33 @@ export async function handleIncomingGenericWebhook(input: {
 
     const recipientName = getPayloadValue(flatPayload, workflow.templateAction.recipientNamePath);
     const rawPhone = getPayloadValue(flatPayload, workflow.templateAction.recipientPhonePath);
+    const contactName =
+      (workflow.contactAction.contactPaths?.displayNamePath
+        ? getPayloadValue(flatPayload, workflow.contactAction.contactPaths.displayNamePath)
+        : null) ?? recipientName;
+    const contactEmail = workflow.contactAction.contactPaths?.emailPath
+      ? getPayloadValue(flatPayload, workflow.contactAction.contactPaths.emailPath)
+      : null;
+    const rawContactPhone =
+      (workflow.contactAction.contactPaths?.phoneNumberPath
+        ? getPayloadValue(flatPayload, workflow.contactAction.contactPaths.phoneNumberPath)
+        : null) ?? rawPhone;
     const recipientPhone = normalizePhoneNumber(rawPhone);
+    const contactPhone = normalizePhoneNumber(rawContactPhone);
 
-    if (!recipientPhone) {
+    if (!recipientPhone || !contactPhone) {
       await recordGenericWebhookLog({
         userId: integration.userId,
         integrationId: integration.id,
         workflowId: workflow.id,
         requestId: input.requestId,
         status: "skipped",
-        customerName: recipientName,
-        customerPhone: rawPhone,
+        customerName: contactName,
+        customerPhone: rawContactPhone,
         templateId: workflow.templateAction.templateId,
-        errorMessage: "Recipient phone mapping did not resolve to a valid phone number.",
+        errorMessage: !recipientPhone
+          ? "Recipient phone mapping did not resolve to a valid phone number."
+          : "Contact phone mapping did not resolve to a valid phone number.",
         payloadJson: input.payload
       });
       continue;
@@ -630,8 +649,9 @@ export async function handleIncomingGenericWebhook(input: {
 
       const contact = await upsertWebhookContact({
         userId: integration.userId,
-        displayName: recipientName,
-        phoneNumber: recipientPhone,
+        displayName: contactName,
+        phoneNumber: contactPhone,
+        email: contactEmail,
         tags,
         customFields,
         sourceId: input.requestId,

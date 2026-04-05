@@ -15,6 +15,7 @@ import {
   updateGenericWebhookWorkflow,
   type GenericWebhookCondition,
   type GenericWebhookContactAction,
+  type GenericWebhookContactPaths,
   type GenericWebhookTemplateAction,
   type GenericWebhookWorkflow,
   type MessageTemplate
@@ -55,6 +56,9 @@ export function GenericWebhooksPage() {
   const [templateId, setTemplateId] = useState("");
   const [recipientNamePath, setRecipientNamePath] = useState("");
   const [recipientPhonePath, setRecipientPhonePath] = useState("");
+  const [contactDisplayNamePath, setContactDisplayNamePath] = useState("");
+  const [contactPhonePath, setContactPhonePath] = useState("");
+  const [contactEmailPath, setContactEmailPath] = useState("");
   const [tagOperation, setTagOperation] = useState<"append" | "replace" | "add_if_empty">("append");
   const [tagsText, setTagsText] = useState("");
   const [fieldMappings, setFieldMappings] = useState<Array<{ contactFieldName: string; payloadPath: string }>>([]);
@@ -142,7 +146,13 @@ export function GenericWebhooksPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const contactPaths: GenericWebhookContactPaths = {
+        displayNamePath: contactDisplayNamePath || undefined,
+        phoneNumberPath: contactPhonePath || undefined,
+        emailPath: contactEmailPath || undefined
+      };
       const contactAction: GenericWebhookContactAction = {
+        contactPaths,
         tagOperation,
         tags: toTagArray(tagsText),
         fieldMappings: fieldMappings.filter((mapping) => mapping.contactFieldName && mapping.payloadPath)
@@ -240,6 +250,9 @@ export function GenericWebhooksPage() {
     setTemplateId("");
     setRecipientNamePath("");
     setRecipientPhonePath("");
+    setContactDisplayNamePath("");
+    setContactPhonePath("");
+    setContactEmailPath("");
     setTagOperation("append");
     setTagsText("");
     setFieldMappings([]);
@@ -256,6 +269,9 @@ export function GenericWebhooksPage() {
     setTemplateId(workflow.templateAction.templateId);
     setRecipientNamePath(workflow.templateAction.recipientNamePath);
     setRecipientPhonePath(workflow.templateAction.recipientPhonePath);
+    setContactDisplayNamePath(workflow.contactAction.contactPaths?.displayNamePath ?? "");
+    setContactPhonePath(workflow.contactAction.contactPaths?.phoneNumberPath ?? workflow.templateAction.recipientPhonePath);
+    setContactEmailPath(workflow.contactAction.contactPaths?.emailPath ?? "");
     setTagOperation(workflow.contactAction.tagOperation ?? "append");
     setTagsText(tagsToString(workflow.contactAction.tags));
     setFieldMappings(workflow.contactAction.fieldMappings ?? []);
@@ -392,7 +408,17 @@ export function GenericWebhooksPage() {
               </div>
             </div>
             <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
-              <h4 style={{ marginBottom: "0.75rem" }}>Latest Captured Payload Fields</h4>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
+                <h4 style={{ margin: 0 }}>Latest Captured Payload Fields</h4>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => integrationsQuery.refetch()}
+                  disabled={integrationsQuery.isFetching}
+                >
+                  {integrationsQuery.isFetching ? "Refreshing..." : "Refresh Payload Fields"}
+                </button>
+              </div>
               {sampleKeys.length === 0 ? (
                 <p style={{ margin: 0, color: "#6b7280" }}>No payload captured yet. Send a JSON POST to the webhook URL to populate comparator and mapping options.</p>
               ) : (
@@ -515,6 +541,33 @@ export function GenericWebhooksPage() {
                       {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
                     </select>
                   </label>
+                </div>
+
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Contact mapping</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+                    <label>
+                      <div style={{ marginBottom: 6 }}>Contact name path</div>
+                      <select value={contactDisplayNamePath} onChange={(event) => setContactDisplayNamePath(event.target.value)}>
+                        <option value="">Use recipient name path</option>
+                        {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <div style={{ marginBottom: 6 }}>Contact phone path</div>
+                      <select value={contactPhonePath} onChange={(event) => setContactPhonePath(event.target.value)}>
+                        <option value="">Use recipient phone path</option>
+                        {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <div style={{ marginBottom: 6 }}>Contact email path</div>
+                      <select value={contactEmailPath} onChange={(event) => setContactEmailPath(event.target.value)}>
+                        <option value="">No email mapping</option>
+                        {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                      </select>
+                    </label>
+                  </div>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: "1rem" }}>

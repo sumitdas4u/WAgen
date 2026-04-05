@@ -39,7 +39,14 @@ const ContactFieldMappingSchema = z.object({
   payloadPath: z.string().trim().min(1).max(200)
 });
 
+const ContactPathsSchema = z.object({
+  displayNamePath: z.string().trim().min(1).max(200).optional(),
+  phoneNumberPath: z.string().trim().min(1).max(200).optional(),
+  emailPath: z.string().trim().min(1).max(200).optional()
+});
+
 const ContactActionSchema = z.object({
+  contactPaths: ContactPathsSchema.optional(),
   tagOperation: TagOperationSchema.optional(),
   tags: z.array(z.string().trim().min(1).max(80)).max(24).optional(),
   fieldMappings: z.array(ContactFieldMappingSchema).max(32).optional()

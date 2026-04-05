@@ -1551,6 +1551,14 @@ export interface ContactImportResult {
   errors: Array<{ row: number; message: string }>;
 }
 
+export interface ContactImportPreview {
+  columns: string[];
+  sampleRows: Array<Record<string, string>>;
+  suggestedMapping: Record<string, string>;
+}
+
+export type ContactImportColumnMapping = Record<string, string>;
+
 export function fetchContacts(
   token: string,
   options?: { q?: string; type?: ContactType; source?: ContactSourceType; limit?: number }
@@ -1598,9 +1606,27 @@ export function fetchContactByConversation(token: string, conversationId: string
   return apiRequest<{ contact: ContactRecord }>(`/api/contacts/by-conversation/${conversationId}`, { token });
 }
 
-export function importContactsWorkbook(token: string, file: File) {
+export function previewContactsImportWorkbook(token: string, file: File) {
   const form = new FormData();
   form.append("file", file);
+  return apiRequest<{ ok: boolean; preview: ContactImportPreview }>("/api/contacts/import/preview", {
+    method: "POST",
+    token,
+    body: form,
+    timeoutMs: 120_000
+  });
+}
+
+export function importContactsWorkbook(
+  token: string,
+  file: File,
+  options?: { mapping?: ContactImportColumnMapping }
+) {
+  const form = new FormData();
+  form.append("file", file);
+  if (options?.mapping) {
+    form.append("mapping", JSON.stringify(options.mapping));
+  }
   return apiRequest<ContactImportResult>("/api/contacts/import", {
     method: "POST",
     token,
@@ -2092,11 +2118,17 @@ export interface BroadcastAudienceImportResponse {
   batchTag: string;
 }
 
+export interface BroadcastAudienceImportPreviewResponse {
+  ok: boolean;
+  preview: ContactImportPreview;
+}
+
 export interface BroadcastAudienceImportOptions {
   segmentName?: string;
   marketingOptIn?: boolean;
   phoneNumberFormat?: "with_country_code" | "without_country_code";
   defaultCountryCode?: string;
+  mapping?: ContactImportColumnMapping;
 }
 
 export interface CampaignDeliveryAnalytics {
@@ -2343,6 +2375,20 @@ export function fetchBroadcastRetargetPreview(
   );
 }
 
+export async function previewBroadcastAudienceWorkbookImport(
+  token: string,
+  file: File
+): Promise<BroadcastAudienceImportPreviewResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<BroadcastAudienceImportPreviewResponse>("/api/broadcasts/audience/import/preview", {
+    method: "POST",
+    token,
+    body: form,
+    timeoutMs: 120_000
+  });
+}
+
 export async function importBroadcastAudienceWorkbook(
   token: string,
   file: File,
@@ -2361,6 +2407,9 @@ export async function importBroadcastAudienceWorkbook(
   }
   if (options?.defaultCountryCode?.trim()) {
     form.append("defaultCountryCode", options.defaultCountryCode.trim());
+  }
+  if (options?.mapping) {
+    form.append("mapping", JSON.stringify(options.mapping));
   }
   return apiRequest<BroadcastAudienceImportResponse>("/api/broadcasts/audience/import", {
     method: "POST",
@@ -2631,7 +2680,14 @@ export interface GenericWebhookContactFieldMapping {
   payloadPath: string;
 }
 
+export interface GenericWebhookContactPaths {
+  displayNamePath?: string;
+  phoneNumberPath?: string;
+  emailPath?: string;
+}
+
 export interface GenericWebhookContactAction {
+  contactPaths?: GenericWebhookContactPaths;
   tagOperation?: GenericWebhookTagOperation;
   tags?: string[];
   fieldMappings?: GenericWebhookContactFieldMapping[];
