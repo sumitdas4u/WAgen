@@ -68,6 +68,11 @@ export interface ContactImportPreview {
   suggestedMapping: Record<string, string>;
 }
 
+export interface ContactUpsertResult {
+  contact: Contact;
+  action: "created" | "updated" | "skipped";
+}
+
 interface ContactImportWorkbookOptions {
   extraTags?: string[];
   phoneNumberFormat?: "with_country_code" | "without_country_code";
@@ -656,7 +661,7 @@ export async function listContacts(userId: string, filters: ContactsListFilters 
   return contacts.map((c) => ({ ...c, custom_field_values: fieldValuesMap.get(c.id) ?? [] }));
 }
 
-export async function createManualContact(userId: string, input: CreateManualContactInput): Promise<Contact> {
+export async function createManualContact(userId: string, input: CreateManualContactInput): Promise<ContactUpsertResult> {
   const displayName = normalizeDisplayName(input.displayName);
   if (!displayName) {
     throw new Error("Name is required.");
@@ -676,7 +681,7 @@ export async function createManualContact(userId: string, input: CreateManualCon
         sourceId: input.sourceId ?? undefined,
         sourceUrl: input.sourceUrl ?? undefined
       },
-      { rejectOnDuplicate: true }
+      { mergeTags: true }
     );
     if (input.customFields && Object.keys(input.customFields).length > 0) {
       await saveFieldValues(client, upsertResult.contact.id, input.customFields);
@@ -685,7 +690,10 @@ export async function createManualContact(userId: string, input: CreateManualCon
   });
 
   const fieldValuesMap = await loadFieldValues(pool, [result.contact.id]);
-  return { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
+  return {
+    action: result.action,
+    contact: { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] }
+  };
 }
 
 export async function upsertWebhookContact(input: {

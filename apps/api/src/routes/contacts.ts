@@ -85,7 +85,7 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       try {
-        const contact = await createManualContact(request.authUser.userId, {
+        const result = await createManualContact(request.authUser.userId, {
           displayName: parsed.data.name,
           phoneNumber: parsed.data.phone,
           email: parsed.data.email,
@@ -95,11 +95,8 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
           sourceUrl: parsed.data.sourceUrl,
           customFields: parsed.data.customFields
         });
-        return reply.status(201).send({ contact });
+        return reply.status(result.action === "created" ? 201 : 200).send({ contact: result.contact });
       } catch (error) {
-        if ((error as Error & { code?: string }).code === "CONTACT_DUPLICATE") {
-          return reply.status(409).send({ error: (error as Error).message });
-        }
         return reply.status(400).send({ error: (error as Error).message });
       }
     }
