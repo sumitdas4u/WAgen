@@ -9,16 +9,32 @@ export interface MigrationPlanItem {
   sourcePath: string;
   sql: string;
   checksum: string;
+  acceptedChecksums: string[];
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, "../../../../");
+const INITIAL_MIGRATION_PATH = resolve(ROOT_DIR, "infra/baseline/0001_initial.sql");
 const BASELINE_SCHEMA_PATH = resolve(ROOT_DIR, "infra/schema.sql");
 const MIGRATIONS_DIR = resolve(ROOT_DIR, "infra/migrations");
 const ADVISORY_LOCK_KEY = 68423190;
 
-function computeChecksum(sql: string): string {
+function normalizeSqlForChecksum(sql: string): string {
+  return sql.replace(/\r\n/g, "\n");
+}
+
+function hashSql(sql: string): string {
   return createHash("sha256").update(sql, "utf8").digest("hex");
+}
+
+function computeChecksum(sql: string): string {
+  return hashSql(normalizeSqlForChecksum(sql));
+}
+
+function buildAcceptedChecksums(sql: string): string[] {
+  const normalizedSql = normalizeSqlForChecksum(sql);
+  const legacyCrlfSql = normalizedSql.replace(/\n/g, "\r\n");
+  return Array.from(new Set([hashSql(normalizedSql), hashSql(legacyCrlfSql)]));
 }
 
 function readSqlFile(path: string): string {
@@ -28,12 +44,14 @@ function readSqlFile(path: string): string {
 export function buildMigrationPlan(): MigrationPlanItem[] {
   const plan: MigrationPlanItem[] = [];
 
-  const baselineSql = readSqlFile(BASELINE_SCHEMA_PATH);
+  const initialSourcePath = existsSync(INITIAL_MIGRATION_PATH) ? INITIAL_MIGRATION_PATH : BASELINE_SCHEMA_PATH;
+  const baselineSql = readSqlFile(initialSourcePath);
   plan.push({
     id: "0001_initial",
-    sourcePath: BASELINE_SCHEMA_PATH,
+    sourcePath: initialSourcePath,
     sql: baselineSql,
-    checksum: computeChecksum(baselineSql)
+    checksum: computeChecksum(baselineSql),
+    acceptedChecksums: buildAcceptedChecksums(baselineSql)
   });
 
   if (!existsSync(MIGRATIONS_DIR)) {
@@ -51,11 +69,20 @@ export function buildMigrationPlan(): MigrationPlanItem[] {
       id: file.replace(/\.sql$/i, ""),
       sourcePath,
       sql,
-      checksum: computeChecksum(sql)
+      checksum: computeChecksum(sql),
+      acceptedChecksums: buildAcceptedChecksums(sql)
     });
   }
 
   return plan;
+}
+
+export function migrationChecksumMatches(item: MigrationPlanItem, appliedChecksum: string | null | undefined): boolean {
+  if (!appliedChecksum) {
+    return false;
+  }
+
+  return item.acceptedChecksums.includes(appliedChecksum);
 }
 
 async function ensureMigrationsTable(client: PoolClient): Promise<void> {
@@ -169,7 +196,7 @@ export async function runMigrations(options?: { closePool?: boolean; silent?: bo
       const appliedChecksum = existing.get(item.id);
       if (appliedChecksum !== undefined) {
         skippedCount += 1;
-        if (appliedChecksum && appliedChecksum !== item.checksum && !silent) {
+        if (appliedChecksum && !migrationChecksumMatches(item, appliedChecksum) && !silent) {
           console.warn(
             `Migration ${item.id} checksum mismatch. Applied=${appliedChecksum.slice(0, 12)} Current=${item.checksum.slice(0, 12)}`
           );

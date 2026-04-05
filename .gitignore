@@ -17,4 +17,5 @@ tools/deploy/*
 *.pdf
 *.sql
 !infra/schema.sql
+!infra/baseline/*.sql
 !infra/migrations/*.sql

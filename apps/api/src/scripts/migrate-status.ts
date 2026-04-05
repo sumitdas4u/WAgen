@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 import { Pool } from "pg";
-import { buildMigrationPlan } from "./migrate.js";
+import { buildMigrationPlan, migrationChecksumMatches } from "./migrate.js";
 
 config();
 
@@ -45,7 +45,7 @@ async function showMigrationStatus(): Promise<void> {
     for (const item of plan) {
       const applied = appliedMap.get(item.id);
       if (applied) {
-        const mismatch = applied.checksum && applied.checksum !== item.checksum;
+        const mismatch = applied.checksum ? !migrationChecksumMatches(item, applied.checksum) : false;
         console.log(`[APPLIED] ${item.id} at ${applied.executed_at}${mismatch ? " (checksum mismatch)" : ""}`);
       } else {
         console.log(`[PENDING] ${item.id}`);
