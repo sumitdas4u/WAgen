@@ -103,7 +103,9 @@ const SEGMENT_OP_OPTIONS: Array<{ value: SegmentFilterOp; label: string; onlyDat
   { value: "is_not_empty", label: "is not empty", noValue: true }
 ];
 
-const CONTACT_IMPORT_STANDARD_FIELDS: Array<{ key: string; label: string; required?: boolean }> = [
+type ContactImportFieldOption = { key: string; label: string; required?: boolean };
+
+const CONTACT_IMPORT_STANDARD_FIELDS: ContactImportFieldOption[] = [
   { key: "display_name", label: "Contact name" },
   { key: "phone_number", label: "Phone number", required: true },
   { key: "email", label: "Email" },
@@ -531,7 +533,7 @@ function ContactsImportModal({
   onImport: () => void;
   importing: boolean;
 }) {
-  const mappingFields = [
+  const mappingFields: ContactImportFieldOption[] = [
     ...CONTACT_IMPORT_STANDARD_FIELDS,
     ...customFields
       .filter((field) => field.is_active)

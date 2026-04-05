@@ -55,7 +55,9 @@ const RETARGET_OPTIONS: Array<{ value: RetargetStatus; label: string }> = [
   { value: "skipped", label: "Not delivered" }
 ];
 
-const CONTACT_IMPORT_STANDARD_FIELDS: Array<{ key: string; label: string; required?: boolean }> = [
+type ContactImportFieldOption = { key: string; label: string; required?: boolean };
+
+const CONTACT_IMPORT_STANDARD_FIELDS: ContactImportFieldOption[] = [
   { key: "display_name", label: "Contact name" },
   { key: "phone_number", label: "Phone number", required: true },
   { key: "email", label: "Email" },
@@ -1037,7 +1039,7 @@ function AudienceSelectionStep({
   onContinue: () => void;
   canContinue: boolean;
 }) {
-  const mappingFields = [
+  const mappingFields: ContactImportFieldOption[] = [
     ...CONTACT_IMPORT_STANDARD_FIELDS,
     ...customFields
       .filter((field) => field.is_active)
