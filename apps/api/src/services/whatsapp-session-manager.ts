@@ -36,7 +36,11 @@ import {
 import { reconcileConversationPhone } from "./conversation-service.js";
 import { extractInboundMediaText } from "./inbound-media-service.js";
 import { processIncomingMessage } from "./message-router-service.js";
-import { summarizeFlowMessage, type FlowMessagePayload } from "./outbound-message-types.js";
+import {
+  adaptPayloadForChannel,
+  summarizeFlowMessage,
+  type FlowMessagePayload
+} from "./outbound-message-types.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
@@ -672,11 +676,12 @@ class WhatsAppSessionManager {
     }
 
     const to = this.resolveOutboundChatJid(input.userId, input.phoneNumber);
+    const deliveryPayload = adaptPayloadForChannel(input.payload, "baileys");
     await this.sendAndRememberMessage(
       input.userId,
       runtime.socket,
       to,
-      buildQrFlowMessageContent(input.payload) as never
+      buildQrFlowMessageContent(deliveryPayload) as never
     );
   }
 

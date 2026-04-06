@@ -1,8 +1,25 @@
 import { getConversationById, setConversationManualAndPaused, trackOutboundMessage } from "./conversation-service.js";
 import { sendTrackedApiConversationFlowMessage } from "./message-delivery-service.js";
-import { summarizeFlowMessage, type FlowMessagePayload } from "./outbound-message-types.js";
+import {
+  adaptPayloadForChannel,
+  getPayloadMediaUrl,
+  summarizeFlowMessage,
+  type FlowDeliveryChannel,
+  type FlowMessagePayload,
+  validateFlowMessagePayload
+} from "./outbound-message-types.js";
 import { sendWidgetConversationMessage } from "./widget-chat-gateway-service.js";
 import { whatsappSessionManager } from "./whatsapp-session-manager.js";
+
+function resolveDeliveryChannel(channelType: "web" | "qr" | "api"): FlowDeliveryChannel {
+  if (channelType === "api") {
+    return "api_whatsapp";
+  }
+  if (channelType === "qr") {
+    return "baileys";
+  }
+  return "web";
+}
 
 export async function sendConversationFlowMessage(input: {
   userId: string;
@@ -23,7 +40,10 @@ export async function sendConversationFlowMessage(input: {
     throw new Error("Conversation not found.");
   }
 
-  const summaryText = input.displayText ?? summarizeFlowMessage(input.payload);
+  const canonicalPayload = validateFlowMessagePayload(input.payload);
+  const deliveryChannel = resolveDeliveryChannel(conversation.channel_type);
+  const deliveryPayload = adaptPayloadForChannel(canonicalPayload, deliveryChannel);
+  const summaryText = input.displayText ?? summarizeFlowMessage(deliveryPayload);
   if (!summaryText) {
     throw new Error("Message text is required.");
   }
@@ -32,9 +52,9 @@ export async function sendConversationFlowMessage(input: {
     await sendTrackedApiConversationFlowMessage({
       userId: input.userId,
       conversation,
-      payload: input.payload,
+      payload: deliveryPayload,
       summaryText,
-      mediaUrl: input.mediaUrl ?? null,
+      mediaUrl: input.mediaUrl ?? getPayloadMediaUrl(canonicalPayload) ?? null,
       senderName: input.senderName ?? null,
       track: input.track
     });
@@ -42,7 +62,7 @@ export async function sendConversationFlowMessage(input: {
     await whatsappSessionManager.sendFlowMessage({
       userId: input.userId,
       phoneNumber: conversation.phone_number,
-      payload: input.payload
+      payload: deliveryPayload
     });
   } else {
     const delivered = await sendWidgetConversationMessage({
@@ -56,17 +76,12 @@ export async function sendConversationFlowMessage(input: {
   }
 
   if (conversation.channel_type !== "api" && input.track !== false) {
-    // If no explicit mediaUrl, pull it from the payload itself (media / media_buttons blocks).
-    const payloadMediaUrl =
-      input.payload.type === "media" ? input.payload.url :
-      input.payload.type === "media_buttons" ? input.payload.url :
-      null;
     await trackOutboundMessage(
       conversation.id,
       summaryText,
       { senderName: input.senderName ?? null },
-      input.mediaUrl ?? payloadMediaUrl ?? null,
-      input.payload,
+      input.mediaUrl ?? getPayloadMediaUrl(canonicalPayload) ?? null,
+      canonicalPayload,
       null
     );
   }

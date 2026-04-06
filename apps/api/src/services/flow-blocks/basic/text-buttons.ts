@@ -3,8 +3,7 @@ import {
   buildChoicePrompt,
   getDefaultNextNodeId,
   interpolate,
-  matchChoiceByMessage,
-  summarizeAsText
+  matchChoiceByMessage
 } from "../helpers.js";
 import type { FlowBlockModule } from "../types.js";
 
@@ -30,24 +29,12 @@ export const textButtonsBlock: FlowBlockModule = {
       };
     }
 
-    if (context.channel === "web") {
-      await context.sendReply({
-        type: "text",
-        text: summarizeAsText({
-          type: "text_buttons",
-          text,
-          footer,
-          buttons
-        })
-      });
-    } else {
-      await context.sendReply({
-        type: "text_buttons",
-        text,
-        footer,
-        buttons
-      });
-    }
+    await context.sendReply({
+      type: "text_buttons",
+      text,
+      footer,
+      buttons
+    });
 
     return {
       signal: "wait",

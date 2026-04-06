@@ -3,8 +3,7 @@ import {
   buildChoicePrompt,
   getDefaultNextNodeId,
   interpolate,
-  matchChoiceByMessage,
-  summarizeAsText
+  matchChoiceByMessage
 } from "../helpers.js";
 import type { FlowBlockModule } from "../types.js";
 
@@ -20,7 +19,7 @@ export const mediaButtonsBlock: FlowBlockModule = {
     const buttons = buildButtonOptions(context.node.data.buttons, context.vars);
 
     if (!buttons.length) {
-      if (url && context.channel !== "web") {
+      if (url) {
         await context.sendReply({
           type: "media",
           mediaType,
@@ -30,14 +29,7 @@ export const mediaButtonsBlock: FlowBlockModule = {
       } else if (caption.trim()) {
         await context.sendReply({
           type: "text",
-          text: url
-            ? summarizeAsText({
-                type: "media",
-                mediaType,
-                url,
-                caption
-              })
-            : caption
+          text: caption
         });
       }
 
@@ -52,7 +44,7 @@ export const mediaButtonsBlock: FlowBlockModule = {
       };
     }
 
-    if (context.channel !== "web" && url) {
+    if (url) {
       await context.sendReply({
         type: "media_buttons",
         mediaType,
@@ -60,31 +52,12 @@ export const mediaButtonsBlock: FlowBlockModule = {
         caption,
         buttons
       });
-    } else if (context.channel !== "web") {
+    } else {
       await context.sendReply({
         type: "text_buttons",
         text: caption || "Please choose an option.",
         footer: "",
         buttons
-      });
-    } else {
-      const fallbackText = url
-        ? summarizeAsText({
-            type: "media_buttons",
-            mediaType,
-            url,
-            caption,
-            buttons
-          })
-        : summarizeAsText({
-            type: "text_buttons",
-            text: caption || "Please choose an option.",
-            footer: "",
-            buttons
-          });
-      await context.sendReply({
-        type: "text",
-        text: fallbackText
       });
     }
 

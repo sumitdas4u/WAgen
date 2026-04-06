@@ -81,6 +81,44 @@ export interface UniversalMessage {
   created_at: string;
 }
 
+function resolveMediaUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  return url.startsWith("/") ? `${API_URL}${url}` : url;
+}
+
+function payloadTypeToUniversalType(payload: Record<string, unknown>): UniversalMessageType {
+  const type = payload.type as string | undefined;
+
+  switch (type) {
+    case "text":
+      return "text";
+    case "media": {
+      const mediaType = payload.mediaType as string | undefined;
+      if (mediaType === "image") return "image";
+      if (mediaType === "video") return "video";
+      if (mediaType === "audio") return "audio";
+      return "file";
+    }
+    case "text_buttons":
+    case "media_buttons":
+      return "buttons";
+    case "list":
+    case "product_list":
+      return "list";
+    case "template":
+    case "product":
+      return "template";
+    case "location_share":
+      return "location";
+    case "contact_share":
+      return "contact";
+    case "poll":
+      return "poll";
+    default:
+      return "unsupported";
+  }
+}
+
 // ─── Normalizer ───────────────────────────────────────────────────────────────
 
 /**
@@ -140,6 +178,8 @@ function contentFromPayload(
   mediaUrl: string | null
 ): UniversalMessage["content"] {
   const type = payload.type as string;
+  const payloadMediaUrl = resolveMediaUrl(payload.url as string | undefined);
+  const fallbackMediaUrl = resolveMediaUrl(mediaUrl);
 
   switch (type) {
     case "text":
@@ -147,7 +187,7 @@ function contentFromPayload(
 
     case "media":
       return {
-        media_url: (payload.url as string) ?? mediaUrl ?? undefined,
+        media_url: payloadMediaUrl ?? fallbackMediaUrl,
         text: payload.caption as string | undefined
       };
 
@@ -159,7 +199,7 @@ function contentFromPayload(
     case "media_buttons": {
       const buttons = (payload.buttons as { id: string; label: string }[]) ?? [];
       return {
-        media_url: payload.url as string,
+        media_url: payloadMediaUrl ?? fallbackMediaUrl,
         text: payload.caption as string | undefined,
         buttons
       };
@@ -181,7 +221,7 @@ function contentFromPayload(
       return {
         template: {
           name: payload.templateName as string,
-          image: payload.headerMediaUrl as string | undefined,
+          image: resolveMediaUrl(payload.headerMediaUrl as string | undefined),
           headerText: payload.headerText as string | undefined,
           text: (payload.previewText as string) || `📋 Template: ${payload.templateName as string}`,
           footerText: payload.footerText as string | undefined,
@@ -249,9 +289,7 @@ function contentFromText(
   mediaUrl: string | null,
   type: UniversalMessageType
 ): UniversalMessage["content"] {
-  const resolvedMediaUrl = mediaUrl
-    ? (mediaUrl.startsWith("/") ? `${API_URL}${mediaUrl}` : mediaUrl)
-    : undefined;
+  const resolvedMediaUrl = resolveMediaUrl(mediaUrl);
 
   switch (type) {
     case "image":
@@ -359,15 +397,15 @@ export function normalizeMessage(msg: ConversationMessage): UniversalMessage {
   const senderType: UniversalMessageSenderType =
     msg.direction === "inbound" ? "user" : isAi ? "ai" : "agent";
 
-  const storedType = msg.message_type ?? "text";
-  const type = detectTypeFromText(msg.message_text, msg.media_url, storedType);
-
+  let type: UniversalMessageType;
   let content: UniversalMessage["content"];
   if (msg.message_content && typeof msg.message_content === "object" && msg.message_content.type) {
-    // Structured payload available — use it (preferred)
-    content = contentFromPayload(msg.message_content as Record<string, unknown>, msg.media_url);
+    const payload = msg.message_content as Record<string, unknown>;
+    type = payloadTypeToUniversalType(payload);
+    content = contentFromPayload(payload, msg.media_url);
   } else {
-    // Text-only fallback (inbound or legacy)
+    const storedType = msg.message_type ?? "text";
+    type = detectTypeFromText(msg.message_text, msg.media_url, storedType);
     content = contentFromText(msg.message_text, msg.media_url, type);
   }
 

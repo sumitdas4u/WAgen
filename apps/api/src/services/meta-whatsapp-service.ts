@@ -8,7 +8,12 @@ import {
 } from "./flow-input-codec.js";
 import { processIncomingMessage } from "./message-router-service.js";
 import { getUserPlanEntitlements } from "./billing-service.js";
-import { summarizeFlowMessage, type FlowMessagePayload } from "./outbound-message-types.js";
+import {
+  adaptPayloadForChannel,
+  summarizeFlowMessage,
+  type FlowMessagePayload,
+  validateFlowMessagePayload
+} from "./outbound-message-types.js";
 
 interface MetaConnectionRow {
   id: string;
@@ -2312,7 +2317,9 @@ export async function sendMetaFlowMessageDirect(input: {
 
   const resolvedRow = await resolveMetaSendConnectionRow(input);
   const accessToken = decryptToken(resolvedRow.access_token_encrypted);
-  const summaryText = summarizeFlowMessage(input.payload);
+  const canonicalPayload = validateFlowMessagePayload(input.payload);
+  const deliveryPayload = adaptPayloadForChannel(canonicalPayload, "api_whatsapp");
+  const summaryText = summarizeFlowMessage(deliveryPayload);
   if (!summaryText) {
     throw new Error("Flow message is empty.");
   }
@@ -2320,7 +2327,7 @@ export async function sendMetaFlowMessageDirect(input: {
   const response = await graphPost<{ messages?: Array<{ id?: string }> }>(
     `/${resolvedRow.phone_number_id}/messages`,
     accessToken,
-    buildMetaFlowRequestBody(normalizedTo, input.payload)
+    buildMetaFlowRequestBody(normalizedTo, deliveryPayload)
   );
 
   return {

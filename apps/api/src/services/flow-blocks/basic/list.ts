@@ -4,8 +4,7 @@ import {
   flattenListChoices,
   getDefaultNextNodeId,
   interpolate,
-  matchChoiceByMessage,
-  summarizeAsText
+  matchChoiceByMessage
 } from "../helpers.js";
 import type { FlowBlockModule } from "../types.js";
 
@@ -34,24 +33,12 @@ export const listBlock: FlowBlockModule = {
       };
     }
 
-    if (context.channel === "web") {
-      await context.sendReply({
-        type: "text",
-        text: summarizeAsText({
-          type: "list",
-          text,
-          buttonLabel,
-          sections
-        })
-      });
-    } else {
-      await context.sendReply({
-        type: "list",
-        text,
-        buttonLabel,
-        sections
-      });
-    }
+    await context.sendReply({
+      type: "list",
+      text,
+      buttonLabel,
+      sections
+    });
 
     return {
       signal: "wait",
