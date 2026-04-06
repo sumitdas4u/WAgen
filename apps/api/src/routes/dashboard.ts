@@ -23,6 +23,7 @@ function buildDashboardFeatureFlags(): Record<string, boolean> {
     "dashboard.contacts": contactsEnabled,
     "dashboard.leads": contactsEnabled,
     "dashboard.billing": env.DASHBOARD_BILLING_CENTER,
+    "dashboard.sequence": true,
     "dashboard.agents": true,
     "dashboard.settings.web": true,
     "dashboard.settings.qr": true,

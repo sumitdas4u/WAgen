@@ -55,6 +55,19 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     requiresAuth: true
   },
   {
+    id: "sequence",
+    path: "sequence/*",
+    navTo: "/dashboard/sequence",
+    navLabel: "Sequence",
+    subtitle: "Behavior-based follow ups",
+    icon: "sequence",
+    section: "main",
+    lazyRoute: () => import("../modules/dashboard/sequence/route"),
+    featureFlag: "dashboard.sequence",
+    prefetchStrategy: "code+data",
+    requiresAuth: true
+  },
+  {
     id: "analytics",
     path: "analytics/*",
     navTo: "/dashboard/analytics",

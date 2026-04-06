@@ -13,6 +13,7 @@ const dashboardContactFieldsRoot = ["dashboard", "contact-fields"] as const;
 const dashboardContactSegmentsRoot = ["dashboard", "contact-segments"] as const;
 const dashboardAnalyticsRoot = ["dashboard", "analytics"] as const;
 const dashboardBroadcastRoot = ["dashboard", "broadcast"] as const;
+const dashboardSequenceRoot = ["dashboard", "sequence"] as const;
 const dashboardWebhooksRoot = ["dashboard", "webhooks"] as const;
 
 export const dashboardQueryKeys = {
@@ -54,6 +55,11 @@ export const dashboardQueryKeys = {
     [...dashboardBroadcastRoot, "report", campaignId, status, page] as const,
   broadcastRetargetPreview: (campaignId: string, status: string) =>
     [...dashboardBroadcastRoot, "retarget-preview", campaignId, status] as const,
+  sequenceRoot: dashboardSequenceRoot,
+  sequences: [...dashboardSequenceRoot, "list"] as const,
+  sequenceDetail: (sequenceId: string) => [...dashboardSequenceRoot, "detail", sequenceId] as const,
+  sequenceEnrollments: (sequenceId: string) => [...dashboardSequenceRoot, "enrollments", sequenceId] as const,
+  sequenceLogs: (enrollmentId: string) => [...dashboardSequenceRoot, "logs", enrollmentId] as const,
   webhooksRoot: dashboardWebhooksRoot,
   webhookIntegrations: [...dashboardWebhooksRoot, "integrations"] as const,
   webhookIntegration: (integrationId: string) => [...dashboardWebhooksRoot, "integration", integrationId] as const,

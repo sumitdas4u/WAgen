@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "broadcast" | "analytics" | "billing" | "knowledge" | "settings";
+type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "billing" | "knowledge" | "settings";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -59,6 +59,13 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "broadcast",
     title: "Broadcast",
     defaultModuleIds: ["broadcast"]
+  },
+  {
+    id: "sequence",
+    label: "Sequence",
+    icon: "sequence",
+    title: "Sequence",
+    defaultModuleIds: ["sequence"]
   },
   {
     id: "analytics",
@@ -126,6 +133,7 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   leads: { label: "Contacts", subtitle: "Customer Directory" },
   billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
   broadcast: { label: "Broadcast", subtitle: "Broadcast campaigns, audiences, and retargeting" },
+  sequence: { label: "Sequence", subtitle: "Behavior-based follow ups and remarketing" },
   analytics: { label: "Analytics", subtitle: "Message delivery and reporting" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
   "studio-flows": { label: "Flows", subtitle: "Build chatbot workflows visually" },
@@ -234,6 +242,8 @@ function DashboardShellLayout() {
             ? "/dashboard/leads"
             : item.id === "broadcast"
               ? "/dashboard/broadcast"
+            : item.id === "sequence"
+              ? "/dashboard/sequence"
             : item.id === "analytics"
               ? "/dashboard/analytics"
               : item.id === "billing"
@@ -250,6 +260,8 @@ function DashboardShellLayout() {
         ? "leads"
         : currentModuleId === "broadcast"
           ? "broadcast"
+          : currentModuleId === "sequence"
+            ? "sequence"
           : currentModuleId === "analytics"
             ? "analytics"
             : currentModuleId === "billing"

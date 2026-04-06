@@ -32,6 +32,7 @@ import { campaignRoutes } from "./routes/campaigns.js";
 import { broadcastRoutes } from "./routes/broadcasts.js";
 import { deliveryRoutes } from "./routes/delivery.js";
 import { genericWebhookRoutes } from "./routes/generic-webhooks.js";
+import { sequenceRoutes } from "./routes/sequences.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
 
@@ -177,6 +178,7 @@ export async function buildApp() {
   await broadcastRoutes(app);
   await deliveryRoutes(app);
   await genericWebhookRoutes(app);
+  await sequenceRoutes(app);
   await flowRoutes(app);
   await registerRealtimeRoutes(app);
   await registerWidgetChatGatewayRoutes(app);

@@ -37,6 +37,16 @@ export function DashboardIcon({ name }: { name: DashboardIconName }) {
           <path d="M13.8 6.6a4.5 4.5 0 0 1 0 6.8M15.6 4.7a7 7 0 0 1 0 10.6" />
         </svg>
       );
+    case "sequence":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
+          <circle cx="5.5" cy="5.5" r="1.6" />
+          <circle cx="14.5" cy="10" r="1.6" />
+          <circle cx="5.5" cy="14.5" r="1.6" />
+          <path d="M7.1 5.8h4.3a2.3 2.3 0 0 1 2.3 2.3V8.4" />
+          <path d="M13 11.1a2.3 2.3 0 0 1-1.8 1H7.3" />
+        </svg>
+      );
     case "billing":
       return (
         <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">

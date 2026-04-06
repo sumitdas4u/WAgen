@@ -73,6 +73,22 @@ export interface ContactUpsertResult {
   action: "created" | "updated" | "skipped";
 }
 
+async function emitSequenceContactEvent(result: ContactUpsertResult): Promise<void> {
+  if (result.action === "skipped") {
+    return;
+  }
+  try {
+    const { processSequenceEvent } = await import("./sequence-event-service.js");
+    await processSequenceEvent({
+      userId: result.contact.user_id,
+      event: result.action === "created" ? "contact_created" : "contact_updated",
+      contactId: result.contact.id
+    });
+  } catch (error) {
+    console.warn("[Sequence] contact event processing failed", error);
+  }
+}
+
 interface ContactImportWorkbookOptions {
   extraTags?: string[];
   phoneNumberFormat?: "with_country_code" | "without_country_code";
@@ -690,10 +706,12 @@ export async function createManualContact(userId: string, input: CreateManualCon
   });
 
   const fieldValuesMap = await loadFieldValues(pool, [result.contact.id]);
-  return {
+  const hydratedResult = {
     action: result.action,
     contact: { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] }
   };
+  await emitSequenceContactEvent(hydratedResult);
+  return hydratedResult;
 }
 
 export async function upsertWebhookContact(input: {
@@ -730,7 +748,9 @@ export async function upsertWebhookContact(input: {
   });
 
   const fieldValuesMap = await loadFieldValues(pool, [result.contact.id]);
-  return { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
+  const contact = { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
+  await emitSequenceContactEvent({ action: result.action, contact });
+  return contact;
 }
 
 export async function syncConversationContact(input: {
@@ -754,6 +774,7 @@ export async function syncConversationContact(input: {
     })
   );
 
+  await emitSequenceContactEvent(result);
   return result.contact;
 }
 
@@ -933,6 +954,11 @@ export async function importContactsWorkbook(
     } else {
       skipped += 1;
     }
+
+    await emitSequenceContactEvent({
+      action: result.action,
+      contact: result.contact
+    });
   }
 
   return { created, updated, skipped, errors };

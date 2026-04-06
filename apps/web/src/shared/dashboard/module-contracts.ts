@@ -13,6 +13,7 @@ export type DashboardIconName =
   | "leads"
   | "analytics"
   | "broadcast"
+  | "sequence"
   | "billing"
   | "flows"
   | "knowledge"

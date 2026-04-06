@@ -2443,6 +2443,192 @@ export async function uploadBroadcastMedia(
   });
 }
 
+export type SequenceStatus = "draft" | "published" | "paused";
+export type SequenceTriggerType = "create" | "update" | "both";
+export type SequenceDelayUnit = "minutes" | "hours" | "days";
+export type SequenceConditionType = "start" | "stop_success" | "stop_failure";
+export type SequenceConditionOperator = "eq" | "neq" | "gt" | "lt" | "contains";
+export type SequenceEnrollmentStatus = "active" | "completed" | "failed" | "stopped";
+
+export interface SequenceStep {
+  id: string;
+  sequence_id: string;
+  step_order: number;
+  delay_value: number;
+  delay_unit: SequenceDelayUnit;
+  message_template_id: string;
+  custom_delivery_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SequenceCondition {
+  id: string;
+  sequence_id: string;
+  condition_type: SequenceConditionType;
+  field: string;
+  operator: SequenceConditionOperator;
+  value: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Sequence {
+  id: string;
+  user_id: string;
+  name: string;
+  status: SequenceStatus;
+  base_type: "contact";
+  trigger_type: SequenceTriggerType;
+  channel: "whatsapp";
+  allow_once: boolean;
+  require_previous_delivery: boolean;
+  retry_enabled: boolean;
+  retry_window_hours: number;
+  allowed_days_json: string[];
+  time_mode: "any_time" | "window";
+  time_window_start: string | null;
+  time_window_end: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SequenceListItem extends Sequence {
+  steps_count: number;
+  enrolled_count: number;
+  completed_count: number;
+  failed_count: number;
+  active_count: number;
+}
+
+export interface SequenceDetail extends Sequence {
+  steps: SequenceStep[];
+  conditions: SequenceCondition[];
+  metrics: {
+    enrolled: number;
+    active: number;
+    completed: number;
+    failed: number;
+    stopped: number;
+  };
+}
+
+export interface SequenceEnrollment {
+  id: string;
+  sequence_id: string;
+  contact_id: string;
+  status: SequenceEnrollmentStatus;
+  current_step: number;
+  entered_at: string;
+  next_run_at: string;
+  last_executed_at: string | null;
+  last_message_id: string | null;
+  last_delivery_status: string | null;
+  retry_count: number;
+  retry_started_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SequenceLog {
+  id: string;
+  enrollment_id: string;
+  sequence_id: string;
+  step_id: string | null;
+  status: "pending" | "sent" | "failed" | "stopped" | "skipped" | "retrying";
+  response_id: string | null;
+  error_message: string | null;
+  meta_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface SequenceWriteStepInput {
+  id?: string;
+  stepOrder: number;
+  delayValue: number;
+  delayUnit: SequenceDelayUnit;
+  messageTemplateId: string;
+  customDelivery?: Record<string, unknown>;
+}
+
+export interface SequenceWriteConditionInput {
+  id?: string;
+  conditionType: SequenceConditionType;
+  field: string;
+  operator: SequenceConditionOperator;
+  value: string;
+}
+
+export interface SequenceWriteInput {
+  name: string;
+  baseType?: "contact";
+  triggerType: SequenceTriggerType;
+  channel?: "whatsapp";
+  allowOnce?: boolean;
+  requirePreviousDelivery?: boolean;
+  retryEnabled?: boolean;
+  retryWindowHours?: number;
+  allowedDays?: string[];
+  timeMode?: "any_time" | "window";
+  timeWindowStart?: string | null;
+  timeWindowEnd?: string | null;
+  steps?: SequenceWriteStepInput[];
+  conditions?: SequenceWriteConditionInput[];
+}
+
+export function fetchSequences(token: string) {
+  return apiRequest<{ sequences: SequenceListItem[] }>("/api/sequences", { token });
+}
+
+export function createSequence(token: string, payload: SequenceWriteInput) {
+  return apiRequest<{ sequence: SequenceDetail }>("/api/sequences", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchSequence(token: string, sequenceId: string) {
+  return apiRequest<{ sequence: SequenceDetail }>(`/api/sequences/${sequenceId}`, { token });
+}
+
+export function updateSequenceDraft(token: string, sequenceId: string, payload: Partial<SequenceWriteInput>) {
+  return apiRequest<{ sequence: SequenceDetail }>(`/api/sequences/${sequenceId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function publishSequence(token: string, sequenceId: string) {
+  return apiRequest<{ sequence: SequenceDetail }>(`/api/sequences/${sequenceId}/publish`, {
+    method: "POST",
+    token
+  });
+}
+
+export function pauseSequence(token: string, sequenceId: string) {
+  return apiRequest<{ sequence: SequenceDetail }>(`/api/sequences/${sequenceId}/pause`, {
+    method: "POST",
+    token
+  });
+}
+
+export function resumeSequence(token: string, sequenceId: string) {
+  return apiRequest<{ sequence: SequenceDetail }>(`/api/sequences/${sequenceId}/resume`, {
+    method: "POST",
+    token
+  });
+}
+
+export function fetchSequenceEnrollments(token: string, sequenceId: string) {
+  return apiRequest<{ enrollments: SequenceEnrollment[] }>(`/api/sequences/${sequenceId}/enrollments`, { token });
+}
+
+export function fetchSequenceLogs(token: string, enrollmentId: string) {
+  return apiRequest<{ logs: SequenceLog[] }>(`/api/enrollments/${enrollmentId}/logs`, { token });
+}
+
 export function fetchDeliveryOverview(token: string) {
   return apiRequest<{ overview: DeliveryOverview }>("/api/delivery/overview", { token });
 }

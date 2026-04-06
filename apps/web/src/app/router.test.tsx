@@ -9,6 +9,7 @@ import { appRoutes } from "./router";
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockApiRequest = vi.hoisted(() => vi.fn());
 const mockContactsPrefetchData = vi.hoisted(() => vi.fn());
+const mockSequencePrefetchData = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: mockUseAuth
@@ -38,6 +39,11 @@ vi.mock("../modules/dashboard/studio/knowledge/route", () => ({
 
 vi.mock("../modules/dashboard/studio/test/route", () => ({
   Component: () => <div>Test module</div>
+}));
+
+vi.mock("../modules/dashboard/sequence/route", () => ({
+  Component: () => <div>Sequence module</div>,
+  prefetchData: mockSequencePrefetchData
 }));
 
 function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): DashboardBootstrapResponse {
@@ -199,6 +205,15 @@ describe("dashboard router", () => {
 
     expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
     expect(screen.getByText("Billing module")).toBeInTheDocument();
+  });
+
+  it("renders the sequence module on /dashboard/sequence", async () => {
+    const { router } = renderRoute("/dashboard/sequence");
+
+    expect(await screen.findByText("Sequence module")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/dashboard/sequence");
+    });
   });
 
   it("normalizes legacy bootstrap payloads that omit dashboard summaries", async () => {
