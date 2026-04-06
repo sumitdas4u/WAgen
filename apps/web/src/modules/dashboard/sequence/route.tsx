@@ -556,16 +556,17 @@ function BuilderPage({ token }: { token: string }) {
     }
   }, [detail]);
 
+  const conditionFieldOptions = useMemo(
+    () => [...CONDITION_FIELD_OPTIONS, ...contactFieldDefinitions.map(mapContactFieldToConditionOption)],
+    [contactFieldDefinitions]
+  );
+
   if (!detail || !draft) return <div style={card}>Loading sequence...</div>;
 
   const setConditions = (conditionType: SequenceCondition["condition_type"], next: SequenceWriteConditionInput[]) =>
     setDraft((current) => current ? { ...current, conditions: [...(current.conditions ?? []).filter((item) => item.conditionType !== conditionType), ...next] } : current);
 
   const validationErrors = getSequenceValidationErrors(draft);
-  const conditionFieldOptions = useMemo(
-    () => [...CONDITION_FIELD_OPTIONS, ...contactFieldDefinitions.map(mapContactFieldToConditionOption)],
-    [contactFieldDefinitions]
-  );
   const saveDraft = async () => { await updateMutation.mutateAsync(draft); };
 
   return (
