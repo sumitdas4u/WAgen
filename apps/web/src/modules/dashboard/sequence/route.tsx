@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetSt
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRoutes } from "react-router-dom";
 import type {
+  ContactField,
   MessageTemplate,
   SequenceCondition,
   SequenceDetail,
@@ -10,7 +11,7 @@ import type {
   SequenceWriteInput,
   SequenceWriteStepInput
 } from "../../../lib/api";
-import { fetchTemplates } from "../../../lib/api";
+import { fetchTemplates, listContactFields } from "../../../lib/api";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
@@ -30,12 +31,13 @@ import {
 type ViewMode = "grid" | "list";
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 type SelectOption = { value: string; label: string; disabled?: boolean; hint?: string };
-type ConditionFieldType = "text" | "tag" | "phone" | "email";
+type ConditionFieldType = "text" | "tag" | "phone" | "email" | "number" | "date" | "switch";
 type ConditionFieldOption = {
   key: string;
   label: string;
   type: ConditionFieldType;
   operators: SequenceWriteConditionInput["operator"][];
+  source: "core" | "custom";
 };
 
 const DAYS: DayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -59,11 +61,14 @@ const CHANNEL_OPTIONS: SelectOption[] = [
   { value: "email", label: "Email", disabled: true, hint: "Coming soon" }
 ];
 const CONDITION_FIELD_OPTIONS: ConditionFieldOption[] = [
-  { key: "tags", label: "Tag", type: "tag", operators: ["contains", "eq", "neq"] },
-  { key: "name", label: "Name", type: "text", operators: ["contains", "eq", "neq"] },
-  { key: "phone", label: "Phone", type: "phone", operators: ["contains", "eq", "neq"] },
-  { key: "email", label: "Email", type: "email", operators: ["contains", "eq", "neq"] },
-  { key: "city", label: "City", type: "text", operators: ["contains", "eq", "neq"] }
+  { key: "tags", label: "Tag", type: "tag", operators: ["contains", "eq", "neq"], source: "core" },
+  { key: "name", label: "Name", type: "text", operators: ["contains", "eq", "neq"], source: "core" },
+  { key: "phone", label: "Phone", type: "phone", operators: ["contains", "eq", "neq"], source: "core" },
+  { key: "email", label: "Email", type: "email", operators: ["contains", "eq", "neq"], source: "core" },
+  { key: "contact_type", label: "Contact Type", type: "text", operators: ["contains", "eq", "neq"], source: "core" },
+  { key: "source_type", label: "Source Type", type: "text", operators: ["contains", "eq", "neq"], source: "core" },
+  { key: "created_at", label: "Created At", type: "date", operators: ["eq", "gt", "lt"], source: "core" },
+  { key: "updated_at", label: "Updated At", type: "date", operators: ["eq", "gt", "lt"], source: "core" }
 ];
 
 const shell = { display: "flex", flexDirection: "column" as const, gap: 18 };
@@ -281,17 +286,50 @@ function toDraft(detail: SequenceDetail): SequenceWriteInput {
   };
 }
 
-function getConditionFieldMeta(field: string) {
-  return CONDITION_FIELD_OPTIONS.find((option) => option.key === field) ?? null;
+function getConditionOperatorsForFieldType(type: ConditionFieldType): SequenceWriteConditionInput["operator"][] {
+  switch (type) {
+    case "number":
+      return ["eq", "neq", "gt", "lt"];
+    case "date":
+      return ["eq", "gt", "lt"];
+    case "switch":
+      return ["eq", "neq"];
+    default:
+      return ["contains", "eq", "neq"];
+  }
 }
 
-function getConditionFieldKey(condition: SequenceWriteConditionInput) {
-  return getConditionFieldMeta(condition.field)?.key ?? "custom_field";
+function mapContactFieldToConditionOption(field: ContactField): ConditionFieldOption {
+  const typeMap: Record<ContactField["field_type"], ConditionFieldType> = {
+    TEXT: "text",
+    MULTI_TEXT: "text",
+    NUMBER: "number",
+    SWITCH: "switch",
+    DATE: "date"
+  };
+
+  const type = typeMap[field.field_type] ?? "text";
+
+  return {
+    key: `custom:${field.name}`,
+    label: field.label,
+    type,
+    operators: getConditionOperatorsForFieldType(type),
+    source: "custom"
+  };
 }
 
-function getOperatorsForField(fieldKey: string): SequenceWriteConditionInput["operator"][] {
+function getConditionFieldMeta(field: string, options: ConditionFieldOption[]) {
+  return options.find((option) => option.key === field) ?? null;
+}
+
+function getConditionFieldKey(condition: SequenceWriteConditionInput, options: ConditionFieldOption[]) {
+  return getConditionFieldMeta(condition.field, options)?.key ?? "custom_field";
+}
+
+function getOperatorsForField(fieldKey: string, options: ConditionFieldOption[]): SequenceWriteConditionInput["operator"][] {
   if (fieldKey === "custom_field") return ["contains", "eq", "neq", "gt", "lt"];
-  return getConditionFieldMeta(fieldKey)?.operators ?? ["contains", "eq", "neq"];
+  return getConditionFieldMeta(fieldKey, options)?.operators ?? ["contains", "eq", "neq"];
 }
 
 function getOperatorLabel(operator: SequenceWriteConditionInput["operator"]) {
@@ -305,9 +343,9 @@ function getOperatorLabel(operator: SequenceWriteConditionInput["operator"]) {
   return labels[operator];
 }
 
-function getConditionPreview(prefix: string, condition: SequenceWriteConditionInput) {
-  const fieldKey = getConditionFieldKey(condition);
-  const fieldLabel = fieldKey === "custom_field" ? condition.field || "custom field" : getConditionFieldMeta(condition.field)?.label ?? condition.field;
+function getConditionPreview(prefix: string, condition: SequenceWriteConditionInput, options: ConditionFieldOption[]) {
+  const fieldKey = getConditionFieldKey(condition, options);
+  const fieldLabel = fieldKey === "custom_field" ? condition.field || "custom field" : getConditionFieldMeta(condition.field, options)?.label ?? condition.field;
   const value = condition.value || "a value";
   return `${prefix} when ${fieldLabel} ${getOperatorLabel(condition.operator)} ${value}`.replace(/\s+/g, " ");
 }
@@ -503,6 +541,11 @@ function BuilderPage({ token }: { token: string }) {
     queryFn: () => fetchTemplates(token).then((response) => response.templates.filter((item) => item.status === "APPROVED")),
     enabled: Boolean(token)
   }).data ?? [];
+  const contactFieldDefinitions = useQuery({
+    queryKey: dashboardQueryKeys.contactFields,
+    queryFn: () => listContactFields(token).then((response) => response.fields.filter((field) => field.is_active)),
+    enabled: Boolean(token)
+  }).data ?? [];
   const [draft, setDraft] = useState<SequenceWriteInput | null>(null);
   const selectedEnrollment = enrollments[0] ?? null;
   const logs = useSequenceLogsQuery(token, selectedEnrollment?.id ?? "").data ?? [];
@@ -519,6 +562,10 @@ function BuilderPage({ token }: { token: string }) {
     setDraft((current) => current ? { ...current, conditions: [...(current.conditions ?? []).filter((item) => item.conditionType !== conditionType), ...next] } : current);
 
   const validationErrors = getSequenceValidationErrors(draft);
+  const conditionFieldOptions = useMemo(
+    () => [...CONDITION_FIELD_OPTIONS, ...contactFieldDefinitions.map(mapContactFieldToConditionOption)],
+    [contactFieldDefinitions]
+  );
   const saveDraft = async () => { await updateMutation.mutateAsync(draft); };
 
   return (
@@ -570,7 +617,7 @@ function BuilderPage({ token }: { token: string }) {
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.55fr) minmax(320px, 0.85fr)", gap: 18, alignItems: "start" }}>
         <div style={{ display: "grid", gap: 18 }}>
           <BasicsEditor draft={draft} setDraft={setDraft} />
-          <TriggerEditor draft={draft} setDraft={setDraft} setConditions={setConditions} />
+          <TriggerEditor draft={draft} setDraft={setDraft} setConditions={setConditions} fieldOptions={conditionFieldOptions} />
           <DeliveryEditor draft={draft} setDraft={setDraft} />
           <StepsEditor draft={draft} setDraft={setDraft} templates={templates} />
         </div>
@@ -602,11 +649,13 @@ function BasicsEditor({ draft, setDraft }: { draft: SequenceWriteInput; setDraft
 function TriggerEditor({
   draft,
   setDraft,
-  setConditions
+  setConditions,
+  fieldOptions
 }: {
   draft: SequenceWriteInput;
   setDraft: Dispatch<SetStateAction<SequenceWriteInput | null>>;
   setConditions: (type: SequenceCondition["condition_type"], next: SequenceWriteConditionInput[]) => void;
+  fieldOptions: ConditionFieldOption[];
 }) {
   const start = (draft.conditions ?? []).filter((item) => item.conditionType === "start");
   const success = (draft.conditions ?? []).filter((item) => item.conditionType === "stop_success");
@@ -648,6 +697,7 @@ function TriggerEditor({
           emptyText="No start rules yet. Add a rule to control who enters this sequence."
           previewPrefix="Start"
           conditions={start}
+          fieldOptions={fieldOptions}
           onChange={(next) => setConditions("start", next.map((item) => ({ ...item, conditionType: "start" })))}
         />
         <ConditionGroupCard
@@ -655,6 +705,7 @@ function TriggerEditor({
           emptyText="No stop-on-success rules yet. Add a rule for conditions that should end the sequence after a positive outcome."
           previewPrefix="Stop"
           conditions={success}
+          fieldOptions={fieldOptions}
           onChange={(next) => setConditions("stop_success", next.map((item) => ({ ...item, conditionType: "stop_success" })))}
         />
         <ConditionGroupCard
@@ -662,6 +713,7 @@ function TriggerEditor({
           emptyText="No stop-on-failure rules yet. Add a rule for conditions that should stop the sequence after an unsuccessful outcome."
           previewPrefix="Stop"
           conditions={failure}
+          fieldOptions={fieldOptions}
           onChange={(next) => setConditions("stop_failure", next.map((item) => ({ ...item, conditionType: "stop_failure" })))}
         />
       </div>
@@ -674,15 +726,18 @@ function ConditionGroupCard({
   emptyText,
   previewPrefix,
   conditions,
+  fieldOptions,
   onChange
 }: {
   title: string;
   emptyText: string;
   previewPrefix: string;
   conditions: SequenceWriteConditionInput[];
+  fieldOptions: ConditionFieldOption[];
   onChange: (next: SequenceWriteConditionInput[]) => void;
 }) {
-  const addCondition = () => onChange([...conditions, { conditionType: "start", field: "tags", operator: "contains", value: "" }]);
+  const defaultField = fieldOptions[0];
+  const addCondition = () => onChange([...conditions, { conditionType: "start", field: defaultField?.key ?? "tags", operator: defaultField?.operators[0] ?? "contains", value: "" }]);
 
   return (
     <div style={{ ...subtleSurface, padding: 16 }}>
@@ -700,6 +755,7 @@ function ConditionGroupCard({
               key={`${title}-${index}`}
               condition={condition}
               previewPrefix={previewPrefix}
+              fieldOptions={fieldOptions}
               onChange={(nextCondition) => onChange(conditions.map((item, itemIndex) => itemIndex === index ? nextCondition : item))}
               onRemove={() => onChange(conditions.filter((_, itemIndex) => itemIndex !== index))}
             />
@@ -713,17 +769,19 @@ function ConditionGroupCard({
 function ConditionRow({
   condition,
   previewPrefix,
+  fieldOptions,
   onChange,
   onRemove
 }: {
   condition: SequenceWriteConditionInput;
   previewPrefix: string;
+  fieldOptions: ConditionFieldOption[];
   onChange: (next: SequenceWriteConditionInput) => void;
   onRemove: () => void;
 }) {
-  const fieldKey = getConditionFieldKey(condition);
-  const operators = getOperatorsForField(fieldKey);
-  const fieldMeta = fieldKey === "custom_field" ? null : getConditionFieldMeta(condition.field);
+  const fieldKey = getConditionFieldKey(condition, fieldOptions);
+  const operators = getOperatorsForField(fieldKey, fieldOptions);
+  const fieldMeta = fieldKey === "custom_field" ? null : getConditionFieldMeta(condition.field, fieldOptions);
 
   useEffect(() => {
     if (!operators.includes(condition.operator)) {
@@ -739,7 +797,7 @@ function ConditionRow({
           value={fieldKey}
           onChange={(event) => {
             const nextFieldKey = event.target.value;
-            const nextOperators = getOperatorsForField(nextFieldKey);
+            const nextOperators = getOperatorsForField(nextFieldKey, fieldOptions);
             onChange({
               ...condition,
               field: nextFieldKey === "custom_field" ? "" : nextFieldKey,
@@ -747,7 +805,14 @@ function ConditionRow({
             });
           }}
         >
-          {CONDITION_FIELD_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+          <optgroup label="Contact fields">
+            {fieldOptions.filter((option) => option.source === "core").map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+          </optgroup>
+          {fieldOptions.some((option) => option.source === "custom") ? (
+            <optgroup label="Custom fields">
+              {fieldOptions.filter((option) => option.source === "custom").map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </optgroup>
+          ) : null}
           <option value="custom_field">Custom field</option>
         </select>
         <select style={input} value={condition.operator} onChange={(event) => onChange({ ...condition, operator: event.target.value as SequenceWriteConditionInput["operator"] })}>
@@ -765,7 +830,7 @@ function ConditionRow({
         <button type="button" style={ghostBtn} onClick={onRemove}>Remove</button>
       </div>
       <div style={{ marginTop: 10, color: "#0f766e", fontSize: "0.9rem", fontWeight: 600 }}>
-        {getConditionPreview(previewPrefix, condition)}
+        {getConditionPreview(previewPrefix, condition, fieldOptions)}
       </div>
     </div>
   );
