@@ -1,11 +1,10 @@
-import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRoutes } from "react-router-dom";
 import type {
   MessageTemplate,
   SequenceCondition,
   SequenceDetail,
-  SequenceEnrollment,
   SequenceListItem,
   SequenceWriteConditionInput,
   SequenceWriteInput,
@@ -318,12 +317,16 @@ function BuilderPage({ token }: { token: string }) {
     enabled: Boolean(token)
   }).data ?? [];
   const [draft, setDraft] = useState<SequenceWriteInput | null>(null);
-
-  if (detail && !draft) setDraft(toDraft(detail));
-  if (!detail || !draft) return <div style={card}>Loading sequence...</div>;
-
   const selectedEnrollment = enrollments[0] ?? null;
   const logs = useSequenceLogsQuery(token, selectedEnrollment?.id ?? "").data ?? [];
+
+  useEffect(() => {
+    if (detail) {
+      setDraft((current) => current ?? toDraft(detail));
+    }
+  }, [detail]);
+
+  if (!detail || !draft) return <div style={card}>Loading sequence...</div>;
 
   const setConditions = (conditionType: SequenceCondition["condition_type"], next: SequenceWriteConditionInput[]) =>
     setDraft((current) => current ? { ...current, conditions: [...(current.conditions ?? []).filter((item) => item.conditionType !== conditionType), ...next] } : current);
