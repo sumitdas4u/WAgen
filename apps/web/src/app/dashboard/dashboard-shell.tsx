@@ -298,6 +298,10 @@ function DashboardShellLayout() {
     user?.name ||
     "WAgen AI";
 
+  useEffect(() => {
+    document.title = `WAgen - ${companyLabel}`;
+  }, [companyLabel]);
+
   const websiteChannelEnabled = Boolean(bootstrap?.channelSummary?.website?.enabled);
   const qrChannelStatus = bootstrap?.channelSummary?.whatsapp?.status ?? "not_connected";
   const qrChannelConnected = qrChannelStatus === "connected";

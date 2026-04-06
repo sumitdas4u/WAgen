@@ -29,8 +29,43 @@ import {
 
 type ViewMode = "grid" | "list";
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+type SelectOption = { value: string; label: string; disabled?: boolean; hint?: string };
+type ConditionFieldType = "text" | "tag" | "phone" | "email";
+type ConditionFieldOption = {
+  key: string;
+  label: string;
+  type: ConditionFieldType;
+  operators: SequenceWriteConditionInput["operator"][];
+};
 
 const DAYS: DayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAY_LABELS: Record<DayKey, string> = {
+  mon: "Mon",
+  tue: "Tue",
+  wed: "Wed",
+  thu: "Thu",
+  fri: "Fri",
+  sat: "Sat",
+  sun: "Sun"
+};
+const BASE_OPTIONS: SelectOption[] = [
+  { value: "contact", label: "Contacts" },
+  { value: "deals", label: "Deals", disabled: true, hint: "Coming soon" },
+  { value: "orders", label: "Orders", disabled: true, hint: "Coming soon" }
+];
+const CHANNEL_OPTIONS: SelectOption[] = [
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "web", label: "Web Chat", disabled: true, hint: "Coming soon" },
+  { value: "email", label: "Email", disabled: true, hint: "Coming soon" }
+];
+const CONDITION_FIELD_OPTIONS: ConditionFieldOption[] = [
+  { key: "tags", label: "Tag", type: "tag", operators: ["contains", "eq", "neq"] },
+  { key: "name", label: "Name", type: "text", operators: ["contains", "eq", "neq"] },
+  { key: "phone", label: "Phone", type: "phone", operators: ["contains", "eq", "neq"] },
+  { key: "email", label: "Email", type: "email", operators: ["contains", "eq", "neq"] },
+  { key: "city", label: "City", type: "text", operators: ["contains", "eq", "neq"] }
+];
+
 const shell = { display: "flex", flexDirection: "column" as const, gap: 18 };
 const card = {
   background: "#fff",
@@ -47,6 +82,11 @@ const input = {
   fontSize: "0.95rem",
   color: "#0f172a",
   background: "#fff"
+};
+const subtleSurface = {
+  border: "1px solid #e2e8f0",
+  borderRadius: 18,
+  background: "#f8fafc"
 };
 const ghostBtn = {
   border: "1px solid #d7dee8",
@@ -71,11 +111,55 @@ function SectionHeader({ title, subtitle, right }: { title: string; subtitle?: s
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
       <div>
-        <h2 style={{ margin: 0, fontSize: "1.45rem", color: "#0f172a" }}>{title}</h2>
-        {subtitle ? <p style={{ margin: "6px 0 0", color: "#64748b" }}>{subtitle}</p> : null}
+        <h2 style={{ margin: 0, fontSize: "1.35rem", color: "#0f172a" }}>{title}</h2>
+        {subtitle ? <p style={{ margin: "6px 0 0", color: "#64748b", lineHeight: 1.6 }}>{subtitle}</p> : null}
       </div>
       {right}
     </div>
+  );
+}
+
+function FieldLabel({ label, helper, children }: { label: string; helper?: string; children: ReactNode }) {
+  return (
+    <label style={{ display: "grid", gap: 8, fontWeight: 700, color: "#0f172a" }}>
+      <span>{label}</span>
+      {children}
+      {helper ? <span style={{ fontSize: "0.85rem", fontWeight: 500, color: "#64748b" }}>{helper}</span> : null}
+    </label>
+  );
+}
+
+function StageHeader({ index, title, subtitle }: { index: number; title: string; subtitle: string }) {
+  return (
+    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+      <div style={{ minWidth: 34, height: 34, borderRadius: 999, background: "#ccfbf1", color: "#115e59", display: "grid", placeItems: "center", fontWeight: 800 }}>
+        {index}
+      </div>
+      <div>
+        <div style={{ fontWeight: 800, fontSize: "1rem", color: "#0f172a" }}>{title}</div>
+        <div style={{ marginTop: 4, color: "#64748b", lineHeight: 1.6 }}>{subtitle}</div>
+      </div>
+    </div>
+  );
+}
+
+function SelectField({
+  value,
+  options,
+  onChange
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select style={input} value={value} onChange={(event) => onChange(event.target.value)}>
+      {options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled}>
+          {option.hint ? `${option.label} (${option.hint})` : option.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -90,16 +174,51 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
+function formatTime(value: string | null | undefined) {
+  if (!value) return "";
+  const [hours, minutes] = value.split(":");
+  const date = new Date();
+  date.setHours(Number(hours), Number(minutes ?? "0"), 0, 0);
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function formatDays(days: string[] | undefined) {
+  if (!days || days.length === 0 || days.length === DAYS.length) return "All days";
+  return days.map((day) => DAY_LABELS[day as DayKey] ?? day).join(", ");
+}
+
+function formatDeliverySummary(draft: SequenceWriteInput) {
+  const daySummary = formatDays(draft.allowedDays);
+  if (draft.timeMode !== "window") {
+    return `Messages can go out ${daySummary.toLowerCase()}, any time.`;
+  }
+  const start = formatTime(draft.timeWindowStart);
+  const end = formatTime(draft.timeWindowEnd);
+  return `Messages can go out ${daySummary.toLowerCase()} between ${start || "--"} and ${end || "--"}.`;
+}
+
 function StatusPill({ status }: { status: string }) {
   const tones: Record<string, { bg: string; bd: string; fg: string }> = {
     published: { bg: "#ecfdf5", bd: "#bbf7d0", fg: "#166534" },
     paused: { bg: "#fff7ed", bd: "#fed7aa", fg: "#c2410c" },
-    draft: { bg: "#eff6ff", bd: "#bfdbfe", fg: "#1d4ed8" }
+    draft: { bg: "#eff6ff", bd: "#bfdbfe", fg: "#1d4ed8" },
+    sent: { bg: "#ecfdf5", bd: "#bbf7d0", fg: "#166534" },
+    failed: { bg: "#fff1f2", bd: "#fecdd3", fg: "#be123c" },
+    stopped: { bg: "#f8fafc", bd: "#cbd5e1", fg: "#334155" },
+    retrying: { bg: "#fff7ed", bd: "#fed7aa", fg: "#c2410c" }
   };
   const tone = tones[status] ?? { bg: "#f8fafc", bd: "#dbe4f0", fg: "#334155" };
   return (
     <span style={{ display: "inline-flex", padding: "6px 10px", borderRadius: 999, background: tone.bg, border: `1px solid ${tone.bd}`, color: tone.fg, fontSize: "0.82rem", fontWeight: 700, textTransform: "capitalize" }}>
-      {status}
+      {status.replaceAll("_", " ")}
+    </span>
+  );
+}
+
+function Chip({ children }: { children: ReactNode }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", padding: "7px 11px", borderRadius: 999, background: "#f8fafc", border: "1px solid #dbe4f0", color: "#334155", fontSize: "0.82rem", fontWeight: 700 }}>
+      {children}
     </span>
   );
 }
@@ -113,12 +232,12 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function buildDefaultPayload(name: string): SequenceWriteInput {
+function buildDefaultPayload(name: string, baseType = "contact", channel = "whatsapp"): SequenceWriteInput {
   return {
     name,
     triggerType: "create",
-    channel: "whatsapp",
-    baseType: "contact",
+    channel: channel as "whatsapp",
+    baseType: baseType as "contact",
     allowOnce: true,
     requirePreviousDelivery: false,
     retryEnabled: false,
@@ -160,6 +279,52 @@ function toDraft(detail: SequenceDetail): SequenceWriteInput {
       value: condition.value
     }))
   };
+}
+
+function getConditionFieldMeta(field: string) {
+  return CONDITION_FIELD_OPTIONS.find((option) => option.key === field) ?? null;
+}
+
+function getConditionFieldKey(condition: SequenceWriteConditionInput) {
+  return getConditionFieldMeta(condition.field)?.key ?? "custom_field";
+}
+
+function getOperatorsForField(fieldKey: string): SequenceWriteConditionInput["operator"][] {
+  if (fieldKey === "custom_field") return ["contains", "eq", "neq", "gt", "lt"];
+  return getConditionFieldMeta(fieldKey)?.operators ?? ["contains", "eq", "neq"];
+}
+
+function getOperatorLabel(operator: SequenceWriteConditionInput["operator"]) {
+  const labels: Record<SequenceWriteConditionInput["operator"], string> = {
+    contains: "contains",
+    eq: "equals",
+    neq: "does not equal",
+    gt: "is greater than",
+    lt: "is less than"
+  };
+  return labels[operator];
+}
+
+function getConditionPreview(prefix: string, condition: SequenceWriteConditionInput) {
+  const fieldKey = getConditionFieldKey(condition);
+  const fieldLabel = fieldKey === "custom_field" ? condition.field || "custom field" : getConditionFieldMeta(condition.field)?.label ?? condition.field;
+  const value = condition.value || "a value";
+  return `${prefix} when ${fieldLabel} ${getOperatorLabel(condition.operator)} ${value}`.replace(/\s+/g, " ");
+}
+
+function getStepTitle(step: SequenceWriteStepInput, index: number) {
+  const title = typeof step.customDelivery?.stepTitle === "string" ? step.customDelivery.stepTitle : "";
+  return title || `Untitled Step ${index + 1}`;
+}
+
+function getSequenceValidationErrors(draft: SequenceWriteInput) {
+  const errors: string[] = [];
+  if (!draft.name.trim()) errors.push("Sequence name is required.");
+  if (!draft.steps || draft.steps.length === 0) errors.push("Add at least one step before publishing.");
+  if (draft.timeMode === "window" && (!draft.timeWindowStart || !draft.timeWindowEnd)) errors.push("Select both a start and end time for the delivery window.");
+  if ((draft.conditions ?? []).some((condition) => !condition.field.trim() || !condition.value.trim())) errors.push("Complete or remove any unfinished condition rows.");
+  if ((draft.steps ?? []).some((step) => !step.messageTemplateId)) errors.push("Choose a template for every step.");
+  return errors;
 }
 
 function SequenceListPage({ token }: { token: string }) {
@@ -262,40 +427,62 @@ function Mini({ label, value }: { label: string; value: string }) {
 function SequenceCreatePage({ token }: { token: string }) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  const [baseType, setBaseType] = useState("contact");
+  const [channel, setChannel] = useState("whatsapp");
   const createMutation = useCreateSequenceMutation(token);
+  const canContinue = Boolean(name.trim() && baseType && channel);
+
   return (
     <section style={shell}>
       <div style={{ ...card, display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.9fr)", gap: 24 }}>
-        <div style={{ display: "grid", gap: 18 }}>
-          <SectionHeader title="Create Sequence" subtitle="Set up the sequence basics before adding conditions and steps." />
-          <label style={{ display: "grid", gap: 8, fontWeight: 600 }}>Sequence Name *<input style={input} value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter a sequence name" /></label>
-          <label style={{ display: "grid", gap: 8, fontWeight: 600 }}>Sequence Based on *<input style={input} value="Contacts" readOnly /></label>
-          <label style={{ display: "grid", gap: 8, fontWeight: 600 }}>Send from *<input style={input} value="WhatsApp" readOnly /></label>
-          <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "grid", gap: 22 }}>
+          <SectionHeader title="Create Sequence" subtitle="Start with the basics, then define who enters, when messages send, and what each step should do." />
+          <div style={{ display: "grid", gap: 18 }}>
+            <StageHeader index={1} title="Basics" subtitle="Choose the audience source and sending channel for this sequence." />
+            <FieldLabel label="Sequence Name *">
+              <input style={input} value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter a sequence name" />
+            </FieldLabel>
+            <FieldLabel label="Sequence Based on *" helper="Contacts are supported in MVP. More sources will appear here later.">
+              <SelectField value={baseType} options={BASE_OPTIONS} onChange={setBaseType} />
+            </FieldLabel>
+            <FieldLabel label="Send from *" helper="WhatsApp template sequences are supported in MVP.">
+              <SelectField value={channel} options={CHANNEL_OPTIONS} onChange={setChannel} />
+            </FieldLabel>
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button type="button" style={ghostBtn} onClick={() => navigate("/dashboard/sequence")}>Back</button>
             <button
               type="button"
-              style={primaryBtn}
-              disabled={!name.trim() || createMutation.isPending}
+              style={{ ...primaryBtn, opacity: canContinue ? 1 : 0.55 }}
+              disabled={!canContinue || createMutation.isPending}
               onClick={async () => {
-                const sequence = await createMutation.mutateAsync(buildDefaultPayload(name.trim()));
+                const sequence = await createMutation.mutateAsync(buildDefaultPayload(name.trim(), baseType, channel));
                 navigate(`/dashboard/sequence/${sequence.id}`);
               }}
             >
-              {createMutation.isPending ? "Creating..." : "Next"}
+              {createMutation.isPending ? "Creating..." : "Continue to builder"}
             </button>
           </div>
         </div>
-        <div style={{ ...card, background: "linear-gradient(180deg, #ecfeff 0%, #f8fafc 100%)", borderColor: "#bae6fd" }}>
-          <h3 style={{ margin: 0, color: "#0f172a" }}>What is Sequence</h3>
-          <p style={{ marginTop: 12, color: "#475569", lineHeight: 1.7 }}>Sequence allows you to send multiple WhatsApp templates to your customers based on certain triggers and intervals.</p>
-          <ol style={{ margin: "16px 0 0", paddingLeft: 18, color: "#0f172a", lineHeight: 1.8 }}>
-            <li>Create a sequence</li>
-            <li>Set the condition triggers</li>
-            <li>Add steps - message templates</li>
-            <li>Add delays</li>
-            <li>Execute</li>
-          </ol>
+        <div style={{ ...card, background: "linear-gradient(180deg, #ecfeff 0%, #f8fafc 100%)", borderColor: "#bae6fd", display: "grid", gap: 16 }}>
+          <h3 style={{ margin: 0, color: "#0f172a", fontSize: "1.15rem" }}>How Sequence works</h3>
+          <p style={{ margin: 0, color: "#475569", lineHeight: 1.7 }}>
+            Build a guided WhatsApp follow-up journey that reacts to customer activity and sends approved templates on your schedule.
+          </p>
+          <div style={{ display: "grid", gap: 10 }}>
+            {[
+              "Pick the source and send channel",
+              "Decide who should enter the sequence",
+              "Choose when messages can go out",
+              "Add step delays and templates",
+              "Publish when the sequence is ready"
+            ].map((item, index) => (
+              <div key={item} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ width: 26, height: 26, borderRadius: 999, background: "#ccfbf1", color: "#115e59", display: "grid", placeItems: "center", fontWeight: 800 }}>{index + 1}</div>
+                <span style={{ color: "#0f172a", fontWeight: 600 }}>{item}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
@@ -331,18 +518,21 @@ function BuilderPage({ token }: { token: string }) {
   const setConditions = (conditionType: SequenceCondition["condition_type"], next: SequenceWriteConditionInput[]) =>
     setDraft((current) => current ? { ...current, conditions: [...(current.conditions ?? []).filter((item) => item.conditionType !== conditionType), ...next] } : current);
 
+  const validationErrors = getSequenceValidationErrors(draft);
   const saveDraft = async () => { await updateMutation.mutateAsync(draft); };
 
   return (
     <section style={shell}>
-      <div style={card}>
+      <div style={{ ...card, position: "sticky", top: 12, zIndex: 2 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ display: "grid", gap: 8, minWidth: 320 }}>
-            <input style={{ ...input, border: "none", padding: 0, fontSize: "1.35rem", fontWeight: 800 }} value={draft.name} onChange={(event) => setDraft((current) => current ? { ...current, name: event.target.value } : current)} />
+          <div style={{ display: "grid", gap: 10, minWidth: 320 }}>
+            <input style={{ ...input, border: "none", padding: 0, fontSize: "1.45rem", fontWeight: 800 }} value={draft.name} onChange={(event) => setDraft((current) => current ? { ...current, name: event.target.value } : current)} />
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <StatusPill status={detail.status} />
-              <span style={{ color: "#64748b" }}>Trigger: {draft.triggerType}</span>
-              <span style={{ color: "#64748b" }}>Days: {(draft.allowedDays ?? []).join(", ") || "all"}</span>
+              <Chip>Based on Contacts</Chip>
+              <Chip>Send via WhatsApp</Chip>
+              <Chip>Trigger: {draft.triggerType}</Chip>
+              <Chip>{formatDays(draft.allowedDays)}</Chip>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -350,58 +540,62 @@ function BuilderPage({ token }: { token: string }) {
             <button type="button" style={ghostBtn} onClick={() => void saveDraft()}>{updateMutation.isPending ? "Saving..." : "Save"}</button>
             {detail.status === "published" ? <button type="button" style={ghostBtn} onClick={() => void pauseMutation.mutateAsync()}>Pause</button> : null}
             {detail.status === "paused" ? <button type="button" style={ghostBtn} onClick={() => void resumeMutation.mutateAsync()}>Resume</button> : null}
-            {detail.status !== "published" ? <button type="button" style={primaryBtn} onClick={async () => { await saveDraft(); await publishMutation.mutateAsync(); navigate("/dashboard/sequence"); }}>Publish & Close</button> : null}
+            {detail.status !== "published" ? (
+              <button
+                type="button"
+                style={{ ...primaryBtn, opacity: validationErrors.length === 0 ? 1 : 0.72 }}
+                onClick={async () => {
+                  if (validationErrors.length > 0) return;
+                  await saveDraft();
+                  await publishMutation.mutateAsync();
+                  navigate("/dashboard/sequence");
+                }}
+              >
+                Publish & Close
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.6fr) minmax(320px, 0.8fr)", gap: 18 }}>
+
+      {validationErrors.length > 0 ? (
+        <div style={{ ...card, borderColor: "#fed7aa", background: "#fffaf0" }}>
+          <SectionHeader title="Before you publish" subtitle="A few details still need attention." />
+          <div style={{ marginTop: 14, display: "grid", gap: 8, color: "#9a3412" }}>
+            {validationErrors.map((error) => <div key={error}>• {error}</div>)}
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.55fr) minmax(320px, 0.85fr)", gap: 18, alignItems: "start" }}>
         <div style={{ display: "grid", gap: 18 }}>
+          <BasicsEditor draft={draft} setDraft={setDraft} />
           <TriggerEditor draft={draft} setDraft={setDraft} setConditions={setConditions} />
           <DeliveryEditor draft={draft} setDraft={setDraft} />
           <StepsEditor draft={draft} setDraft={setDraft} templates={templates} />
         </div>
-        <div style={card}>
-          <SectionHeader title="Execution / enrollment insights" subtitle="Recent sequence outcomes and enrollment activity." />
-          <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
-            <Mini label="Enrolled" value={String(detail.metrics.enrolled)} />
-            <Mini label="Active" value={String(detail.metrics.active)} />
-            <Mini label="Completed" value={String(detail.metrics.completed)} />
-            <Mini label="Failed" value={String(detail.metrics.failed)} />
-          </div>
-          <div style={{ marginTop: 20 }}>
-            <strong>Recent enrollments</strong>
-            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-              {enrollments.slice(0, 4).map((enrollment) => (
-                <div key={enrollment.id} style={{ padding: 12, borderRadius: 14, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <strong>{enrollment.status}</strong>
-                    <span style={{ color: "#64748b", fontSize: "0.82rem" }}>{formatDateTime(enrollment.entered_at)}</span>
-                  </div>
-                  <div style={{ marginTop: 6, color: "#475569" }}>Step {enrollment.current_step + 1}</div>
-                </div>
-              ))}
-              {enrollments.length === 0 ? <div style={{ color: "#94a3b8" }}>No enrollments yet.</div> : null}
-            </div>
-          </div>
-          {selectedEnrollment ? (
-            <div style={{ marginTop: 20 }}>
-              <strong>Latest logs</strong>
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                {logs.slice(0, 4).map((log) => (
-                  <div key={log.id} style={{ padding: 12, borderRadius: 14, background: "#fff", border: "1px solid #e2e8f0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <StatusPill status={log.status} />
-                      <span style={{ color: "#64748b", fontSize: "0.82rem" }}>{formatDateTime(log.created_at)}</span>
-                    </div>
-                    {log.error_message ? <div style={{ marginTop: 8, color: "#be123c" }}>{log.error_message}</div> : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
+        <div style={{ display: "grid", gap: 18 }}>
+          <ReviewPanel draft={draft} />
+          <ActivityPanel detail={detail} enrollments={enrollments} logs={logs} />
         </div>
       </div>
     </section>
+  );
+}
+
+function BasicsEditor({ draft, setDraft }: { draft: SequenceWriteInput; setDraft: Dispatch<SetStateAction<SequenceWriteInput | null>> }) {
+  return (
+    <div style={card}>
+      <SectionHeader title="Basics" subtitle="These settings define where this sequence starts and how it will send." />
+      <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        <FieldLabel label="Sequence Based on *" helper="Only Contacts are available in the MVP backend.">
+          <SelectField value={draft.baseType ?? "contact"} options={BASE_OPTIONS} onChange={(value) => setDraft((current) => current ? { ...current, baseType: value as "contact" } : current)} />
+        </FieldLabel>
+        <FieldLabel label="Send from *" helper="Only WhatsApp templates are supported right now.">
+          <SelectField value={draft.channel ?? "whatsapp"} options={CHANNEL_OPTIONS} onChange={(value) => setDraft((current) => current ? { ...current, channel: value as "whatsapp" } : current)} />
+        </FieldLabel>
+      </div>
+    </div>
   );
 }
 
@@ -417,80 +611,240 @@ function TriggerEditor({
   const start = (draft.conditions ?? []).filter((item) => item.conditionType === "start");
   const success = (draft.conditions ?? []).filter((item) => item.conditionType === "stop_success");
   const failure = (draft.conditions ?? []).filter((item) => item.conditionType === "stop_failure");
+
   return (
     <div style={card}>
-      <SectionHeader title="Set trigger and conditions" />
-      <div style={{ marginTop: 18, display: "grid", gap: 16 }}>
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-          {[
-            ["create", "On create"],
-            ["update", "On update"],
-            ["both", "Both (create & update)"]
-          ].map(([value, label]) => (
-            <label key={value} style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-              <input type="radio" checked={draft.triggerType === value} onChange={() => setDraft((current) => current ? { ...current, triggerType: value as SequenceWriteInput["triggerType"] } : current)} />
-              {label}
-            </label>
-          ))}
+      <SectionHeader title="Trigger & conditions" subtitle="Choose when contacts enter the sequence and what should stop it later." />
+      <div style={{ marginTop: 18, display: "grid", gap: 18 }}>
+        <div style={{ ...subtleSurface, padding: 16 }}>
+          <div style={{ color: "#475569", fontWeight: 700, marginBottom: 12 }}>Who should enter this sequence?</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {[
+              ["create", "On create"],
+              ["update", "On update"],
+              ["both", "Both (create & update)"]
+            ].map(([value, label]) => {
+              const active = draft.triggerType === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  style={{
+                    ...ghostBtn,
+                    background: active ? "#ecfdf5" : "#fff",
+                    borderColor: active ? "#99f6e4" : "#d7dee8",
+                    color: active ? "#115e59" : "#334155"
+                  }}
+                  onClick={() => setDraft((current) => current ? { ...current, triggerType: value as SequenceWriteInput["triggerType"] } : current)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <ConditionRows title="Start conditions" conditions={start} onChange={(next) => setConditions("start", next.map((item) => ({ ...item, conditionType: "start" })))} />
-        <ConditionRows title="Stop conditions - Success" conditions={success} onChange={(next) => setConditions("stop_success", next.map((item) => ({ ...item, conditionType: "stop_success" })))} />
-        <ConditionRows title="Stop conditions - Failure" conditions={failure} onChange={(next) => setConditions("stop_failure", next.map((item) => ({ ...item, conditionType: "stop_failure" })))} />
+        <ConditionGroupCard
+          title="Start conditions"
+          emptyText="No start rules yet. Add a rule to control who enters this sequence."
+          previewPrefix="Start"
+          conditions={start}
+          onChange={(next) => setConditions("start", next.map((item) => ({ ...item, conditionType: "start" })))}
+        />
+        <ConditionGroupCard
+          title="Stop on success"
+          emptyText="No stop-on-success rules yet. Add a rule for conditions that should end the sequence after a positive outcome."
+          previewPrefix="Stop"
+          conditions={success}
+          onChange={(next) => setConditions("stop_success", next.map((item) => ({ ...item, conditionType: "stop_success" })))}
+        />
+        <ConditionGroupCard
+          title="Stop on failure"
+          emptyText="No stop-on-failure rules yet. Add a rule for conditions that should stop the sequence after an unsuccessful outcome."
+          previewPrefix="Stop"
+          conditions={failure}
+          onChange={(next) => setConditions("stop_failure", next.map((item) => ({ ...item, conditionType: "stop_failure" })))}
+        />
       </div>
     </div>
   );
 }
 
-function ConditionRows({ title, conditions, onChange }: { title: string; conditions: SequenceWriteConditionInput[]; onChange: (next: SequenceWriteConditionInput[]) => void }) {
+function ConditionGroupCard({
+  title,
+  emptyText,
+  previewPrefix,
+  conditions,
+  onChange
+}: {
+  title: string;
+  emptyText: string;
+  previewPrefix: string;
+  conditions: SequenceWriteConditionInput[];
+  onChange: (next: SequenceWriteConditionInput[]) => void;
+}) {
+  const addCondition = () => onChange([...conditions, { conditionType: "start", field: "tags", operator: "contains", value: "" }]);
+
   return (
-    <div style={{ display: "grid", gap: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-        <strong>{title}</strong>
-        <button type="button" style={ghostBtn} onClick={() => onChange([...conditions, { conditionType: "start", field: "tags", operator: "contains", value: "" }])}>+ Add</button>
-      </div>
-      {conditions.map((condition, index) => (
-        <div key={`${title}-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 8 }}>
-          <input style={input} value={condition.field} onChange={(event) => onChange(conditions.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item))} placeholder="Field" />
-          <select style={input} value={condition.operator} onChange={(event) => onChange(conditions.map((item, itemIndex) => itemIndex === index ? { ...item, operator: event.target.value as SequenceWriteConditionInput["operator"] } : item))}>
-            <option value="contains">contains</option>
-            <option value="eq">equals</option>
-            <option value="neq">not equals</option>
-            <option value="gt">greater than</option>
-            <option value="lt">less than</option>
-          </select>
-          <input style={input} value={condition.value} onChange={(event) => onChange(conditions.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} placeholder="Value" />
-          <button type="button" style={ghostBtn} onClick={() => onChange(conditions.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+    <div style={{ ...subtleSurface, padding: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontWeight: 800, color: "#0f172a" }}>{title}</div>
+          <div style={{ marginTop: 4, color: "#64748b", fontSize: "0.9rem" }}>{emptyText}</div>
         </div>
-      ))}
-      {conditions.length === 0 ? <div style={{ color: "#94a3b8" }}>No conditions added.</div> : null}
+        <button type="button" style={ghostBtn} onClick={addCondition}>+ Add rule</button>
+      </div>
+      {conditions.length === 0 ? null : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {conditions.map((condition, index) => (
+            <ConditionRow
+              key={`${title}-${index}`}
+              condition={condition}
+              previewPrefix={previewPrefix}
+              onChange={(nextCondition) => onChange(conditions.map((item, itemIndex) => itemIndex === index ? nextCondition : item))}
+              onRemove={() => onChange(conditions.filter((_, itemIndex) => itemIndex !== index))}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConditionRow({
+  condition,
+  previewPrefix,
+  onChange,
+  onRemove
+}: {
+  condition: SequenceWriteConditionInput;
+  previewPrefix: string;
+  onChange: (next: SequenceWriteConditionInput) => void;
+  onRemove: () => void;
+}) {
+  const fieldKey = getConditionFieldKey(condition);
+  const operators = getOperatorsForField(fieldKey);
+  const fieldMeta = fieldKey === "custom_field" ? null : getConditionFieldMeta(condition.field);
+
+  useEffect(() => {
+    if (!operators.includes(condition.operator)) {
+      onChange({ ...condition, operator: operators[0] });
+    }
+  }, [condition, onChange, operators]);
+
+  return (
+    <div style={{ ...card, borderRadius: 18, boxShadow: "none", padding: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, alignItems: "start" }}>
+        <select
+          style={input}
+          value={fieldKey}
+          onChange={(event) => {
+            const nextFieldKey = event.target.value;
+            const nextOperators = getOperatorsForField(nextFieldKey);
+            onChange({
+              ...condition,
+              field: nextFieldKey === "custom_field" ? "" : nextFieldKey,
+              operator: nextOperators[0]
+            });
+          }}
+        >
+          {CONDITION_FIELD_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+          <option value="custom_field">Custom field</option>
+        </select>
+        <select style={input} value={condition.operator} onChange={(event) => onChange({ ...condition, operator: event.target.value as SequenceWriteConditionInput["operator"] })}>
+          {operators.map((operator) => <option key={operator} value={operator}>{getOperatorLabel(operator)}</option>)}
+        </select>
+        {fieldKey === "custom_field" ? (
+          <input style={input} value={condition.field} onChange={(event) => onChange({ ...condition, field: event.target.value })} placeholder="Custom field name" />
+        ) : null}
+        <input
+          style={input}
+          value={condition.value}
+          onChange={(event) => onChange({ ...condition, value: event.target.value })}
+          placeholder={fieldMeta?.type === "tag" ? "VIP" : "Value"}
+        />
+        <button type="button" style={ghostBtn} onClick={onRemove}>Remove</button>
+      </div>
+      <div style={{ marginTop: 10, color: "#0f766e", fontSize: "0.9rem", fontWeight: 600 }}>
+        {getConditionPreview(previewPrefix, condition)}
+      </div>
     </div>
   );
 }
 
 function DeliveryEditor({ draft, setDraft }: { draft: SequenceWriteInput; setDraft: Dispatch<SetStateAction<SequenceWriteInput | null>> }) {
   const toggleDay = (day: DayKey) => setDraft((current) => current ? { ...current, allowedDays: (current.allowedDays ?? []).includes(day) ? (current.allowedDays ?? []).filter((item) => item !== day) : [...(current.allowedDays ?? []), day] } : current);
+  const allDaysSelected = (draft.allowedDays ?? []).length === DAYS.length;
+
   return (
     <div style={card}>
-      <SectionHeader title="Set sequence delivery preference" />
-      <div style={{ marginTop: 18, display: "grid", gap: 16 }}>
-        <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: 700 }}>Enable Retry</span><input type="checkbox" checked={draft.retryEnabled ?? false} onChange={(event) => setDraft((current) => current ? { ...current, retryEnabled: event.target.checked } : current)} /></label>
-        <div>
-          <strong>Days</strong>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            <button type="button" style={{ ...ghostBtn, background: (draft.allowedDays ?? []).length === 7 ? "#ecfdf5" : "#fff" }} onClick={() => setDraft((current) => current ? { ...current, allowedDays: [...DAYS] } : current)}>All days</button>
-            {DAYS.map((day) => <button key={day} type="button" style={{ ...ghostBtn, background: (draft.allowedDays ?? []).includes(day) ? "#ecfdf5" : "#fff" }} onClick={() => toggleDay(day)}>{day.toUpperCase()}</button>)}
+      <SectionHeader title="Delivery preferences" subtitle="Decide when messages can be sent and how the sequence should behave after each attempt." />
+      <div style={{ marginTop: 18, display: "grid", gap: 18 }}>
+        <div style={{ ...subtleSurface, padding: 16, display: "grid", gap: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontWeight: 800, color: "#0f172a" }}>Retry failed sends</div>
+              <div style={{ marginTop: 4, color: "#64748b" }}>Messages can retry within the configured 48-hour window to improve delivery rate.</div>
+            </div>
+            <input type="checkbox" checked={draft.retryEnabled ?? false} onChange={(event) => setDraft((current) => current ? { ...current, retryEnabled: event.target.checked } : current)} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, color: "#0f172a" }}>Which days can messages go out?</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              <button type="button" style={{ ...ghostBtn, background: allDaysSelected ? "#ecfdf5" : "#fff", borderColor: allDaysSelected ? "#99f6e4" : "#d7dee8" }} onClick={() => setDraft((current) => current ? { ...current, allowedDays: [...DAYS] } : current)}>All days</button>
+              {DAYS.map((day) => {
+                const active = (draft.allowedDays ?? []).includes(day);
+                return (
+                  <button key={day} type="button" style={{ ...ghostBtn, background: active ? "#ecfdf5" : "#fff", borderColor: active ? "#99f6e4" : "#d7dee8" }} onClick={() => toggleDay(day)}>
+                    {DAY_LABELS[day]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ fontWeight: 800, color: "#0f172a" }}>What time should messages go out?</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                style={{ ...ghostBtn, background: draft.timeMode !== "window" ? "#ecfdf5" : "#fff", borderColor: draft.timeMode !== "window" ? "#99f6e4" : "#d7dee8" }}
+                onClick={() => setDraft((current) => current ? { ...current, timeMode: "any_time" } : current)}
+              >
+                Any time
+              </button>
+              <button
+                type="button"
+                style={{ ...ghostBtn, background: draft.timeMode === "window" ? "#ecfdf5" : "#fff", borderColor: draft.timeMode === "window" ? "#99f6e4" : "#d7dee8" }}
+                onClick={() => setDraft((current) => current ? { ...current, timeMode: "window" } : current)}
+              >
+                Between specific hours
+              </button>
+            </div>
+            {draft.timeMode === "window" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                <FieldLabel label="Start time">
+                  <input style={input} type="time" value={draft.timeWindowStart ?? ""} onChange={(event) => setDraft((current) => current ? { ...current, timeWindowStart: event.target.value } : current)} />
+                </FieldLabel>
+                <FieldLabel label="End time">
+                  <input style={input} type="time" value={draft.timeWindowEnd ?? ""} onChange={(event) => setDraft((current) => current ? { ...current, timeWindowEnd: event.target.value } : current)} />
+                </FieldLabel>
+              </div>
+            ) : null}
+          </div>
+          <div style={{ padding: 14, borderRadius: 14, background: "#ffffff", border: "1px solid #e2e8f0", color: "#0f766e", fontWeight: 700 }}>
+            {formatDeliverySummary(draft)}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "220px 1fr 1fr", gap: 12 }}>
-          <select style={input} value={draft.timeMode} onChange={(event) => setDraft((current) => current ? { ...current, timeMode: event.target.value as SequenceWriteInput["timeMode"] } : current)}>
-            <option value="any_time">Any time</option>
-            <option value="window">Between start/end time</option>
-          </select>
-          <input style={input} type="time" disabled={draft.timeMode !== "window"} value={draft.timeWindowStart ?? ""} onChange={(event) => setDraft((current) => current ? { ...current, timeWindowStart: event.target.value } : current)} />
-          <input style={input} type="time" disabled={draft.timeMode !== "window"} value={draft.timeWindowEnd ?? ""} onChange={(event) => setDraft((current) => current ? { ...current, timeWindowEnd: event.target.value } : current)} />
+        <div style={{ ...subtleSurface, padding: 16, display: "grid", gap: 12 }}>
+          <div style={{ fontWeight: 800, color: "#0f172a" }}>Sequence behavior</div>
+          <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <input type="checkbox" checked={draft.allowOnce ?? false} onChange={(event) => setDraft((current) => current ? { ...current, allowOnce: event.target.checked } : current)} />
+            Allow contacts to enter this sequence only once
+          </label>
+          <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <input type="checkbox" checked={draft.requirePreviousDelivery ?? false} onChange={(event) => setDraft((current) => current ? { ...current, requirePreviousDelivery: event.target.checked } : current)} />
+            Continue sequence only after the previous message is delivered
+          </label>
         </div>
-        <label style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={draft.allowOnce ?? false} onChange={(event) => setDraft((current) => current ? { ...current, allowOnce: event.target.checked } : current)} />Allow contacts to enter this sequence only once</label>
-        <label style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={draft.requirePreviousDelivery ?? false} onChange={(event) => setDraft((current) => current ? { ...current, requirePreviousDelivery: event.target.checked } : current)} />Continue sequence only after message is successfully delivered</label>
       </div>
     </div>
   );
@@ -498,9 +852,29 @@ function DeliveryEditor({ draft, setDraft }: { draft: SequenceWriteInput; setDra
 
 function StepsEditor({ draft, setDraft, templates }: { draft: SequenceWriteInput; setDraft: Dispatch<SetStateAction<SequenceWriteInput | null>>; templates: MessageTemplate[] }) {
   const steps = draft.steps ?? [];
-  const updateStep = (index: number, patch: Partial<SequenceWriteStepInput>) => setDraft((current) => current ? { ...current, steps: (current.steps ?? []).map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step) } : current);
-  const addStep = () => setDraft((current) => current ? { ...current, steps: [...(current.steps ?? []), { stepOrder: (current.steps ?? []).length, delayValue: 1, delayUnit: "hours", messageTemplateId: templates[0]?.id ?? "00000000-0000-0000-0000-000000000000", customDelivery: {} }] } : current);
-  const removeStep = (index: number) => setDraft((current) => current ? { ...current, steps: (current.steps ?? []).filter((_, stepIndex) => stepIndex !== index).map((step, stepIndex) => ({ ...step, stepOrder: stepIndex })) } : current);
+  const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
+
+  const updateStep = (index: number, patch: Partial<SequenceWriteStepInput>) =>
+    setDraft((current) => current ? { ...current, steps: (current.steps ?? []).map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step) } : current);
+
+  const addStep = () =>
+    setDraft((current) => current ? {
+      ...current,
+      steps: [
+        ...(current.steps ?? []),
+        {
+          stepOrder: (current.steps ?? []).length,
+          delayValue: 1,
+          delayUnit: "hours",
+          messageTemplateId: templates[0]?.id ?? "",
+          customDelivery: { stepTitle: "" }
+        }
+      ]
+    } : current);
+
+  const removeStep = (index: number) =>
+    setDraft((current) => current ? { ...current, steps: (current.steps ?? []).filter((_, stepIndex) => stepIndex !== index).map((step, stepIndex) => ({ ...step, stepOrder: stepIndex })) } : current);
+
   const moveStep = (index: number, delta: -1 | 1) => setDraft((current) => {
     if (!current) return current;
     const next = [...(current.steps ?? [])];
@@ -510,45 +884,177 @@ function StepsEditor({ draft, setDraft, templates }: { draft: SequenceWriteInput
     next.splice(target, 0, step);
     return { ...current, steps: next.map((item, itemIndex) => ({ ...item, stepOrder: itemIndex })) };
   });
-  const duplicate = (index: number) => setDraft((current) => current ? { ...current, steps: [...(current.steps ?? []).slice(0, index + 1), { ...(current.steps ?? [])[index], id: undefined }, ...(current.steps ?? []).slice(index + 1)].map((step, stepIndex) => ({ ...step, stepOrder: stepIndex })) } : current);
+
+  const duplicate = (index: number) => setDraft((current) => current ? {
+    ...current,
+    steps: [
+      ...(current.steps ?? []).slice(0, index + 1),
+      { ...(current.steps ?? [])[index], id: undefined, customDelivery: { ...((current.steps ?? [])[index].customDelivery ?? {}) } },
+      ...(current.steps ?? []).slice(index + 1)
+    ].map((step, stepIndex) => ({ ...step, stepOrder: stepIndex }))
+  } : current);
+
   return (
     <div style={card}>
-      <SectionHeader title="Steps" subtitle="Define the delay and WhatsApp template for each follow-up." right={<button type="button" style={primaryBtn} onClick={addStep}>Add step</button>} />
-      <div style={{ marginTop: 18, display: "grid", gap: 16 }}>
-        {steps.map((step, index) => (
-          <div key={`${step.id ?? "draft"}-${index}`} style={{ ...card, borderRadius: 18, boxShadow: "none" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-              <div style={{ fontWeight: 800 }}>Step {index + 1}</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button type="button" style={ghostBtn} onClick={() => moveStep(index, -1)}>Up</button>
-                <button type="button" style={ghostBtn} onClick={() => moveStep(index, 1)}>Down</button>
-                <button type="button" style={ghostBtn} onClick={() => duplicate(index)}>Duplicate</button>
-                <button type="button" style={ghostBtn} onClick={() => removeStep(index)}>Delete</button>
+      <SectionHeader title="Sequence steps" subtitle="Define what should happen next and how long to wait between sends." right={<button type="button" style={primaryBtn} onClick={addStep}>{steps.length === 0 ? "Add first step" : "Add step"}</button>} />
+      {steps.length === 0 ? (
+        <div style={{ ...subtleSurface, padding: 20, marginTop: 18, display: "grid", gap: 12, textAlign: "center" }}>
+          <div style={{ fontWeight: 800, color: "#0f172a" }}>No steps yet</div>
+          <div style={{ color: "#64748b" }}>Add the first step to choose a delay and pick the WhatsApp template that should send.</div>
+          <div><button type="button" style={primaryBtn} onClick={addStep}>Add first step</button></div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 18, display: "grid", gap: 14 }}>
+          {steps.map((step, index) => {
+            const isCollapsed = Boolean(collapsed[index]);
+            const templateName = templates.find((template) => template.id === step.messageTemplateId)?.name ?? "No template selected";
+            return (
+              <div key={`${step.id ?? "draft"}-${index}`} style={{ display: "grid", gap: 12 }}>
+                {index > 0 ? (
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    <Chip>After {step.delayValue} {step.delayUnit}</Chip>
+                  </div>
+                ) : null}
+                <div style={{ ...card, borderRadius: 18, boxShadow: "none", borderColor: "#cbd5e1" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 999, background: "#e2e8f0", color: "#334155", display: "grid", placeItems: "center", fontWeight: 800 }}>
+                        {index + 1}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 800, color: "#0f172a" }}>{getStepTitle(step, index)}</div>
+                        <div style={{ marginTop: 4, color: "#64748b", fontSize: "0.9rem" }}>{index === 0 ? "From enrollment" : "From previous step"} • {templateName}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" style={ghostBtn} onClick={() => moveStep(index, -1)}>Up</button>
+                      <button type="button" style={ghostBtn} onClick={() => moveStep(index, 1)}>Down</button>
+                      <button type="button" style={ghostBtn} onClick={() => duplicate(index)}>Duplicate</button>
+                      <button type="button" style={ghostBtn} onClick={() => removeStep(index)}>Delete</button>
+                      <button type="button" style={ghostBtn} onClick={() => setCollapsed((current) => ({ ...current, [index]: !current[index] }))}>{isCollapsed ? "Expand" : "Collapse"}</button>
+                    </div>
+                  </div>
+                  {!isCollapsed ? (
+                    <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
+                      <FieldLabel label="Step title">
+                        <input
+                          style={input}
+                          value={typeof step.customDelivery?.stepTitle === "string" ? step.customDelivery.stepTitle : ""}
+                          onChange={(event) => updateStep(index, { customDelivery: { ...(step.customDelivery ?? {}), stepTitle: event.target.value } })}
+                          placeholder={`Untitled Step ${index + 1}`}
+                        />
+                      </FieldLabel>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+                        <FieldLabel label="Send after">
+                          <input style={input} type="number" min={0} value={step.delayValue} onChange={(event) => updateStep(index, { delayValue: Number(event.target.value) })} />
+                        </FieldLabel>
+                        <FieldLabel label="Unit">
+                          <select style={input} value={step.delayUnit} onChange={(event) => updateStep(index, { delayUnit: event.target.value as SequenceWriteStepInput["delayUnit"] })}>
+                            <option value="minutes">Minutes</option>
+                            <option value="hours">Hours</option>
+                            <option value="days">Days</option>
+                          </select>
+                        </FieldLabel>
+                        <FieldLabel label="Relative to">
+                          <input style={{ ...input, background: "#f8fafc" }} value={index === 0 ? "From enrollment" : "From previous step"} readOnly />
+                        </FieldLabel>
+                      </div>
+                      <FieldLabel label="Send message *">
+                        <select style={input} value={step.messageTemplateId} onChange={(event) => updateStep(index, { messageTemplateId: event.target.value })}>
+                          <option value="">Pick a template</option>
+                          {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                        </select>
+                      </FieldLabel>
+                      <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input type="checkbox" checked={Boolean(step.customDelivery?.enabled)} onChange={(event) => updateStep(index, { customDelivery: { ...(step.customDelivery ?? {}), enabled: event.target.checked } })} />
+                        Set custom delivery preference
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "120px 160px 1fr", gap: 12 }}>
-              <input style={input} type="number" min={0} value={step.delayValue} onChange={(event) => updateStep(index, { delayValue: Number(event.target.value) })} />
-              <select style={input} value={step.delayUnit} onChange={(event) => updateStep(index, { delayUnit: event.target.value as SequenceWriteStepInput["delayUnit"] })}>
-                <option value="minutes">Minutes</option>
-                <option value="hours">Hours</option>
-                <option value="days">Days</option>
-              </select>
-              <div style={{ alignSelf: "center", color: "#0f766e", fontWeight: 600 }}>{index === 0 ? "From enrollment" : "From previous step"}</div>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <select style={input} value={step.messageTemplateId} onChange={(event) => updateStep(index, { messageTemplateId: event.target.value })}>
-                {templates.length === 0 ? <option value="">No approved templates</option> : null}
-                {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-              </select>
-            </div>
-            <label style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
-              <input type="checkbox" checked={Boolean(step.customDelivery?.enabled)} onChange={(event) => updateStep(index, { customDelivery: { ...(step.customDelivery ?? {}), enabled: event.target.checked } })} />
-              Set custom delivery preference
-            </label>
-          </div>
-        ))}
-        {steps.length === 0 ? <div style={{ color: "#64748b" }}>No steps yet. Add the first step to publish this sequence.</div> : null}
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewPanel({ draft }: { draft: SequenceWriteInput }) {
+  const startConditions = (draft.conditions ?? []).filter((item) => item.conditionType === "start");
+
+  return (
+    <div style={card}>
+      <SectionHeader title="Review" subtitle="A quick summary of who enters, when messages go out, and what happens next." />
+      <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
+        <ReviewBlock title="Who can enter?" value={startConditions.length > 0 ? `${startConditions.length} start rule${startConditions.length > 1 ? "s" : ""}` : "Anyone matching the selected trigger"} />
+        <ReviewBlock title="When do messages send?" value={formatDeliverySummary(draft)} />
+        <ReviewBlock title="What happens next?" value={`${draft.steps?.length ?? 0} step${(draft.steps?.length ?? 0) === 1 ? "" : "s"} configured`} />
+        <ReviewBlock title="Retry" value={draft.retryEnabled ? "Enabled" : "Off"} />
       </div>
+    </div>
+  );
+}
+
+function ReviewBlock({ title, value }: { title: string; value: string }) {
+  return (
+    <div style={{ ...subtleSurface, padding: 14 }}>
+      <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>{title}</div>
+      <div style={{ marginTop: 6, color: "#0f172a", fontWeight: 700, lineHeight: 1.6 }}>{value}</div>
+    </div>
+  );
+}
+
+function ActivityPanel({
+  detail,
+  enrollments,
+  logs
+}: {
+  detail: SequenceDetail;
+  enrollments: Array<{ id: string; status: string; entered_at: string; current_step: number }>;
+  logs: Array<{ id: string; status: string; created_at: string; error_message: string | null }>;
+}) {
+  return (
+    <div style={card}>
+      <SectionHeader title="Review / activity" subtitle="Authoring controls stay on the left. Recent enrollment activity stays here for quick reference." />
+      <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
+        <Mini label="Enrolled" value={String(detail.metrics.enrolled)} />
+        <Mini label="Active" value={String(detail.metrics.active)} />
+        <Mini label="Completed" value={String(detail.metrics.completed)} />
+        <Mini label="Failed" value={String(detail.metrics.failed)} />
+      </div>
+      <div style={{ marginTop: 20 }}>
+        <strong>Recent enrollments</strong>
+        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+          {enrollments.slice(0, 4).map((enrollment) => (
+            <div key={enrollment.id} style={{ padding: 12, borderRadius: 14, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <StatusPill status={enrollment.status} />
+                <span style={{ color: "#64748b", fontSize: "0.82rem" }}>{formatDateTime(enrollment.entered_at)}</span>
+              </div>
+              <div style={{ marginTop: 6, color: "#475569" }}>Step {enrollment.current_step + 1}</div>
+            </div>
+          ))}
+          {enrollments.length === 0 ? <div style={{ color: "#94a3b8" }}>No enrollments yet.</div> : null}
+        </div>
+      </div>
+      {logs.length > 0 ? (
+        <div style={{ marginTop: 20 }}>
+          <strong>Latest logs</strong>
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {logs.slice(0, 4).map((log) => (
+              <div key={log.id} style={{ padding: 12, borderRadius: 14, background: "#fff", border: "1px solid #e2e8f0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <StatusPill status={log.status} />
+                  <span style={{ color: "#64748b", fontSize: "0.82rem" }}>{formatDateTime(log.created_at)}</span>
+                </div>
+                {log.error_message ? <div style={{ marginTop: 8, color: "#be123c" }}>{log.error_message}</div> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

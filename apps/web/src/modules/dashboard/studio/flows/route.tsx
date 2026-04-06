@@ -1010,10 +1010,6 @@ export async function prefetchData(
 }
 
 export function Component() {
-  useEffect(() => {
-    document.title = "Studio · Flows";
-  }, []);
-
   const element = useRoutes([
     { index: true, element: <FlowsPage /> },
     { path: "new", element: <FlowNewPage /> },
