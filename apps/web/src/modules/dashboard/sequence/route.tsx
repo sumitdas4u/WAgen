@@ -601,6 +601,11 @@ function BuilderPage({ token }: { token: string }) {
             <Chip>Contacts</Chip>
             <Chip>WhatsApp</Chip>
             <Chip>Trigger: {draft.triggerType}</Chip>
+            <Chip teal={(draft.steps?.length ?? 0) > 0}>
+              {draft.steps?.length ?? 0} step{(draft.steps?.length ?? 0) !== 1 ? "s" : ""}
+            </Chip>
+            <Chip>{formatDays(draft.allowedDays)}</Chip>
+            {draft.retryEnabled && <Chip>Retry on</Chip>}
           </div>
         </div>
         <div className="seq-builder-right">
@@ -711,51 +716,27 @@ function BuilderPage({ token }: { token: string }) {
             <StepsEditor draft={draft} setDraft={setDraft} templates={templates} />
           )}
 
-          {/* ── Footer: compact review summary + nav buttons ── */}
+          {/* ── Footer: nav buttons only ── */}
           <div className="seq-wizard-footer">
-            {/* Review summary strip */}
-            <div className="seq-wizard-footer-review">
-              <span className="seq-footer-review-label">Summary</span>
-              <span className="seq-footer-review-chip">
-                👥 {(draft.conditions ?? []).filter((c) => c.conditionType === "start").length > 0
-                  ? `${(draft.conditions ?? []).filter((c) => c.conditionType === "start").length} start rule(s)`
-                  : "All contacts"}
-              </span>
-              <span className="seq-footer-review-chip">
-                ⚡ Trigger: {draft.triggerType}
-              </span>
-              <span className="seq-footer-review-chip">
-                📅 {formatDays(draft.allowedDays)}
-              </span>
-              <span className={`seq-footer-review-chip${(draft.steps?.length ?? 0) > 0 ? " chip-steps" : ""}`}>
-                📋 {draft.steps?.length ?? 0} step{(draft.steps?.length ?? 0) !== 1 ? "s" : ""}
-              </span>
-              {draft.retryEnabled && (
-                <span className="seq-footer-review-chip">🔄 Retry on</span>
-              )}
-            </div>
-            {/* Nav buttons */}
-            <div className="seq-wizard-footer-nav">
-              <button
-                type="button"
-                className="seq-btn seq-btn-ghost"
-                onClick={() => canGoBack ? setWizardStep((s) => s - 1) : navigate("/dashboard/sequence")}
-              >
-                ← {canGoBack ? `Back: ${WIZARD_STEPS[wizardStep - 1].label}` : "Back to Sequences"}
+            <button
+              type="button"
+              className="seq-btn seq-btn-ghost"
+              onClick={() => canGoBack ? setWizardStep((s) => s - 1) : navigate("/dashboard/sequence")}
+            >
+              ← {canGoBack ? `Back: ${WIZARD_STEPS[wizardStep - 1].label}` : "Back to Sequences"}
+            </button>
+            {canGoNext ? (
+              <button type="button" className="seq-btn seq-btn-primary"
+                onClick={() => setWizardStep((s) => s + 1)}>
+                Next: {WIZARD_STEPS[wizardStep + 1].label} →
               </button>
-              {canGoNext ? (
-                <button type="button" className="seq-btn seq-btn-primary"
-                  onClick={() => setWizardStep((s) => s + 1)}>
-                  Next: {WIZARD_STEPS[wizardStep + 1].label} →
-                </button>
-              ) : (
-                <button type="button" className="seq-btn seq-btn-primary"
-                  disabled={validationErrors.length > 0}
-                  onClick={() => void handlePublish()}>
-                  {publishMutation.isPending ? "Publishing…" : "Publish & Close"}
-                </button>
-              )}
-            </div>
+            ) : (
+              <button type="button" className="seq-btn seq-btn-primary"
+                disabled={validationErrors.length > 0}
+                onClick={() => void handlePublish()}>
+                {publishMutation.isPending ? "Publishing…" : "Publish & Close"}
+              </button>
+            )}
           </div>
 
           {/* ── Activity panel — full width, below footer ── */}

@@ -599,14 +599,13 @@
 ═══════════════════════════════════════ */
 .seq-wizard-nav {
   display: flex;
-  align-items: stretch;
-  padding: 0.6rem 1rem;
-  background: var(--seq-white);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 18px;
-  box-shadow: var(--seq-shadow);
-  gap: 0;
-  overflow: hidden;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  gap: 0.25rem;
+  background: #ffffff;
+  border: 1px solid rgba(18, 32, 51, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 4px 16px rgba(16, 24, 40, 0.07);
 }
 
 .seq-wstep {
@@ -614,22 +613,22 @@
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.85rem;
+  gap: 0.65rem;
+  padding: 0.55rem 0.9rem;
   border: none;
   background: transparent;
-  color: var(--seq-muted);
+  color: #64748b;
   font: inherit;
   font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
-  border-radius: 12px;
+  border-radius: 14px;
   transition: background 150ms ease, color 150ms ease;
 }
 
 .seq-wstep:hover:not(.is-active) {
-  background: var(--seq-surface);
-  color: var(--seq-sub);
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .seq-wstep.is-active {
@@ -638,19 +637,45 @@
 }
 
 .seq-wstep.is-done {
-  color: #16a34a;
+  color: #166534;
 }
 
+.seq-wstep.is-done:hover {
+  background: #f0fdf4;
+}
+
+/* ── Connecting line between steps ── */
+.seq-wstep-connector {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 2rem;
+}
+
+.seq-wstep-connector-line {
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  border-radius: 1px;
+}
+
+.seq-wstep.is-done ~ .seq-wstep-connector .seq-wstep-connector-line,
+.seq-wstep-connector.is-done .seq-wstep-connector-line {
+  background: #10b981;
+}
+
+/* ── Step badge ── */
 .seq-wstep-badge {
   display: grid;
   place-items: center;
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 1.75rem;
+  height: 1.75rem;
   border-radius: 50%;
-  border: 2px solid #cbd5e1;
-  background: var(--seq-white);
-  color: var(--seq-muted);
-  font-size: 0.7rem;
+  border: 2px solid #94a3b8;   /* visible gray ring for inactive */
+  background: #f1f5f9;          /* light gray fill — visible on white */
+  color: #64748b;
+  font-size: 0.72rem;
   font-weight: 800;
   flex-shrink: 0;
   transition: all 150ms ease;
@@ -660,6 +685,7 @@
   border-color: var(--seq-teal);
   background: var(--seq-teal);
   color: #fff;
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.15);
 }
 
 .seq-wstep.is-done .seq-wstep-badge {
@@ -668,7 +694,7 @@
   color: #fff;
 }
 
-.seq-wstep-text { display: grid; gap: 0.05rem; }
+.seq-wstep-text { display: grid; gap: 0.04rem; }
 
 .seq-wstep-label {
   font-size: 0.85rem;
@@ -677,19 +703,22 @@
 }
 
 .seq-wstep-desc {
-  font-size: 0.72rem;
+  font-size: 0.71rem;
   font-weight: 500;
-  color: var(--seq-muted);
+  color: #94a3b8;
   line-height: 1.2;
 }
 
-.seq-wstep.is-active .seq-wstep-desc { color: var(--seq-teal-dark); opacity: 0.75; }
+.seq-wstep.is-active .seq-wstep-label { color: var(--seq-teal-dark); }
+.seq-wstep.is-active .seq-wstep-desc  { color: var(--seq-teal-dark); opacity: 0.65; }
+.seq-wstep.is-done   .seq-wstep-label { color: #166534; }
+.seq-wstep.is-done   .seq-wstep-desc  { color: #16a34a; opacity: 0.7; }
 
 .seq-wstep-divider {
   width: 1px;
-  background: var(--seq-line);
+  background: #e2e8f0;
   align-self: stretch;
-  margin: 0.35rem 0;
+  margin: 0.4rem 0;
   flex-shrink: 0;
 }
 
@@ -707,61 +736,18 @@
   gap: 1rem;
 }
 
-/* ── Footer: review strip + nav in one card ── */
+/* ── Footer: nav buttons only — clean, minimal ── */
 .seq-wizard-footer {
-  background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 20px;
-  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
-  backdrop-filter: blur(10px);
-  overflow: hidden;
-}
-
-.seq-wizard-footer-review {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid rgba(18, 32, 51, 0.08);
-  background: rgba(248, 250, 252, 0.6);
-}
-
-.seq-footer-review-label {
-  font-size: 0.67rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--seq-muted);
-  margin-right: 0.25rem;
-}
-
-.seq-footer-review-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(18, 32, 51, 0.12);
-  color: var(--seq-sub);
-  white-space: nowrap;
-}
-
-.seq-footer-review-chip.chip-steps {
-  background: var(--seq-teal-light);
-  border-color: #a7f3d0;
-  color: var(--seq-teal-dark);
-}
-
-.seq-wizard-footer-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.9rem 1.25rem;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
+  backdrop-filter: blur(10px);
 }
 
 /* ═══════════════════════════════════════
