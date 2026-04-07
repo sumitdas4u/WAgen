@@ -55,7 +55,6 @@ export function GenericWebhooksPage() {
   const [selectedIntegrationId, setSelectedIntegrationId] = useState("");
   const [newIntegrationName, setNewIntegrationName] = useState("");
   const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(null);
-  const [name, setName] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [channelMode, setChannelMode] = useState<GenericWebhookChannelMode>("api");
   const [matchMode, setMatchMode] = useState<"all" | "any">("all");
@@ -158,7 +157,6 @@ export function GenericWebhooksPage() {
     if (!data || data.length === 0 || editingWorkflowId) return;
     const workflow = data[0];
     setEditingWorkflowId(workflow.id);
-    setName(workflow.name);
     setEnabled(workflow.enabled);
     setChannelMode(workflow.channelMode);
     setMatchMode(workflow.matchMode);
@@ -250,7 +248,7 @@ export function GenericWebhooksPage() {
           }
         : null;
       const payload = {
-        name,
+        name: integration!.name,
         enabled,
         channelMode,
         matchMode,
@@ -320,7 +318,6 @@ export function GenericWebhooksPage() {
 
   function resetForm() {
     setEditingWorkflowId(null);
-    setName("");
     setEnabled(true);
     setChannelMode("api");
     setMatchMode("all");
@@ -515,11 +512,6 @@ export function GenericWebhooksPage() {
               </div>
 
               <div style={{ display: "grid", gap: "1rem" }}>
-                <label>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Workflow name</div>
-                  <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Website lead follow-up" />
-                </label>
-
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem" }}>
                   <label>
                     <div style={{ fontWeight: 600, marginBottom: 6 }}>Action channel</div>
@@ -784,7 +776,6 @@ export function GenericWebhooksPage() {
                     onClick={() => saveMutation.mutate()}
                     disabled={
                       saveMutation.isPending ||
-                      !name.trim() ||
                       (channelMode === "api" && (!templateId || !recipientNamePath || !recipientPhonePath)) ||
                       (channelMode === "qr" && (!qrFlowId || !qrRecipientPhonePath))
                     }
