@@ -19,6 +19,7 @@ import {
   type GenericWebhookCondition,
   type GenericWebhookContactAction,
   type GenericWebhookContactPaths,
+  type GenericWebhookDelayUnit,
   type GenericWebhookQrFlowAction,
   type GenericWebhookTemplateAction,
   type GenericWebhookWorkflow,
@@ -47,6 +48,12 @@ function tagsToString(tags?: string[]): string {
   return (tags ?? []).join(", ");
 }
 
+function formatDelayLabel(delayValue?: number, delayUnit?: GenericWebhookDelayUnit): string | null {
+  if (!delayValue || !delayUnit) return null;
+  const unitLabel = delayValue === 1 ? delayUnit.slice(0, -1) : delayUnit;
+  return `${delayValue} ${unitLabel}`;
+}
+
 export function GenericWebhooksPage() {
   const { token } = useDashboardShell();
   const queryClient = useQueryClient();
@@ -58,6 +65,9 @@ export function GenericWebhooksPage() {
   const [enabled, setEnabled] = useState(true);
   const [channelMode, setChannelMode] = useState<GenericWebhookChannelMode>("api");
   const [matchMode, setMatchMode] = useState<"all" | "any">("all");
+  const [defaultCountryCode, setDefaultCountryCode] = useState("");
+  const [delayValue, setDelayValue] = useState("");
+  const [delayUnit, setDelayUnit] = useState<GenericWebhookDelayUnit>("minutes");
   const [conditions, setConditions] = useState<GenericWebhookCondition[]>([]);
   const [templateId, setTemplateId] = useState("");
   const [recipientNamePath, setRecipientNamePath] = useState("");
@@ -171,6 +181,11 @@ export function GenericWebhooksPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const parsedDelayValue = Number(delayValue);
+      const normalizedDelayValue =
+        delayValue.trim() && Number.isInteger(parsedDelayValue) && parsedDelayValue > 0
+          ? parsedDelayValue
+          : null;
       const contactPaths: GenericWebhookContactPaths = {
         displayNamePath: contactDisplayNamePath || undefined,
         phoneNumberPath: contactPhonePath || undefined,
@@ -209,6 +224,9 @@ export function GenericWebhooksPage() {
         enabled,
         channelMode,
         matchMode,
+        defaultCountryCode: defaultCountryCode.trim() || null,
+        delayValue: normalizedDelayValue,
+        delayUnit: normalizedDelayValue ? delayUnit : null,
         conditions: conditions.filter((condition) => condition.comparator),
         contactAction,
         ...(templateAction ? { templateAction } : {}),
@@ -283,6 +301,9 @@ export function GenericWebhooksPage() {
     setEnabled(true);
     setChannelMode("api");
     setMatchMode("all");
+    setDefaultCountryCode("");
+    setDelayValue("");
+    setDelayUnit("minutes");
     setConditions([]);
     setTemplateId("");
     setRecipientNamePath("");
@@ -306,6 +327,9 @@ export function GenericWebhooksPage() {
     setEnabled(workflow.enabled);
     setChannelMode(workflow.channelMode);
     setMatchMode(workflow.matchMode);
+    setDefaultCountryCode(workflow.defaultCountryCode ?? "");
+    setDelayValue(workflow.delayValue ? String(workflow.delayValue) : "");
+    setDelayUnit(workflow.delayUnit ?? "minutes");
     setConditions(workflow.conditions);
     setTemplateId(workflow.templateAction?.templateId ?? "");
     setRecipientNamePath(workflow.templateAction?.recipientNamePath ?? "");
@@ -527,6 +551,46 @@ export function GenericWebhooksPage() {
                     <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
                     Enable workflow
                   </label>
+                </div>
+
+                <label>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Default country code for local numbers</div>
+                  <input
+                    value={defaultCountryCode}
+                    onChange={(event) => setDefaultCountryCode(event.target.value)}
+                    placeholder="+91"
+                  />
+                  <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>
+                    Local numbers like <code>9804735837</code> become <code>919804735837</code>. Numbers already sent as <code>+919804735837</code> stay unchanged.
+                  </div>
+                </label>
+
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Delay</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "180px 180px", gap: "1rem", alignItems: "end" }}>
+                    <label>
+                      <div style={{ marginBottom: 6 }}>Delay value</div>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={delayValue}
+                        onChange={(event) => setDelayValue(event.target.value)}
+                        placeholder="0"
+                      />
+                    </label>
+                    <label>
+                      <div style={{ marginBottom: 6 }}>Delay unit</div>
+                      <select value={delayUnit} onChange={(event) => setDelayUnit(event.target.value as GenericWebhookDelayUnit)}>
+                        <option value="minutes">Minutes</option>
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>
+                    Leave blank or use <code>0</code> to send immediately. Examples: <code>30 minutes</code>, <code>2 hours</code>, <code>1 day</code>.
+                  </div>
                 </div>
 
                 <div>
@@ -756,6 +820,7 @@ export function GenericWebhooksPage() {
                         <div style={{ fontWeight: 700 }}>{workflow.name}</div>
                         <div style={{ color: "#6b7280", fontSize: "0.92rem" }}>
                           {workflow.enabled ? "Enabled" : "Disabled"} · {workflow.channelMode.toUpperCase()} · {workflow.matchMode.toUpperCase()} · {workflow.conditions.length} condition(s)
+                          {formatDelayLabel(workflow.delayValue, workflow.delayUnit) ? ` · Delay ${formatDelayLabel(workflow.delayValue, workflow.delayUnit)}` : ""}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>

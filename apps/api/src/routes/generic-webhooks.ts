@@ -17,8 +17,10 @@ import {
 
 const MatchModeSchema = z.enum(["all", "any"]);
 const ChannelModeSchema = z.enum(["api", "qr"]);
+const DelayUnitSchema = z.enum(["minutes", "hours", "days"]);
 const ConditionOperatorSchema = z.enum(["is_not_empty", "is_empty", "equals", "not_equals"]);
 const TagOperationSchema = z.enum(["append", "replace", "add_if_empty"]);
+const DefaultCountryCodeSchema = z.string().trim().regex(/^\+\d{1,15}$/, "Default country code must start with + and contain digits only.").nullable();
 
 const CreateIntegrationBodySchema = z.object({
   name: z.string().trim().min(1).max(120)
@@ -70,18 +72,39 @@ const QrFlowActionSchema = z.object({
   recipientNamePath: z.string().trim().min(1).max(200).optional()
 });
 
-const WorkflowBodySchema = z.object({
+const WorkflowBodySchemaBase = z.object({
   name: z.string().trim().min(1).max(120),
   enabled: z.boolean().optional(),
   channelMode: ChannelModeSchema,
   matchMode: MatchModeSchema,
+  defaultCountryCode: DefaultCountryCodeSchema.optional(),
+  delayValue: z.number().int().min(0).nullable().optional(),
+  delayUnit: DelayUnitSchema.nullable().optional(),
   conditions: z.array(ConditionSchema).max(3),
   contactAction: ContactActionSchema,
   templateAction: TemplateActionSchema.optional(),
   qrFlowAction: QrFlowActionSchema.optional()
 });
 
-const WorkflowPatchSchema = WorkflowBodySchema.partial();
+const WorkflowBodySchema = WorkflowBodySchemaBase.superRefine((value, ctx) => {
+  if ((value.delayValue ?? 0) > 0 && !value.delayUnit) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["delayUnit"],
+      message: "Delay unit is required when delay value is greater than 0."
+    });
+  }
+});
+
+const WorkflowPatchSchema = WorkflowBodySchemaBase.partial().superRefine((value, ctx) => {
+  if ((value.delayValue ?? 0) > 0 && !value.delayUnit) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["delayUnit"],
+      message: "Delay unit is required when delay value is greater than 0."
+    });
+  }
+});
 
 export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(

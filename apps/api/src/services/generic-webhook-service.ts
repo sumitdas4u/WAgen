@@ -15,8 +15,9 @@ type JsonRecord = Record<string, unknown>;
 export type GenericWebhookConditionOperator = "is_not_empty" | "is_empty" | "equals" | "not_equals";
 export type GenericWebhookMatchMode = "all" | "any";
 export type GenericWebhookChannelMode = "api" | "qr";
+export type GenericWebhookDelayUnit = "minutes" | "hours" | "days";
 export type GenericWebhookTagOperation = "append" | "replace" | "add_if_empty";
-export type GenericWebhookLogStatus = "completed" | "skipped" | "failed";
+export type GenericWebhookLogStatus = "queued" | "completed" | "skipped" | "failed";
 
 export interface GenericWebhookCondition {
   comparator: string;
@@ -34,6 +35,12 @@ export interface GenericWebhookContactAction {
   tags?: string[];
   fieldMappings?: Array<{ contactFieldName: string; payloadPath: string }>;
 }
+
+type PersistedGenericWebhookContactAction = GenericWebhookContactAction & {
+  _defaultCountryCode?: string;
+  _delayValue?: number;
+  _delayUnit?: GenericWebhookDelayUnit;
+};
 
 export interface GenericWebhookTemplateAction {
   templateId: string;
@@ -72,6 +79,9 @@ export interface GenericWebhookWorkflow {
   enabled: boolean;
   channelMode: GenericWebhookChannelMode;
   matchMode: GenericWebhookMatchMode;
+  defaultCountryCode?: string;
+  delayValue?: number;
+  delayUnit?: GenericWebhookDelayUnit;
   conditions: GenericWebhookCondition[];
   contactAction: GenericWebhookContactAction;
   templateAction: GenericWebhookTemplateAction | null;
@@ -142,6 +152,60 @@ interface GenericWebhookLogRow {
   created_at: string;
 }
 
+type GenericWebhookJobStatus = "queued" | "processing" | "completed" | "failed";
+
+interface GenericWebhookJobRow {
+  id: string;
+  user_id: string;
+  integration_id: string | null;
+  workflow_id: string | null;
+  log_id: string | null;
+  request_id: string;
+  channel_mode: GenericWebhookChannelMode;
+  recipient_name: string | null;
+  recipient_phone: string;
+  contact_name: string | null;
+  contact_phone: string;
+  contact_email: string | null;
+  contact_id: string | null;
+  template_id: string | null;
+  flow_id: string | null;
+  variable_values_json: Record<string, string>;
+  payload_json: JsonRecord;
+  workflow_json: JsonRecord;
+  result_json: JsonRecord;
+  scheduled_at: string;
+  status: GenericWebhookJobStatus;
+  attempt_count: number;
+  error_message: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface PreparedGenericWebhookExecution {
+  userId: string;
+  requestId: string;
+  integrationId: string;
+  integrationName: string;
+  workflowId: string;
+  workflowName: string;
+  channelMode: GenericWebhookChannelMode;
+  payloadJson: JsonRecord;
+  recipientName: string | null;
+  recipientPhone: string;
+  contactName: string | null;
+  contactPhone: string;
+  contactEmail: string | null;
+  contactId: string;
+  templateId: string | null;
+  flowId: string | null;
+  variableValues: Record<string, string>;
+  scheduledAt: string | null;
+  delayValue: number;
+  delayUnit: GenericWebhookDelayUnit | null;
+}
+
 function buildWebhookKey(): string {
   return `wh_${randomBytes(8).toString("hex")}`;
 }
@@ -167,6 +231,37 @@ function normalizePhoneNumber(value: string | null): string | null {
     return null;
   }
   return digits;
+}
+
+function normalizeCountryCode(value: string | null | undefined): string | null {
+  const trimmed = trimToNull(value);
+  if (!trimmed || !/^\+\d{1,15}$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeDelayValue(value: number | null | undefined): number {
+  if (!Number.isInteger(value) || (value ?? 0) <= 0) {
+    return 0;
+  }
+  return value!;
+}
+
+function normalizeDelayUnit(value: string | null | undefined): GenericWebhookDelayUnit | null {
+  if (value === "minutes" || value === "hours" || value === "days") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeWebhookPhoneNumber(value: string | null, defaultCountryCode?: string): string | null {
+  const trimmed = trimToNull(value);
+  if (!trimmed) {
+    return null;
+  }
+  const resolvedValue = trimmed.startsWith("+") || !defaultCountryCode ? trimmed : `${defaultCountryCode}${trimmed}`;
+  return normalizePhoneNumber(resolvedValue);
 }
 
 function flattenPayload(input: unknown, prefix = ""): Record<string, string> {
@@ -200,6 +295,18 @@ function getPayloadValue(flatPayload: Record<string, string>, path: string): str
   return trimToNull(flatPayload[path.trim()] ?? null);
 }
 
+function calculateScheduledAt(delayValue: number, delayUnit: GenericWebhookDelayUnit | null, now = new Date()): string | null {
+  const normalizedDelayValue = normalizeDelayValue(delayValue);
+  if (normalizedDelayValue === 0 || !delayUnit) {
+    return null;
+  }
+  const multiplier =
+    delayUnit === "minutes" ? 60_000 :
+    delayUnit === "hours" ? 60 * 60_000 :
+    24 * 60 * 60_000;
+  return new Date(now.getTime() + normalizedDelayValue * multiplier).toISOString();
+}
+
 function mapIntegration(row: GenericWebhookIntegrationRow): GenericWebhookIntegration {
   return {
     id: row.id,
@@ -218,6 +325,19 @@ function mapIntegration(row: GenericWebhookIntegrationRow): GenericWebhookIntegr
 }
 
 function mapWorkflow(row: GenericWebhookWorkflowRow): GenericWebhookWorkflow {
+  const persistedContactAction = (row.contact_action_json ?? {}) as PersistedGenericWebhookContactAction;
+  const defaultCountryCode =
+    normalizeCountryCode(persistedContactAction._defaultCountryCode) ??
+    null;
+  const delayValue = normalizeDelayValue(persistedContactAction._delayValue);
+  const delayUnit = normalizeDelayUnit(persistedContactAction._delayUnit);
+  const {
+    _defaultCountryCode: _ignoredDefaultCountryCode,
+    _delayValue: _ignoredDelayValue,
+    _delayUnit: _ignoredDelayUnit,
+    ...contactAction
+  } = persistedContactAction;
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -226,8 +346,11 @@ function mapWorkflow(row: GenericWebhookWorkflowRow): GenericWebhookWorkflow {
     enabled: row.enabled,
     channelMode: row.channel_mode ?? "api",
     matchMode: row.match_mode,
+    defaultCountryCode: defaultCountryCode ?? undefined,
+    delayValue: delayValue > 0 ? delayValue : undefined,
+    delayUnit: delayValue > 0 ? delayUnit ?? undefined : undefined,
     conditions: Array.isArray(row.conditions_json) ? row.conditions_json : [],
-    contactAction: row.contact_action_json ?? {},
+    contactAction,
     templateAction: row.channel_mode === "api" ? row.template_action_json ?? null : null,
     qrFlowAction: row.channel_mode === "qr" ? row.qr_flow_action_json ?? null : null,
     createdAt: row.created_at,
@@ -273,6 +396,9 @@ async function getUserDisplayName(userId: string): Promise<string> {
 function validateWorkflowPayload(input: {
   name?: string;
   channelMode?: GenericWebhookChannelMode;
+  defaultCountryCode?: string | null;
+  delayValue?: number | null;
+  delayUnit?: GenericWebhookDelayUnit | null;
   conditions?: GenericWebhookCondition[];
   templateAction?: GenericWebhookTemplateAction | null;
   qrFlowAction?: GenericWebhookQrFlowAction | null;
@@ -299,6 +425,20 @@ function validateWorkflowPayload(input: {
   }
   if (input.qrFlowAction && !input.qrFlowAction.recipientPhonePath.trim()) {
     throw new Error("Recipient phone mapping is required for QR webhook workflows.");
+  }
+  if (input.defaultCountryCode !== undefined && input.defaultCountryCode !== null && !normalizeCountryCode(input.defaultCountryCode)) {
+    throw new Error("Default country code must start with + and contain digits only.");
+  }
+  if (input.delayValue !== undefined && input.delayValue !== null) {
+    if (!Number.isInteger(input.delayValue) || input.delayValue < 0) {
+      throw new Error("Delay value must be an integer greater than or equal to 0.");
+    }
+    if (input.delayValue > 0 && !normalizeDelayUnit(input.delayUnit ?? undefined)) {
+      throw new Error("Delay unit is required when delay value is greater than 0.");
+    }
+  }
+  if (input.delayUnit !== undefined && input.delayUnit !== null && !normalizeDelayUnit(input.delayUnit)) {
+    throw new Error("Delay unit must be minutes, hours, or days.");
   }
 }
 
@@ -350,6 +490,23 @@ function applyTagOperation(existingTags: string[], incomingTags: string[], opera
   return Array.from(new Set([...existingTags, ...normalizedIncoming]));
 }
 
+function buildPersistedContactAction(input: {
+  contactAction?: GenericWebhookContactAction;
+  defaultCountryCode?: string | null;
+  delayValue?: number | null;
+  delayUnit?: GenericWebhookDelayUnit | null;
+}): PersistedGenericWebhookContactAction {
+  const defaultCountryCode = normalizeCountryCode(input.defaultCountryCode ?? undefined);
+  const delayValue = normalizeDelayValue(input.delayValue);
+  const delayUnit = normalizeDelayUnit(input.delayUnit ?? undefined);
+
+  return {
+    ...(input.contactAction ?? {}),
+    ...(defaultCountryCode ? { _defaultCountryCode: defaultCountryCode } : {}),
+    ...(delayValue > 0 && delayUnit ? { _delayValue: delayValue, _delayUnit: delayUnit } : {})
+  };
+}
+
 async function recordGenericWebhookLog(input: {
   userId: string;
   integrationId: string;
@@ -364,12 +521,13 @@ async function recordGenericWebhookLog(input: {
   errorMessage?: string | null;
   payloadJson: JsonRecord;
   resultJson?: JsonRecord;
-}): Promise<void> {
-  await pool.query(
+}): Promise<string> {
+  const result = await pool.query<{ id: string }>(
     `INSERT INTO generic_webhook_logs (
        user_id, integration_id, workflow_id, request_id, status, customer_name, customer_phone, contact_id, template_id, provider_message_id, error_message, payload_json, result_json
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb)
+     RETURNING id`,
     [
       input.userId,
       input.integrationId,
@@ -384,6 +542,70 @@ async function recordGenericWebhookLog(input: {
       input.errorMessage ?? null,
       JSON.stringify(input.payloadJson ?? {}),
       JSON.stringify(input.resultJson ?? {})
+    ]
+  );
+  return result.rows[0]!.id;
+}
+
+async function updateGenericWebhookLog(input: {
+  logId: string;
+  status?: GenericWebhookLogStatus;
+  contactId?: string | null;
+  providerMessageId?: string | null;
+  errorMessage?: string | null;
+  resultJson?: JsonRecord;
+}): Promise<void> {
+  await pool.query(
+    `UPDATE generic_webhook_logs
+     SET status = COALESCE($2, status),
+         contact_id = COALESCE($3, contact_id),
+         provider_message_id = COALESCE($4, provider_message_id),
+         error_message = $5,
+         result_json = COALESCE($6::jsonb, result_json)
+     WHERE id = $1`,
+    [
+      input.logId,
+      input.status ?? null,
+      input.contactId ?? null,
+      input.providerMessageId ?? null,
+      input.errorMessage ?? null,
+      input.resultJson ? JSON.stringify(input.resultJson) : null
+    ]
+  );
+}
+
+async function queueGenericWebhookJob(input: PreparedGenericWebhookExecution & { logId: string }): Promise<void> {
+  await pool.query(
+    `INSERT INTO generic_webhook_jobs (
+       user_id, integration_id, workflow_id, log_id, request_id, channel_mode, recipient_name, recipient_phone, contact_name, contact_phone, contact_email, contact_id,
+       template_id, flow_id, variable_values_json, payload_json, workflow_json, result_json, scheduled_at, status
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19, 'queued')`,
+    [
+      input.userId,
+      input.integrationId,
+      input.workflowId,
+      input.logId,
+      input.requestId,
+      input.channelMode,
+      input.recipientName,
+      input.recipientPhone,
+      input.contactName,
+      input.contactPhone,
+      input.contactEmail,
+      input.contactId,
+      input.templateId,
+      input.flowId,
+      JSON.stringify(input.variableValues ?? {}),
+      JSON.stringify(input.payloadJson ?? {}),
+      JSON.stringify({
+        workflowName: input.workflowName,
+        integrationName: input.integrationName,
+        delayValue: input.delayValue,
+        delayUnit: input.delayUnit
+      }),
+      JSON.stringify({}),
+      input.scheduledAt
     ]
   );
 }
@@ -498,6 +720,9 @@ export async function createGenericWebhookWorkflow(
     enabled?: boolean;
     channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
+    defaultCountryCode?: string | null;
+    delayValue?: number | null;
+    delayUnit?: GenericWebhookDelayUnit | null;
     conditions: GenericWebhookCondition[];
     contactAction?: GenericWebhookContactAction;
     templateAction?: GenericWebhookTemplateAction | null;
@@ -534,7 +759,7 @@ export async function createGenericWebhookWorkflow(
       input.channelMode,
       input.matchMode,
       JSON.stringify(input.conditions ?? []),
-      JSON.stringify(input.contactAction ?? {}),
+      JSON.stringify(buildPersistedContactAction(input)),
       JSON.stringify(input.templateAction ?? {}),
       JSON.stringify(input.qrFlowAction ?? {}),
       nextSortOrder
@@ -552,6 +777,9 @@ export async function updateGenericWebhookWorkflow(
     enabled: boolean;
     channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
+    defaultCountryCode: string | null;
+    delayValue: number | null;
+    delayUnit: GenericWebhookDelayUnit | null;
     conditions: GenericWebhookCondition[];
     contactAction: GenericWebhookContactAction;
     templateAction: GenericWebhookTemplateAction | null;
@@ -576,9 +804,19 @@ export async function updateGenericWebhookWorkflow(
   const nextQrFlowAction =
     patch.qrFlowAction !== undefined ? patch.qrFlowAction : currentWorkflow.qrFlowAction;
 
+  const nextDefaultCountryCode =
+    patch.defaultCountryCode !== undefined ? patch.defaultCountryCode : currentWorkflow.defaultCountryCode;
+  const nextDelayValue =
+    patch.delayValue !== undefined ? patch.delayValue : currentWorkflow.delayValue;
+  const nextDelayUnit =
+    patch.delayUnit !== undefined ? patch.delayUnit : currentWorkflow.delayUnit;
+
   validateWorkflowPayload({
     name: patch.name,
     channelMode: nextChannelMode,
+    defaultCountryCode: nextDefaultCountryCode,
+    delayValue: nextDelayValue,
+    delayUnit: nextDelayUnit,
     conditions: patch.conditions,
     templateAction: nextTemplateAction,
     qrFlowAction: nextQrFlowAction
@@ -613,7 +851,14 @@ export async function updateGenericWebhookWorkflow(
       patch.channelMode ?? null,
       patch.matchMode ?? null,
       patch.conditions ? JSON.stringify(patch.conditions) : null,
-      patch.contactAction ? JSON.stringify(patch.contactAction) : null,
+      patch.contactAction || patch.defaultCountryCode !== undefined || patch.delayValue !== undefined || patch.delayUnit !== undefined
+        ? JSON.stringify(buildPersistedContactAction({
+            contactAction: patch.contactAction ?? currentWorkflow.contactAction,
+            defaultCountryCode: nextDefaultCountryCode,
+            delayValue: nextDelayValue,
+            delayUnit: nextDelayUnit
+          }))
+        : null,
       patch.templateAction !== undefined ? JSON.stringify(patch.templateAction ?? {}) : null,
       patch.qrFlowAction !== undefined ? JSON.stringify(patch.qrFlowAction ?? {}) : null
     ]
@@ -645,6 +890,198 @@ export async function listGenericWebhookLogs(userId: string, integrationId: stri
   return result.rows.map(mapLog);
 }
 
+async function executePreparedGenericWebhookExecution(input: PreparedGenericWebhookExecution): Promise<{
+  providerMessageId: string | null;
+  resultJson: JsonRecord;
+}> {
+  if (input.channelMode === "api") {
+    if (!input.templateId) {
+      throw new Error("Template action is missing.");
+    }
+
+    const template = await getMessageTemplate(input.userId, input.templateId);
+    const apiConversation = await getOrCreateConversation(input.userId, input.recipientPhone, {
+      channelType: "api",
+      channelLinkedNumber: template.linkedNumber ?? null
+    });
+
+    const delivery = await deliverConversationTemplateMessage({
+      userId: input.userId,
+      conversationId: apiConversation.id,
+      templateId: input.templateId,
+      variableValues: input.variableValues,
+      senderName: await getUserDisplayName(input.userId)
+    });
+
+    return {
+      providerMessageId: delivery.messageId,
+      resultJson: {
+        workflowName: input.workflowName,
+        integrationName: input.integrationName,
+        channelMode: input.channelMode,
+        contactId: input.contactId,
+        conversationId: apiConversation.id,
+        variableKeys: Object.keys(input.variableValues)
+      }
+    };
+  }
+
+  if (!input.flowId) {
+    throw new Error("QR flow action is missing.");
+  }
+
+  const qrStatus = await whatsappSessionManager.getStatus(input.userId);
+  const linkedNumber = normalizePhoneNumber(qrStatus.phoneNumber);
+  if (qrStatus.status !== "connected" || !linkedNumber) {
+    throw new Error("WhatsApp QR session is not connected.");
+  }
+
+  const qrConversation = await getOrCreateConversation(input.userId, input.recipientPhone, {
+    channelType: "qr",
+    channelLinkedNumber: linkedNumber
+  });
+
+  const session = await startFlowForConversation({
+    userId: input.userId,
+    flowId: input.flowId,
+    conversationId: qrConversation.id,
+    sendReply: async (payload) => {
+      await sendConversationFlowMessage({
+        userId: input.userId,
+        conversationId: qrConversation.id,
+        payload
+      });
+    }
+  });
+
+  const selectedFlow = await getFlow(input.userId, input.flowId);
+  return {
+    providerMessageId: null,
+    resultJson: {
+      workflowName: input.workflowName,
+      integrationName: input.integrationName,
+      channelMode: input.channelMode,
+      contactId: input.contactId,
+      conversationId: qrConversation.id,
+      flowId: input.flowId,
+      flowName: selectedFlow?.name ?? null,
+      sessionId: session.id
+    }
+  };
+}
+
+function mapPreparedExecutionFromJob(row: GenericWebhookJobRow): PreparedGenericWebhookExecution {
+  const workflowMeta = row.workflow_json ?? {};
+  return {
+    userId: row.user_id,
+    requestId: row.request_id,
+    integrationId: row.integration_id ?? "",
+    integrationName: trimToNull(workflowMeta.integrationName) ?? "Webhook Integration",
+    workflowId: row.workflow_id ?? "",
+    workflowName: trimToNull(workflowMeta.workflowName) ?? "Webhook Workflow",
+    channelMode: row.channel_mode,
+    payloadJson: row.payload_json ?? {},
+    recipientName: row.recipient_name,
+    recipientPhone: row.recipient_phone,
+    contactName: row.contact_name,
+    contactPhone: row.contact_phone,
+    contactEmail: row.contact_email,
+    contactId: row.contact_id ?? "",
+    templateId: row.template_id,
+    flowId: row.flow_id,
+    variableValues: row.variable_values_json ?? {},
+    scheduledAt: row.scheduled_at,
+    delayValue: normalizeDelayValue(typeof workflowMeta.delayValue === "number" ? workflowMeta.delayValue : 0),
+    delayUnit: normalizeDelayUnit(trimToNull(workflowMeta.delayUnit))
+  };
+}
+
+async function completeGenericWebhookJob(jobId: string, resultJson: JsonRecord): Promise<void> {
+  await pool.query(
+    `UPDATE generic_webhook_jobs
+     SET status = 'completed',
+         completed_at = NOW(),
+         error_message = NULL,
+         result_json = $2::jsonb
+     WHERE id = $1`,
+    [jobId, JSON.stringify(resultJson)]
+  );
+}
+
+async function failGenericWebhookJob(jobId: string, errorMessage: string, resultJson: JsonRecord): Promise<void> {
+  await pool.query(
+    `UPDATE generic_webhook_jobs
+     SET status = 'failed',
+         error_message = $2,
+         result_json = $3::jsonb
+     WHERE id = $1`,
+    [jobId, errorMessage, JSON.stringify(resultJson)]
+  );
+}
+
+async function claimDueGenericWebhookJobs(limit: number): Promise<GenericWebhookJobRow[]> {
+  const result = await pool.query<GenericWebhookJobRow>(
+    `WITH due AS (
+       SELECT id
+       FROM generic_webhook_jobs
+       WHERE status = 'queued'
+         AND scheduled_at <= NOW()
+       ORDER BY scheduled_at ASC
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED
+     )
+     UPDATE generic_webhook_jobs jobs
+     SET status = 'processing',
+         attempt_count = jobs.attempt_count + 1,
+         updated_at = NOW()
+     FROM due
+     WHERE jobs.id = due.id
+     RETURNING jobs.*`,
+    [limit]
+  );
+  return result.rows;
+}
+
+export async function processDueGenericWebhookJobs(limit = 25): Promise<void> {
+  const jobs = await claimDueGenericWebhookJobs(limit);
+  for (const job of jobs) {
+    const prepared = mapPreparedExecutionFromJob(job);
+    let queuedLogId: string | null = null;
+    try {
+      const executionResult = await executePreparedGenericWebhookExecution(prepared);
+      await completeGenericWebhookJob(job.id, executionResult.resultJson);
+      if (job.log_id) {
+        await updateGenericWebhookLog({
+          logId: job.log_id,
+          status: "completed",
+          contactId: prepared.contactId || null,
+          providerMessageId: executionResult.providerMessageId,
+          errorMessage: null,
+          resultJson: executionResult.resultJson
+        });
+      }
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+      const resultJson = {
+        workflowName: prepared.workflowName,
+        integrationName: prepared.integrationName,
+        channelMode: prepared.channelMode,
+        flowId: prepared.flowId
+      };
+      await failGenericWebhookJob(job.id, errorMessage, resultJson);
+      if (job.log_id) {
+        await updateGenericWebhookLog({
+          logId: job.log_id,
+          status: "failed",
+          contactId: prepared.contactId || null,
+          errorMessage,
+          resultJson
+        });
+      }
+    }
+  }
+}
+
 export async function handleIncomingGenericWebhook(input: {
   webhookKey: string;
   secretToken: string | null;
@@ -669,6 +1106,7 @@ export async function handleIncomingGenericWebhook(input: {
   let matchedWorkflows = 0;
   let completedWorkflows = 0;
   let failedWorkflows = 0;
+  const fields = await listContactFields(integration.userId);
 
   for (const workflow of workflows) {
     if (!workflowMatches(workflow, flatPayload)) continue;
@@ -693,8 +1131,8 @@ export async function handleIncomingGenericWebhook(input: {
       (workflow.contactAction.contactPaths?.phoneNumberPath
         ? getPayloadValue(flatPayload, workflow.contactAction.contactPaths.phoneNumberPath)
         : null) ?? rawPhone;
-    const recipientPhone = normalizePhoneNumber(rawPhone);
-    const contactPhone = normalizePhoneNumber(rawContactPhone);
+    const recipientPhone = normalizeWebhookPhoneNumber(rawPhone, workflow.defaultCountryCode);
+    const contactPhone = normalizeWebhookPhoneNumber(rawContactPhone, workflow.defaultCountryCode);
 
     if (!recipientPhone || !contactPhone) {
       await recordGenericWebhookLog({
@@ -714,8 +1152,8 @@ export async function handleIncomingGenericWebhook(input: {
       continue;
     }
 
+    let queuedLogId: string | null = null;
     try {
-      const fields = await listContactFields(integration.userId);
       const customFields: Record<string, string> = {};
       for (const mapping of workflow.contactAction.fieldMappings ?? []) {
         if (!fields.some((field) => field.name === mapping.contactFieldName)) continue;
@@ -744,87 +1182,68 @@ export async function handleIncomingGenericWebhook(input: {
         sourceUrl: integration.endpointUrlPath
       });
 
+      const variableValues: Record<string, string> = {};
       if (workflow.channelMode === "api") {
         const templateAction = workflow.templateAction;
         if (!templateAction) {
           throw new Error("Template action is missing.");
         }
-
-        const template = await getMessageTemplate(integration.userId, templateAction.templateId);
-        const variableValues: Record<string, string> = {};
         for (const [key, binding] of Object.entries(templateAction.variableMappings ?? {})) {
           const value = getPayloadValue(flatPayload, binding.path) ?? trimToNull(templateAction.fallbackValues?.[key]);
           if (value) variableValues[key] = value;
         }
+      }
 
-        const apiConversation = await getOrCreateConversation(integration.userId, recipientPhone, {
-          channelType: "api",
-          channelLinkedNumber: template.linkedNumber ?? null
-        });
+      const preparedExecution: PreparedGenericWebhookExecution = {
+        userId: integration.userId,
+        requestId: input.requestId,
+        integrationId: integration.id,
+        integrationName: integration.name,
+        workflowId: workflow.id,
+        workflowName: workflow.name,
+        channelMode: workflow.channelMode,
+        payloadJson: input.payload,
+        recipientName,
+        recipientPhone,
+        contactName,
+        contactPhone,
+        contactEmail,
+        contactId: contact.id,
+        templateId: workflow.templateAction?.templateId ?? null,
+        flowId: workflow.qrFlowAction?.flowId ?? null,
+        variableValues,
+        scheduledAt: calculateScheduledAt(workflow.delayValue ?? 0, workflow.delayUnit ?? null),
+        delayValue: workflow.delayValue ?? 0,
+        delayUnit: workflow.delayUnit ?? null
+      };
 
-        const delivery = await deliverConversationTemplateMessage({
-          userId: integration.userId,
-          conversationId: apiConversation.id,
-          templateId: template.id,
-          variableValues,
-          senderName: await getUserDisplayName(integration.userId)
-        });
-
-        completedWorkflows += 1;
-        await recordGenericWebhookLog({
+      if (preparedExecution.scheduledAt) {
+        queuedLogId = await recordGenericWebhookLog({
           userId: integration.userId,
           integrationId: integration.id,
           workflowId: workflow.id,
           requestId: input.requestId,
-          status: "completed",
-          customerName: recipientName,
+          status: "queued",
+          customerName: recipientName ?? contactName,
           customerPhone: recipientPhone,
           contactId: contact.id,
-          templateId: template.id,
-          providerMessageId: delivery.messageId,
+          templateId: preparedExecution.templateId,
           payloadJson: input.payload,
           resultJson: {
             workflowName: workflow.name,
             integrationName: integration.name,
             channelMode: workflow.channelMode,
             contactId: contact.id,
-            conversationId: apiConversation.id,
-            variableKeys: Object.keys(variableValues)
+            delayValue: preparedExecution.delayValue,
+            delayUnit: preparedExecution.delayUnit,
+            scheduledAt: preparedExecution.scheduledAt
           }
         });
+        await queueGenericWebhookJob({ ...preparedExecution, logId: queuedLogId });
         continue;
       }
 
-      const qrFlowAction = workflow.qrFlowAction;
-      if (!qrFlowAction) {
-        throw new Error("QR flow action is missing.");
-      }
-
-      const qrStatus = await whatsappSessionManager.getStatus(integration.userId);
-      const linkedNumber = normalizePhoneNumber(qrStatus.phoneNumber);
-      if (qrStatus.status !== "connected" || !linkedNumber) {
-        throw new Error("WhatsApp QR session is not connected.");
-      }
-
-      const qrConversation = await getOrCreateConversation(integration.userId, recipientPhone, {
-        channelType: "qr",
-        channelLinkedNumber: linkedNumber
-      });
-
-      const session = await startFlowForConversation({
-        userId: integration.userId,
-        flowId: qrFlowAction.flowId,
-        conversationId: qrConversation.id,
-        sendReply: async (payload) => {
-          await sendConversationFlowMessage({
-            userId: integration.userId,
-            conversationId: qrConversation.id,
-            payload
-          });
-        }
-      });
-
-      const selectedFlow = await getFlow(integration.userId, qrFlowAction.flowId);
+      const executionResult = await executePreparedGenericWebhookExecution(preparedExecution);
       completedWorkflows += 1;
       await recordGenericWebhookLog({
         userId: integration.userId,
@@ -835,38 +1254,43 @@ export async function handleIncomingGenericWebhook(input: {
         customerName: recipientName ?? contactName,
         customerPhone: recipientPhone,
         contactId: contact.id,
+        templateId: preparedExecution.templateId,
+        providerMessageId: executionResult.providerMessageId,
         payloadJson: input.payload,
-        resultJson: {
-          workflowName: workflow.name,
-          integrationName: integration.name,
-          channelMode: workflow.channelMode,
-          contactId: contact.id,
-          conversationId: qrConversation.id,
-          flowId: qrFlowAction.flowId,
-          flowName: selectedFlow?.name ?? null,
-          sessionId: session.id
-        }
+        resultJson: executionResult.resultJson
       });
     } catch (error) {
       failedWorkflows += 1;
-      await recordGenericWebhookLog({
-        userId: integration.userId,
-        integrationId: integration.id,
-        workflowId: workflow.id,
-        requestId: input.requestId,
-        status: "failed",
-        customerName: recipientName,
-        customerPhone: recipientPhone,
-        templateId: workflow.templateAction?.templateId ?? null,
-        errorMessage: (error as Error).message,
-        payloadJson: input.payload,
-        resultJson: {
-          workflowName: workflow.name,
-          integrationName: integration.name,
-          channelMode: workflow.channelMode,
-          flowId: workflow.qrFlowAction?.flowId ?? null
-        }
-      });
+      const errorMessage = (error as Error).message;
+      const resultJson = {
+        workflowName: workflow.name,
+        integrationName: integration.name,
+        channelMode: workflow.channelMode,
+        flowId: workflow.qrFlowAction?.flowId ?? null
+      };
+      if (queuedLogId) {
+        await updateGenericWebhookLog({
+          logId: queuedLogId,
+          status: "failed",
+          contactId: null,
+          errorMessage,
+          resultJson
+        });
+      } else {
+        await recordGenericWebhookLog({
+          userId: integration.userId,
+          integrationId: integration.id,
+          workflowId: workflow.id,
+          requestId: input.requestId,
+          status: "failed",
+          customerName: recipientName,
+          customerPhone: recipientPhone,
+          templateId: workflow.templateAction?.templateId ?? null,
+          errorMessage,
+          payloadJson: input.payload,
+          resultJson
+        });
+      }
     }
   }
 

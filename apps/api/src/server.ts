@@ -5,6 +5,7 @@ import { runMigrations } from "./scripts/migrate.js";
 import { renewDueWorkspaceCredits } from "./services/workspace-billing-service.js";
 import { runAutoRechargeSweep } from "./services/workspace-billing-center-service.js";
 import { startCampaignWorker } from "./services/campaign-worker-service.js";
+import { startGenericWebhookWorker } from "./services/generic-webhook-worker-service.js";
 import { startSequenceWorker } from "./services/sequence-worker-service.js";
 
 await runMigrations({
@@ -52,6 +53,7 @@ if (env.AUTO_RECHARGE_CRON_ENABLED) {
 }
 
 startCampaignWorker();
+startGenericWebhookWorker();
 startSequenceWorker();
 
 const close = async () => {

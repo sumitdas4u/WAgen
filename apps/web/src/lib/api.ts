@@ -2908,8 +2908,9 @@ export function previewSegmentContacts(token: string, filters: SegmentFilter[]) 
 export type GenericWebhookConditionOperator = "is_not_empty" | "is_empty" | "equals" | "not_equals";
 export type GenericWebhookMatchMode = "all" | "any";
 export type GenericWebhookChannelMode = "api" | "qr";
+export type GenericWebhookDelayUnit = "minutes" | "hours" | "days";
 export type GenericWebhookTagOperation = "append" | "replace" | "add_if_empty";
-export type GenericWebhookLogStatus = "completed" | "skipped" | "failed";
+export type GenericWebhookLogStatus = "queued" | "completed" | "skipped" | "failed";
 
 export interface GenericWebhookCondition {
   comparator: string;
@@ -2972,6 +2973,9 @@ export interface GenericWebhookWorkflow {
   enabled: boolean;
   channelMode: GenericWebhookChannelMode;
   matchMode: GenericWebhookMatchMode;
+  defaultCountryCode?: string;
+  delayValue?: number;
+  delayUnit?: GenericWebhookDelayUnit;
   conditions: GenericWebhookCondition[];
   contactAction: GenericWebhookContactAction;
   templateAction: GenericWebhookTemplateAction | null;
@@ -3046,6 +3050,9 @@ export function createGenericWebhookWorkflow(
     enabled?: boolean;
     channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
+    defaultCountryCode?: string | null;
+    delayValue?: number | null;
+    delayUnit?: GenericWebhookDelayUnit | null;
     conditions: GenericWebhookCondition[];
     contactAction?: GenericWebhookContactAction;
     templateAction?: GenericWebhookTemplateAction | null;
@@ -3068,6 +3075,9 @@ export function updateGenericWebhookWorkflow(
     enabled: boolean;
     channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
+    defaultCountryCode: string | null;
+    delayValue: number | null;
+    delayUnit: GenericWebhookDelayUnit | null;
     conditions: GenericWebhookCondition[];
     contactAction: GenericWebhookContactAction;
     templateAction: GenericWebhookTemplateAction | null;
