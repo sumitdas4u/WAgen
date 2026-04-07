@@ -1791,6 +1791,51 @@ export function assignConversationAgent(
 export interface PublishedFlowSummary {
   id: string;
   name: string;
+  channel: "web" | "qr" | "api";
+}
+
+export type GeneratedFlowChannel = "web" | "qr" | "api";
+
+export interface GeneratedFlowTrigger {
+  id: string;
+  type: "keyword" | "any_message" | "template_reply" | "qr_start" | "website_start";
+  value: string;
+}
+
+export interface GeneratedFlowNode {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: Record<string, unknown>;
+}
+
+export interface GeneratedFlowEdge {
+  id: string;
+  source: string;
+  sourceHandle?: string;
+  target: string;
+}
+
+export interface GenerateFlowDraftRequest {
+  prompt: string;
+  channel: GeneratedFlowChannel;
+}
+
+export interface GenerateFlowDraftResponse {
+  name: string;
+  channel: GeneratedFlowChannel;
+  nodes: GeneratedFlowNode[];
+  edges: GeneratedFlowEdge[];
+  triggers: GeneratedFlowTrigger[];
+  warnings: string[];
+}
+
+export function generateFlowDraft(token: string, payload: GenerateFlowDraftRequest) {
+  return apiRequest<GenerateFlowDraftResponse>("/api/flows/generate-draft", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
 }
 
 export function fetchPublishedFlows(token: string) {
@@ -2862,6 +2907,7 @@ export function previewSegmentContacts(token: string, filters: SegmentFilter[]) 
 
 export type GenericWebhookConditionOperator = "is_not_empty" | "is_empty" | "equals" | "not_equals";
 export type GenericWebhookMatchMode = "all" | "any";
+export type GenericWebhookChannelMode = "api" | "qr";
 export type GenericWebhookTagOperation = "append" | "replace" | "add_if_empty";
 export type GenericWebhookLogStatus = "completed" | "skipped" | "failed";
 
@@ -2897,6 +2943,12 @@ export interface GenericWebhookTemplateAction {
   fallbackValues?: Record<string, string>;
 }
 
+export interface GenericWebhookQrFlowAction {
+  flowId: string;
+  recipientPhonePath: string;
+  recipientNamePath?: string;
+}
+
 export interface GenericWebhookIntegration {
   id: string;
   userId: string;
@@ -2918,10 +2970,12 @@ export interface GenericWebhookWorkflow {
   integrationId: string;
   name: string;
   enabled: boolean;
+  channelMode: GenericWebhookChannelMode;
   matchMode: GenericWebhookMatchMode;
   conditions: GenericWebhookCondition[];
   contactAction: GenericWebhookContactAction;
-  templateAction: GenericWebhookTemplateAction;
+  templateAction: GenericWebhookTemplateAction | null;
+  qrFlowAction: GenericWebhookQrFlowAction | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2990,10 +3044,12 @@ export function createGenericWebhookWorkflow(
   payload: {
     name: string;
     enabled?: boolean;
+    channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
     conditions: GenericWebhookCondition[];
     contactAction?: GenericWebhookContactAction;
-    templateAction: GenericWebhookTemplateAction;
+    templateAction?: GenericWebhookTemplateAction | null;
+    qrFlowAction?: GenericWebhookQrFlowAction | null;
   }
 ) {
   return apiRequest<{ workflow: GenericWebhookWorkflow }>(`/api/integrations/webhooks/${integrationId}/workflows`, {
@@ -3010,10 +3066,12 @@ export function updateGenericWebhookWorkflow(
   patch: Partial<{
     name: string;
     enabled: boolean;
+    channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
     conditions: GenericWebhookCondition[];
     contactAction: GenericWebhookContactAction;
-    templateAction: GenericWebhookTemplateAction;
+    templateAction: GenericWebhookTemplateAction | null;
+    qrFlowAction: GenericWebhookQrFlowAction | null;
   }>
 ) {
   return apiRequest<{ workflow: GenericWebhookWorkflow }>(`/api/integrations/webhooks/${integrationId}/workflows/${workflowId}`, {

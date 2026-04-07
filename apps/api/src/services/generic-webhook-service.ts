@@ -1,15 +1,20 @@
 import { randomBytes } from "node:crypto";
 import { pool } from "../db/pool.js";
+import { sendConversationFlowMessage } from "./channel-outbound-service.js";
 import { listContactFields } from "./contact-fields-service.js";
 import { getOrCreateConversation } from "./conversation-service.js";
 import { upsertWebhookContact } from "./contacts-service.js";
+import { startFlowForConversation } from "./flow-engine-service.js";
+import { getFlow } from "./flow-service.js";
 import { deliverConversationTemplateMessage } from "./message-delivery-service.js";
 import { getMessageTemplate } from "./template-service.js";
+import { whatsappSessionManager } from "./whatsapp-session-manager.js";
 
 type JsonRecord = Record<string, unknown>;
 
 export type GenericWebhookConditionOperator = "is_not_empty" | "is_empty" | "equals" | "not_equals";
 export type GenericWebhookMatchMode = "all" | "any";
+export type GenericWebhookChannelMode = "api" | "qr";
 export type GenericWebhookTagOperation = "append" | "replace" | "add_if_empty";
 export type GenericWebhookLogStatus = "completed" | "skipped" | "failed";
 
@@ -38,6 +43,12 @@ export interface GenericWebhookTemplateAction {
   fallbackValues?: Record<string, string>;
 }
 
+export interface GenericWebhookQrFlowAction {
+  flowId: string;
+  recipientPhonePath: string;
+  recipientNamePath?: string;
+}
+
 export interface GenericWebhookIntegration {
   id: string;
   userId: string;
@@ -59,10 +70,12 @@ export interface GenericWebhookWorkflow {
   integrationId: string;
   name: string;
   enabled: boolean;
+  channelMode: GenericWebhookChannelMode;
   matchMode: GenericWebhookMatchMode;
   conditions: GenericWebhookCondition[];
   contactAction: GenericWebhookContactAction;
-  templateAction: GenericWebhookTemplateAction;
+  templateAction: GenericWebhookTemplateAction | null;
+  qrFlowAction: GenericWebhookQrFlowAction | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,10 +116,12 @@ interface GenericWebhookWorkflowRow {
   integration_id: string;
   name: string;
   enabled: boolean;
+  channel_mode: GenericWebhookChannelMode;
   match_mode: GenericWebhookMatchMode;
   conditions_json: GenericWebhookCondition[];
   contact_action_json: GenericWebhookContactAction;
   template_action_json: GenericWebhookTemplateAction;
+  qr_flow_action_json: GenericWebhookQrFlowAction;
   created_at: string;
   updated_at: string;
 }
@@ -209,10 +224,12 @@ function mapWorkflow(row: GenericWebhookWorkflowRow): GenericWebhookWorkflow {
     integrationId: row.integration_id,
     name: row.name,
     enabled: row.enabled,
+    channelMode: row.channel_mode ?? "api",
     matchMode: row.match_mode,
     conditions: Array.isArray(row.conditions_json) ? row.conditions_json : [],
     contactAction: row.contact_action_json ?? {},
-    templateAction: row.template_action_json,
+    templateAction: row.channel_mode === "api" ? row.template_action_json ?? null : null,
+    qrFlowAction: row.channel_mode === "qr" ? row.qr_flow_action_json ?? null : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -255,8 +272,10 @@ async function getUserDisplayName(userId: string): Promise<string> {
 
 function validateWorkflowPayload(input: {
   name?: string;
+  channelMode?: GenericWebhookChannelMode;
   conditions?: GenericWebhookCondition[];
-  templateAction?: GenericWebhookTemplateAction;
+  templateAction?: GenericWebhookTemplateAction | null;
+  qrFlowAction?: GenericWebhookQrFlowAction | null;
 }): void {
   if (input.name !== undefined && !input.name.trim()) {
     throw new Error("Workflow name is required.");
@@ -264,10 +283,39 @@ function validateWorkflowPayload(input: {
   if ((input.conditions?.length ?? 0) > 3) {
     throw new Error("A maximum of 3 conditions is allowed.");
   }
+  if (input.channelMode && input.channelMode !== "api" && input.channelMode !== "qr") {
+    throw new Error("Channel mode must be either api or qr.");
+  }
+  if (input.channelMode === "api" && !input.templateAction) {
+    throw new Error("Template action is required for API webhook workflows.");
+  }
+  if (input.channelMode === "qr" && !input.qrFlowAction) {
+    throw new Error("QR flow action is required for QR webhook workflows.");
+  }
   if (input.templateAction) {
     if (!input.templateAction.recipientNamePath.trim() || !input.templateAction.recipientPhonePath.trim()) {
       throw new Error("Recipient name and phone mappings are required.");
     }
+  }
+  if (input.qrFlowAction && !input.qrFlowAction.recipientPhonePath.trim()) {
+    throw new Error("Recipient phone mapping is required for QR webhook workflows.");
+  }
+}
+
+async function validateQrFlowAction(userId: string, qrFlowAction: GenericWebhookQrFlowAction | null | undefined): Promise<void> {
+  if (!qrFlowAction) {
+    return;
+  }
+
+  const flow = await getFlow(userId, qrFlowAction.flowId);
+  if (!flow) {
+    throw new Error("Selected QR flow was not found.");
+  }
+  if (!flow.published) {
+    throw new Error("Selected QR flow must be published.");
+  }
+  if (flow.channel !== "qr") {
+    throw new Error("Selected flow must use the QR channel.");
   }
 }
 
@@ -448,10 +496,12 @@ export async function createGenericWebhookWorkflow(
   input: {
     name: string;
     enabled?: boolean;
+    channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
     conditions: GenericWebhookCondition[];
     contactAction?: GenericWebhookContactAction;
-    templateAction: GenericWebhookTemplateAction;
+    templateAction?: GenericWebhookTemplateAction | null;
+    qrFlowAction?: GenericWebhookQrFlowAction | null;
   }
 ): Promise<GenericWebhookWorkflow> {
   validateWorkflowPayload(input);
@@ -459,7 +509,12 @@ export async function createGenericWebhookWorkflow(
   if (!integration) {
     throw new Error("Webhook integration not found.");
   }
-  await getMessageTemplate(userId, input.templateAction.templateId);
+  if (input.channelMode === "api" && input.templateAction?.templateId) {
+    await getMessageTemplate(userId, input.templateAction.templateId);
+  }
+  if (input.channelMode === "qr") {
+    await validateQrFlowAction(userId, input.qrFlowAction);
+  }
   const sortOrderResult = await pool.query<{ max: number | null }>(
     `SELECT MAX(sort_order) AS max FROM generic_webhook_workflows WHERE integration_id = $1`,
     [integration.id]
@@ -467,19 +522,21 @@ export async function createGenericWebhookWorkflow(
   const nextSortOrder = (sortOrderResult.rows[0]?.max ?? -1) + 1;
   const result = await pool.query<GenericWebhookWorkflowRow>(
     `INSERT INTO generic_webhook_workflows (
-       user_id, integration_id, name, enabled, match_mode, conditions_json, contact_action_json, template_action_json, sort_order
+       user_id, integration_id, name, enabled, channel_mode, match_mode, conditions_json, contact_action_json, template_action_json, qr_flow_action_json, sort_order
      )
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11)
      RETURNING *`,
     [
       userId,
       integration.id,
       input.name.trim(),
       input.enabled ?? true,
+      input.channelMode,
       input.matchMode,
       JSON.stringify(input.conditions ?? []),
       JSON.stringify(input.contactAction ?? {}),
-      JSON.stringify(input.templateAction),
+      JSON.stringify(input.templateAction ?? {}),
+      JSON.stringify(input.qrFlowAction ?? {}),
       nextSortOrder
     ]
   );
@@ -493,13 +550,14 @@ export async function updateGenericWebhookWorkflow(
   patch: Partial<{
     name: string;
     enabled: boolean;
+    channelMode: GenericWebhookChannelMode;
     matchMode: GenericWebhookMatchMode;
     conditions: GenericWebhookCondition[];
     contactAction: GenericWebhookContactAction;
-    templateAction: GenericWebhookTemplateAction;
+    templateAction: GenericWebhookTemplateAction | null;
+    qrFlowAction: GenericWebhookQrFlowAction | null;
   }>
 ): Promise<GenericWebhookWorkflow | null> {
-  validateWorkflowPayload(patch);
   const currentResult = await pool.query<GenericWebhookWorkflowRow>(
     `SELECT *
      FROM generic_webhook_workflows
@@ -510,17 +568,38 @@ export async function updateGenericWebhookWorkflow(
     [workflowId, userId, integrationId]
   );
   if (!currentResult.rows[0]) return null;
-  if (patch.templateAction?.templateId) {
-    await getMessageTemplate(userId, patch.templateAction.templateId);
+
+  const currentWorkflow = mapWorkflow(currentResult.rows[0]);
+  const nextChannelMode = patch.channelMode ?? currentWorkflow.channelMode;
+  const nextTemplateAction =
+    patch.templateAction !== undefined ? patch.templateAction : currentWorkflow.templateAction;
+  const nextQrFlowAction =
+    patch.qrFlowAction !== undefined ? patch.qrFlowAction : currentWorkflow.qrFlowAction;
+
+  validateWorkflowPayload({
+    name: patch.name,
+    channelMode: nextChannelMode,
+    conditions: patch.conditions,
+    templateAction: nextTemplateAction,
+    qrFlowAction: nextQrFlowAction
+  });
+
+  if (nextChannelMode === "api" && nextTemplateAction?.templateId) {
+    await getMessageTemplate(userId, nextTemplateAction.templateId);
+  }
+  if (nextChannelMode === "qr") {
+    await validateQrFlowAction(userId, nextQrFlowAction);
   }
   const result = await pool.query<GenericWebhookWorkflowRow>(
     `UPDATE generic_webhook_workflows
      SET name = COALESCE($4, name),
          enabled = COALESCE($5, enabled),
-         match_mode = COALESCE($6, match_mode),
-         conditions_json = COALESCE($7::jsonb, conditions_json),
-         contact_action_json = COALESCE($8::jsonb, contact_action_json),
-         template_action_json = COALESCE($9::jsonb, template_action_json)
+         channel_mode = COALESCE($6, channel_mode),
+         match_mode = COALESCE($7, match_mode),
+         conditions_json = COALESCE($8::jsonb, conditions_json),
+         contact_action_json = COALESCE($9::jsonb, contact_action_json),
+         template_action_json = COALESCE($10::jsonb, template_action_json),
+         qr_flow_action_json = COALESCE($11::jsonb, qr_flow_action_json)
      WHERE id = $1
        AND user_id = $2
        AND integration_id = $3
@@ -531,10 +610,12 @@ export async function updateGenericWebhookWorkflow(
       integrationId,
       patch.name?.trim() || null,
       patch.enabled ?? null,
+      patch.channelMode ?? null,
       patch.matchMode ?? null,
       patch.conditions ? JSON.stringify(patch.conditions) : null,
       patch.contactAction ? JSON.stringify(patch.contactAction) : null,
-      patch.templateAction ? JSON.stringify(patch.templateAction) : null
+      patch.templateAction !== undefined ? JSON.stringify(patch.templateAction ?? {}) : null,
+      patch.qrFlowAction !== undefined ? JSON.stringify(patch.qrFlowAction ?? {}) : null
     ]
   );
   return result.rows[0] ? mapWorkflow(result.rows[0]) : null;
@@ -593,8 +674,14 @@ export async function handleIncomingGenericWebhook(input: {
     if (!workflowMatches(workflow, flatPayload)) continue;
     matchedWorkflows += 1;
 
-    const recipientName = getPayloadValue(flatPayload, workflow.templateAction.recipientNamePath);
-    const rawPhone = getPayloadValue(flatPayload, workflow.templateAction.recipientPhonePath);
+    const recipientName =
+      workflow.channelMode === "api"
+        ? getPayloadValue(flatPayload, workflow.templateAction?.recipientNamePath ?? "")
+        : getPayloadValue(flatPayload, workflow.qrFlowAction?.recipientNamePath ?? "");
+    const rawPhone =
+      workflow.channelMode === "api"
+        ? getPayloadValue(flatPayload, workflow.templateAction?.recipientPhonePath ?? "")
+        : getPayloadValue(flatPayload, workflow.qrFlowAction?.recipientPhonePath ?? "");
     const contactName =
       (workflow.contactAction.contactPaths?.displayNamePath
         ? getPayloadValue(flatPayload, workflow.contactAction.contactPaths.displayNamePath)
@@ -618,7 +705,7 @@ export async function handleIncomingGenericWebhook(input: {
         status: "skipped",
         customerName: contactName,
         customerPhone: rawContactPhone,
-        templateId: workflow.templateAction.templateId,
+        templateId: workflow.templateAction?.templateId ?? null,
         errorMessage: !recipientPhone
           ? "Recipient phone mapping did not resolve to a valid phone number."
           : "Contact phone mapping did not resolve to a valid phone number.",
@@ -628,7 +715,6 @@ export async function handleIncomingGenericWebhook(input: {
     }
 
     try {
-      const template = await getMessageTemplate(integration.userId, workflow.templateAction.templateId);
       const fields = await listContactFields(integration.userId);
       const customFields: Record<string, string> = {};
       for (const mapping of workflow.contactAction.fieldMappings ?? []) {
@@ -658,25 +744,87 @@ export async function handleIncomingGenericWebhook(input: {
         sourceUrl: integration.endpointUrlPath
       });
 
-      const variableValues: Record<string, string> = {};
-      for (const [key, binding] of Object.entries(workflow.templateAction.variableMappings ?? {})) {
-        const value = getPayloadValue(flatPayload, binding.path) ?? trimToNull(workflow.templateAction.fallbackValues?.[key]);
-        if (value) variableValues[key] = value;
+      if (workflow.channelMode === "api") {
+        const templateAction = workflow.templateAction;
+        if (!templateAction) {
+          throw new Error("Template action is missing.");
+        }
+
+        const template = await getMessageTemplate(integration.userId, templateAction.templateId);
+        const variableValues: Record<string, string> = {};
+        for (const [key, binding] of Object.entries(templateAction.variableMappings ?? {})) {
+          const value = getPayloadValue(flatPayload, binding.path) ?? trimToNull(templateAction.fallbackValues?.[key]);
+          if (value) variableValues[key] = value;
+        }
+
+        const apiConversation = await getOrCreateConversation(integration.userId, recipientPhone, {
+          channelType: "api",
+          channelLinkedNumber: template.linkedNumber ?? null
+        });
+
+        const delivery = await deliverConversationTemplateMessage({
+          userId: integration.userId,
+          conversationId: apiConversation.id,
+          templateId: template.id,
+          variableValues,
+          senderName: await getUserDisplayName(integration.userId)
+        });
+
+        completedWorkflows += 1;
+        await recordGenericWebhookLog({
+          userId: integration.userId,
+          integrationId: integration.id,
+          workflowId: workflow.id,
+          requestId: input.requestId,
+          status: "completed",
+          customerName: recipientName,
+          customerPhone: recipientPhone,
+          contactId: contact.id,
+          templateId: template.id,
+          providerMessageId: delivery.messageId,
+          payloadJson: input.payload,
+          resultJson: {
+            workflowName: workflow.name,
+            integrationName: integration.name,
+            channelMode: workflow.channelMode,
+            contactId: contact.id,
+            conversationId: apiConversation.id,
+            variableKeys: Object.keys(variableValues)
+          }
+        });
+        continue;
       }
 
-      const conversation = await getOrCreateConversation(integration.userId, recipientPhone, {
-        channelType: "api",
-        channelLinkedNumber: template.linkedNumber ?? null
+      const qrFlowAction = workflow.qrFlowAction;
+      if (!qrFlowAction) {
+        throw new Error("QR flow action is missing.");
+      }
+
+      const qrStatus = await whatsappSessionManager.getStatus(integration.userId);
+      const linkedNumber = normalizePhoneNumber(qrStatus.phoneNumber);
+      if (qrStatus.status !== "connected" || !linkedNumber) {
+        throw new Error("WhatsApp QR session is not connected.");
+      }
+
+      const qrConversation = await getOrCreateConversation(integration.userId, recipientPhone, {
+        channelType: "qr",
+        channelLinkedNumber: linkedNumber
       });
 
-      const delivery = await deliverConversationTemplateMessage({
+      const session = await startFlowForConversation({
         userId: integration.userId,
-        conversationId: conversation.id,
-        templateId: template.id,
-        variableValues,
-        senderName: await getUserDisplayName(integration.userId)
+        flowId: qrFlowAction.flowId,
+        conversationId: qrConversation.id,
+        sendReply: async (payload) => {
+          await sendConversationFlowMessage({
+            userId: integration.userId,
+            conversationId: qrConversation.id,
+            payload
+          });
+        }
       });
 
+      const selectedFlow = await getFlow(integration.userId, qrFlowAction.flowId);
       completedWorkflows += 1;
       await recordGenericWebhookLog({
         userId: integration.userId,
@@ -684,18 +832,19 @@ export async function handleIncomingGenericWebhook(input: {
         workflowId: workflow.id,
         requestId: input.requestId,
         status: "completed",
-        customerName: recipientName,
+        customerName: recipientName ?? contactName,
         customerPhone: recipientPhone,
         contactId: contact.id,
-        templateId: template.id,
-        providerMessageId: delivery.messageId,
         payloadJson: input.payload,
         resultJson: {
           workflowName: workflow.name,
           integrationName: integration.name,
+          channelMode: workflow.channelMode,
           contactId: contact.id,
-          conversationId: conversation.id,
-          variableKeys: Object.keys(variableValues)
+          conversationId: qrConversation.id,
+          flowId: qrFlowAction.flowId,
+          flowName: selectedFlow?.name ?? null,
+          sessionId: session.id
         }
       });
     } catch (error) {
@@ -708,10 +857,15 @@ export async function handleIncomingGenericWebhook(input: {
         status: "failed",
         customerName: recipientName,
         customerPhone: recipientPhone,
-        templateId: workflow.templateAction.templateId,
+        templateId: workflow.templateAction?.templateId ?? null,
         errorMessage: (error as Error).message,
         payloadJson: input.payload,
-        resultJson: { workflowName: workflow.name, integrationName: integration.name }
+        resultJson: {
+          workflowName: workflow.name,
+          integrationName: integration.name,
+          channelMode: workflow.channelMode,
+          flowId: workflow.qrFlowAction?.flowId ?? null
+        }
       });
     }
   }

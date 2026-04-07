@@ -7,12 +7,28 @@ import type { AnyNodeData, FlowNode } from "./types";
 
 interface FlowEditorCtx {
   token: string;
+  variableOptions: FlowEditorVariableOption[];
 }
 
-export const FlowEditorContext = createContext<FlowEditorCtx>({ token: "" });
+export interface FlowEditorVariableOption {
+  id: string;
+  label: string;
+  token: string;
+  category: "contact" | "custom" | "flow";
+  description?: string;
+}
+
+export const FlowEditorContext = createContext<FlowEditorCtx>({
+  token: "",
+  variableOptions: []
+});
 
 export function useFlowEditorToken(): string {
   return useContext(FlowEditorContext).token;
+}
+
+export function useFlowEditorVariableOptions(): FlowEditorVariableOption[] {
+  return useContext(FlowEditorContext).variableOptions;
 }
 
 export function uid(): string {

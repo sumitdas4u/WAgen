@@ -16,6 +16,7 @@ import {
 } from "../services/generic-webhook-service.js";
 
 const MatchModeSchema = z.enum(["all", "any"]);
+const ChannelModeSchema = z.enum(["api", "qr"]);
 const ConditionOperatorSchema = z.enum(["is_not_empty", "is_empty", "equals", "not_equals"]);
 const TagOperationSchema = z.enum(["append", "replace", "add_if_empty"]);
 
@@ -63,13 +64,21 @@ const TemplateActionSchema = z.object({
   fallbackValues: z.record(z.string()).optional()
 });
 
+const QrFlowActionSchema = z.object({
+  flowId: z.string().uuid(),
+  recipientPhonePath: z.string().trim().min(1).max(200),
+  recipientNamePath: z.string().trim().min(1).max(200).optional()
+});
+
 const WorkflowBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
   enabled: z.boolean().optional(),
+  channelMode: ChannelModeSchema,
   matchMode: MatchModeSchema,
   conditions: z.array(ConditionSchema).max(3),
   contactAction: ContactActionSchema,
-  templateAction: TemplateActionSchema
+  templateAction: TemplateActionSchema.optional(),
+  qrFlowAction: QrFlowActionSchema.optional()
 });
 
 const WorkflowPatchSchema = WorkflowBodySchema.partial();

@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useRoutes } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useRoutes } from "react-router-dom";
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -20,7 +20,13 @@ import ReactFlow, {
 } from "reactflow";
 import type { DashboardModulePrefetchContext } from "../../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
-import { apiRequest } from "../../../../lib/api";
+import {
+  apiRequest,
+  generateFlowDraft as apiGenerateFlowDraftRequest,
+  listContactFields,
+  type ContactField,
+  type GenerateFlowDraftResponse
+} from "../../../../lib/api";
 import {
   createDefaultBlockData,
   getPaletteBlocksForChannel,
@@ -29,7 +35,12 @@ import {
   studioBlockNodeTypes
 } from "./flow-blocks/registry";
 import { getConnectionError, validateFlow } from "./flow-validation";
-import { FlowEditorContext, uid } from "./flow-blocks/editor-shared";
+import {
+  FlowEditorContext,
+  uid,
+  type FlowEditorVariableOption
+} from "./flow-blocks/editor-shared";
+import { FlowVariablePicker, isVariableTarget } from "./flow-blocks/variable-picker";
 import type {
   AnyNodeData,
   FlowChannel,
@@ -108,7 +119,8 @@ async function apiGetFlow(token: string, id: string): Promise<FlowDoc> {
 async function apiCreateFlow(
   token: string,
   name: string,
-  channel: FlowChannel
+  channel: FlowChannel,
+  options?: { nodes?: FlowNode[]; edges?: FlowDoc["edges"]; triggers?: FlowDoc["triggers"] }
 ): Promise<FlowDoc> {
   const startId = uid();
   return apiFetch<FlowDoc>("/api/flows", token, {
@@ -116,7 +128,7 @@ async function apiCreateFlow(
     body: JSON.stringify({
       name,
       channel,
-      nodes: [
+      nodes: options?.nodes ?? [
         {
           id: startId,
           type: "flowStart",
@@ -124,10 +136,14 @@ async function apiCreateFlow(
           data: createDefaultBlockData("flowStart")
         }
       ],
-      edges: [],
-      triggers: []
+      edges: options?.edges ?? [],
+      triggers: options?.triggers ?? []
     })
   });
+}
+
+async function apiGenerateFlowDraft(token: string, prompt: string, channel: FlowChannel): Promise<GenerateFlowDraftResponse> {
+  return apiGenerateFlowDraftRequest(token, { prompt, channel });
 }
 
 async function apiUpdateFlow(
@@ -180,6 +196,133 @@ function formatFlowDate(value: string): string {
     day: "2-digit",
     year: "numeric"
   }).format(date);
+}
+
+const BUILT_IN_VARIABLES: FlowEditorVariableOption[] = [
+  { id: "contact-name", label: "Name", token: "{{name}}", category: "contact" },
+  { id: "contact-phone", label: "Phone", token: "{{phone}}", category: "contact" },
+  { id: "contact-email", label: "Email", token: "{{email}}", category: "contact" },
+  { id: "contact-type", label: "Contact Type", token: "{{type}}", category: "contact" },
+  { id: "contact-tags", label: "Tags", token: "{{tags}}", category: "contact" },
+  { id: "contact-source", label: "Source", token: "{{source}}", category: "contact" },
+  { id: "contact-source-id", label: "Source ID", token: "{{source_id}}", category: "contact" },
+  { id: "contact-source-url", label: "Source URL", token: "{{source_url}}", category: "contact" },
+  { id: "conversation-id", label: "Conversation ID", token: "{{conversation.id}}", category: "contact" },
+  { id: "conversation-phone", label: "Conversation Phone", token: "{{conversation.phone}}", category: "contact" },
+  { id: "conversation-stage", label: "Conversation Stage", token: "{{conversation.stage}}", category: "contact" },
+  { id: "conversation-score", label: "Conversation Score", token: "{{conversation.score}}", category: "contact" },
+  { id: "conversation-channel", label: "Conversation Channel", token: "{{conversation.channel}}", category: "contact" }
+];
+
+function pushFlowVariable(
+  map: Map<string, FlowEditorVariableOption>,
+  name: string,
+  label?: string
+) {
+  const normalized = name.trim().replace(/\{\{|\}\}/g, "");
+  if (!normalized) {
+    return;
+  }
+  map.set(normalized, {
+    id: `flow-${normalized}`,
+    label: label ?? normalized,
+    token: `{{${normalized}}}`,
+    category: "flow"
+  });
+}
+
+function discoverFlowVariableOptions(nodes: FlowNode[]): FlowEditorVariableOption[] {
+  const flowVars = new Map<string, FlowEditorVariableOption>();
+
+  for (const node of nodes) {
+    const data = node.data;
+    switch (data.kind) {
+      case "askQuestion":
+        pushFlowVariable(flowVars, data.variableName || "answer", "Question Answer");
+        break;
+      case "askLocation": {
+        const base = (data.variableName || "location").trim() || "location";
+        pushFlowVariable(flowVars, base, "Location");
+        pushFlowVariable(flowVars, `${base}_latitude`, "Location Latitude");
+        pushFlowVariable(flowVars, `${base}_longitude`, "Location Longitude");
+        pushFlowVariable(flowVars, `${base}_name`, "Location Name");
+        pushFlowVariable(flowVars, `${base}_address`, "Location Address");
+        pushFlowVariable(flowVars, `${base}_url`, "Location URL");
+        pushFlowVariable(flowVars, `${base}_source`, "Location Source");
+        break;
+      }
+      case "aiAgent": {
+        const base = (data.saveAs || "ai_agent_result").trim() || "ai_agent_result";
+        pushFlowVariable(flowVars, base, "AI Agent Result");
+        pushFlowVariable(flowVars, `${base}_ok`);
+        pushFlowVariable(flowVars, `${base}_status`);
+        pushFlowVariable(flowVars, `${base}_error`);
+        pushFlowVariable(flowVars, `${base}_payload`);
+        pushFlowVariable(flowVars, `${base}_model`);
+        for (const mapping of data.responseMappings) {
+          pushFlowVariable(flowVars, mapping.variableName);
+        }
+        break;
+      }
+      case "apiRequest": {
+        const base = (data.saveResponseAs || "api_response").trim() || "api_response";
+        pushFlowVariable(flowVars, base, "API Response");
+        pushFlowVariable(flowVars, `${base}_body`);
+        pushFlowVariable(flowVars, `${base}_payload`);
+        pushFlowVariable(flowVars, `${base}_status`);
+        pushFlowVariable(flowVars, `${base}_status_text`);
+        pushFlowVariable(flowVars, `${base}_ok`);
+        pushFlowVariable(flowVars, `${base}_url`);
+        pushFlowVariable(flowVars, `${base}_duration_ms`);
+        pushFlowVariable(flowVars, `${base}_headers`);
+        pushFlowVariable(flowVars, `${base}_error`);
+        for (const mapping of data.responseMappings) {
+          pushFlowVariable(flowVars, mapping.variableName);
+        }
+        break;
+      }
+      case "googleSheets":
+      case "googleSheetsFetchRow":
+      case "googleSheetsFetchRows":
+      case "googleCalendarBooking": {
+        const base = "saveAs" in data ? String(data.saveAs ?? "").trim() : "";
+        if (base) {
+          pushFlowVariable(flowVars, base);
+        }
+        if ("fetchMappings" in data && Array.isArray(data.fetchMappings)) {
+          for (const mapping of data.fetchMappings) {
+            pushFlowVariable(flowVars, mapping.value);
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return [...flowVars.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function buildVariableOptions(
+  nodes: FlowNode[],
+  contactFields: ContactField[]
+): FlowEditorVariableOption[] {
+  const customOptions = contactFields
+    .filter((field) => field.is_active)
+    .map((field) => ({
+      id: `custom-${field.id}`,
+      label: field.label,
+      token: `{{custom.${field.name}}}`,
+      category: "custom" as const
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return [
+    ...BUILT_IN_VARIABLES,
+    ...customOptions,
+    ...discoverFlowVariableOptions(nodes)
+  ];
 }
 
 // â”€â”€â”€ Blocks panel (channel-filtered) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -296,6 +439,8 @@ function FlowNodeEditorSurface({ node }: { node: FlowNode }) {
 function FlowNodeEditorPanel(props: {
   node: FlowNode | null;
   saveStatus: "saved" | "dirty" | "saving";
+  activeVariableTarget: HTMLInputElement | HTMLTextAreaElement | null;
+  onFocusVariableTarget: (target: HTMLInputElement | HTMLTextAreaElement | null) => void;
   onClose: () => void;
   onSaveAndClose: () => Promise<void>;
 }) {
@@ -314,7 +459,17 @@ function FlowNodeEditorPanel(props: {
               x
             </button>
           </div>
-          <div className="fn-right-body">
+          <div className="fn-right-toolbar">
+            <FlowVariablePicker activeTarget={props.activeVariableTarget} />
+          </div>
+          <div
+            className="fn-right-body"
+            onFocusCapture={(event) => {
+              props.onFocusVariableTarget(
+                isVariableTarget(event.target) ? event.target : null
+              );
+            }}
+          >
             <FlowNodeEditorSurface node={props.node} />
           </div>
           <div className="fn-right-foot">
@@ -350,18 +505,22 @@ function FlowNodeEditorPanel(props: {
 interface FlowEditorInnerProps {
   flow: FlowDoc;
   token: string;
+  initialNotice?: string | null;
   onChange: (flow: FlowDoc) => void;
   onBack: () => void;
 }
 
-function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps) {
+function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowEditorInnerProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AnyNodeData>(flow.nodes as FlowNode[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flow.edges);
   const [flowName, setFlowName] = useState(flow.name);
   const [live, setLive] = useState(flow.published);
   const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "saving">("saved");
   const [isBlocksOpen, setIsBlocksOpen] = useState(true);
-  const [validationNotice, setValidationNotice] = useState<string | null>(null);
+  const [validationNotice, setValidationNotice] = useState<string | null>(initialNotice ?? null);
+  const [contactFields, setContactFields] = useState<ContactField[]>([]);
+  const [activeVariableTarget, setActiveVariableTarget] =
+    useState<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { project } = useReactFlow();
@@ -398,6 +557,30 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
       label: "Ready to publish"
     };
   }, [validation.errors.length, validation.warnings.length]);
+  const variableOptions = useMemo(
+    () => buildVariableOptions(nodes as FlowNode[], contactFields),
+    [contactFields, nodes]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void listContactFields(token)
+      .then((response) => {
+        if (!cancelled) {
+          setContactFields(response.fields);
+        }
+      })
+      .catch((error) => {
+        console.warn("[FlowEditor] Failed to load contact fields", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    setActiveVariableTarget(null);
+  }, [selectedNode?.id]);
   useEffect(() => {
     if (isInitial.current) {
       isInitial.current = false;
@@ -506,7 +689,8 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
   };
 
   return (
-    <div className="fn-root">
+    <FlowEditorContext.Provider value={{ token, variableOptions }}>
+      <div className="fn-root">
       <div className="fn-topbar">
         <button className="fn-btn fn-btn-back" onClick={onBack}>
           Back to Flows
@@ -622,6 +806,8 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
         <FlowNodeEditorPanel
           node={selectedNode}
           saveStatus={saveStatus}
+          activeVariableTarget={activeVariableTarget}
+          onFocusVariableTarget={(target) => setActiveVariableTarget(target)}
           onClose={closeNodeEditor}
           onSaveAndClose={async () => {
             const saved = await saveNow();
@@ -631,7 +817,8 @@ function FlowEditorInner({ flow, token, onChange, onBack }: FlowEditorInnerProps
           }}
         />
       </div>
-    </div>
+      </div>
+    </FlowEditorContext.Provider>
   );
 }
 
@@ -644,11 +831,9 @@ function FlowEditor(props: FlowEditorInnerProps) {
   }, []);
 
   return (
-    <FlowEditorContext.Provider value={{ token: props.token }}>
-      <ReactFlowProvider>
-        <FlowEditorInner {...props} />
-      </ReactFlowProvider>
-    </FlowEditorContext.Provider>
+    <ReactFlowProvider>
+      <FlowEditorInner {...props} />
+    </ReactFlowProvider>
   );
 }
 
@@ -657,15 +842,34 @@ function FlowEditor(props: FlowEditorInnerProps) {
 const CHANNELS: FlowChannel[] = ["web", "qr", "api"];
 
 function CreateFlowModal(props: {
-  onCreate: (name: string, channel: FlowChannel) => void;
+  onCreate: (name: string, channel: FlowChannel) => void | Promise<void>;
+  onCreateWithAi: (prompt: string, channel: FlowChannel) => Promise<void>;
   onClose: () => void;
 }) {
   const [step, setStep] = useState<"channel" | "name">("channel");
   const [channel, setChannel] = useState<FlowChannel>("api");
+  const [mode, setMode] = useState<"manual" | "ai">("manual");
   const [name, setName] = useState("Untitled Flow");
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleCreate = () => {
-    if (name.trim()) props.onCreate(name.trim(), channel);
+    if (!name.trim()) return;
+    setError(null);
+    props.onCreate(name.trim(), channel);
+  };
+
+  const handleGenerateWithAi = async () => {
+    if (!aiPrompt.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await props.onCreateWithAi(aiPrompt.trim(), channel);
+    } catch (err) {
+      setError((err as Error).message || "Could not generate a draft flow.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -730,27 +934,71 @@ function CreateFlowModal(props: {
                 </span>
                 <span style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{CHANNEL_META[channel].label}</span>
               </div>
-              <input
-                className="fn-input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Flow name..."
-                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                autoFocus
-              />
+              <div className="fn-create-mode-toggle">
+                <button
+                  type="button"
+                  className={`fn-create-mode-btn${mode === "manual" ? " active" : ""}`}
+                  onClick={() => setMode("manual")}
+                >
+                  Start Blank
+                </button>
+                <button
+                  type="button"
+                  className={`fn-create-mode-btn${mode === "ai" ? " active" : ""}`}
+                  onClick={() => setMode("ai")}
+                >
+                  Generate Draft with AI
+                </button>
+              </div>
+              {mode === "manual" ? (
+                <input
+                  className="fn-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Flow name..."
+                  onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                  autoFocus
+                />
+              ) : (
+                <div className="fn-ai-create-wrap">
+                  <textarea
+                    className="fn-input fn-ai-create-textarea"
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="Describe the flow you want, for example: Create a restaurant feedback flow that collects comments, thanks the customer, and escalates negative feedback to a human."
+                    rows={5}
+                    autoFocus
+                  />
+                  <p className="fn-ai-create-hint">
+                    AI will create a generic draft using existing flow components and placeholders for details you still need to fill.
+                  </p>
+                </div>
+              )}
+              {error ? <div className="fn-banner fn-banner-error" style={{ marginTop: "0.75rem" }}>{error}</div> : null}
             </div>
             <div className="fn-modal-foot" style={{ display: "flex", gap: "0.5rem" }}>
               <button className="fn-btn" onClick={() => setStep("channel")}>
                 Back
               </button>
-              <button
-                className="fn-btn fn-btn-primary"
-                style={{ flex: 1 }}
-                onClick={handleCreate}
-                disabled={!name.trim()}
-              >
-                Create Flow
-              </button>
+              {mode === "manual" ? (
+                <button
+                  className="fn-btn fn-btn-primary"
+                  style={{ flex: 1 }}
+                  onClick={handleCreate}
+                  disabled={!name.trim()}
+                >
+                  Create Flow
+                </button>
+              ) : (
+                <button
+                  className="fn-btn fn-btn-primary"
+                  style={{ flex: 1 }}
+                  onClick={handleGenerateWithAi}
+                  disabled={!aiPrompt.trim() || busy}
+                >
+                  {busy ? "Generating..." : "Generate Draft"}
+                </button>
+              )}
             </div>
           </>
         )}
@@ -940,10 +1188,14 @@ function FlowsPage() {
 function FlowEditorPage() {
   const { token } = useDashboardShell();
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const [flow, setFlow] = useState<FlowDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const aiWarnings = Array.isArray((location.state as { aiGenerationWarnings?: unknown } | null)?.aiGenerationWarnings)
+    ? ((location.state as { aiGenerationWarnings?: string[] }).aiGenerationWarnings ?? [])
+    : [];
 
   useEffect(() => {
     if (!id) return;
@@ -971,6 +1223,7 @@ function FlowEditorPage() {
       key={flow.id}
       flow={flow}
       token={token}
+      initialNotice={aiWarnings.length > 0 ? aiWarnings.join(" ") : null}
       onChange={(updated) => setFlow(updated)}
       onBack={() => navigate("/dashboard/studio/flows")}
     />
@@ -992,9 +1245,23 @@ function FlowNewPage() {
     }
   };
 
+  const handleCreateWithAi = async (prompt: string, channel: FlowChannel) => {
+    const draft = await apiGenerateFlowDraft(token, prompt, channel);
+    const created = await apiCreateFlow(token, draft.name, channel, {
+      nodes: draft.nodes as unknown as FlowNode[],
+      edges: draft.edges,
+      triggers: draft.triggers
+    });
+    navigate(`/dashboard/studio/flows/${created.id}`, {
+      replace: true,
+      state: { aiGenerationWarnings: draft.warnings }
+    });
+  };
+
   return (
     <CreateFlowModal
       onCreate={handleCreate}
+      onCreateWithAi={handleCreateWithAi}
       onClose={() => navigate("/dashboard/studio/flows")}
     />
   );

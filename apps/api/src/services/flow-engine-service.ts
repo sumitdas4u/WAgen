@@ -4,12 +4,14 @@ import {
   parseFlowLocationInput
 } from "./flow-input-codec.js";
 import { setConversationManualAndPaused } from "./conversation-service.js";
+import { getContactByConversationId } from "./contacts-service.js";
 import {
   buildButtonOptions,
   buildChoicePrompt,
   buildListSections,
   flattenListChoices,
   getNextNode,
+  interpolate,
   matchChoiceByMessage
 } from "./flow-blocks/helpers.js";
 import { getFlowBlockModule } from "./flow-blocks/registry.js";
@@ -46,6 +48,77 @@ interface FlowExecutionOptions {
 }
 
 const MAX_STEPS = 20;
+
+interface ConversationVariableContextRow {
+  id: string;
+  phone_number: string;
+  stage: string;
+  score: number;
+  channel_type: FlowChannelType | null;
+}
+
+function buildContactVariables(input: {
+  contact: Awaited<ReturnType<typeof getContactByConversationId>>;
+  conversation: ConversationVariableContextRow | null;
+}): FlowVariables {
+  const { contact, conversation } = input;
+  const custom = Object.fromEntries(
+    (contact?.custom_field_values ?? [])
+      .filter((field) => field.field_name)
+      .map((field) => [field.field_name, field.value ?? ""])
+  );
+
+  return {
+    name: contact?.display_name ?? "",
+    phone: contact?.phone_number ?? conversation?.phone_number ?? "",
+    email: contact?.email ?? "",
+    type: contact?.contact_type ?? "",
+    tags: Array.isArray(contact?.tags) ? contact.tags.join(", ") : "",
+    source: contact?.source_type ?? "",
+    source_id: contact?.source_id ?? "",
+    source_url: contact?.source_url ?? "",
+    custom,
+    contact: {
+      id: contact?.id ?? "",
+      name: contact?.display_name ?? "",
+      phone: contact?.phone_number ?? conversation?.phone_number ?? "",
+      email: contact?.email ?? "",
+      type: contact?.contact_type ?? "",
+      tags: contact?.tags ?? [],
+      source: contact?.source_type ?? "",
+      source_id: contact?.source_id ?? "",
+      source_url: contact?.source_url ?? "",
+      custom
+    },
+    conversation: {
+      id: conversation?.id ?? "",
+      phone: conversation?.phone_number ?? "",
+      stage: conversation?.stage ?? "",
+      score: conversation?.score ?? 0,
+      channel: conversation?.channel_type ?? ""
+    }
+  };
+}
+
+async function buildConversationFlowVariables(params: {
+  userId: string;
+  conversationId: string;
+}): Promise<FlowVariables> {
+  const [contact, conversation] = await Promise.all([
+    getContactByConversationId(params.userId, params.conversationId),
+    pool
+      .query<ConversationVariableContextRow>(
+        `SELECT id, phone_number, stage, score, channel_type
+         FROM conversations
+         WHERE id = $1
+         LIMIT 1`,
+        [params.conversationId]
+      )
+      .then((result) => result.rows[0] ?? null)
+  ]);
+
+  return buildContactVariables({ contact, conversation });
+}
 
 function isFlowCompatibleWithChannel(
   flow: FlowRow,
@@ -626,6 +699,32 @@ export async function advanceFlowAfterAiReply(
   }
 }
 
+export async function getActiveAiReplyContextNote(
+  conversationId: string
+): Promise<string> {
+  const session = await getActiveFlowSession(conversationId);
+  if (!session?.current_node_id) {
+    return "";
+  }
+
+  const flowResult = await pool.query<FlowRow>(
+    "SELECT * FROM flows WHERE id = $1 LIMIT 1",
+    [session.flow_id]
+  );
+  const flow = flowResult.rows[0];
+  if (!flow) {
+    return "";
+  }
+
+  const { nodes } = getFlowGraph(flow);
+  const currentNode = nodes.find((node) => node.id === session.current_node_id);
+  if (!currentNode || currentNode.type !== "aiReply") {
+    return "";
+  }
+
+  return interpolate(String(currentNode.data.contextNote ?? ""), session.variables).trim();
+}
+
 export async function startFlowForConversation(input: {
   userId: string;
   flowId: string;
@@ -670,10 +769,14 @@ export async function startFlowForConversation(input: {
     );
   }
 
-  const session = await createFlowSession(flow.id, input.conversationId);
+  const initialVars = await buildConversationFlowVariables({
+    userId: input.userId,
+    conversationId: input.conversationId
+  });
+  const session = await createFlowSession(flow.id, input.conversationId, initialVars);
 
   try {
-    await runChain(startNode, nodes, edges, session, {}, input.sendReply, {
+    await runChain(startNode, nodes, edges, session, initialVars, input.sendReply, {
       userId: input.userId,
       channelType: executionContext.channelType
     });
@@ -781,11 +884,15 @@ export async function handleFlowMessage(input: {
       return { result: "not_matched" };
     }
 
-    const session = await createFlowSession(matchedFlow.id, conversationId);
+    const initialVars = await buildConversationFlowVariables({
+      userId,
+      conversationId
+    });
+    const session = await createFlowSession(matchedFlow.id, conversationId, initialVars);
     sessionIdToFail = session.id;
 
     try {
-      return await runChain(startNode, nodes, edges, session, {}, sendReply, {
+      return await runChain(startNode, nodes, edges, session, initialVars, sendReply, {
         userId,
         channelType
       });

@@ -341,6 +341,7 @@ interface CreateQueueItemInput {
   aiResponse: string;
   confidenceScore: number;
   signals: string[];
+  skipQuestionFilter?: boolean;
 }
 
 function normalizeText(value: string): string {
@@ -562,12 +563,14 @@ async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: 
     return { created: false, itemId: null };
   }
 
-  const questionRejection = getQuestionRejectionReason(question);
-  if (questionRejection) {
-    console.log(
-      `[AI-Review] Queue item rejected: question filtered as irrelevant (reason=${questionRejection}, conversation=${input.conversationId})`
-    );
-    return { created: false, itemId: null };
+  if (!input.skipQuestionFilter) {
+    const questionRejection = getQuestionRejectionReason(question);
+    if (questionRejection) {
+      console.log(
+        `[AI-Review] Queue item rejected: question filtered as irrelevant (reason=${questionRejection}, conversation=${input.conversationId})`
+      );
+      return { created: false, itemId: null };
+    }
   }
 
   if (input.signals.length === 0) {
@@ -757,6 +760,38 @@ export async function queueNegativeFeedbackForReview(input: {
     aiResponse,
     confidenceScore: 25,
     signals: ["user_negative_feedback", "low_confidence"]
+  });
+
+  return {
+    queued: created.created,
+    itemId: created.itemId
+  };
+}
+
+export async function queueFlowIssueForReview(input: {
+  userId: string;
+  conversationId: string;
+  customerPhone: string;
+  messageText: string;
+  issue: "flow_execution_failed" | "no_matching_flow";
+  details: string;
+}): Promise<{ queued: boolean; itemId: string | null }> {
+  const question =
+    input.messageText.trim() ||
+    (input.issue === "no_matching_flow" ? "[No matching flow]" : "[Flow execution failed]");
+
+  const created = await createQueueItem({
+    userId: input.userId,
+    conversationId: input.conversationId,
+    customerPhone: input.customerPhone,
+    question,
+    aiResponse: input.details.trim(),
+    confidenceScore: input.issue === "no_matching_flow" ? 20 : 10,
+    signals:
+      input.issue === "no_matching_flow"
+        ? ["no_matching_flow", "flow_setup_required"]
+        : ["flow_execution_failed", "flow_runtime_error"],
+    skipQuestionFilter: true
   });
 
   return {

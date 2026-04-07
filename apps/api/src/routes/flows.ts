@@ -8,6 +8,7 @@ import {
   publishFlow,
   updateFlow
 } from "../services/flow-service.js";
+import { generateFlowDraft } from "../services/flow-draft-generator-service.js";
 import { pool } from "../db/pool.js";
 import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
@@ -49,6 +50,28 @@ export async function flowRoutes(app: FastifyInstance) {
     const flows = await listFlowSummaries(userId);
     return reply.send(flows.map(serializeFlowSummary));
   });
+
+  app.post<{ Body: { prompt?: string; channel?: "web" | "qr" | "api" } }>(
+    "/api/flows/generate-draft",
+    { preHandler: app.requireAuth },
+    async (req, reply) => {
+      const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+      const channel = req.body?.channel;
+      if (!prompt) {
+        return reply.status(400).send({ error: "Prompt is required." });
+      }
+      if (channel !== "web" && channel !== "qr" && channel !== "api") {
+        return reply.status(400).send({ error: "A valid channel is required." });
+      }
+
+      try {
+        const draft = await generateFlowDraft({ prompt, channel });
+        return reply.send(draft);
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message || "Could not generate flow draft." });
+      }
+    }
+  );
 
   app.get<{ Params: { id: string } }>(
     "/api/flows/:id",
@@ -111,7 +134,7 @@ export async function flowRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const flows = await getPublishedFlowsForUser(userId);
-      return reply.send(flows.map(f => ({ id: f.id, name: f.name })));
+      return reply.send(flows.map(f => ({ id: f.id, name: f.name, channel: f.channel })));
     }
   );
 

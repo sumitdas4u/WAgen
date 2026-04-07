@@ -64,13 +64,13 @@ function previewValue(value: unknown): string {
 
 /** Extract all unique {{var}} tokens from a string */
 function extractVars(text: string): string[] {
-  const matches = text.matchAll(/\{\{(\w+)\}\}/g);
+  const matches = text.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g);
   return [...new Set([...matches].map((m) => m[1]))];
 }
 
 /** Replace {{var}} tokens using a values map */
 function interpolateVars(text: string, vals: Record<string, string>): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vals[key] ?? `{{${key}}}`);
+  return text.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_, key) => vals[key] ?? `{{${key}}}`);
 }
 
 // ─── Test state ───────────────────────────────────────────────────────────────

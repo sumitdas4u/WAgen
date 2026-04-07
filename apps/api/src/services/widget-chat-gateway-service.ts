@@ -290,7 +290,12 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
             }
           });
 
-          if (!result.autoReplySent && result.reason !== "auto_reply_disabled") {
+          if (
+            !result.autoReplySent &&
+            result.reason !== "auto_reply_disabled" &&
+            result.reason !== "flow_error" &&
+            result.reason !== "no_matching_flow"
+          ) {
             sendEvent(socket, {
               event: "message",
               data: {

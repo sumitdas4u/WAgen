@@ -9,6 +9,7 @@ interface ReplyInput {
   incomingMessage: string;
   conversationPhone: string;
   history: Array<{ direction: "inbound" | "outbound"; message_text: string }>;
+  flowContextNote?: string | null;
 }
 
 export interface ReplyOutput {
@@ -1437,6 +1438,12 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     `Primary scenario playbook:\n${selectedPlaybook}`,
     `Support handoff contact:\n${supportLine}`
   ];
+
+  if (input.flowContextNote?.trim()) {
+    baseSections.push(
+      `Flow context note:\n${trimForPrompt(input.flowContextNote.trim(), 800)}`
+    );
+  }
 
   const settingsSections = [
     `Customer fit context:\n- Audience: ${basics.targetAudience}\n- Promise/USP: ${basics.usp}\n- Common issues: ${basics.objections}`,

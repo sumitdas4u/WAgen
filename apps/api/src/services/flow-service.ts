@@ -187,15 +187,19 @@ export async function getActiveFlowSession(conversationId: string): Promise<Flow
 
 export async function createFlowSession(
   flowId: string,
-  conversationId: string
+  conversationId: string,
+  variables: Record<string, unknown> = {}
 ): Promise<FlowSessionRow> {
   const res = await pool.query<FlowSessionRow>(
     `INSERT INTO flow_sessions (flow_id, conversation_id, status, variables)
-     VALUES ($1, $2, 'active', '{}')
+     VALUES ($1, $2, 'active', $3)
      RETURNING *`,
-    [flowId, conversationId]
+    [flowId, conversationId, JSON.stringify(variables)]
   );
-  return res.rows[0];
+  return {
+    ...res.rows[0],
+    variables
+  };
 }
 
 export async function updateFlowSession(

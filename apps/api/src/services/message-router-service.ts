@@ -1,10 +1,18 @@
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
-import { handleFlowMessage, advanceFlowAfterAiReply } from "./flow-engine-service.js";
+import {
+  handleFlowMessage,
+  advanceFlowAfterAiReply,
+  getActiveAiReplyContextNote
+} from "./flow-engine-service.js";
 import { buildSalesReply } from "./ai-reply-service.js";
 import { resolveAgentProfileForChannel } from "./agent-profile-service.js";
 import { isAgentSenderPhone } from "./agent-loop-guard-service.js";
-import { queueAiFailureForReview, queueNegativeFeedbackForReview } from "./ai-review-service.js";
+import {
+  queueAiFailureForReview,
+  queueFlowIssueForReview,
+  queueNegativeFeedbackForReview
+} from "./ai-review-service.js";
 import {
   getConversationHistoryForPrompt,
   setConversationAIPaused,
@@ -52,7 +60,8 @@ export interface ProcessIncomingMessageResult {
     | "cooldown"
     | "missing_channel_adapter"
     | "insufficient_credits"
-    | "flow_error";
+    | "flow_error"
+    | "no_matching_flow";
 }
 
 function normalizePhoneCandidate(value: string): string | null {
@@ -285,26 +294,29 @@ export async function processIncomingMessage(
   }
 
   if (flowResult.result === "failed") {
-    const fallbackText = "Sorry, I hit a problem continuing this flow. Please reply again.";
     try {
-      await input.sendReply({ text: fallbackText });
-      latestConversationState = await trackAndBroadcastOutbound({
+      const reviewResult = await queueFlowIssueForReview({
         userId: input.userId,
         conversationId: conversation.id,
-        customerIdentifier: input.customerIdentifier,
-        text: fallbackText,
-        fallback: latestConversationState
+        customerPhone: input.customerIdentifier,
+        messageText: normalizedFlowMessage,
+        issue: "flow_execution_failed",
+        details:
+          "Flow execution failed while continuing this conversation. Check the flow session, node wiring, and runtime logs."
       });
+      console.warn(
+        `[Router] flow execution failed user=${input.userId} conversation=${conversation.id} reviewQueued=${reviewResult.queued} itemId=${reviewResult.itemId ?? "none"}`
+      );
       return {
         conversationId: conversation.id,
         stage: latestConversationState.stage,
         score: latestConversationState.score,
-        autoReplySent: true,
-        reason: "sent"
+        autoReplySent: false,
+        reason: "flow_error"
       };
     } catch (error) {
       console.warn(
-        `[Router] flow fallback reply failed user=${input.userId} conversation=${conversation.id}`,
+        `[Router] flow issue queue failed user=${input.userId} conversation=${conversation.id}`,
         error
       );
       return {
@@ -315,6 +327,36 @@ export async function processIncomingMessage(
         reason: "flow_error"
       };
     }
+  }
+
+  if (flowResult.result === "not_matched" && input.channelType === "web") {
+    try {
+      const reviewResult = await queueFlowIssueForReview({
+        userId: input.userId,
+        conversationId: conversation.id,
+        customerPhone: input.customerIdentifier,
+        messageText: normalizedFlowMessage,
+        issue: "no_matching_flow",
+        details:
+          "No published web flow matched this visitor message. Create a flow trigger for this message, or publish a website-start/any-message flow."
+      });
+      console.info(
+        `[Router] no matching web flow user=${input.userId} conversation=${conversation.id} reviewQueued=${reviewResult.queued} itemId=${reviewResult.itemId ?? "none"}`
+      );
+    } catch (error) {
+      console.warn(
+        `[Router] no-match flow issue queue failed user=${input.userId} conversation=${conversation.id}`,
+        error
+      );
+    }
+
+    return {
+      conversationId: conversation.id,
+      stage: latestConversationState.stage,
+      score: latestConversationState.score,
+      autoReplySent: false,
+      reason: "no_matching_flow"
+    };
   }
 
   // ── AI gates — only runs when no flow handled the message ────────────────────
@@ -393,7 +435,11 @@ export async function processIncomingMessage(
     user: effectiveUser,
     incomingMessage: normalizedMessage,
     conversationPhone: input.customerIdentifier,
-    history
+    history,
+    flowContextNote:
+      flowResult.result === "use_ai"
+        ? await getActiveAiReplyContextNote(conversation.id)
+        : null
   });
 
   await input.sendReply({ text: reply.text });

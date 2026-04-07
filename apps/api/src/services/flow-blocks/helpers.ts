@@ -56,8 +56,90 @@ export function getDefaultNextNodeId(
   );
 }
 
+function tokenizePath(path: string): string[] {
+  return path
+    .replace(/\[(\d+)\]/g, ".$1")
+    .split(".")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function normalizeTemplateKey(value: string): string {
+  return value.replace(/\{\{|\}\}/g, "").trim();
+}
+
+export function getValueAtPath(input: unknown, path: string): unknown {
+  const tokens = tokenizePath(normalizeTemplateKey(path));
+  if (tokens.length === 0) {
+    return input;
+  }
+
+  let current: unknown = input;
+  for (const token of tokens) {
+    if (Array.isArray(current)) {
+      const index = Number(token);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        return null;
+      }
+      current = current[index];
+      continue;
+    }
+
+    if (current && typeof current === "object") {
+      current = (current as Record<string, unknown>)[token];
+      continue;
+    }
+
+    return null;
+  }
+
+  return current;
+}
+
+export function resolveVariableValue(vars: FlowVariables, key: string): unknown {
+  const normalized = normalizeTemplateKey(key);
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized in vars) {
+    return vars[normalized];
+  }
+
+  return getValueAtPath(vars, normalized);
+}
+
+export function stringifyVariableValue(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.every((item) => item == null || ["string", "number", "boolean", "bigint"].includes(typeof item))
+      ? value.map((item) => stringifyVariableValue(item)).filter(Boolean).join(", ")
+      : JSON.stringify(value);
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 export function interpolate(value: string, vars: FlowVariables): string {
-  return value.replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? ""));
+  return value.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_, key) =>
+    stringifyVariableValue(resolveVariableValue(vars, key))
+  );
 }
 
 export function asText(value: unknown): string {

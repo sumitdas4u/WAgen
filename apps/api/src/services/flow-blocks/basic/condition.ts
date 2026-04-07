@@ -1,4 +1,4 @@
-import { getNextNodeId } from "../helpers.js";
+import { getNextNodeId, interpolate, resolveVariableValue, stringifyVariableValue } from "../helpers.js";
 import type { FlowBlockModule } from "../types.js";
 
 export const conditionBlock: FlowBlockModule = {
@@ -8,8 +8,8 @@ export const conditionBlock: FlowBlockModule = {
       .replace(/\{\{|\}\}/g, "")
       .trim();
     const operator = String(context.node.data.operator ?? "equals");
-    const expected = String(context.node.data.value ?? "");
-    const actual = String(context.vars[variableName] ?? "");
+    const expected = interpolate(String(context.node.data.value ?? ""), context.vars);
+    const actual = stringifyVariableValue(resolveVariableValue(context.vars, variableName));
 
     let matched = false;
     switch (operator) {
@@ -29,10 +29,10 @@ export const conditionBlock: FlowBlockModule = {
         matched = parseFloat(actual) < parseFloat(expected);
         break;
       case "exists":
-        matched = variableName in context.vars && context.vars[variableName] != null;
+        matched = resolveVariableValue(context.vars, variableName) != null;
         break;
       case "not_exists":
-        matched = !(variableName in context.vars) || context.vars[variableName] == null;
+        matched = resolveVariableValue(context.vars, variableName) == null;
         break;
       default:
         matched = false;

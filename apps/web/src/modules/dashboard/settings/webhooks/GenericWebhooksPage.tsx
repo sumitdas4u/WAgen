@@ -8,17 +8,22 @@ import {
   fetchGenericWebhookIntegrations,
   fetchGenericWebhookLogs,
   fetchGenericWebhookWorkflows,
+  fetchPublishedFlows,
   fetchTemplates,
+  fetchWhatsAppStatus,
   listContactFields,
   rotateGenericWebhookSecret,
   updateGenericWebhookIntegration,
   updateGenericWebhookWorkflow,
+  type GenericWebhookChannelMode,
   type GenericWebhookCondition,
   type GenericWebhookContactAction,
   type GenericWebhookContactPaths,
+  type GenericWebhookQrFlowAction,
   type GenericWebhookTemplateAction,
   type GenericWebhookWorkflow,
-  type MessageTemplate
+  type MessageTemplate,
+  type PublishedFlowSummary
 } from "../../../../lib/api";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
@@ -51,11 +56,15 @@ export function GenericWebhooksPage() {
   const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [channelMode, setChannelMode] = useState<GenericWebhookChannelMode>("api");
   const [matchMode, setMatchMode] = useState<"all" | "any">("all");
   const [conditions, setConditions] = useState<GenericWebhookCondition[]>([]);
   const [templateId, setTemplateId] = useState("");
   const [recipientNamePath, setRecipientNamePath] = useState("");
   const [recipientPhonePath, setRecipientPhonePath] = useState("");
+  const [qrFlowId, setQrFlowId] = useState("");
+  const [qrRecipientNamePath, setQrRecipientNamePath] = useState("");
+  const [qrRecipientPhonePath, setQrRecipientPhonePath] = useState("");
   const [contactDisplayNamePath, setContactDisplayNamePath] = useState("");
   const [contactPhonePath, setContactPhonePath] = useState("");
   const [contactEmailPath, setContactEmailPath] = useState("");
@@ -108,10 +117,26 @@ export function GenericWebhooksPage() {
     queryFn: () => listContactFields(token).then((response) => response.fields),
     enabled: Boolean(token)
   });
+  const publishedFlowsQuery = useQuery({
+    queryKey: [...dashboardQueryKeys.webhooksRoot, "published-flows"],
+    queryFn: () => fetchPublishedFlows(token),
+    enabled: Boolean(token)
+  });
+  const qrStatusQuery = useQuery({
+    queryKey: [...dashboardQueryKeys.settingsRoot, "qr-status"],
+    queryFn: () => fetchWhatsAppStatus(token),
+    enabled: Boolean(token)
+  });
 
   const integrations = integrationsQuery.data ?? [];
   const workflows = workflowsQuery.data ?? [];
   const logs = logsQuery.data ?? [];
+  const publishedQrFlows = useMemo(
+    () => (publishedFlowsQuery.data ?? []).filter((flow: PublishedFlowSummary) => flow.channel === "qr"),
+    [publishedFlowsQuery.data]
+  );
+  const qrStatus = qrStatusQuery.data ?? null;
+  const qrConnected = qrStatus?.status === "connected";
   const approvedTemplates = useMemo(
     () => (templatesQuery.data ?? []).filter((template) => template.status === "APPROVED"),
     [templatesQuery.data]
@@ -157,26 +182,37 @@ export function GenericWebhooksPage() {
         tags: toTagArray(tagsText),
         fieldMappings: fieldMappings.filter((mapping) => mapping.contactFieldName && mapping.payloadPath)
       };
-      const templateAction: GenericWebhookTemplateAction = {
-        templateId,
-        recipientNamePath,
-        recipientPhonePath,
-        variableMappings: Object.fromEntries(
-          Object.entries(variableMappings)
-            .filter(([, path]) => path.trim())
-            .map(([key, path]) => [key, { source: "payload" as const, path }])
-        ),
-        fallbackValues: Object.fromEntries(
-          Object.entries(fallbackValues).filter(([, value]) => value.trim())
-        )
-      };
+      const templateAction: GenericWebhookTemplateAction | null = channelMode === "api"
+        ? {
+            templateId,
+            recipientNamePath,
+            recipientPhonePath,
+            variableMappings: Object.fromEntries(
+              Object.entries(variableMappings)
+                .filter(([, path]) => path.trim())
+                .map(([key, path]) => [key, { source: "payload" as const, path }])
+            ),
+            fallbackValues: Object.fromEntries(
+              Object.entries(fallbackValues).filter(([, value]) => value.trim())
+            )
+          }
+        : null;
+      const qrFlowAction: GenericWebhookQrFlowAction | null = channelMode === "qr"
+        ? {
+            flowId: qrFlowId,
+            recipientPhonePath: qrRecipientPhonePath,
+            recipientNamePath: qrRecipientNamePath || undefined
+          }
+        : null;
       const payload = {
         name,
         enabled,
+        channelMode,
         matchMode,
         conditions: conditions.filter((condition) => condition.comparator),
         contactAction,
-        templateAction
+        ...(templateAction ? { templateAction } : {}),
+        ...(qrFlowAction ? { qrFlowAction } : {})
       };
       if (editingWorkflowId) {
         return updateGenericWebhookWorkflow(token, selectedIntegrationId, editingWorkflowId, payload).then((response) => response.workflow);
@@ -245,11 +281,15 @@ export function GenericWebhooksPage() {
     setEditingWorkflowId(null);
     setName("");
     setEnabled(true);
+    setChannelMode("api");
     setMatchMode("all");
     setConditions([]);
     setTemplateId("");
     setRecipientNamePath("");
     setRecipientPhonePath("");
+    setQrFlowId("");
+    setQrRecipientNamePath("");
+    setQrRecipientPhonePath("");
     setContactDisplayNamePath("");
     setContactPhonePath("");
     setContactEmailPath("");
@@ -264,21 +304,30 @@ export function GenericWebhooksPage() {
     setEditingWorkflowId(workflow.id);
     setName(workflow.name);
     setEnabled(workflow.enabled);
+    setChannelMode(workflow.channelMode);
     setMatchMode(workflow.matchMode);
     setConditions(workflow.conditions);
-    setTemplateId(workflow.templateAction.templateId);
-    setRecipientNamePath(workflow.templateAction.recipientNamePath);
-    setRecipientPhonePath(workflow.templateAction.recipientPhonePath);
+    setTemplateId(workflow.templateAction?.templateId ?? "");
+    setRecipientNamePath(workflow.templateAction?.recipientNamePath ?? "");
+    setRecipientPhonePath(workflow.templateAction?.recipientPhonePath ?? "");
+    setQrFlowId(workflow.qrFlowAction?.flowId ?? "");
+    setQrRecipientNamePath(workflow.qrFlowAction?.recipientNamePath ?? "");
+    setQrRecipientPhonePath(workflow.qrFlowAction?.recipientPhonePath ?? "");
     setContactDisplayNamePath(workflow.contactAction.contactPaths?.displayNamePath ?? "");
-    setContactPhonePath(workflow.contactAction.contactPaths?.phoneNumberPath ?? workflow.templateAction.recipientPhonePath);
+    setContactPhonePath(
+      workflow.contactAction.contactPaths?.phoneNumberPath ??
+      workflow.templateAction?.recipientPhonePath ??
+      workflow.qrFlowAction?.recipientPhonePath ??
+      ""
+    );
     setContactEmailPath(workflow.contactAction.contactPaths?.emailPath ?? "");
     setTagOperation(workflow.contactAction.tagOperation ?? "append");
     setTagsText(tagsToString(workflow.contactAction.tags));
     setFieldMappings(workflow.contactAction.fieldMappings ?? []);
     setVariableMappings(
-      Object.fromEntries(Object.entries(workflow.templateAction.variableMappings ?? {}).map(([key, binding]) => [key, binding.path]))
+      Object.fromEntries(Object.entries(workflow.templateAction?.variableMappings ?? {}).map(([key, binding]) => [key, binding.path]))
     );
-    setFallbackValues(workflow.templateAction.fallbackValues ?? {});
+    setFallbackValues(workflow.templateAction?.fallbackValues ?? {});
     setActiveTab("workflows");
   }
 
@@ -358,7 +407,7 @@ export function GenericWebhooksPage() {
               <h4 style={{ marginBottom: "0.5rem" }}>What this does</h4>
               <p style={{ margin: 0, color: "#4b5563" }}>
                 External systems can POST JSON to your WAGen webhook. WAGen captures the payload, evaluates your saved workflow conditions,
-                updates contact tags and fields, then sends a WhatsApp template to the mapped recipient.
+                updates contact tags and fields, then either sends an API WhatsApp template or starts a QR flow for the mapped recipient.
               </p>
             </div>
             <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
@@ -461,6 +510,13 @@ export function GenericWebhooksPage() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem" }}>
                   <label>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Action channel</div>
+                    <select value={channelMode} onChange={(event) => setChannelMode(event.target.value as GenericWebhookChannelMode)}>
+                      <option value="api">API Template</option>
+                      <option value="qr">QR Flow</option>
+                    </select>
+                  </label>
+                  <label>
                     <div style={{ fontWeight: 600, marginBottom: 6 }}>Matches</div>
                     <select value={matchMode} onChange={(event) => setMatchMode(event.target.value as "all" | "any")}>
                       <option value="all">ALL</option>
@@ -519,29 +575,60 @@ export function GenericWebhooksPage() {
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-                  <label>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Approved template</div>
-                    <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
-                      <option value="">Select template</option>
-                      {approvedTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Recipient name path</div>
-                    <select value={recipientNamePath} onChange={(event) => setRecipientNamePath(event.target.value)}>
-                      <option value="">Select path</option>
-                      {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Recipient phone path</div>
-                    <select value={recipientPhonePath} onChange={(event) => setRecipientPhonePath(event.target.value)}>
-                      <option value="">Select path</option>
-                      {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
-                    </select>
-                  </label>
-                </div>
+                {channelMode === "api" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+                    <label>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>Approved template</div>
+                      <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+                        <option value="">Select template</option>
+                        {approvedTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>Recipient name path</div>
+                      <select value={recipientNamePath} onChange={(event) => setRecipientNamePath(event.target.value)}>
+                        <option value="">Select path</option>
+                        {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>Recipient phone path</div>
+                      <select value={recipientPhonePath} onChange={(event) => setRecipientPhonePath(event.target.value)}>
+                        <option value="">Select path</option>
+                        {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: "1rem" }}>
+                    <div style={{ padding: "0.85rem", border: "1px solid #e5e7eb", borderRadius: 12, background: "#f8fafc", color: "#334155" }}>
+                      QR status: <strong>{qrConnected ? `Connected as ${qrStatus?.phoneNumber ?? "active session"}` : "Not connected"}</strong>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+                      <label>
+                        <div style={{ fontWeight: 600, marginBottom: 6 }}>Published QR flow</div>
+                        <select value={qrFlowId} onChange={(event) => setQrFlowId(event.target.value)}>
+                          <option value="">Select flow</option>
+                          {publishedQrFlows.map((flow) => <option key={flow.id} value={flow.id}>{flow.name}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <div style={{ fontWeight: 600, marginBottom: 6 }}>Recipient phone path</div>
+                        <select value={qrRecipientPhonePath} onChange={(event) => setQrRecipientPhonePath(event.target.value)}>
+                          <option value="">Select path</option>
+                          {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <div style={{ fontWeight: 600, marginBottom: 6 }}>Recipient name path</div>
+                        <select value={qrRecipientNamePath} onChange={(event) => setQrRecipientNamePath(event.target.value)}>
+                          <option value="">Optional</option>
+                          {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>Contact mapping</div>
@@ -613,35 +700,42 @@ export function GenericWebhooksPage() {
                   </div>
                 </div>
 
-                <div>
-                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Template variable mappings</div>
-                  <div style={{ display: "grid", gap: "0.75rem" }}>
-                    {templatePlaceholders.length === 0 && <p style={{ color: "#6b7280", margin: 0 }}>Selected template has no variables.</p>}
-                    {templatePlaceholders.map((placeholder) => (
-                      <div key={placeholder} style={{ display: "grid", gridTemplateColumns: "180px 1fr 1fr", gap: "0.5rem", alignItems: "end" }}>
-                        <div style={{ fontFamily: "monospace", fontSize: "0.9rem", paddingBottom: 10 }}>{placeholder}</div>
-                        <label>
-                          <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Payload path</div>
-                          <select value={variableMappings[placeholder] ?? ""} onChange={(event) => setVariableMappings((current) => ({ ...current, [placeholder]: event.target.value }))}>
-                            <option value="">Select path</option>
-                            {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
-                          </select>
-                        </label>
-                        <label>
-                          <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Fallback</div>
-                          <input value={fallbackValues[placeholder] ?? ""} onChange={(event) => setFallbackValues((current) => ({ ...current, [placeholder]: event.target.value }))} placeholder="Optional fallback" />
-                        </label>
-                      </div>
-                    ))}
+                {channelMode === "api" && (
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Template variable mappings</div>
+                    <div style={{ display: "grid", gap: "0.75rem" }}>
+                      {templatePlaceholders.length === 0 && <p style={{ color: "#6b7280", margin: 0 }}>Selected template has no variables.</p>}
+                      {templatePlaceholders.map((placeholder) => (
+                        <div key={placeholder} style={{ display: "grid", gridTemplateColumns: "180px 1fr 1fr", gap: "0.5rem", alignItems: "end" }}>
+                          <div style={{ fontFamily: "monospace", fontSize: "0.9rem", paddingBottom: 10 }}>{placeholder}</div>
+                          <label>
+                            <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Payload path</div>
+                            <select value={variableMappings[placeholder] ?? ""} onChange={(event) => setVariableMappings((current) => ({ ...current, [placeholder]: event.target.value }))}>
+                              <option value="">Select path</option>
+                              {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                            </select>
+                          </label>
+                          <label>
+                            <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Fallback</div>
+                            <input value={fallbackValues[placeholder] ?? ""} onChange={(event) => setFallbackValues((current) => ({ ...current, [placeholder]: event.target.value }))} placeholder="Optional fallback" />
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                   <button
                     type="button"
                     className="primary-btn"
                     onClick={() => saveMutation.mutate()}
-                    disabled={saveMutation.isPending || !name.trim() || !templateId || !recipientNamePath || !recipientPhonePath}
+                    disabled={
+                      saveMutation.isPending ||
+                      !name.trim() ||
+                      (channelMode === "api" && (!templateId || !recipientNamePath || !recipientPhonePath)) ||
+                      (channelMode === "qr" && (!qrFlowId || !qrRecipientPhonePath))
+                    }
                   >
                     {saveMutation.isPending ? "Saving..." : editingWorkflowId ? "Update Workflow" : "Create Workflow"}
                   </button>
@@ -661,7 +755,7 @@ export function GenericWebhooksPage() {
                       <div>
                         <div style={{ fontWeight: 700 }}>{workflow.name}</div>
                         <div style={{ color: "#6b7280", fontSize: "0.92rem" }}>
-                          {workflow.enabled ? "Enabled" : "Disabled"} · {workflow.matchMode.toUpperCase()} · {workflow.conditions.length} condition(s)
+                          {workflow.enabled ? "Enabled" : "Disabled"} · {workflow.channelMode.toUpperCase()} · {workflow.matchMode.toUpperCase()} · {workflow.conditions.length} condition(s)
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
