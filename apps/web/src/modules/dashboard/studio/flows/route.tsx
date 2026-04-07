@@ -178,6 +178,7 @@ function summarizeFlow(flow: FlowDoc): FlowSummary {
     name: flow.name,
     channel: flow.channel,
     published: flow.published,
+    isDefaultReply: flow.isDefaultReply,
     createdAt: flow.createdAt,
     updatedAt: flow.updatedAt,
     nodeCount: (flow.nodes as unknown[]).length,
@@ -515,6 +516,7 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
   const [edges, setEdges, onEdgesChange] = useEdgesState(flow.edges);
   const [flowName, setFlowName] = useState(flow.name);
   const [live, setLive] = useState(flow.published);
+  const [isDefaultReply, setIsDefaultReply] = useState(flow.isDefaultReply ?? false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "saving">("saved");
   const [isBlocksOpen, setIsBlocksOpen] = useState(true);
   const [validationNotice, setValidationNotice] = useState<string | null>(initialNotice ?? null);
@@ -525,8 +527,8 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { project } = useReactFlow();
   const isInitial = useRef(true);
-  const latest = useRef({ nodes, edges, flowName, live });
-  latest.current = { nodes, edges, flowName, live };
+  const latest = useRef({ nodes, edges, flowName, live, isDefaultReply });
+  latest.current = { nodes, edges, flowName, live, isDefaultReply };
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelMeta = CHANNEL_META[flow.channel] ?? CHANNEL_META.api;
   const validation = useMemo(
@@ -587,10 +589,10 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
       return;
     }
     setSaveStatus("dirty");
-  }, [nodes, edges, flowName, live]);
+  }, [nodes, edges, flowName, live, isDefaultReply]);
 
   const persistToApi = useCallback(async () => {
-    const { nodes: n, edges: e, flowName: name, live: lv } = latest.current;
+    const { nodes: n, edges: e, flowName: name, live: lv, isDefaultReply: idr } = latest.current;
     const validationResult = validateFlow(flow.channel, n as FlowNode[], e);
     const startNode = (n as FlowNode[]).find((node) => node.type === "flowStart");
     const triggers = (startNode?.data as FlowStartData | undefined)?.triggers ?? [];
@@ -606,10 +608,10 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
 
     try {
       const [updated] = await Promise.all([
-        apiUpdateFlow(token, flow.id, { name, nodes: n as FlowNode[], edges: e, triggers }),
+        apiUpdateFlow(token, flow.id, { name, nodes: n as FlowNode[], edges: e, triggers, isDefaultReply: idr }),
         lv !== flow.published ? apiPublishFlow(token, flow.id, lv) : Promise.resolve(null)
       ]);
-      onChange({ ...flow, ...updated, published: lv });
+      onChange({ ...flow, ...updated, published: lv, isDefaultReply: idr });
       setValidationNotice(null);
       return true;
     } catch (err) {
@@ -743,6 +745,23 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
                 }
                 setValidationNotice(null);
                 setLive(event.target.checked);
+              }}
+            />
+            <span className="fn-toggle-slider" />
+          </label>
+        </div>
+        <div
+          className="fn-topbar-live"
+          title={`When enabled, this flow handles all ${CHANNEL_META[flow.channel]?.label ?? flow.channel} messages that don't match another trigger. Only one flow per channel can be the default reply.`}
+        >
+          <span>Default Reply</span>
+          <label className="fn-toggle">
+            <input
+              type="checkbox"
+              checked={isDefaultReply}
+              onChange={(event) => {
+                setValidationNotice(null);
+                setIsDefaultReply(event.target.checked);
               }}
             />
             <span className="fn-toggle-slider" />
@@ -1164,6 +1183,15 @@ function FlowsPage() {
                   >
                     {flow.published ? "Live" : "Draft"}
                   </button>
+                  {flow.isDefaultReply && (
+                    <span
+                      className="fn-status-btn"
+                      title="This flow is the default reply for its channel"
+                      style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", cursor: "default" }}
+                    >
+                      Default Reply
+                    </span>
+                  )}
                   <button
                     className="fn-btn fn-btn-primary"
                     style={{ flex: 1 }}

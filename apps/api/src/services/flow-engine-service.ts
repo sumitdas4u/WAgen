@@ -876,7 +876,33 @@ export async function handleFlowMessage(input: {
         const { startNode } = getFlowGraph(flow);
         return startNode?.data?.fallbackUseAi === true;
       });
-      return fallbackFlow ? { result: "use_ai" } : { result: "not_matched" };
+      if (fallbackFlow) return { result: "use_ai" };
+
+      // Check for a default reply flow — catches all unmatched messages for this channel
+      const defaultReplyFlow = flows.find((flow) => flow.is_default_reply === true);
+      if (defaultReplyFlow) {
+        const { nodes, edges, startNode: drStartNode } = getFlowGraph(defaultReplyFlow);
+        if (drStartNode) {
+          const initialVars = await buildConversationFlowVariables({ userId, conversationId });
+          const session = await createFlowSession(defaultReplyFlow.id, conversationId, initialVars);
+          sessionIdToFail = session.id;
+          try {
+            return await runChain(drStartNode, nodes, edges, session, initialVars, sendReply, {
+              userId,
+              channelType
+            });
+          } catch (error) {
+            await markFlowSessionFailed(session.id);
+            console.warn(
+              `[FlowEngine] Default reply flow failed conversation=${conversationId} session=${session.id}:`,
+              error
+            );
+            return { result: "failed" };
+          }
+        }
+      }
+
+      return { result: "not_matched" };
     }
 
     const { nodes, edges, startNode } = getFlowGraph(matchedFlow);

@@ -61,6 +61,7 @@ export async function flowRoutes(app: FastifyInstance) {
       name: flow.name,
       channel: flow.channel,
       published: flow.published,
+      isDefaultReply: flow.is_default_reply,
       createdAt: flow.created_at,
       updatedAt: flow.updated_at,
       nodes: flow.nodes,
@@ -76,6 +77,7 @@ export async function flowRoutes(app: FastifyInstance) {
     name: flow.name,
     channel: flow.channel,
     published: flow.published,
+    isDefaultReply: flow.is_default_reply,
     createdAt: flow.created_at,
     updatedAt: flow.updated_at,
     nodeCount: Number(flow.node_count ?? 0),
@@ -132,12 +134,16 @@ export async function flowRoutes(app: FastifyInstance) {
     }
   );
 
-  app.put<{ Params: { id: string }; Body: { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[] } }>(
+  app.put<{ Params: { id: string }; Body: { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[]; isDefaultReply?: boolean } }>(
     "/api/flows/:id",
     { preHandler: app.requireAuth },
     async (req, reply) => {
       const userId = req.authUser!.userId;
-      const flow = await updateFlow(userId, req.params.id, req.body as Parameters<typeof updateFlow>[2]);
+      const { isDefaultReply, ...rest } = req.body as { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[]; isDefaultReply?: boolean };
+      const flow = await updateFlow(userId, req.params.id, {
+        ...(rest as Parameters<typeof updateFlow>[2]),
+        ...(isDefaultReply !== undefined ? { is_default_reply: isDefaultReply } : {})
+      });
       if (!flow) return reply.status(404).send({ error: "Flow not found" });
       return reply.send(serializeFlow(flow));
     }

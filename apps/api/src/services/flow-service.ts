@@ -16,6 +16,7 @@ export interface FlowRow {
   triggers: FlowTrigger[];
   variables: Record<string, unknown>;
   published: boolean;
+  is_default_reply: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,7 @@ export interface FlowSummaryRow {
   name: string;
   channel: "web" | "qr" | "api";
   published: boolean;
+  is_default_reply: boolean;
   created_at: string;
   updated_at: string;
   node_count: number;
@@ -40,6 +42,7 @@ export async function listFlowSummaries(userId: string): Promise<FlowSummaryRow[
             name,
             channel,
             published,
+            is_default_reply,
             created_at,
             updated_at,
             COALESCE(jsonb_array_length(nodes::jsonb), 0) AS node_count,
@@ -55,7 +58,7 @@ export async function listFlowSummaries(userId: string): Promise<FlowSummaryRow[
 
 export async function getFlow(userId: string, flowId: string): Promise<FlowRow | null> {
   const res = await pool.query<FlowRow>(
-    `SELECT id, user_id, name, channel, nodes, edges, triggers, variables, published, created_at, updated_at
+    `SELECT id, user_id, name, channel, nodes, edges, triggers, variables, published, is_default_reply, created_at, updated_at
      FROM flows
      WHERE id = $1 AND user_id = $2
      LIMIT 1`,
@@ -87,7 +90,7 @@ export async function createFlow(
 export async function updateFlow(
   userId: string,
   flowId: string,
-  data: { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: FlowTrigger[] }
+  data: { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: FlowTrigger[]; is_default_reply?: boolean }
 ): Promise<FlowRow | null> {
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -109,8 +112,24 @@ export async function updateFlow(
     fields.push(`triggers = $${i++}`);
     values.push(JSON.stringify(data.triggers));
   }
+  if (data.is_default_reply !== undefined) {
+    fields.push(`is_default_reply = $${i++}`);
+    values.push(data.is_default_reply);
+  }
 
   if (!fields.length) return getFlow(userId, flowId);
+
+  // If setting this flow as default reply, unset any other flow in the same channel first
+  if (data.is_default_reply === true) {
+    const current = await getFlow(userId, flowId);
+    if (current) {
+      await pool.query(
+        `UPDATE flows SET is_default_reply = FALSE
+         WHERE user_id = $1 AND channel = $2 AND id != $3 AND is_default_reply = TRUE`,
+        [userId, current.channel, flowId]
+      );
+    }
+  }
 
   values.push(flowId, userId);
   const res = await pool.query<FlowRow>(
@@ -149,7 +168,7 @@ export async function getPublishedFlowsForUser(
   channel?: "web" | "qr" | "api"
 ): Promise<FlowRow[]> {
   const res = await pool.query<FlowRow>(
-    `SELECT id, user_id, name, channel, nodes, edges, triggers, variables, published, created_at, updated_at
+    `SELECT id, user_id, name, channel, nodes, edges, triggers, variables, published, is_default_reply, created_at, updated_at
      FROM flows
      WHERE user_id = $1 AND published = TRUE${channel ? " AND channel = $2" : ""}
      ORDER BY created_at ASC, id ASC`,

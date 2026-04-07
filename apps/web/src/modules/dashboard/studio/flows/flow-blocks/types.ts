@@ -336,6 +336,7 @@ export interface FlowDoc {
   name: string;
   channel: FlowChannel;
   published: boolean;
+  isDefaultReply: boolean;
   createdAt: string;
   updatedAt: string;
   nodes: FlowNode[];
@@ -348,6 +349,7 @@ export interface FlowSummary {
   name: string;
   channel: FlowChannel;
   published: boolean;
+  isDefaultReply: boolean;
   createdAt: string;
   updatedAt: string;
   nodeCount: number;

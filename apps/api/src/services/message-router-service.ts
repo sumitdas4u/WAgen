@@ -329,27 +329,8 @@ export async function processIncomingMessage(
     }
   }
 
-  if (flowResult.result === "not_matched" && input.channelType === "web") {
-    try {
-      const reviewResult = await queueFlowIssueForReview({
-        userId: input.userId,
-        conversationId: conversation.id,
-        customerPhone: input.customerIdentifier,
-        messageText: normalizedFlowMessage,
-        issue: "no_matching_flow",
-        details:
-          "No published web flow matched this visitor message. Create a flow trigger for this message, or publish a website-start/any-message flow."
-      });
-      console.info(
-        `[Router] no matching web flow user=${input.userId} conversation=${conversation.id} reviewQueued=${reviewResult.queued} itemId=${reviewResult.itemId ?? "none"}`
-      );
-    } catch (error) {
-      console.warn(
-        `[Router] no-match flow issue queue failed user=${input.userId} conversation=${conversation.id}`,
-        error
-      );
-    }
-
+  if (flowResult.result === "not_matched") {
+    // Default: silence. No reply goes out unless a flow (or default reply flow) handled the message.
     return {
       conversationId: conversation.id,
       stage: latestConversationState.stage,
@@ -359,7 +340,8 @@ export async function processIncomingMessage(
     };
   }
 
-  // ── AI gates — only runs when no flow handled the message ────────────────────
+  // ── AI gate — only runs when a flow explicitly requests it via use_ai ────────
+  // Any other result (not_matched, handled, failed) returns before reaching here.
   // Manual-takeover / ai_paused → agent is handling; skip AI.
   if (conversation.manual_takeover) {
     console.log(`[Router] Manual takeover — skipping AI reply (conversation=${conversation.id})`);
@@ -383,33 +365,8 @@ export async function processIncomingMessage(
     };
   }
 
-  // AI only replies when explicitly requested by flow OR an AI agent is assigned.
-  const aiRequestedByFlow = flowResult.result === "use_ai";
-  const hasAssignedAgent = Boolean(conversation.assigned_agent_profile_id);
-  if (!aiRequestedByFlow && !hasAssignedAgent && !user.ai_active) {
-    console.log(`[Router] No AI agent assigned and ai_active=false — skipping AI reply (userId=${input.userId})`);
-    return {
-      conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
-      autoReplySent: false,
-      reason: "ai_inactive"
-    };
-  }
-
-  if (!aiRequestedByFlow && conversation.last_ai_reply_at) {
-    const elapsedSeconds = (Date.now() - new Date(conversation.last_ai_reply_at).getTime()) / 1000;
-    if (elapsedSeconds < env.CONTACT_COOLDOWN_SECONDS) {
-      console.log(`[Router] Cooldown active - only ${Math.round(elapsedSeconds)}s elapsed, need ${env.CONTACT_COOLDOWN_SECONDS}s (conversation=${conversation.id})`);
-      return {
-        conversationId: conversation.id,
-        stage: conversation.stage,
-        score: conversation.score,
-        autoReplySent: false,
-        reason: "cooldown"
-      };
-    }
-  }
+  // At this point flowResult.result === "use_ai" — AI was explicitly requested by the flow.
+  // Cooldown is intentionally skipped: when a flow requests AI, it should always fire.
 
   const historyLimit = Math.max(16, Math.min(40, env.PROMPT_HISTORY_LIMIT * 4));
   const history = await getConversationHistoryForPrompt(conversation.id, historyLimit);
