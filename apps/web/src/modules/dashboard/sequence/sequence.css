@@ -1,6 +1,8 @@
 /* ─────────────────────────────────────────────────────────────
    Sequence Module — Design System
-   Theme: Teal/Green accent, clean surfaces, wizard format
+   Theme: Teal/Green accent — matches dashboard shell aesthetic
+   Shell bg: radial blue-gray gradient (see DashboardShell.module.css)
+   Cards mirror the shell's rgba(255,255,255,0.82) glass-card style
 ───────────────────────────────────────────────────────────── */
 
 /* ─── Page shell ─── */
@@ -10,34 +12,37 @@
   --seq-teal-dark:   #115e59;
   --seq-teal-light:  #ccfbf1;
   --seq-teal-mid:    #5eead4;
-  --seq-ink:         #0f172a;
-  --seq-sub:         #334155;
-  --seq-muted:       #64748b;
-  --seq-line:        #e2e8f0;
-  --seq-surface:     #f8fafc;
+  --seq-ink:         #122033;  /* matches shell --ink */
+  --seq-sub:         #2d4059;
+  --seq-muted:       #53627a;  /* matches shell muted text */
+  --seq-line:        rgba(18, 32, 51, 0.1);
+  --seq-surface:     rgba(255, 255, 255, 0.55);
   --seq-white:       #ffffff;
-  --seq-shadow:      0 4px 16px rgba(15, 23, 42, 0.07);
-  --seq-shadow-lg:   0 12px 32px rgba(15, 23, 42, 0.1);
+  --seq-shadow:      0 8px 24px rgba(16, 24, 40, 0.07);
+  --seq-shadow-lg:   0 18px 48px rgba(16, 24, 40, 0.1);
 
   display: grid;
   gap: 1rem;
-  padding: 0.4rem 0.5rem 2.5rem;
+  /* Shell .content already provides 1.25rem padding on all sides */
+  padding: 0 0 2rem;
   color: var(--seq-ink);
   font-family: inherit;
 }
 
-/* ─── Common card surfaces ─── */
+/* ─── Common card surfaces — glass cards matching dashboard shell ─── */
 .seq-card {
-  background: var(--seq-white);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 20px;
-  box-shadow: var(--seq-shadow);
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 22px;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
   padding: 1.25rem;
+  backdrop-filter: blur(10px);
 }
 
+/* Inner surface — slightly more transparent than card */
 .seq-surface {
-  background: var(--seq-surface);
-  border: 1px solid var(--seq-line);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(18, 32, 51, 0.1);
   border-radius: 16px;
   padding: 1rem;
 }
@@ -51,11 +56,13 @@
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  padding: 1.1rem 1.4rem;
-  background: linear-gradient(135deg, #fff 0%, #f0fdf9 55%, #ecfdf5 100%);
-  border: 1px solid #d1fae5;
-  border-radius: 20px;
-  box-shadow: 0 16px 40px rgba(15, 118, 110, 0.06);
+  padding: 1.15rem 1.4rem;
+  /* Subtle teal tint on top of the shell's glass-card style */
+  background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(236,253,245,0.88) 55%, rgba(204,251,241,0.82) 100%);
+  border: 1px solid rgba(167, 243, 208, 0.55);
+  border-radius: 22px;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
+  backdrop-filter: blur(10px);
 }
 
 .seq-hero-copy { display: grid; gap: 0.2rem; }
@@ -103,10 +110,11 @@
   display: grid;
   gap: 0.3rem;
   padding: 0.9rem 1rem;
-  background: var(--seq-white);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 18px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.07);
+  backdrop-filter: blur(8px);
   overflow: hidden;
 }
 
@@ -198,13 +206,14 @@
   flex-direction: column;
   gap: 0;
   padding: 0;
-  background: var(--seq-white);
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.68);
   border-left-width: 4px;
   border-left-style: solid;
   border-left-color: #cbd5e1;
-  border-radius: 18px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.07);
+  backdrop-filter: blur(8px);
   cursor: pointer;
   text-align: left;
   font: inherit;
@@ -303,15 +312,16 @@
   place-items: center;
   gap: 0.55rem;
   min-height: 210px;
-  background: var(--seq-white);
-  border: 2px dashed #cbd5e1;
-  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 2px dashed rgba(18, 32, 51, 0.2);
+  border-radius: 20px;
   color: var(--seq-teal);
   font: inherit;
   font-size: 0.88rem;
   font-weight: 700;
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
+  backdrop-filter: blur(6px);
 }
 
 .seq-tile-new:hover {
@@ -466,10 +476,11 @@
 
 /* ═══════════════════════════════════════
    BUILDER — Sticky top bar
+   Fully opaque — prevents content bleed-through on scroll
 ═══════════════════════════════════════ */
 .seq-builder-bar {
   position: sticky;
-  top: 0.75rem;
+  top: 0;
   z-index: 10;
   display: flex;
   align-items: center;
@@ -477,11 +488,11 @@
   gap: 1rem;
   flex-wrap: wrap;
   padding: 0.85rem 1.25rem;
-  background: rgba(255, 255, 255, 0.97);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 18px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  /* Fully opaque — no content bleeding through when scrolling */
+  background: #ffffff;
+  border: 1px solid rgba(18, 32, 51, 0.12);
+  border-radius: 22px;
+  box-shadow: 0 4px 18px rgba(16, 24, 40, 0.1), 0 1px 0 rgba(255,255,255,0.9) inset;
 }
 
 .seq-builder-left {
@@ -683,13 +694,12 @@
 }
 
 /* ═══════════════════════════════════════
-   WIZARD LAYOUT
+   WIZARD LAYOUT  — single column, full-width
 ═══════════════════════════════════════ */
 .seq-wizard-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) 300px;
+  grid-template-columns: 1fr;
   gap: 1rem;
-  align-items: start;
 }
 
 .seq-wizard-main {
@@ -697,23 +707,61 @@
   gap: 1rem;
 }
 
+/* ── Footer: review strip + nav in one card ── */
 .seq-wizard-footer {
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.seq-wizard-footer-review {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid rgba(18, 32, 51, 0.08);
+  background: rgba(248, 250, 252, 0.6);
+}
+
+.seq-footer-review-label {
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--seq-muted);
+  margin-right: 0.25rem;
+}
+
+.seq-footer-review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(18, 32, 51, 0.12);
+  color: var(--seq-sub);
+  white-space: nowrap;
+}
+
+.seq-footer-review-chip.chip-steps {
+  background: var(--seq-teal-light);
+  border-color: #a7f3d0;
+  color: var(--seq-teal-dark);
+}
+
+.seq-wizard-footer-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  background: var(--seq-white);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 18px;
-  box-shadow: var(--seq-shadow);
-}
-
-.seq-sidebar {
-  display: grid;
-  gap: 1rem;
-  position: sticky;
-  top: 5.5rem;
+  padding: 0.9rem 1.25rem;
 }
 
 /* ═══════════════════════════════════════
@@ -1348,6 +1396,17 @@
   color: var(--seq-ink);
 }
 
+/* ─── Activity panel full-width (inline, not sidebar) ─── */
+.seq-activity-inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.seq-activity-inline .seq-metrics-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 /* ─── Activity items ─── */
 .seq-activity-list { display: grid; gap: 0.55rem; margin-top: 0.65rem; }
 
@@ -1456,13 +1515,12 @@
    RESPONSIVE
 ═══════════════════════════════════════ */
 @media (max-width: 1100px) {
-  .seq-wizard-layout { grid-template-columns: 1fr; }
-  .seq-sidebar { position: static; }
   .seq-stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .seq-activity-inline .seq-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 860px) {
-  .seq-page { padding: 0.3rem 0.25rem 1.5rem; }
+  .seq-page { padding: 0 0 1.5rem; }
   .seq-create-shell { grid-template-columns: 1fr; }
   .seq-builder-bar { position: static; }
   .seq-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }

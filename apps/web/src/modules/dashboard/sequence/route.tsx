@@ -687,7 +687,7 @@ function BuilderPage({ token }: { token: string }) {
         </div>
       )}
 
-      {/* ── Main layout: step content + sidebar ── */}
+      {/* ── Main wizard content — full width ── */}
       <div className="seq-wizard-layout">
         <div className="seq-wizard-main">
 
@@ -711,34 +711,56 @@ function BuilderPage({ token }: { token: string }) {
             <StepsEditor draft={draft} setDraft={setDraft} templates={templates} />
           )}
 
-          {/* ── Wizard footer nav ── */}
+          {/* ── Footer: compact review summary + nav buttons ── */}
           <div className="seq-wizard-footer">
-            <button
-              type="button"
-              className="seq-btn seq-btn-ghost"
-              onClick={() => canGoBack ? setWizardStep((s) => s - 1) : navigate("/dashboard/sequence")}
-            >
-              ← {canGoBack ? `Back: ${WIZARD_STEPS[wizardStep - 1].label}` : "Back to Sequences"}
-            </button>
-            {canGoNext ? (
-              <button type="button" className="seq-btn seq-btn-primary"
-                onClick={() => setWizardStep((s) => s + 1)}>
-                Next: {WIZARD_STEPS[wizardStep + 1].label} →
+            {/* Review summary strip */}
+            <div className="seq-wizard-footer-review">
+              <span className="seq-footer-review-label">Summary</span>
+              <span className="seq-footer-review-chip">
+                👥 {(draft.conditions ?? []).filter((c) => c.conditionType === "start").length > 0
+                  ? `${(draft.conditions ?? []).filter((c) => c.conditionType === "start").length} start rule(s)`
+                  : "All contacts"}
+              </span>
+              <span className="seq-footer-review-chip">
+                ⚡ Trigger: {draft.triggerType}
+              </span>
+              <span className="seq-footer-review-chip">
+                📅 {formatDays(draft.allowedDays)}
+              </span>
+              <span className={`seq-footer-review-chip${(draft.steps?.length ?? 0) > 0 ? " chip-steps" : ""}`}>
+                📋 {draft.steps?.length ?? 0} step{(draft.steps?.length ?? 0) !== 1 ? "s" : ""}
+              </span>
+              {draft.retryEnabled && (
+                <span className="seq-footer-review-chip">🔄 Retry on</span>
+              )}
+            </div>
+            {/* Nav buttons */}
+            <div className="seq-wizard-footer-nav">
+              <button
+                type="button"
+                className="seq-btn seq-btn-ghost"
+                onClick={() => canGoBack ? setWizardStep((s) => s - 1) : navigate("/dashboard/sequence")}
+              >
+                ← {canGoBack ? `Back: ${WIZARD_STEPS[wizardStep - 1].label}` : "Back to Sequences"}
               </button>
-            ) : (
-              <button type="button" className="seq-btn seq-btn-primary"
-                disabled={validationErrors.length > 0}
-                onClick={() => void handlePublish()}>
-                {publishMutation.isPending ? "Publishing…" : "Publish & Close"}
-              </button>
-            )}
+              {canGoNext ? (
+                <button type="button" className="seq-btn seq-btn-primary"
+                  onClick={() => setWizardStep((s) => s + 1)}>
+                  Next: {WIZARD_STEPS[wizardStep + 1].label} →
+                </button>
+              ) : (
+                <button type="button" className="seq-btn seq-btn-primary"
+                  disabled={validationErrors.length > 0}
+                  onClick={() => void handlePublish()}>
+                  {publishMutation.isPending ? "Publishing…" : "Publish & Close"}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* ── Sidebar ── */}
-        <div className="seq-sidebar">
-          <ReviewPanel draft={draft} />
+          {/* ── Activity panel — full width, below footer ── */}
           <ActivityPanel detail={detail} enrollments={enrollments} logs={logs} />
+
         </div>
       </div>
 
@@ -1251,42 +1273,7 @@ function StepsEditor({
 }
 
 /* ─────────────────────────────────────────────
-   REVIEW PANEL  (sidebar)
-───────────────────────────────────────────── */
-function ReviewPanel({ draft }: { draft: SequenceWriteInput }) {
-  const startConditions = (draft.conditions ?? []).filter((c) => c.conditionType === "start");
-  const stepCount       = draft.steps?.length ?? 0;
-
-  const items = [
-    { label: "Who can enter?",      value: startConditions.length > 0 ? `${startConditions.length} start rule${startConditions.length > 1 ? "s" : ""}` : "Anyone matching the trigger" },
-    { label: "When do messages send?", value: formatDeliverySummary(draft) },
-    { label: "Steps configured",    value: `${stepCount} step${stepCount !== 1 ? "s" : ""}` },
-    { label: "Retry",               value: draft.retryEnabled ? "Enabled (48 hr window)" : "Off" },
-    { label: "Allowed days",        value: formatDays(draft.allowedDays) }
-  ];
-
-  return (
-    <div className="seq-card">
-      <div className="seq-section-head" style={{ marginBottom: "0.75rem" }}>
-        <div className="seq-section-heading">
-          <h3 className="seq-section-title">Review</h3>
-          <p className="seq-section-desc">Summary of your sequence settings.</p>
-        </div>
-      </div>
-      <div className="seq-review-grid">
-        {items.map(({ label, value }) => (
-          <div key={label} className="seq-review-block">
-            <p className="seq-review-label">{label}</p>
-            <p className="seq-review-value">{value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   ACTIVITY PANEL  (sidebar)
+   ACTIVITY PANEL  (full-width, below footer)
 ───────────────────────────────────────────── */
 function ActivityPanel({
   detail, enrollments, logs
@@ -1297,50 +1284,79 @@ function ActivityPanel({
 }) {
   return (
     <div className="seq-card">
-      <div className="seq-section-head" style={{ marginBottom: "0.75rem" }}>
+      <div className="seq-section-head" style={{ marginBottom: "1rem" }}>
         <div className="seq-section-heading">
           <h3 className="seq-section-title">Activity</h3>
           <p className="seq-section-desc">Enrollment metrics and recent logs.</p>
         </div>
       </div>
 
-      {/* Metrics */}
-      <div className="seq-metrics-grid">
+      {/* Metrics — horizontal row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.75rem", marginBottom: enrollments.length > 0 || logs.length > 0 ? "1.25rem" : 0 }}>
         {([
-          ["Enrolled",  detail.metrics.enrolled],
-          ["Active",    detail.metrics.active],
-          ["Completed", detail.metrics.completed],
-          ["Failed",    detail.metrics.failed]
-        ] as [string, number][]).map(([label, value]) => (
-          <div key={label} className="seq-metric">
-            <p className="seq-metric-label">{label}</p>
-            <p className="seq-metric-value">{value}</p>
+          ["Enrolled",  detail.metrics.enrolled,  "tone-blue"],
+          ["Active",    detail.metrics.active,    "tone-teal"],
+          ["Completed", detail.metrics.completed, "tone-green"],
+          ["Failed",    detail.metrics.failed,    "tone-rose"]
+        ] as [string, number, string][]).map(([label, value, tone]) => (
+          <div key={label} className={`seq-stat-card ${tone}`} style={{ minHeight: "auto", padding: "0.75rem 1rem" }}>
+            <p className="seq-stat-label">{label}</p>
+            <p className="seq-stat-value" style={{ fontSize: "1.5rem" }}>{value}</p>
           </div>
         ))}
       </div>
 
-      {/* Recent enrollments */}
-      {enrollments.length > 0 && (
-        <div style={{ marginTop: "1rem" }}>
-          <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 800, color: "var(--seq-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            Recent enrollments
-          </p>
-          <div className="seq-activity-list">
-            {enrollments.slice(0, 4).map((enr) => (
-              <div key={enr.id} className="seq-activity-item">
-                <div className="seq-activity-row">
-                  <StatusPill status={enr.status} />
-                  <span className="seq-activity-time">{formatDateTime(enr.entered_at)}</span>
+      {/* Recent enrollments + logs side by side */}
+      {(enrollments.length > 0 || logs.length > 0) && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.25rem" }}>
+          {/* Enrollments */}
+          <div>
+            <p style={{ margin: "0 0 0.65rem", fontSize: "0.76rem", fontWeight: 800, color: "var(--seq-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+              Recent enrollments
+            </p>
+            {enrollments.length === 0
+              ? <p className="seq-empty-row">No enrollments yet.</p>
+              : (
+                <div className="seq-activity-list">
+                  {enrollments.slice(0, 5).map((enr) => (
+                    <div key={enr.id} className="seq-activity-item">
+                      <div className="seq-activity-row">
+                        <StatusPill status={enr.status} />
+                        <span className="seq-activity-time">{formatDateTime(enr.entered_at)}</span>
+                      </div>
+                      <p className="seq-activity-step">Step {enr.current_step + 1}</p>
+                    </div>
+                  ))}
                 </div>
-                <p className="seq-activity-step">Step {enr.current_step + 1}</p>
-              </div>
-            ))}
+              )}
           </div>
+
+          {/* Logs */}
+          {logs.length > 0 && (
+            <div>
+              <p style={{ margin: "0 0 0.65rem", fontSize: "0.76rem", fontWeight: 800, color: "var(--seq-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Latest logs
+              </p>
+              <div className="seq-activity-list">
+                {logs.slice(0, 5).map((log) => (
+                  <div key={log.id} className="seq-activity-item">
+                    <div className="seq-activity-row">
+                      <StatusPill status={log.status} />
+                      <span className="seq-activity-time">{formatDateTime(log.created_at)}</span>
+                    </div>
+                    {log.error_message && (
+                      <p style={{ margin: "0.3rem 0 0", fontSize: "0.78rem", color: "#be123c" }}>{log.error_message}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {enrollments.length === 0 && (
-        <p className="seq-empty-row" style={{ marginTop: "0.75rem" }}>No enrollments yet.</p>
+      {enrollments.length === 0 && logs.length === 0 && (
+        <p className="seq-empty-row">No enrollment activity yet.</p>
       )}
 
       {/* Logs */}
