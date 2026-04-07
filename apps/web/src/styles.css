@@ -6659,6 +6659,79 @@ textarea {
   border-top: 1px solid #edf2f8;
 }
 
+/* ── QR mode option cards ───────────────────────────────────── */
+
+.new-chat-qr-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.new-chat-qr-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  background: #f7fafd;
+  border: 1px solid #dce8f2;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.new-chat-qr-mode-card:hover {
+  background: #eaf4f0;
+  border-color: #a8d4c2;
+}
+
+.new-chat-qr-mode-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+  margin-bottom: 0.1rem;
+}
+
+.new-chat-qr-mode-card strong {
+  font-size: 0.85rem;
+  color: #1a2c38;
+}
+
+.new-chat-qr-mode-card span:last-child {
+  font-size: 0.74rem;
+  color: #6a8099;
+}
+
+.new-chat-mode-back {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.new-chat-mode-back .ghost-btn {
+  font-size: 0.76rem;
+  padding: 0.18rem 0.55rem;
+}
+
+.new-chat-ai-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #f0faf4;
+  border: 1px solid #b6dcc8;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.new-chat-ai-confirm p {
+  font-size: 0.83rem;
+  color: #2b5c3f;
+  margin: 0;
+  line-height: 1.5;
+}
+
 .inbox-detail-divider span {
   font-size: 0.7rem;
   font-weight: 700;

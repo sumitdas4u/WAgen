@@ -53,11 +53,14 @@ type TemplateVarsDialogState = {
 };
 
 type NewChatStep = "contact" | "message";
+type NewChatQrMode = "flow" | "manual" | "ai" | null;
 type NewChatState = {
   open: boolean;
   step: NewChatStep;
   contact: ContactRecord | null;
   channelType: "qr" | "api";
+  qrMode: NewChatQrMode;
+  qrFlowId: string | null;
   messageText: string;
   template: MessageTemplate | null;
   templateVars: TemplateVarsDialogState | null;
@@ -508,7 +511,7 @@ export function Component() {
   const [templateUploadingFieldKey, setTemplateUploadingFieldKey] = useState<string | null>(null);
 
   // New Chat dialog
-  const NEW_CHAT_DEFAULT: NewChatState = { open: false, step: "contact", contact: null, channelType: "qr", messageText: "", template: null, templateVars: null };
+  const NEW_CHAT_DEFAULT: NewChatState = { open: false, step: "contact", contact: null, channelType: "qr", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null };
   const [newChat, setNewChat] = useState<NewChatState>(NEW_CHAT_DEFAULT);
   const [newChatContactSearch, setNewChatContactSearch] = useState("");
   const [newChatContacts, setNewChatContacts] = useState<ContactRecord[]>([]);
@@ -939,8 +942,13 @@ export function Component() {
       const { conversationId } = await startOutboundConversation(token, newChat.contact.id, newChat.channelType);
       if (newChat.channelType === "api" && newChat.templateVars) {
         await sendInboxConversationTemplate(token, conversationId, newChat.templateVars.template.id, newChat.templateVars.values);
-      } else if (newChat.channelType === "qr" && newChat.messageText.trim()) {
-        await sendManualConversationMessage(token, conversationId, newChat.messageText.trim());
+      } else if (newChat.channelType === "qr") {
+        if (newChat.qrMode === "manual" && newChat.messageText.trim()) {
+          await sendManualConversationMessage(token, conversationId, newChat.messageText.trim());
+        } else if (newChat.qrMode === "flow" && newChat.qrFlowId) {
+          await assignInboxFlow(token, conversationId, newChat.qrFlowId);
+        }
+        // "ai" mode: conversation is created, AI handles from here — nothing extra to send
       }
       return conversationId;
     },
@@ -1118,7 +1126,7 @@ export function Component() {
   }, [token, isQrConnected]);
 
   const handleNewChatSelectContact = useCallback((contact: ContactRecord) => {
-    setNewChat((prev) => ({ ...prev, contact, step: "message", messageText: "", template: null, templateVars: null }));
+    setNewChat((prev) => ({ ...prev, contact, step: "message", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }));
   }, []);
 
   const handleNewChatSelectTemplate = useCallback((template: MessageTemplate) => {
@@ -2218,14 +2226,14 @@ export function Component() {
                       <button
                         type="button"
                         className={`compose-toolbar-pill${newChat.channelType === "qr" ? " active" : ""}`}
-                        onClick={() => setNewChat((p) => ({ ...p, channelType: "qr", template: null, templateVars: null }))}
+                        onClick={() => setNewChat((p) => ({ ...p, channelType: "qr", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
                       >
                         WA QR
                       </button>
                       <button
                         type="button"
                         className={`compose-toolbar-pill${newChat.channelType === "api" ? " active" : ""}`}
-                        onClick={() => setNewChat((p) => ({ ...p, channelType: "api", messageText: "", template: null, templateVars: null }))}
+                        onClick={() => setNewChat((p) => ({ ...p, channelType: "api", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
                       >
                         WA API
                       </button>
@@ -2233,19 +2241,102 @@ export function Component() {
                   </div>
                 )}
 
-                {/* QR: free-text compose */}
+                {/* QR: 3-option mode picker */}
                 {newChat.channelType === "qr" && (
                   <div className="new-chat-compose-wrap">
-                    <label className="new-chat-compose-label">First message</label>
-                    <textarea
-                      className="chat-compose-textarea"
-                      rows={4}
-                      maxLength={4000}
-                      placeholder="Type the first message to send..."
-                      value={newChat.messageText}
-                      onChange={(e) => setNewChat((p) => ({ ...p, messageText: e.target.value }))}
-                    />
-                    <p className="new-chat-hint">This message will be sent to {newChat.contact.phone_number} via WhatsApp QR.</p>
+                    {/* Mode cards */}
+                    {!newChat.qrMode && (
+                      <div className="new-chat-qr-modes">
+                        <button
+                          type="button"
+                          className="new-chat-qr-mode-card"
+                          onClick={() => setNewChat((p) => ({ ...p, qrMode: "manual" }))}
+                        >
+                          <span className="new-chat-qr-mode-icon">✏️</span>
+                          <strong>Manual Message</strong>
+                          <span>Type a custom first message to send now.</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="new-chat-qr-mode-card"
+                          onClick={() => setNewChat((p) => ({ ...p, qrMode: "flow" }))}
+                        >
+                          <span className="new-chat-qr-mode-icon">⚡</span>
+                          <strong>Select Flow</strong>
+                          <span>Assign a published automation flow to handle the conversation.</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="new-chat-qr-mode-card"
+                          onClick={() => setNewChat((p) => ({ ...p, qrMode: "ai" }))}
+                        >
+                          <span className="new-chat-qr-mode-icon">🤖</span>
+                          <strong>AI Reply</strong>
+                          <span>Open the chat and let the AI agent respond automatically.</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Manual: free-text textarea */}
+                    {newChat.qrMode === "manual" && (
+                      <>
+                        <div className="new-chat-mode-back">
+                          <button type="button" className="ghost-btn" onClick={() => setNewChat((p) => ({ ...p, qrMode: null, messageText: "" }))}>← Change</button>
+                          <label className="new-chat-compose-label">Type your first message</label>
+                        </div>
+                        <textarea
+                          className="chat-compose-textarea"
+                          rows={4}
+                          maxLength={4000}
+                          autoFocus
+                          placeholder="Type the first message to send..."
+                          value={newChat.messageText}
+                          onChange={(e) => setNewChat((p) => ({ ...p, messageText: e.target.value }))}
+                        />
+                        <p className="new-chat-hint">Sent to {newChat.contact.phone_number} via WA QR.</p>
+                      </>
+                    )}
+
+                    {/* Flow: pick a published flow */}
+                    {newChat.qrMode === "flow" && (
+                      <>
+                        <div className="new-chat-mode-back">
+                          <button type="button" className="ghost-btn" onClick={() => setNewChat((p) => ({ ...p, qrMode: null, qrFlowId: null }))}>← Change</button>
+                          <label className="new-chat-compose-label">Select a flow</label>
+                        </div>
+                        {publishedFlowsQuery.isLoading ? (
+                          <p className="empty-note" style={{ padding: "8px 0" }}>Loading flows…</p>
+                        ) : publishedFlows.length === 0 ? (
+                          <p className="empty-note" style={{ padding: "8px 0" }}>No published flows found.</p>
+                        ) : (
+                          <div className="new-chat-template-list">
+                            {publishedFlows.map((flow) => (
+                              <button
+                                key={flow.id}
+                                type="button"
+                                className={`compose-template-item${newChat.qrFlowId === flow.id ? " active" : ""}`}
+                                onClick={() => setNewChat((p) => ({ ...p, qrFlowId: flow.id }))}
+                              >
+                                <strong>{flow.name}</strong>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* AI mode: confirmation */}
+                    {newChat.qrMode === "ai" && (
+                      <>
+                        <div className="new-chat-mode-back">
+                          <button type="button" className="ghost-btn" onClick={() => setNewChat((p) => ({ ...p, qrMode: null }))}>← Change</button>
+                        </div>
+                        <div className="new-chat-ai-confirm">
+                          <span className="new-chat-qr-mode-icon">🤖</span>
+                          <p>The conversation will open and the AI agent will reply automatically when the contact messages.</p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -2300,13 +2391,15 @@ export function Component() {
                   {newChatMutation.isError && (
                     <div className="tmpl-dialog-error">{(newChatMutation.error as Error).message}</div>
                   )}
-                  <button type="button" className="ghost-btn" onClick={() => setNewChat((p) => ({ ...p, step: "contact" }))}>Back</button>
+                  <button type="button" className="ghost-btn" onClick={() => setNewChat((p) => ({ ...p, step: "contact", qrMode: null, qrFlowId: null, messageText: "" }))}>Back</button>
                   <button
                     type="button"
                     className="compose-send-btn"
                     disabled={
                       newChatMutation.isPending ||
-                      (newChat.channelType === "qr" && !newChat.messageText.trim()) ||
+                      (newChat.channelType === "qr" && !newChat.qrMode) ||
+                      (newChat.channelType === "qr" && newChat.qrMode === "manual" && !newChat.messageText.trim()) ||
+                      (newChat.channelType === "qr" && newChat.qrMode === "flow" && !newChat.qrFlowId) ||
                       (newChat.channelType === "api" && (!newChat.templateVars || (newChat.templateVars.fields.length > 0 && !newChat.templateVars.fields.every((f) => Boolean(newChat.templateVars?.values[f.key]?.trim())))))
                     }
                     onClick={() => newChatMutation.mutate()}
