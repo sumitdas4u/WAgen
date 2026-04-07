@@ -29,6 +29,7 @@ import {
 import {
   createFlowSession,
   getActiveFlowSession,
+  getLastCompletedFlowSession,
   getPublishedFlowsForUser,
   updateFlowSession,
   type FlowRow,
@@ -864,12 +865,42 @@ export async function handleFlowMessage(input: {
     }
 
     const flows = await getPublishedFlowsForUser(userId, channelType);
+    const firstInbound = await isFirstInboundMessage(conversationId);
+
     const matchedFlow = matchingFlow({
       message,
-      flows,
+      flows: flows.filter((flow) => !flow.is_default_reply),
       channelType,
-      isFirstInboundMessage: await isFirstInboundMessage(conversationId)
+      isFirstInboundMessage: firstInbound
     });
+
+    // If the matched flow is the same one that just completed, prefer the default reply flow
+    // instead of re-triggering it. This prevents any_message / no-trigger flows from looping.
+    const defaultReplyFlow = flows.find((flow) => flow.is_default_reply === true);
+    if (matchedFlow && defaultReplyFlow) {
+      const recentlyCompleted = await getLastCompletedFlowSession(conversationId);
+      if (recentlyCompleted?.flow_id === matchedFlow.id) {
+        const { nodes, edges, startNode: drStartNode } = getFlowGraph(defaultReplyFlow);
+        if (drStartNode) {
+          const initialVars = await buildConversationFlowVariables({ userId, conversationId });
+          const session = await createFlowSession(defaultReplyFlow.id, conversationId, initialVars);
+          sessionIdToFail = session.id;
+          try {
+            return await runChain(drStartNode, nodes, edges, session, initialVars, sendReply, {
+              userId,
+              channelType
+            });
+          } catch (error) {
+            await markFlowSessionFailed(session.id);
+            console.warn(
+              `[FlowEngine] Default reply flow (post-complete) failed conversation=${conversationId} session=${session.id}:`,
+              error
+            );
+            return { result: "failed" };
+          }
+        }
+      }
+    }
 
     if (!matchedFlow) {
       const fallbackFlow = flows.find((flow) => {

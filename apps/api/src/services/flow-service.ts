@@ -204,6 +204,21 @@ export async function getActiveFlowSession(conversationId: string): Promise<Flow
   return res.rows[0] ?? null;
 }
 
+export async function getLastCompletedFlowSession(
+  conversationId: string
+): Promise<FlowSessionRow | null> {
+  const res = await pool.query<FlowSessionRow>(
+    `SELECT * FROM flow_sessions
+     WHERE conversation_id = $1
+       AND status = 'completed'
+       AND updated_at >= NOW() - INTERVAL '10 minutes'
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [conversationId]
+  );
+  return res.rows[0] ?? null;
+}
+
 export async function createFlowSession(
   flowId: string,
   conversationId: string,
