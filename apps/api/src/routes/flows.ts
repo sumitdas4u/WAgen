@@ -12,6 +12,44 @@ import { generateFlowDraft } from "../services/flow-draft-generator-service.js";
 import { pool } from "../db/pool.js";
 import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
+import * as net from "net";
+
+function isBlockedHostname(hostname: string): boolean {
+  const lowerHost = hostname.toLowerCase();
+
+  // Block obvious internal hostnames
+  if (
+    lowerHost === "localhost" ||
+    lowerHost === "127.0.0.1" ||
+    lowerHost === "::1"
+  ) {
+    return true;
+  }
+
+  // If it's an IP address, block private, loopback and link-local ranges
+  const ipVersion = net.isIP(lowerHost);
+  if (ipVersion === 4) {
+    const parts = lowerHost.split(".").map((p) => Number(p));
+    const [a, b] = parts;
+    // 10.0.0.0/8
+    if (a === 10) return true;
+    // 172.16.0.0/12
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    // 192.168.0.0/16
+    if (a === 192 && b === 168) return true;
+    // 127.0.0.0/8
+    if (a === 127) return true;
+    // 169.254.0.0/16 (link-local)
+    if (a === 169 && b === 254) return true;
+  } else if (ipVersion === 6) {
+    // Block IPv6 loopback and link-local ranges
+    if (lowerHost === "::1") return true;
+    if (lowerHost.startsWith("fe80:")) return true;
+    if (lowerHost.startsWith("fc00:") || lowerHost.startsWith("fd00:")) return true;
+  }
+
+  return false;
+}
 
 export async function flowRoutes(app: FastifyInstance) {
   const serializeFlow = (flow: Awaited<ReturnType<typeof getFlow>>) => {
@@ -197,6 +235,23 @@ export async function flowRoutes(app: FastifyInstance) {
 
       if (!url || typeof url !== "string" || !url.startsWith("http")) {
         return reply.status(400).send({ error: "A valid URL starting with http/https is required." });
+      }
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return reply.status(400).send({ error: "Invalid URL format." });
+      }
+
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        return reply.status(400).send({ error: "Only http and https protocols are allowed." });
+      }
+
+      if (!parsedUrl.hostname || isBlockedHostname(parsedUrl.hostname)) {
+        return reply
+          .status(400)
+          .send({ error: "Requests to internal or disallowed hosts are not permitted." });
       }
 
       const safeMethod = ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(
