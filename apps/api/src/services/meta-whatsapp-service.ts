@@ -534,6 +534,18 @@ async function subscribeAppToWabaWebhook(accessToken: string, wabaId: string): P
   }
 }
 
+async function detachSharedBillingFromWaba(allocationConfigId: string): Promise<void> {
+  if (!env.META_SYSTEM_USER_TOKEN?.trim()) {
+    return;
+  }
+  try {
+    await graphDelete<Record<string, unknown>>(`/${allocationConfigId}`, env.META_SYSTEM_USER_TOKEN.trim());
+    console.info(`[MetaConnect] detached credit line allocation ${allocationConfigId}`);
+  } catch (error) {
+    console.warn(`[MetaConnect] credit line detach failed for ${allocationConfigId}: ${(error as Error).message}`);
+  }
+}
+
 async function attachSharedBillingToWaba(input: {
   metaBusinessId: string | null;
   wabaId: string;
@@ -1599,20 +1611,18 @@ export async function completeMetaEmbeddedSignup(
 
   await ensureMetaConnectionWithinPlanLimit(userId, discovered.phoneNumberId);
 
+  // If reconnecting, detach any previously attached partner credit line so the
+  // user's Meta account is free to manage its own payment method.
+  const existingRow = await getConnectionRowByPhoneNumberId(discovered.phoneNumberId, { includePending: true });
+  if (existingRow?.billing_allocation_config_id) {
+    await detachSharedBillingFromWaba(existingRow.billing_allocation_config_id);
+  }
+
   const registration = await registerPhoneNumberIfConfigured(resolvedToken, discovered.phoneNumberId);
   const webhookSubscription = await subscribeAppToWabaWebhook(resolvedToken, discovered.wabaId);
-  const sharedBilling = await attachSharedBillingToWaba({
-    metaBusinessId: discovered.metaBusinessId,
-    wabaId: discovered.wabaId
-  });
   if (!webhookSubscription.success) {
     console.warn(
       `[MetaConnect] webhook subscribe failed user=${userId} wabaId=${discovered.wabaId}: ${webhookSubscription.error ?? "unknown error"}`
-    );
-  }
-  if (sharedBilling.status === "failed") {
-    console.warn(
-      `[MetaConnect] shared billing attach failed user=${userId} wabaId=${discovered.wabaId}: ${sharedBilling.error ?? "unknown error"}`
     );
   }
   const isConnected = registration.success && webhookSubscription.success;
@@ -1626,19 +1636,18 @@ export async function completeMetaEmbeddedSignup(
     expiresInSeconds: resolvedExpiry,
     subscriptionStatus: isConnected ? "active" : "pending",
     status: isConnected ? "connected" : "pending",
-    billingMode: sharedBilling.mode,
-    billingStatus: sharedBilling.status,
-    billingOwnerBusinessId: sharedBilling.ownerBusinessId,
-    billingAttachedAt: sharedBilling.attachedAt,
-    billingError: sharedBilling.error,
-    billingCreditLineId: sharedBilling.creditLineId,
-    billingAllocationConfigId: sharedBilling.allocationConfigId,
-    billingCurrency: sharedBilling.currency,
+    billingMode: "none",
+    billingStatus: "not_configured",
+    billingOwnerBusinessId: null,
+    billingAttachedAt: null,
+    billingError: null,
+    billingCreditLineId: null,
+    billingAllocationConfigId: null,
+    billingCurrency: null,
     metadata: {
       source: "embedded_signup",
       connectedAt: new Date().toISOString(),
       ...buildWebhookSubscriptionMetadata(webhookSubscription, "embedded_signup"),
-      ...(sharedBilling.metadata ?? {}),
       registration: {
         ...registration,
         attemptedAt: new Date().toISOString()
