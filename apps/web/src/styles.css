@@ -2139,6 +2139,13 @@
   min-width: unset;
 }
 
+.compose-toolbar-pill.disabled,
+.compose-toolbar-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .compose-action-btn:hover:not(:disabled) {
   background: #eef8f0;
   border-color: #bcd3c3;

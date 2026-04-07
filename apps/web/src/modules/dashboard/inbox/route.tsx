@@ -608,7 +608,7 @@ export function Component() {
     return approvedTemplates.filter((template) => !template.linkedNumber || template.linkedNumber === linkedNumber);
   }, [approvedTemplates, selectedConversation]);
 
-  const isQrConnected = Boolean(bootstrap?.channelSummary.whatsapp.status === "open");
+  const isQrConnected = Boolean(bootstrap?.channelSummary.whatsapp.status === "connected");
   const isApiConnected = Boolean(bootstrap?.channelSummary.metaApi.connected);
 
   const newChatFilteredContacts = useMemo(() => {
@@ -2218,28 +2218,30 @@ export function Component() {
 
             {newChat.step === "message" && newChat.contact && (
               <>
-                {/* Channel selector — only show if both are connected */}
-                {isQrConnected && isApiConnected && (
-                  <div className="new-chat-channel-row">
-                    <span>Channel</span>
-                    <div className="new-chat-channel-pills">
-                      <button
-                        type="button"
-                        className={`compose-toolbar-pill${newChat.channelType === "qr" ? " active" : ""}`}
-                        onClick={() => setNewChat((p) => ({ ...p, channelType: "qr", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
-                      >
-                        WA QR
-                      </button>
-                      <button
-                        type="button"
-                        className={`compose-toolbar-pill${newChat.channelType === "api" ? " active" : ""}`}
-                        onClick={() => setNewChat((p) => ({ ...p, channelType: "api", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
-                      >
-                        WA API
-                      </button>
-                    </div>
+                {/* Channel selector — always visible, disabled pills for disconnected channels */}
+                <div className="new-chat-channel-row">
+                  <span>Channel</span>
+                  <div className="new-chat-channel-pills">
+                    <button
+                      type="button"
+                      className={`compose-toolbar-pill${newChat.channelType === "qr" ? " active" : ""}${!isQrConnected ? " disabled" : ""}`}
+                      disabled={!isQrConnected}
+                      title={isQrConnected ? "WhatsApp QR" : "WhatsApp QR not connected"}
+                      onClick={() => setNewChat((p) => ({ ...p, channelType: "qr", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
+                    >
+                      WA QR{!isQrConnected && " (offline)"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`compose-toolbar-pill${newChat.channelType === "api" ? " active" : ""}${!isApiConnected ? " disabled" : ""}`}
+                      disabled={!isApiConnected}
+                      title={isApiConnected ? "WhatsApp API" : "WhatsApp API not connected"}
+                      onClick={() => setNewChat((p) => ({ ...p, channelType: "api", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
+                    >
+                      WA API{!isApiConnected && " (offline)"}
+                    </button>
                   </div>
-                )}
+                </div>
 
                 {/* QR: 3-option mode picker */}
                 {newChat.channelType === "qr" && (
