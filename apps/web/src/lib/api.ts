@@ -1516,6 +1516,18 @@ export function fetchConversations(token: string) {
   return apiRequest<{ conversations: Conversation[] }>("/api/conversations", { token });
 }
 
+export function createOutboundConversation(
+  token: string,
+  contactId: string,
+  channelType: "qr" | "api"
+) {
+  return apiRequest<{ conversationId: string }>("/api/conversations/outbound", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ contactId, channelType })
+  });
+}
+
 export interface LeadConversation extends Conversation {
   contact_name: string | null;
   contact_phone: string | null;

@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { Conversation, ConversationMessage, MessageTemplate } from "../../../lib/api";
-import { fetchContactByConversation, listContactFields } from "../../../lib/api";
+import type { Conversation, ConversationMessage, MessageTemplate, ContactRecord } from "../../../lib/api";
+import { fetchContactByConversation, listContactFields, fetchContacts } from "../../../lib/api";
 import { normalizeMessage, renderFormattedText, renderMessage } from "./message-renderer";
 import { uploadInboxMedia as uploadInboxMediaToSupabase } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
@@ -14,7 +14,8 @@ import {
   sendManualConversationMessage,
   updateConversationAiMode,
   aiAssistText,
-  sendInboxConversationTemplate
+  sendInboxConversationTemplate,
+  startOutboundConversation
 } from "./api";
 import {
   buildInboxConversationsQueryOptions,
@@ -49,6 +50,17 @@ type TemplateVarsDialogState = {
   fields: TemplateDialogField[];
   values: Record<string, string>;
   uploads: Record<string, TemplateDialogUpload>;
+};
+
+type NewChatStep = "contact" | "message";
+type NewChatState = {
+  open: boolean;
+  step: NewChatStep;
+  contact: ContactRecord | null;
+  channelType: "qr" | "api";
+  messageText: string;
+  template: MessageTemplate | null;
+  templateVars: TemplateVarsDialogState | null;
 };
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -495,6 +507,12 @@ export function Component() {
   const [templateUploadError, setTemplateUploadError] = useState<string | null>(null);
   const [templateUploadingFieldKey, setTemplateUploadingFieldKey] = useState<string | null>(null);
 
+  // New Chat dialog
+  const NEW_CHAT_DEFAULT: NewChatState = { open: false, step: "contact", contact: null, channelType: "qr", messageText: "", template: null, templateVars: null };
+  const [newChat, setNewChat] = useState<NewChatState>(NEW_CHAT_DEFAULT);
+  const [newChatContactSearch, setNewChatContactSearch] = useState("");
+  const [newChatContacts, setNewChatContacts] = useState<ContactRecord[]>([]);
+
   // Toast
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -586,6 +604,23 @@ export function Component() {
     }
     return approvedTemplates.filter((template) => !template.linkedNumber || template.linkedNumber === linkedNumber);
   }, [approvedTemplates, selectedConversation]);
+
+  const isQrConnected = Boolean(bootstrap?.channelSummary.whatsapp.status === "open");
+  const isApiConnected = Boolean(bootstrap?.channelSummary.metaApi.connected);
+
+  const newChatFilteredContacts = useMemo(() => {
+    const q = newChatContactSearch.trim().toLowerCase();
+    if (!q) return newChatContacts.slice(0, 50);
+    return newChatContacts.filter((c) => {
+      const hay = `${c.display_name ?? ""} ${c.phone_number} ${c.email ?? ""}`.toLowerCase();
+      return hay.includes(q);
+    }).slice(0, 50);
+  }, [newChatContacts, newChatContactSearch]);
+
+  const newChatAvailableTemplates = useMemo(() => {
+    if (newChat.channelType !== "api") return [];
+    return approvedTemplates;
+  }, [approvedTemplates, newChat.channelType]);
 
   const selectedConversationAiTimer = selectedConversation ? chatAiTimers[selectedConversation.id] ?? null : null;
   const selectedConversationAiTimerLabel = selectedConversationAiTimer
@@ -898,6 +933,27 @@ export function Component() {
     onError: (e) => setError((e as Error).message)
   });
 
+  const newChatMutation = useMutation({
+    mutationFn: async () => {
+      if (!newChat.contact) throw new Error("No contact selected.");
+      const { conversationId } = await startOutboundConversation(token, newChat.contact.id, newChat.channelType);
+      if (newChat.channelType === "api" && newChat.templateVars) {
+        await sendInboxConversationTemplate(token, conversationId, newChat.templateVars.template.id, newChat.templateVars.values);
+      } else if (newChat.channelType === "qr" && newChat.messageText.trim()) {
+        await sendManualConversationMessage(token, conversationId, newChat.messageText.trim());
+      }
+      return conversationId;
+    },
+    onSuccess: async (conversationId) => {
+      setNewChat(NEW_CHAT_DEFAULT);
+      setNewChatContactSearch("");
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      navigate({ pathname: `/dashboard/inbox/${conversationId}`, search: searchParamString ? `?${searchParamString}` : "" });
+      setInfo("Chat started.");
+    },
+    onError: (e) => setError((e as Error).message)
+  });
+
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
   const updateSearchParam = useCallback((key: string, value: string) => {
@@ -1048,6 +1104,33 @@ export function Component() {
       setShowTranslateSubmenu(false);
     }
   }, [replyDraftText, isAiRewriting, token]);
+
+  const handleOpenNewChat = useCallback(async () => {
+    const defaultChannel: "qr" | "api" = isQrConnected ? "qr" : "api";
+    setNewChat({ ...NEW_CHAT_DEFAULT, open: true, channelType: defaultChannel });
+    setNewChatContactSearch("");
+    try {
+      const res = await fetchContacts(token, { limit: 250 });
+      setNewChatContacts(res.contacts);
+    } catch {
+      setNewChatContacts([]);
+    }
+  }, [token, isQrConnected]);
+
+  const handleNewChatSelectContact = useCallback((contact: ContactRecord) => {
+    setNewChat((prev) => ({ ...prev, contact, step: "message", messageText: "", template: null, templateVars: null }));
+  }, []);
+
+  const handleNewChatSelectTemplate = useCallback((template: MessageTemplate) => {
+    const fields = buildTemplateDialogFields(template);
+    const initialValues: Record<string, string> = {};
+    fields.forEach((f) => { initialValues[f.key] = ""; });
+    setNewChat((prev) => ({
+      ...prev,
+      template,
+      templateVars: { template, fields, values: initialValues, uploads: {} }
+    }));
+  }, []);
 
   const handleSelectTemplate = useCallback((template: MessageTemplate) => {
     if (!selectedConversation) return;
@@ -1309,9 +1392,16 @@ export function Component() {
                       <h3>Chat List <span>{filteredConversations.length}</span></h3>
                     </div>
                     <p>Search, scan, and pick the lead to work.</p>
-                    {!showFilterPane && activeFilterCount > 0 && (
-                      <button type="button" className="ghost-btn" onClick={clearFilters}>Clear filters</button>
-                    )}
+                    <div className="inbox-list-toolbar-actions">
+                      {(isQrConnected || isApiConnected) && (
+                        <button type="button" className="ghost-btn inbox-new-chat-btn" onClick={() => { void handleOpenNewChat(); }}>
+                          + New Chat
+                        </button>
+                      )}
+                      {!showFilterPane && activeFilterCount > 0 && (
+                        <button type="button" className="ghost-btn" onClick={clearFilters}>Clear filters</button>
+                      )}
+                    </div>
                   </div>
                   <label className="clone-chat-search inbox-chat-search">
                     <input value={search} onChange={(e) => updateSearchParam("q", e.target.value)} placeholder="Search name, phone, email..." />
@@ -2075,6 +2165,159 @@ export function Component() {
             </>
           )}
         </section>
+      )}
+      {/* ── New Chat dialog ── */}
+      {newChat.open && (
+        <div className="tmpl-dialog-overlay" onClick={() => setNewChat(NEW_CHAT_DEFAULT)}>
+          <div className="tmpl-dialog new-chat-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="tmpl-dialog-head">
+              <strong>{newChat.step === "contact" ? "New Chat — Pick a contact" : `New Chat — ${newChat.contact?.display_name ?? newChat.contact?.phone_number ?? ""}`}</strong>
+              <button type="button" className="tmpl-dialog-close" onClick={() => setNewChat(NEW_CHAT_DEFAULT)}>✕</button>
+            </div>
+
+            {newChat.step === "contact" && (
+              <>
+                <div className="new-chat-search-wrap">
+                  <input
+                    className="inbox-select"
+                    autoFocus
+                    placeholder="Search by name or phone..."
+                    value={newChatContactSearch}
+                    onChange={(e) => setNewChatContactSearch(e.target.value)}
+                  />
+                </div>
+                {newChat.contact === null && newChatContacts.length === 0 && (
+                  <p className="empty-note" style={{ padding: "12px 16px" }}>Loading contacts…</p>
+                )}
+                <div className="new-chat-contact-list">
+                  {newChatFilteredContacts.length === 0 && newChatContacts.length > 0 && (
+                    <p className="empty-note" style={{ padding: "12px 16px" }}>No contacts match.</p>
+                  )}
+                  {newChatFilteredContacts.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="new-chat-contact-item"
+                      onClick={() => handleNewChatSelectContact(c)}
+                    >
+                      <span className="new-chat-contact-name">{c.display_name || c.phone_number}</span>
+                      <span className="new-chat-contact-phone">{c.phone_number}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {newChat.step === "message" && newChat.contact && (
+              <>
+                {/* Channel selector — only show if both are connected */}
+                {isQrConnected && isApiConnected && (
+                  <div className="new-chat-channel-row">
+                    <span>Channel</span>
+                    <div className="new-chat-channel-pills">
+                      <button
+                        type="button"
+                        className={`compose-toolbar-pill${newChat.channelType === "qr" ? " active" : ""}`}
+                        onClick={() => setNewChat((p) => ({ ...p, channelType: "qr", template: null, templateVars: null }))}
+                      >
+                        WA QR
+                      </button>
+                      <button
+                        type="button"
+                        className={`compose-toolbar-pill${newChat.channelType === "api" ? " active" : ""}`}
+                        onClick={() => setNewChat((p) => ({ ...p, channelType: "api", messageText: "", template: null, templateVars: null }))}
+                      >
+                        WA API
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* QR: free-text compose */}
+                {newChat.channelType === "qr" && (
+                  <div className="new-chat-compose-wrap">
+                    <label className="new-chat-compose-label">First message</label>
+                    <textarea
+                      className="chat-compose-textarea"
+                      rows={4}
+                      maxLength={4000}
+                      placeholder="Type the first message to send..."
+                      value={newChat.messageText}
+                      onChange={(e) => setNewChat((p) => ({ ...p, messageText: e.target.value }))}
+                    />
+                    <p className="new-chat-hint">This message will be sent to {newChat.contact.phone_number} via WhatsApp QR.</p>
+                  </div>
+                )}
+
+                {/* API: template picker */}
+                {newChat.channelType === "api" && (
+                  <div className="new-chat-template-wrap">
+                    <label className="new-chat-compose-label">Select an approved template</label>
+                    {templatesQuery.isLoading ? (
+                      <p className="empty-note" style={{ padding: "8px 0" }}>Loading templates…</p>
+                    ) : newChatAvailableTemplates.length === 0 ? (
+                      <p className="empty-note" style={{ padding: "8px 0" }}>No approved templates found.</p>
+                    ) : (
+                      <div className="new-chat-template-list">
+                        {newChatAvailableTemplates.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            className={`compose-template-item${newChat.template?.id === t.id ? " active" : ""}`}
+                            onClick={() => handleNewChatSelectTemplate(t)}
+                          >
+                            <strong>{t.name} <span style={{ color: t.category === "MARKETING" ? "#b45309" : "#0f766e", fontWeight: 700 }}>{t.category}</span></strong>
+                            <span>{getTemplateBodyText(t).slice(0, 80)}{getTemplateBodyText(t).length > 80 ? "…" : ""}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Template variable fill */}
+                    {newChat.templateVars && (
+                      <div className="new-chat-template-vars">
+                        {newChat.templateVars.fields.map((field) => (
+                          <label key={field.key} className="tmpl-dialog-field">
+                            <span>{field.label}</span>
+                            {field.kind === "text" ? (
+                              <input
+                                type="text"
+                                placeholder={field.placeholder}
+                                value={newChat.templateVars?.values[field.key] ?? ""}
+                                onChange={(e) => setNewChat((p) => p.templateVars ? { ...p, templateVars: { ...p.templateVars, values: { ...p.templateVars.values, [field.key]: e.target.value } } } : p)}
+                              />
+                            ) : (
+                              <p className="empty-note" style={{ fontSize: 12 }}>Media upload for new chats: provide a URL in the variable field.</p>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="tmpl-dialog-actions">
+                  {newChatMutation.isError && (
+                    <div className="tmpl-dialog-error">{(newChatMutation.error as Error).message}</div>
+                  )}
+                  <button type="button" className="ghost-btn" onClick={() => setNewChat((p) => ({ ...p, step: "contact" }))}>Back</button>
+                  <button
+                    type="button"
+                    className="compose-send-btn"
+                    disabled={
+                      newChatMutation.isPending ||
+                      (newChat.channelType === "qr" && !newChat.messageText.trim()) ||
+                      (newChat.channelType === "api" && (!newChat.templateVars || (newChat.templateVars.fields.length > 0 && !newChat.templateVars.fields.every((f) => Boolean(newChat.templateVars?.values[f.key]?.trim())))))
+                    }
+                    onClick={() => newChatMutation.mutate()}
+                  >
+                    {newChatMutation.isPending ? "Starting…" : "Start Chat"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </section>
   );

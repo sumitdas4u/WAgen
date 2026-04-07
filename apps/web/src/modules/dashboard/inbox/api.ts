@@ -13,6 +13,7 @@ import {
   uploadConversationMedia,
   setConversationPaused,
   setManualTakeover,
+  createOutboundConversation,
   type Conversation,
   type ConversationNote,
   type ConversationMessage,
@@ -84,6 +85,14 @@ export function sendInboxConversationTemplate(
   variableValues?: Record<string, string>
 ) {
   return sendConversationTemplate(token, conversationId, templateId, variableValues);
+}
+
+export function startOutboundConversation(
+  token: string,
+  contactId: string,
+  channelType: "qr" | "api"
+): Promise<{ conversationId: string }> {
+  return createOutboundConversation(token, contactId, channelType);
 }
 
 export async function aiAssistText(

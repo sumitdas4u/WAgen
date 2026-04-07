@@ -11,6 +11,7 @@ import {
   summarizeLeadConversations,
   setConversationAIPaused,
   setManualTakeover,
+  getOrCreateConversation,
 } from "../services/conversation-service.js";
 import {
   createConversationNote,
@@ -389,6 +390,35 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
       const mediaId = result.rows[0].id;
       return { mediaId, url: `/api/media/${mediaId}`, mimeType: file.mimetype };
+    }
+  );
+
+  // ── Create or find an outbound conversation for a contact ────────────────
+  const OutboundConversationSchema = z.object({
+    contactId: z.string().uuid(),
+    channelType: z.enum(["qr", "api"])
+  });
+
+  fastify.post(
+    "/api/conversations/outbound",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = OutboundConversationSchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid payload" });
+
+      const { contactId, channelType } = parsed.data;
+
+      const contactRow = await pool.query<{ phone_number: string }>(
+        `SELECT phone_number FROM contacts WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [contactId, request.authUser.userId]
+      );
+      if ((contactRow.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Contact not found" });
+      }
+
+      const phoneNumber = contactRow.rows[0].phone_number;
+      const conversation = await getOrCreateConversation(request.authUser.userId, phoneNumber, { channelType });
+      return { conversationId: conversation.id };
     }
   );
 
