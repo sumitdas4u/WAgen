@@ -1334,6 +1334,13 @@
 ═══════════════════════════════════════ */
 .seq-review-grid { display: grid; gap: 0.55rem; }
 
+/* Full-width horizontal layout when review is below the footer */
+.seq-review-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.65rem;
+}
+
 .seq-review-block {
   display: grid;
   gap: 0.3rem;

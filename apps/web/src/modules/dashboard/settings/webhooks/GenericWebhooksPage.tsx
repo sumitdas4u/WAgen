@@ -22,7 +22,6 @@ import {
   type GenericWebhookDelayUnit,
   type GenericWebhookQrFlowAction,
   type GenericWebhookTemplateAction,
-  type GenericWebhookWorkflow,
   type MessageTemplate,
   type PublishedFlowSummary
 } from "../../../../lib/api";
@@ -48,11 +47,6 @@ function tagsToString(tags?: string[]): string {
   return (tags ?? []).join(", ");
 }
 
-function formatDelayLabel(delayValue?: number, delayUnit?: GenericWebhookDelayUnit): string | null {
-  if (!delayValue || !delayUnit) return null;
-  const unitLabel = delayValue === 1 ? delayUnit.slice(0, -1) : delayUnit;
-  return `${delayValue} ${unitLabel}`;
-}
 
 export function GenericWebhooksPage() {
   const { token } = useDashboardShell();
@@ -158,6 +152,42 @@ export function GenericWebhooksPage() {
   const selectedTemplate = approvedTemplates.find((template) => template.id === templateId) ?? null;
   const templatePlaceholders = useMemo(() => extractPlaceholders(selectedTemplate), [selectedTemplate]);
   const endpointUrl = integration ? `${window.location.origin}${integration.endpointUrlPath}/incoming` : "";
+
+  useEffect(() => {
+    const data = workflowsQuery.data;
+    if (!data || data.length === 0 || editingWorkflowId) return;
+    const workflow = data[0];
+    setEditingWorkflowId(workflow.id);
+    setName(workflow.name);
+    setEnabled(workflow.enabled);
+    setChannelMode(workflow.channelMode);
+    setMatchMode(workflow.matchMode);
+    setDefaultCountryCode(workflow.defaultCountryCode ?? "");
+    setDelayValue(workflow.delayValue ? String(workflow.delayValue) : "");
+    setDelayUnit(workflow.delayUnit ?? "minutes");
+    setConditions(workflow.conditions);
+    setTemplateId(workflow.templateAction?.templateId ?? "");
+    setRecipientNamePath(workflow.templateAction?.recipientNamePath ?? "");
+    setRecipientPhonePath(workflow.templateAction?.recipientPhonePath ?? "");
+    setQrFlowId(workflow.qrFlowAction?.flowId ?? "");
+    setQrRecipientNamePath(workflow.qrFlowAction?.recipientNamePath ?? "");
+    setQrRecipientPhonePath(workflow.qrFlowAction?.recipientPhonePath ?? "");
+    setContactDisplayNamePath(workflow.contactAction.contactPaths?.displayNamePath ?? "");
+    setContactPhonePath(
+      workflow.contactAction.contactPaths?.phoneNumberPath ??
+      workflow.templateAction?.recipientPhonePath ??
+      workflow.qrFlowAction?.recipientPhonePath ??
+      ""
+    );
+    setContactEmailPath(workflow.contactAction.contactPaths?.emailPath ?? "");
+    setTagOperation(workflow.contactAction.tagOperation ?? "append");
+    setTagsText(tagsToString(workflow.contactAction.tags));
+    setFieldMappings(workflow.contactAction.fieldMappings ?? []);
+    setVariableMappings(
+      Object.fromEntries(Object.entries(workflow.templateAction?.variableMappings ?? {}).map(([key, binding]) => [key, binding.path]))
+    );
+    setFallbackValues(workflow.templateAction?.fallbackValues ?? {});
+  }, [workflowsQuery.data]);
 
   const invalidate = async () => {
     await Promise.all([
@@ -287,13 +317,6 @@ export function GenericWebhooksPage() {
     }
   });
 
-  const toggleWorkflowMutation = useMutation({
-    mutationFn: ({ workflowId, nextEnabled }: { workflowId: string; nextEnabled: boolean }) =>
-      updateGenericWebhookWorkflow(token, selectedIntegrationId, workflowId, { enabled: nextEnabled }),
-    onSuccess: async () => {
-      await invalidate();
-    }
-  });
 
   function resetForm() {
     setEditingWorkflowId(null);
@@ -319,40 +342,6 @@ export function GenericWebhooksPage() {
     setFieldMappings([]);
     setVariableMappings({});
     setFallbackValues({});
-  }
-
-  function startEditing(workflow: GenericWebhookWorkflow) {
-    setEditingWorkflowId(workflow.id);
-    setName(workflow.name);
-    setEnabled(workflow.enabled);
-    setChannelMode(workflow.channelMode);
-    setMatchMode(workflow.matchMode);
-    setDefaultCountryCode(workflow.defaultCountryCode ?? "");
-    setDelayValue(workflow.delayValue ? String(workflow.delayValue) : "");
-    setDelayUnit(workflow.delayUnit ?? "minutes");
-    setConditions(workflow.conditions);
-    setTemplateId(workflow.templateAction?.templateId ?? "");
-    setRecipientNamePath(workflow.templateAction?.recipientNamePath ?? "");
-    setRecipientPhonePath(workflow.templateAction?.recipientPhonePath ?? "");
-    setQrFlowId(workflow.qrFlowAction?.flowId ?? "");
-    setQrRecipientNamePath(workflow.qrFlowAction?.recipientNamePath ?? "");
-    setQrRecipientPhonePath(workflow.qrFlowAction?.recipientPhonePath ?? "");
-    setContactDisplayNamePath(workflow.contactAction.contactPaths?.displayNamePath ?? "");
-    setContactPhonePath(
-      workflow.contactAction.contactPaths?.phoneNumberPath ??
-      workflow.templateAction?.recipientPhonePath ??
-      workflow.qrFlowAction?.recipientPhonePath ??
-      ""
-    );
-    setContactEmailPath(workflow.contactAction.contactPaths?.emailPath ?? "");
-    setTagOperation(workflow.contactAction.tagOperation ?? "append");
-    setTagsText(tagsToString(workflow.contactAction.tags));
-    setFieldMappings(workflow.contactAction.fieldMappings ?? []);
-    setVariableMappings(
-      Object.fromEntries(Object.entries(workflow.templateAction?.variableMappings ?? {}).map(([key, binding]) => [key, binding.path]))
-    );
-    setFallbackValues(workflow.templateAction?.fallbackValues ?? {});
-    setActiveTab("workflows");
   }
 
   return (
@@ -522,8 +511,7 @@ export function GenericWebhooksPage() {
           <div style={{ display: "grid", gap: "1rem" }}>
             <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center", marginBottom: "1rem" }}>
-                <h4 style={{ margin: 0 }}>{editingWorkflowId ? `Edit Workflow for ${integration.name}` : `Create Workflow for ${integration.name}`}</h4>
-                {editingWorkflowId && <button type="button" className="ghost-btn" onClick={resetForm}>Cancel Edit</button>}
+                <h4 style={{ margin: 0 }}>Workflow for {integration.name}</h4>
               </div>
 
               <div style={{ display: "grid", gap: "1rem" }}>
@@ -801,40 +789,23 @@ export function GenericWebhooksPage() {
                       (channelMode === "qr" && (!qrFlowId || !qrRecipientPhonePath))
                     }
                   >
-                    {saveMutation.isPending ? "Saving..." : editingWorkflowId ? "Update Workflow" : "Create Workflow"}
+                    {saveMutation.isPending ? "Saving..." : "Save Workflow"}
                   </button>
-                  <button type="button" className="ghost-btn" onClick={resetForm}>Reset</button>
+                  {editingWorkflowId && (
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      style={{ color: "#dc2626" }}
+                      onClick={() => deleteMutation.mutate(editingWorkflowId)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      {deleteMutation.isPending ? "Deleting..." : "Delete Workflow"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div style={{ padding: "1rem", border: "1px solid #e5e7eb", borderRadius: 12 }}>
-              <h4 style={{ marginBottom: "0.75rem" }}>Saved Workflows</h4>
-              {workflows.length === 0 ? (
-                <p style={{ color: "#6b7280", margin: 0 }}>No workflows yet.</p>
-              ) : (
-                <div style={{ display: "grid", gap: "0.75rem" }}>
-                  {workflows.map((workflow) => (
-                    <div key={workflow.id} style={{ border: "1px solid #f3f4f6", borderRadius: 10, padding: "0.9rem", display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{workflow.name}</div>
-                        <div style={{ color: "#6b7280", fontSize: "0.92rem" }}>
-                          {workflow.enabled ? "Enabled" : "Disabled"} · {workflow.channelMode.toUpperCase()} · {workflow.matchMode.toUpperCase()} · {workflow.conditions.length} condition(s)
-                          {formatDelayLabel(workflow.delayValue, workflow.delayUnit) ? ` · Delay ${formatDelayLabel(workflow.delayValue, workflow.delayUnit)}` : ""}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <button type="button" className="ghost-btn" onClick={() => startEditing(workflow)}>Edit</button>
-                        <button type="button" className="ghost-btn" onClick={() => toggleWorkflowMutation.mutate({ workflowId: workflow.id, nextEnabled: !workflow.enabled })}>
-                          {workflow.enabled ? "Disable" : "Enable"}
-                        </button>
-                        <button type="button" className="ghost-btn" style={{ color: "#dc2626" }} onClick={() => deleteMutation.mutate(workflow.id)}>Delete</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
 

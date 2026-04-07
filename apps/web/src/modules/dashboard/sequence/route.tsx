@@ -739,7 +739,10 @@ function BuilderPage({ token }: { token: string }) {
             )}
           </div>
 
-          {/* ── Activity panel — full width, below footer ── */}
+          {/* ── Review panel — full width, below footer ── */}
+          <ReviewPanel draft={draft} />
+
+          {/* ── Activity panel — full width, below review ── */}
           <ActivityPanel detail={detail} enrollments={enrollments} logs={logs} />
 
         </div>
@@ -1249,6 +1252,41 @@ function StepsEditor({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   REVIEW PANEL  (full-width, below footer)
+───────────────────────────────────────────── */
+function ReviewPanel({ draft }: { draft: SequenceWriteInput }) {
+  const startConditions = (draft.conditions ?? []).filter((c) => c.conditionType === "start");
+  const stepCount = draft.steps?.length ?? 0;
+
+  const items = [
+    { label: "Who can enter?",         value: startConditions.length > 0 ? `${startConditions.length} start rule${startConditions.length > 1 ? "s" : ""}` : "Anyone matching the trigger" },
+    { label: "When do messages send?", value: formatDeliverySummary(draft) },
+    { label: "Steps configured",       value: `${stepCount} step${stepCount !== 1 ? "s" : ""}` },
+    { label: "Retry",                  value: draft.retryEnabled ? "Enabled (48 hr window)" : "Off" },
+    { label: "Allowed days",           value: formatDays(draft.allowedDays) }
+  ];
+
+  return (
+    <div className="seq-card">
+      <div className="seq-section-head" style={{ marginBottom: "1rem" }}>
+        <div className="seq-section-heading">
+          <h3 className="seq-section-title">Review</h3>
+          <p className="seq-section-desc">A summary of your sequence settings.</p>
+        </div>
+      </div>
+      <div className="seq-review-inline-grid">
+        {items.map(({ label, value }) => (
+          <div key={label} className="seq-review-block">
+            <p className="seq-review-label">{label}</p>
+            <p className="seq-review-value">{value}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
