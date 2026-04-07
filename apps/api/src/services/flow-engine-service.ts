@@ -867,19 +867,40 @@ export async function handleFlowMessage(input: {
     const flows = await getPublishedFlowsForUser(userId, channelType);
     const firstInbound = await isFirstInboundMessage(conversationId);
 
+    // Exclude default reply flow from trigger matching — it is handled explicitly below
+    const nonDefaultFlows = flows.filter((flow) => !flow.is_default_reply);
+    const defaultReplyFlow = flows.find((flow) => flow.is_default_reply === true);
+
     const matchedFlow = matchingFlow({
       message,
-      flows: flows.filter((flow) => !flow.is_default_reply),
+      flows: nonDefaultFlows,
       channelType,
       isFirstInboundMessage: firstInbound
     });
 
-    // If the matched flow is the same one that just completed, prefer the default reply flow
-    // instead of re-triggering it. This prevents any_message / no-trigger flows from looping.
-    const defaultReplyFlow = flows.find((flow) => flow.is_default_reply === true);
-    if (matchedFlow && defaultReplyFlow) {
-      const recentlyCompleted = await getLastCompletedFlowSession(conversationId);
-      if (recentlyCompleted?.flow_id === matchedFlow.id) {
+    // any_message and no-trigger flows are generic catches — same concept as default reply.
+    // If a dedicated default reply flow exists, it takes priority over these generic flows.
+    const isGenericMatch =
+      matchedFlow !== null &&
+      (() => {
+        const triggers = getEffectiveTriggers(matchedFlow);
+        return (
+          triggers.length === 0 ||
+          triggers.every((t) => t.type === "any_message")
+        );
+      })();
+
+    if (defaultReplyFlow && (isGenericMatch || matchedFlow === null)) {
+      // Also: if a specific flow just completed and would re-trigger, prefer default reply
+      const recentlyCompleted =
+        !isGenericMatch && matchedFlow
+          ? await getLastCompletedFlowSession(conversationId)
+          : null;
+      const shouldUseDefaultReply =
+        isGenericMatch ||
+        (recentlyCompleted?.flow_id === matchedFlow?.id);
+
+      if (shouldUseDefaultReply) {
         const { nodes, edges, startNode: drStartNode } = getFlowGraph(defaultReplyFlow);
         if (drStartNode) {
           const initialVars = await buildConversationFlowVariables({ userId, conversationId });
@@ -893,7 +914,7 @@ export async function handleFlowMessage(input: {
           } catch (error) {
             await markFlowSessionFailed(session.id);
             console.warn(
-              `[FlowEngine] Default reply flow (post-complete) failed conversation=${conversationId} session=${session.id}:`,
+              `[FlowEngine] Default reply flow failed conversation=${conversationId} session=${session.id}:`,
               error
             );
             return { result: "failed" };
@@ -910,7 +931,6 @@ export async function handleFlowMessage(input: {
       if (fallbackFlow) return { result: "use_ai" };
 
       // Check for a default reply flow — catches all unmatched messages for this channel
-      const defaultReplyFlow = flows.find((flow) => flow.is_default_reply === true);
       if (defaultReplyFlow) {
         const { nodes, edges, startNode: drStartNode } = getFlowGraph(defaultReplyFlow);
         if (drStartNode) {
