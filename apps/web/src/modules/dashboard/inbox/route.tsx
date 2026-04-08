@@ -601,11 +601,14 @@ export function Component() {
     if (!selectedConversation || selectedConversation.channel_type !== "api") {
       return [];
     }
-    const linkedNumber = selectedConversation.channel_linked_number?.trim();
+    const linkedNumber = selectedConversation.channel_linked_number?.replace(/\D/g, "").trim();
     if (!linkedNumber) {
       return approvedTemplates;
     }
-    return approvedTemplates.filter((template) => !template.linkedNumber || template.linkedNumber === linkedNumber);
+    return approvedTemplates.filter((template) => {
+      if (!template.linkedNumber) return true;
+      return template.linkedNumber.replace(/\D/g, "") === linkedNumber;
+    });
   }, [approvedTemplates, selectedConversation]);
 
   const isQrConnected = Boolean(bootstrap?.channelSummary.whatsapp.status === "connected");

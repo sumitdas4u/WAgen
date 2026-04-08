@@ -417,7 +417,22 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const phoneNumber = contactRow.rows[0].phone_number;
-      const conversation = await getOrCreateConversation(request.authUser.userId, phoneNumber, { channelType });
+
+      let channelLinkedNumber: string | null = null;
+      if (channelType === "api") {
+        const connRow = await pool.query<{ linked_number: string | null; display_phone_number: string | null }>(
+          `SELECT linked_number, display_phone_number
+           FROM whatsapp_business_connections
+           WHERE user_id = $1 AND status = 'connected'
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [request.authUser.userId]
+        );
+        const conn = connRow.rows[0];
+        channelLinkedNumber = conn?.linked_number?.trim() || conn?.display_phone_number?.trim() || null;
+      }
+
+      const conversation = await getOrCreateConversation(request.authUser.userId, phoneNumber, { channelType, channelLinkedNumber });
       return { conversationId: conversation.id };
     }
   );
