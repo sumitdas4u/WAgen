@@ -754,13 +754,6 @@ function BroadcastWizardPage({
     mode === "retarget"
       ? retargetPreviewQuery.data?.count ?? 0
       : selectedSegmentContactsQuery.data?.length ?? 0;
-  const selectedSegmentName =
-    mode === "new"
-      ? selectedSegmentIds.length > 0
-        ? `${selectedSegmentIds.length} segment${selectedSegmentIds.length > 1 ? "s" : ""} selected`
-        : "No segment selected"
-      : `Retarget: ${RETARGET_OPTIONS.find((option) => option.value === retargetStatus)?.label ?? "Audience"}`;
-
   const previewComponents = useMemo(
     () => buildPreviewComponents(selectedTemplate, bindings, sampleContact),
     [bindings, sampleContact, selectedTemplate]
@@ -972,14 +965,12 @@ function BroadcastWizardPage({
             defaultCountryCode={defaultCountryCode}
             onDefaultCountryCodeChange={setDefaultCountryCode}
             uploadStep={uploadStep}
-            onUploadStepChange={setUploadStep}
             onOpenCreateSegment={() => setShowCreateSegmentModal(true)}
             onDownloadTemplate={handleDownloadAudienceTemplate}
             downloadingTemplate={downloadingTemplate}
             selectedTemplate={selectedTemplate}
             placeholders={placeholders}
             previewComponents={previewComponents}
-            onBack={() => setStep(1)}
             onContinue={() => setStep(3)}
             canContinue={canContinueStep2 && Boolean(name.trim())}
           />
@@ -1263,95 +1254,6 @@ function RetargetAudienceStep({
   );
 }
 
-function BroadcastSegmentFilterRow({
-  filter,
-  index,
-  customFields,
-  onChange,
-  onRemove
-}: {
-  filter: SegmentFilter;
-  index: number;
-  customFields: ContactField[];
-  onChange: (index: number, updated: SegmentFilter) => void;
-  onRemove: (index: number) => void;
-}) {
-  const allFieldOptions = [
-    ...SEGMENT_FIELD_OPTIONS,
-    ...customFields.filter((field) => field.is_active).map((field) => ({
-      value: `custom:${field.name}`,
-      label: field.label,
-      isDate: field.field_type === "DATE"
-    }))
-  ];
-
-  const selectedFieldOption = allFieldOptions.find((option) => option.value === filter.field);
-  const isDateField = selectedFieldOption?.isDate ?? false;
-  const availableOps = SEGMENT_OP_OPTIONS.filter((option) => !option.onlyDate || isDateField);
-  const selectedOp = SEGMENT_OP_OPTIONS.find((option) => option.value === filter.op);
-  const showValue = !selectedOp?.noValue;
-
-  const handleFieldChange = (field: string) => {
-    const newIsDate = allFieldOptions.find((option) => option.value === field)?.isDate ?? false;
-    const currentOpIsDateOnly = SEGMENT_OP_OPTIONS.find((option) => option.value === filter.op)?.onlyDate ?? false;
-    const nextOp = currentOpIsDateOnly && !newIsDate ? "is" : filter.op;
-    onChange(index, { ...filter, field, op: nextOp as SegmentFilterOp });
-  };
-
-  return (
-    <div className="segment-filter-row">
-      {index > 0 ? <span className="segment-filter-connector">AND</span> : null}
-      <select value={filter.field} onChange={(event) => handleFieldChange(event.target.value)} className="segment-filter-field">
-        <optgroup label="Standard Fields">
-          {SEGMENT_FIELD_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </optgroup>
-        {customFields.filter((field) => field.is_active).length > 0 ? (
-          <optgroup label="Custom Fields">
-            {customFields.filter((field) => field.is_active).map((field) => (
-              <option key={field.id} value={`custom:${field.name}`}>{field.label}</option>
-            ))}
-          </optgroup>
-        ) : null}
-      </select>
-
-      <select
-        value={filter.op}
-        onChange={(event) => onChange(index, { ...filter, op: event.target.value as SegmentFilterOp })}
-        className="segment-filter-op"
-      >
-        {availableOps.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-
-      {showValue ? (
-        isDateField ? (
-          <input
-            type="date"
-            value={filter.value}
-            onChange={(event) => onChange(index, { ...filter, value: event.target.value })}
-            className="segment-filter-value"
-          />
-        ) : (
-          <input
-            type="text"
-            value={filter.value}
-            onChange={(event) => onChange(index, { ...filter, value: event.target.value })}
-            placeholder="Value"
-            className="segment-filter-value"
-          />
-        )
-      ) : null}
-
-      <button type="button" className="ghost-btn segment-filter-remove" onClick={() => onRemove(index)}>
-        Remove
-      </button>
-    </div>
-  );
-}
-
 function BroadcastCreateSegmentModal({
   token,
   customFields,
@@ -1581,7 +1483,6 @@ function AudienceSelectionStep({
   onToggleSegment,
   onToggleAll,
   onOpenCreateSegment,
-  onBack,
   onContinue,
   canContinue,
   onUpload,
@@ -1598,7 +1499,6 @@ function AudienceSelectionStep({
   defaultCountryCode,
   onDefaultCountryCodeChange,
   uploadStep,
-  onUploadStepChange,
   onDownloadTemplate,
   downloadingTemplate,
   selectedTemplate,
@@ -1626,14 +1526,12 @@ function AudienceSelectionStep({
   defaultCountryCode: string;
   onDefaultCountryCodeChange: (value: string) => void;
   uploadStep: "download" | "upload" | "preview";
-  onUploadStepChange: (value: "download" | "upload" | "preview") => void;
   onOpenCreateSegment: () => void;
   onDownloadTemplate: () => Promise<void>;
   downloadingTemplate: boolean;
   selectedTemplate: MessageTemplate | null;
   placeholders: string[];
   previewComponents: ReturnType<typeof buildPreviewComponents>;
-  onBack: () => void;
   onContinue: () => void;
   canContinue: boolean;
 }) {
@@ -2325,7 +2223,6 @@ function ScheduleStep({
         })
       );
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const replyConfigValid = replyMode !== "flow" || Boolean(replyFlowId);
@@ -2629,7 +2526,6 @@ function ScheduleStep({
           onClose={() => setShowTestModal(false)}
           onSend={(phones) => {
             setShowTestModal(false);
-            // eslint-disable-next-line no-console
             console.info("Test broadcast to:", phones);
           }}
         />
