@@ -245,6 +245,7 @@ function BroadcastListPage({ token }: { token: string }) {
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const [page, setPage] = useState(1);
   const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "all">("7d");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const broadcastsQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcasts,
@@ -330,6 +331,9 @@ function BroadcastListPage({ token }: { token: string }) {
         </div>
       </div>
 
+      {/* Close dropdown on outside click */}
+      {openMenuId ? <div style={{ position: "fixed", inset: 0, zIndex: 50 }} onClick={() => setOpenMenuId(null)} /> : null}
+
       {/* Table section */}
       <section className="broadcast-table-shell">
         <div className="bl-table-toolbar">
@@ -398,9 +402,12 @@ function BroadcastListPage({ token }: { token: string }) {
               const failPct = pct(broadcast.failed_count, broadcast.total_count);
               return (
                 <tr key={broadcast.id}>
-                  <td>
+                  <td
+                    style={{ cursor: "pointer" }}
+                    onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}`)}
+                  >
                     <div className="bl-cell-date">{formatDateTime(broadcast.created_at)}</div>
-                    <div className="bl-cell-name">{broadcast.name}</div>
+                    <div className="bl-cell-name" style={{ color: "#2563eb" }}>{broadcast.name}</div>
                   </td>
                   <td>
                     <span className={`bl-status-pill status-${broadcast.status}`}>
@@ -467,14 +474,34 @@ function BroadcastListPage({ token }: { token: string }) {
                       >
                         &#9965; Retarget
                       </button>
-                      <button
-                        type="button"
-                        className="bl-more-btn"
-                        onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}`)}
-                        title="More"
-                      >
-                        &#8942;
-                      </button>
+                      <div className="dd-wrap">
+                        <button
+                          type="button"
+                          className="bl-more-btn"
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === broadcast.id ? null : broadcast.id); }}
+                          title="More"
+                        >
+                          &#8942;
+                        </button>
+                        {openMenuId === broadcast.id ? (
+                          <div className="dd-menu">
+                            <button
+                              type="button"
+                              className="dd-item"
+                              onClick={() => { navigate(`/dashboard/broadcast/${broadcast.id}`); setOpenMenuId(null); }}
+                            >
+                              &#11123; Download Report
+                            </button>
+                            <button
+                              type="button"
+                              className="dd-item"
+                              onClick={() => { navigate("/dashboard/broadcast/new"); setOpenMenuId(null); }}
+                            >
+                              &#8635; Repeat Broadcast
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -558,71 +585,130 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   }
   const isLiveUpdating = shouldPollCampaign(report.campaign.status);
 
+  const totalCount = report.campaign.total_count;
+  const detailStats = [
+    { label: "Recipients", value: totalCount, pct: null },
+    { label: "Sent", value: report.buckets.sent, pct: pct(report.buckets.sent, totalCount) },
+    { label: "Delivered", value: report.buckets.delivered, pct: pct(report.buckets.delivered, totalCount) },
+    { label: "Read", value: report.buckets.read, pct: pct(report.buckets.read, totalCount) },
+    { label: "Failed", value: report.buckets.failed, pct: pct(report.buckets.failed, totalCount) },
+    { label: "Not Delivered", value: report.buckets.skipped, pct: pct(report.buckets.skipped, totalCount) }
+  ];
+
   return (
     <section className="broadcast-page">
-      <div className="broadcast-hero">
-        <div className="broadcast-hero-copy">
-          <span className="broadcast-eyebrow">Broadcast report</span>
-          <h2 className="broadcast-hero-title">{report.campaign.name}</h2>
-          <p className="broadcast-hero-text">
-            {formatCampaignStatus(report.campaign.status)} • Created {formatDateTime(report.campaign.created_at)}
-          </p>
-          {isLiveUpdating ? <div className="broadcast-live-note">Status is updating in real time while this broadcast is running.</div> : null}
+      {/* Header */}
+      <div className="bl-page-header">
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <button
+            type="button"
+            className="wz-back-btn"
+            style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}
+            onClick={() => navigate("/dashboard/broadcast")}
+          >
+            &#8592; All Broadcasts
+          </button>
+          <h2 className="bl-page-title">{report.campaign.name}</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.15rem" }}>
+            <span className={`bl-status-pill status-${report.campaign.status}`}>
+              {formatCampaignStatus(report.campaign.status)}
+            </span>
+            <span style={{ fontSize: "0.78rem", color: "#5f6f86" }}>
+              Created {formatDateTime(report.campaign.created_at)}
+            </span>
+            {isLiveUpdating ? (
+              <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "0.15rem 0.5rem", borderRadius: "999px", border: "1px solid #bbf7d0" }}>
+                ● Live
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="broadcast-table-actions">
-          <button type="button" className="broadcast-secondary-btn" onClick={() => navigate(`/dashboard/broadcast/${campaignId}/retarget`)}>Retarget</button>
+        <div className="bl-page-header-actions">
+          <button
+            type="button"
+            className="bl-toolbar-btn"
+            onClick={() => void reportQuery.refetch()}
+            disabled={reportQuery.isFetching}
+          >
+            ⟳ {reportQuery.isFetching ? "Refreshing…" : "Refresh"}
+          </button>
+          <button
+            type="button"
+            className="bl-toolbar-btn"
+            onClick={() => navigate(`/dashboard/broadcast/${campaignId}/retarget`)}
+          >
+            &#9965; Retarget
+          </button>
           {(report.campaign.status === "running" || report.campaign.status === "scheduled" || report.campaign.status === "draft") ? (
-            <button type="button" className="broadcast-secondary-btn" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-              {cancelMutation.isPending ? "Cancelling..." : "Cancel"}
+            <button
+              type="button"
+              className="bl-toolbar-btn"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+              style={{ color: "#be123c", borderColor: "#fecdd3" }}
+            >
+              {cancelMutation.isPending ? "Cancelling…" : "✕ Cancel"}
             </button>
           ) : null}
         </div>
       </div>
 
-      <SummaryCards report={report} />
+      {/* Stats overview */}
+      <div className="bl-overview-card">
+        <div className="bl-overview-head">
+          <span className="bl-overview-title">Delivery Overview</span>
+        </div>
+        <div className="bl-overview-stats" style={{ gridTemplateColumns: `repeat(${detailStats.length}, minmax(0,1fr))` }}>
+          {detailStats.map((stat) => (
+            <div key={stat.label} className="bl-stat-cell">
+              <div className="bl-stat-label">{stat.label}</div>
+              <div className="bl-stat-value">
+                {stat.value}
+                {stat.pct !== null ? <span className="bl-stat-pct">{stat.pct}</span> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
+      {/* Delivery log table */}
       <section className="broadcast-table-shell">
-        <div className="broadcast-table-header">
-          <div>
-            <h3 className="broadcast-section-title">Recipient delivery log</h3>
-            <p className="broadcast-section-text">Every recipient status and message failure, in a clearer audit trail.</p>
-          </div>
-          <div className="broadcast-table-header-actions">
-            <button
-              type="button"
-              className="broadcast-secondary-btn broadcast-refresh-btn"
-              onClick={() => void reportQuery.refetch()}
-              disabled={reportQuery.isFetching}
-            >
-              {reportQuery.isFetching ? "Refreshing..." : "Refresh status"}
-            </button>
+        <div className="bl-table-toolbar">
+          <span className="bl-table-title">Recipient delivery log</span>
+          <div className="bl-toolbar-right">
+            <span style={{ fontSize: "0.78rem", color: "#94a3b8" }}>Every recipient status and message failure in a clearer audit trail</span>
           </div>
         </div>
         <table className="broadcast-table">
           <thead>
             <tr>
               {["Phone", "Status", "Sent", "Delivered", "Read", "Error"].map((heading) => (
-                <th key={heading}>
-                  {heading}
-                </th>
+                <th key={heading}>{heading}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {report.messages.map((message) => (
               <tr key={message.id}>
-                <td>{message.phone_number}</td>
+                <td style={{ fontWeight: 600 }}>{message.phone_number}</td>
                 <td>
-                  <span className={`broadcast-status-pill status-${String(message.status)}`}>
+                  <span className={`bl-status-pill status-${String(message.status)}`}>
                     {formatCampaignStatus(message.status as Campaign["status"])}
                   </span>
                 </td>
                 <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
                 <td>{message.delivered_at ? formatDateTime(message.delivered_at) : "—"}</td>
                 <td>{message.read_at ? formatDateTime(message.read_at) : "—"}</td>
-                <td className="broadcast-error-cell">{message.error_message || "—"}</td>
+                <td style={{ color: message.error_message ? "#be123c" : "#94a3b8", fontSize: "0.8rem" }}>
+                  {message.error_message || "—"}
+                </td>
               </tr>
             ))}
+            {report.messages.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="broadcast-empty-state">No delivery records yet.</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </section>
@@ -978,8 +1064,6 @@ function BroadcastWizardPage({
 
         {step === 2 && mode === "retarget" ? (
           <TemplateSelectionStep
-            name={name}
-            onNameChange={setName}
             templates={approvedTemplates}
             selectedTemplateId={selectedTemplateId}
             onSelect={setSelectedTemplateId}
@@ -1000,6 +1084,8 @@ function BroadcastWizardPage({
             setMediaOverrides={setMediaOverrides}
             onMediaUpload={handleMediaUpload}
             uploadingMedia={uploadingMedia}
+            selectedTemplate={selectedTemplate}
+            sampleContact={sampleContact}
             onBack={() => setStep(2)}
             onContinue={() => setStep(4)}
           />
@@ -1062,8 +1148,6 @@ function BroadcastWizardPage({
 }
 
 function TemplateSelectionStep({
-  name,
-  onNameChange,
   templates,
   selectedTemplateId,
   onSelect,
@@ -1071,8 +1155,6 @@ function TemplateSelectionStep({
   onContinue,
   canContinue
 }: {
-  name?: string;
-  onNameChange?: (value: string) => void;
   templates: MessageTemplate[];
   selectedTemplateId: string;
   onSelect: (templateId: string) => void;
@@ -1128,19 +1210,6 @@ function TemplateSelectionStep({
           + New Template &#8599;
         </a>
       </div>
-
-      {/* Optional broadcast name field (retarget step 2) */}
-      {onNameChange ? (
-        <label className="broadcast-field wz-name-field">
-          <span className="broadcast-label">Broadcast name</span>
-          <input
-            className="broadcast-input"
-            value={name ?? ""}
-            onChange={(event) => onNameChange(event.target.value)}
-            placeholder="Enter broadcast name"
-          />
-        </label>
-      ) : null}
 
       {/* Template grid */}
       <div className="wz-tpl-grid">
@@ -1539,6 +1608,7 @@ function AudienceSelectionStep({
   const [openAccordion, setOpenAccordion] = useState<"download" | "upload" | "preview">("download");
   const [search, setSearch] = useState("");
   const [hoveredFilterId, setHoveredFilterId] = useState<string | null>(null);
+  const [openSegmentMenuId, setOpenSegmentMenuId] = useState<string | null>(null);
 
   const FIELD_LABELS: Record<string, string> = {
     display_name: "Name", phone_number: "Phone", email: "Email",
@@ -1890,6 +1960,9 @@ function AudienceSelectionStep({
           </div>
         </div>
 
+        {/* Close segment dropdown on outside click */}
+        {openSegmentMenuId ? <div style={{ position: "fixed", inset: 0, zIndex: 50 }} onClick={() => setOpenSegmentMenuId(null)} /> : null}
+
         {/* Segment table */}
         <div className="aud-table-wrap">
           <table className="aud-table">
@@ -1945,7 +2018,41 @@ function AudienceSelectionStep({
                     </td>
                     <td><span className="aud-created-by">—</span></td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button type="button" className="aud-more-btn">&#8942;</button>
+                      <div className="dd-wrap">
+                        <button
+                          type="button"
+                          className="aud-more-btn"
+                          onClick={(e) => { e.stopPropagation(); setOpenSegmentMenuId(openSegmentMenuId === segment.id ? null : segment.id); }}
+                        >
+                          &#8942;
+                        </button>
+                        {openSegmentMenuId === segment.id ? (
+                          <div className="dd-menu">
+                            <button
+                              type="button"
+                              className="dd-item"
+                              onClick={() => { void navigator.clipboard.writeText(segment.id); setOpenSegmentMenuId(null); }}
+                            >
+                              &#128203; Copy Segment ID
+                            </button>
+                            <button
+                              type="button"
+                              className="dd-item"
+                              onClick={() => { onOpenCreateSegment(); setOpenSegmentMenuId(null); }}
+                            >
+                              &#9998; Edit Segment
+                            </button>
+                            <div className="dd-divider" />
+                            <button
+                              type="button"
+                              className="dd-item dd-item-danger"
+                              onClick={() => { setOpenSegmentMenuId(null); }}
+                            >
+                              &#128465; Delete Segment
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1991,6 +2098,8 @@ function VariableMappingStep({
   setMediaOverrides,
   onMediaUpload,
   uploadingMedia,
+  selectedTemplate,
+  sampleContact,
   onBack,
   onContinue
 }: {
@@ -2003,66 +2112,189 @@ function VariableMappingStep({
   setMediaOverrides: Dispatch<SetStateAction<CampaignMediaOverrides>>;
   onMediaUpload: (file: File) => Promise<void>;
   uploadingMedia: boolean;
+  selectedTemplate: MessageTemplate | null;
+  sampleContact: ContactRecord | null;
   onBack: () => void;
   onContinue: () => void;
 }) {
+  const liveComponents = useMemo(
+    () => buildPreviewComponents(selectedTemplate, bindings, sampleContact),
+    [selectedTemplate, bindings, sampleContact]
+  );
+
   return (
-    <section className="broadcast-step-section">
-      <div className="broadcast-section-heading">
-        <h3 className="broadcast-section-title">Map Variables & Media</h3>
-        <p className="broadcast-section-text">Connect template placeholders to contact fields or static values, then attach media if needed.</p>
-      </div>
-      {placeholders.length === 0 ? (
-        <div className="broadcast-note-card">
-          This template does not have dynamic variables.
-        </div>
-      ) : (
-        placeholders.map((placeholder) => {
-          const binding = bindings[placeholder] ?? { source: "contact" as const, field: "display_name", fallback: "" };
-          return (
-            <div key={placeholder} className="broadcast-binding-card">
-              <strong className="broadcast-binding-token">{placeholder}</strong>
-              <select className="broadcast-input" value={binding.source} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, source: event.target.value as "contact" | "static" } }))}>
-                <option value="contact">Contact field</option>
-                <option value="static">Static value</option>
-              </select>
-              {binding.source === "contact" ? (
-                <select className="broadcast-input" value={binding.field ?? "display_name"} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, field: event.target.value } }))}>
-                  {fieldOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              ) : (
-                <input className="broadcast-input" value={binding.value ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, value: event.target.value } }))} placeholder="Static replacement" />
-              )}
-              <input className="broadcast-input" value={binding.fallback ?? ""} onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, fallback: event.target.value } }))} placeholder="Fallback if empty" />
-            </div>
-          );
-        })
-      )}
-      {headerMediaType ? (
-        <section className="broadcast-surface-card">
-          <div className="broadcast-card-title">Media</div>
-          <div className="broadcast-muted-copy">
-            This template uses a {headerMediaType.toLowerCase()} header. Upload a file or provide a public media URL for this broadcast.
-          </div>
-          <label className="broadcast-upload-btn slim">
-            {uploadingMedia ? "Uploading..." : `Upload ${headerMediaType.toLowerCase()}`}
-            <input type="file" disabled={uploadingMedia} onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                void onMediaUpload(file);
-              }
-            }} />
-          </label>
-          <input className="broadcast-input" value={mediaOverrides.headerMediaUrl ?? ""} onChange={(event) => setMediaOverrides((current) => ({ ...current, headerMediaUrl: event.target.value }))} placeholder="https://example.com/media.jpg" />
-        </section>
-      ) : null}
-      <div className="broadcast-actions">
-        <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button>
-        <button type="button" onClick={onContinue} className="broadcast-primary-btn">
-          Continue
+    <section className="sch-page">
+      <div className="sch-header">
+        <button type="button" className="wz-back-btn" onClick={onBack}>
+          &#8592; Map Variables &amp; Media
         </button>
+      </div>
+
+      <div className="sch-layout">
+        {/* ── Left: form ── */}
+        <div className="sch-form-col">
+
+          {/* Variables */}
+          <div className="sch-section">
+            <div className="sch-section-title">Template Variables</div>
+            {placeholders.length === 0 ? (
+              <div style={{ fontSize: "0.84rem", color: "#64748b", padding: "0.25rem 0" }}>
+                This template has no dynamic variables — nothing to map.
+              </div>
+            ) : (
+              placeholders.map((placeholder) => {
+                const binding = bindings[placeholder] ?? { source: "contact" as const, field: "display_name", fallback: "" };
+                return (
+                  <div
+                    key={placeholder}
+                    style={{ display: "flex", flexDirection: "column", gap: "0.55rem", padding: "0.75rem 0", borderBottom: "1px solid #f1f5f9" }}
+                  >
+                    {/* Token badge */}
+                    <span style={{
+                      display: "inline-flex", alignSelf: "flex-start",
+                      padding: "0.18rem 0.6rem", borderRadius: "6px",
+                      background: "#e0f2fe", color: "#0369a1",
+                      fontFamily: "monospace", fontSize: "0.82rem", fontWeight: 700
+                    }}>
+                      {placeholder}
+                    </span>
+
+                    <div className="sch-field-row">
+                      <span className="sch-field-label">Source</span>
+                      <select
+                        className="sch-select"
+                        value={binding.source}
+                        onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, source: e.target.value as "contact" | "static" } }))}
+                      >
+                        <option value="contact">Contact field</option>
+                        <option value="static">Static value</option>
+                      </select>
+                    </div>
+
+                    <div className="sch-field-row">
+                      <span className="sch-field-label">{binding.source === "contact" ? "Field" : "Value"}</span>
+                      {binding.source === "contact" ? (
+                        <select
+                          className="sch-select"
+                          value={binding.field ?? "display_name"}
+                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, field: e.target.value } }))}
+                        >
+                          {fieldOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          className="sch-input"
+                          value={binding.value ?? ""}
+                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, value: e.target.value } }))}
+                          placeholder="Static replacement value"
+                        />
+                      )}
+                    </div>
+
+                    <div className="sch-field-row">
+                      <span className="sch-field-label">Fallback</span>
+                      <input
+                        className="sch-input"
+                        value={binding.fallback ?? ""}
+                        onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, fallback: e.target.value } }))}
+                        placeholder="Used when field is empty"
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Media */}
+          {headerMediaType ? (
+            <div className="sch-section">
+              <div className="sch-section-title">Media</div>
+              <p className="sch-section-desc">
+                This template requires a <strong>{headerMediaType.toLowerCase()}</strong> header.
+                Upload a file or enter a public URL.
+              </p>
+              <div className="sch-field-row">
+                <span className="sch-field-label">Upload file</span>
+                <label style={{
+                  display: "inline-flex", alignItems: "center", gap: "0.4rem",
+                  height: "2.25rem", padding: "0 1rem",
+                  border: "1.5px solid #2563eb", borderRadius: "8px",
+                  background: "#fff", color: "#2563eb",
+                  fontSize: "0.82rem", fontWeight: 700,
+                  cursor: uploadingMedia ? "not-allowed" : "pointer",
+                  opacity: uploadingMedia ? 0.6 : 1
+                }}>
+                  {uploadingMedia ? "Uploading…" : `↑ Upload ${headerMediaType.toLowerCase()}`}
+                  <input
+                    type="file"
+                    style={{ display: "none" }}
+                    disabled={uploadingMedia}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void onMediaUpload(f); }}
+                  />
+                </label>
+              </div>
+              {mediaOverrides.headerMediaUrl ? (
+                <div style={{ fontSize: "0.78rem", color: "#16a34a", marginTop: "-0.25rem" }}>
+                  ✓ Media uploaded
+                </div>
+              ) : null}
+              <div className="sch-field-row">
+                <span className="sch-field-label">Or URL</span>
+                <input
+                  className="sch-input"
+                  value={mediaOverrides.headerMediaUrl ?? ""}
+                  onChange={(e) => setMediaOverrides((c) => ({ ...c, headerMediaUrl: e.target.value }))}
+                  placeholder="https://example.com/media.jpg"
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* ── Right: live preview ── */}
+        <div className="sch-preview-col">
+          <div className="sch-preview-card">
+            {selectedTemplate ? (
+              <>
+                <div className="sch-preview-tpl-name">{selectedTemplate.name}</div>
+                <div className="sch-preview-tpl-meta">
+                  <span className="sch-tpl-status">● Active</span>
+                  <span className="sch-tpl-cat">{selectedTemplate.category}</span>
+                </div>
+                {sampleContact ? (
+                  <div className="sch-preview-tpl-phone">
+                    Preview for: {sampleContact.display_name ?? sampleContact.phone_number}
+                  </div>
+                ) : null}
+                <div className="sch-preview-scroll">
+                  <TemplatePreviewPanel
+                    components={liveComponents.length ? liveComponents : selectedTemplate.components}
+                    businessName={selectedTemplate.name}
+                    headerImageUrl={mediaOverrides.headerMediaUrl}
+                  />
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem" }}>
+                No template selected
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom bar ── */}
+      <div className="sch-bottom-bar">
+        <div className="sch-bottom-left" />
+        <div className="sch-bottom-right">
+          <button type="button" className="sch-cancel-btn" onClick={onBack}>Back</button>
+          <button type="button" className="sch-launch-btn" onClick={onContinue}>
+            Continue &#8594;
+          </button>
+        </div>
       </div>
     </section>
   );
