@@ -972,7 +972,7 @@ function BroadcastWizardPage({
             placeholders={placeholders}
             previewComponents={previewComponents}
             onContinue={() => setStep(3)}
-            canContinue={canContinueStep2 && Boolean(name.trim())}
+            canContinue={canContinueStep2}
           />
         ) : null}
 
@@ -985,7 +985,7 @@ function BroadcastWizardPage({
             onSelect={setSelectedTemplateId}
             onBack={() => setStep(1)}
             onContinue={() => setStep(3)}
-            canContinue={canContinueStep2 && Boolean(name.trim())}
+            canContinue={canContinueStep2}
           />
         ) : null}
 
@@ -1150,7 +1150,7 @@ function TemplateSelectionStep({
             <button
               key={template.id}
               type="button"
-              onClick={() => onSelect(template.id)}
+              onClick={() => { onSelect(template.id); onContinue(); }}
               className={`wz-tpl-card ${selected ? "is-selected" : ""}`}
             >
               <div className="wz-tpl-card-head">
