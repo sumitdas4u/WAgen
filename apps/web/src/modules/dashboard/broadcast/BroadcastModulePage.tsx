@@ -212,28 +212,6 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function SummaryCards({ report }: { report: BroadcastReport }) {
-  const items = [
-    { label: "Recipients", value: report.campaign.total_count, tone: "neutral" },
-    { label: "Sent", value: report.buckets.sent, tone: "blue" },
-    { label: "Delivered", value: report.buckets.delivered, tone: "green" },
-    { label: "Read", value: report.buckets.read, tone: "teal" },
-    { label: "Failed", value: report.buckets.failed, tone: "rose" },
-    { label: "Not delivered", value: report.buckets.skipped, tone: "amber" }
-  ];
-
-  return (
-    <div className="broadcast-stat-grid">
-      {items.map((item) => (
-        <div key={item.label} className={`broadcast-stat-card tone-${item.tone}`}>
-          <div className="broadcast-stat-label">{item.label}</div>
-          <div className="broadcast-stat-value">{item.value}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function pct(part: number, total: number): string {
   if (!total) return "0%";
   return `${Math.round((part / total) * 100)}%`;
