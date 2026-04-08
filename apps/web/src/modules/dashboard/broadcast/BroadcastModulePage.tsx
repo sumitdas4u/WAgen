@@ -234,8 +234,18 @@ function SummaryCards({ report }: { report: BroadcastReport }) {
   );
 }
 
+function pct(part: number, total: number): string {
+  if (!total) return "0%";
+  return `${Math.round((part / total) * 100)}%`;
+}
+
 function BroadcastListPage({ token }: { token: string }) {
   const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [page, setPage] = useState(1);
+  const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "all">("7d");
+
   const broadcastsQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcasts,
     queryFn: () => fetchBroadcasts(token),
@@ -246,108 +256,277 @@ function BroadcastListPage({ token }: { token: string }) {
   });
 
   const data = broadcastsQuery.data;
+  const summary = data?.summary;
   const hasLiveBroadcast = (data?.broadcasts ?? []).some((broadcast) => shouldPollCampaign(broadcast.status));
+
+  const allBroadcasts = data?.broadcasts ?? [];
+  const filtered = allBroadcasts.filter((b) =>
+    !search || b.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  const paginated = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+
+  const DATE_RANGE_LABELS: Record<typeof dateRange, string> = {
+    "7d": "Past 7 days",
+    "30d": "Past 30 days",
+    "90d": "Past 90 days",
+    "all": "All time"
+  };
+
+  const overviewStats = [
+    { label: "Recipients", value: summary?.recipients ?? 0, pctVal: null, icon: "👥" },
+    { label: "Sent", value: summary?.sent ?? 0, pctVal: pct(summary?.sent ?? 0, summary?.recipients ?? 0), icon: "✓" },
+    { label: "Delivered", value: summary?.delivered ?? 0, pctVal: pct(summary?.delivered ?? 0, summary?.recipients ?? 0), icon: "✓✓" },
+    { label: "Engaged", value: summary?.engaged ?? 0, pctVal: pct(summary?.engaged ?? 0, summary?.recipients ?? 0), icon: "↩" },
+    { label: "Not in WhatsApp", value: summary?.suppressed ?? 0, pctVal: pct(summary?.suppressed ?? 0, summary?.recipients ?? 0), icon: "⊘" },
+    { label: "Frequency Limit", value: summary?.frequencyLimited ?? 0, pctVal: pct(summary?.frequencyLimited ?? 0, summary?.recipients ?? 0), icon: "∞" },
+    { label: "Failed", value: summary?.failed ?? 0, pctVal: pct(summary?.failed ?? 0, summary?.recipients ?? 0), icon: "!" }
+  ];
 
   return (
     <section className="broadcast-page">
-      <div className="broadcast-hero">
-        <div className="broadcast-hero-copy">
-          <span className="broadcast-eyebrow">Campaign control room</span>
-          <h2 className="broadcast-hero-title">Broadcasts</h2>
-          <p className="broadcast-hero-text">
-            Manage broadcast sends, delivery performance, and retargeting from one workspace.
-          </p>
-          {hasLiveBroadcast ? <div className="broadcast-live-note">Live status updates are refreshing automatically.</div> : null}
+      {/* Page header */}
+      <div className="bl-page-header">
+        <h2 className="bl-page-title">Broadcast</h2>
+        <div className="bl-page-header-actions">
+          {hasLiveBroadcast ? <div className="broadcast-live-note">Live updates active</div> : null}
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard/broadcast/new")}
+            className="bl-new-btn"
+          >
+            + New Broadcast
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate("/dashboard/broadcast/new")}
-          className="broadcast-primary-btn"
-        >
-          New Broadcast
-        </button>
       </div>
 
-      {data?.summary ? (
-        <div className="broadcast-stat-grid">
-          {[
-            ["Recipients", data.summary.recipients, "neutral"],
-            ["Sent", data.summary.sent, "blue"],
-            ["Delivered", data.summary.delivered, "green"],
-            ["Engaged", data.summary.engaged, "teal"],
-            ["Failed", data.summary.failed, "rose"],
-            ["Suppressed", data.summary.suppressed, "amber"]
-          ].map(([label, value, tone]) => (
-            <div key={String(label)} className={`broadcast-stat-card tone-${String(tone)}`}>
-              <div className="broadcast-stat-label">{label}</div>
-              <div className="broadcast-stat-value">{value}</div>
+      {/* Overview */}
+      <div className="bl-overview-card">
+        <div className="bl-overview-head">
+          <span className="bl-overview-title">Overview</span>
+          <div className="bl-date-range-tabs">
+            {(["7d", "30d", "90d", "all"] as const).map((range) => (
+              <button
+                key={range}
+                type="button"
+                className={`bl-date-tab ${dateRange === range ? "is-active" : ""}`}
+                onClick={() => setDateRange(range)}
+              >
+                {DATE_RANGE_LABELS[range]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="bl-overview-stats">
+          {overviewStats.map((stat) => (
+            <div key={stat.label} className="bl-stat-cell">
+              <div className="bl-stat-label">{stat.label}</div>
+              <div className="bl-stat-value">
+                {stat.value}
+                {stat.pctVal !== null ? <span className="bl-stat-pct">{stat.pctVal}</span> : null}
+              </div>
             </div>
           ))}
         </div>
-      ) : null}
+      </div>
 
+      {/* Table section */}
       <section className="broadcast-table-shell">
-        <div className="broadcast-table-header">
-          <div>
-            <h3 className="broadcast-section-title">All broadcasts</h3>
-            <p className="broadcast-section-text">Recent runs, outcomes, and retarget actions in one clean table.</p>
-          </div>
-          <div className="broadcast-table-header-actions">
+        <div className="bl-table-toolbar">
+          <span className="bl-table-title">All Broadcasts</span>
+          <div className="bl-toolbar-right">
             <button
               type="button"
-              className="broadcast-secondary-btn broadcast-refresh-btn"
+              className="bl-icon-btn"
               onClick={() => void broadcastsQuery.refetch()}
               disabled={broadcastsQuery.isFetching}
+              title="Refresh"
             >
-              {broadcastsQuery.isFetching ? "Refreshing..." : "Refresh status"}
+              {broadcastsQuery.isFetching ? "⟳" : "⟳"}
+            </button>
+            <div className="bl-search-wrap">
+              <span className="bl-search-icon">&#128269;</span>
+              <input
+                className="bl-search-input"
+                type="text"
+                placeholder="Search broadcasts…"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              />
+            </div>
+            <div className="bl-date-filter">
+              <span className="bl-date-filter-label">From date</span>
+              <span className="bl-date-filter-sep">|</span>
+              <span className="bl-date-filter-label">To date</span>
+              <span className="bl-date-filter-icon">&#128197;</span>
+            </div>
+            <button type="button" className="bl-toolbar-btn">
+              &#11123; Export
+            </button>
+            <button type="button" className="bl-toolbar-btn">
+              &#9965; Filter
             </button>
           </div>
         </div>
+
         <table className="broadcast-table">
           <thead>
             <tr>
-              {["Broadcast", "Status", "Recipients", "Sent", "Delivered", "Read", "Failed", "Created", "Actions"].map((heading) => (
-                <th key={heading}>
-                  {heading}
-                </th>
+              {[
+                "Broadcast Name",
+                "Status",
+                "Recipients",
+                "Sent",
+                "Delivered",
+                "Read",
+                "Engaged",
+                "Not in WhatsApp",
+                "Frequency Limit",
+                "Failed",
+                "Created",
+                "Actions"
+              ].map((heading) => (
+                <th key={heading}>{heading}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {(data?.broadcasts ?? []).map((broadcast) => (
-              <tr key={broadcast.id}>
-                <td>
-                  <div className="broadcast-row-name">{broadcast.name}</div>
-                  <div className="broadcast-row-meta">
-                    {broadcast.broadcast_type === "retarget" ? "Retarget broadcast" : "Standard broadcast"}
-                  </div>
-                </td>
-                <td>
-                  <span className={`broadcast-status-pill status-${broadcast.status}`}>{formatCampaignStatus(broadcast.status)}</span>
-                </td>
-                <td>{broadcast.total_count}</td>
-                <td>{broadcast.sent_count}</td>
-                <td>{broadcast.delivered_count}</td>
-                <td>{broadcast.read_count}</td>
-                <td>{broadcast.failed_count}</td>
-                <td>{formatDateTime(broadcast.created_at)}</td>
-                <td>
-                  <div className="broadcast-table-actions">
-                    <button type="button" className="broadcast-secondary-btn" onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}`)}>View</button>
-                    <button type="button" className="broadcast-secondary-btn" onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}/retarget`)}>Retarget</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {!broadcastsQuery.isLoading && (data?.broadcasts ?? []).length === 0 ? (
+            {paginated.map((broadcast) => {
+              const sentPct = pct(broadcast.sent_count, broadcast.total_count);
+              const delivPct = pct(broadcast.delivered_count, broadcast.total_count);
+              const readPct = pct(broadcast.read_count, broadcast.total_count);
+              const failPct = pct(broadcast.failed_count, broadcast.total_count);
+              return (
+                <tr key={broadcast.id}>
+                  <td>
+                    <div className="bl-cell-date">{formatDateTime(broadcast.created_at)}</div>
+                    <div className="bl-cell-name">{broadcast.name}</div>
+                  </td>
+                  <td>
+                    <span className={`bl-status-pill status-${broadcast.status}`}>
+                      {formatCampaignStatus(broadcast.status)}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="bl-count-wrap">
+                      <span className="bl-icon-circle bl-icon-neutral">&#128100;</span>
+                      {broadcast.total_count}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="bl-count-wrap">
+                      <span className="bl-ring-icon" />
+                      <div>
+                        <div>{broadcast.sent_count}</div>
+                        <div className="bl-count-pct">{sentPct}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="bl-count-wrap">
+                      <span className="bl-ring-icon" />
+                      <div>
+                        <div>{broadcast.delivered_count}</div>
+                        <div className="bl-count-pct">{delivPct}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="bl-count-wrap">
+                      <span className="bl-ring-icon bl-ring-blue" />
+                      <div>
+                        <div>{broadcast.read_count}</div>
+                        <div className="bl-count-pct">{readPct}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>0<div className="bl-count-pct">0%</div></td>
+                  <td className="bl-muted-cell">N/A</td>
+                  <td className="bl-muted-cell">N/A</td>
+                  <td>
+                    <div className="bl-count-wrap">
+                      <span className="bl-ring-icon bl-ring-rose" />
+                      <div>
+                        <div>{broadcast.failed_count}</div>
+                        <div className="bl-count-pct">{failPct}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="bl-created-cell">
+                      <div className="bl-created-name">Sumit Das</div>
+                      <div className="bl-created-date">{formatDateTime(broadcast.created_at)}</div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="bl-action-cell">
+                      <button
+                        type="button"
+                        className="bl-retarget-btn"
+                        onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}/retarget`)}
+                      >
+                        &#9965; Retarget
+                      </button>
+                      <button
+                        type="button"
+                        className="bl-more-btn"
+                        onClick={() => navigate(`/dashboard/broadcast/${broadcast.id}`)}
+                        title="More"
+                      >
+                        &#8942;
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {!broadcastsQuery.isLoading && filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="broadcast-empty-state">
-                  No broadcasts created yet.
+                <td colSpan={12} className="broadcast-empty-state">
+                  {search ? "No broadcasts match your search." : "No broadcasts created yet."}
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
+
+        {/* Pagination */}
+        <div className="bl-pagination">
+          <div className="bl-rows-per-page">
+            <span>Show rows per page</span>
+            <select
+              className="bl-rows-select"
+              value={rowsPerPage}
+              onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(1); }}
+            >
+              {[10, 20, 50, 100].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+          <div className="bl-page-info">
+            Showing {filtered.length === 0 ? "0" : `${(page - 1) * rowsPerPage + 1}–${Math.min(page * rowsPerPage, filtered.length)}`} of{" "}
+            <strong>{filtered.length} total</strong>
+          </div>
+          <div className="bl-page-nav">
+            <button
+              type="button"
+              className="bl-nav-btn"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="bl-nav-btn"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </section>
     </section>
   );
@@ -460,20 +639,22 @@ function WizardStepHeader({
 }) {
   const labels =
     mode === "retarget"
-      ? ["Retarget Audience", "Select Template", "Map Variables & Media", "Schedule"]
-      : ["Select Template", "Select Audience", "Map Variables & Media", "Schedule"];
+      ? ["Retarget Audience", "Select Template", "Map Variables & Media", "Schedule Broadcast"]
+      : ["Select Template", "Select Audience", "Map Variables & Media", "Schedule Broadcast"];
 
   return (
-    <div className="broadcast-stepper">
+    <div className="wz-stepper">
       {labels.map((label, index) => {
         const current = (index + 1) as WizardStep;
         const active = current === step;
         const complete = current < step;
         return (
-          <div key={label} className={`broadcast-step ${active ? "is-active" : ""} ${complete ? "is-complete" : ""}`}>
-            <div className="broadcast-step-rail" />
-            <div className="broadcast-step-badge">{complete ? "✓" : current}</div>
-            <div className="broadcast-step-label">{label}</div>
+          <div key={label} className="wz-step-wrap">
+            <div className={`wz-step ${active ? "is-active" : ""} ${complete ? "is-complete" : ""}`}>
+              <div className="wz-step-num">{complete ? "✓" : current}</div>
+              <span className="wz-step-label">{label}</span>
+            </div>
+            {index < labels.length - 1 ? <div className="wz-step-line" /> : null}
           </div>
         );
       })}
@@ -506,7 +687,7 @@ function BroadcastWizardPage({
   const [step, setStep] = useState<WizardStep>(1);
   const [name, setName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [selectedSegmentId, setSelectedSegmentId] = useState("");
+  const [selectedSegmentIds, setSelectedSegmentIds] = useState<string[]>([]);
   const [bindings, setBindings] = useState<CampaignTemplateVariables>({});
   const [mediaOverrides, setMediaOverrides] = useState<CampaignMediaOverrides>({});
   const [scheduledAt, setScheduledAt] = useState("");
@@ -543,10 +724,11 @@ function BroadcastWizardPage({
   const segments = segmentsQuery.data ?? [];
   const publishedFlows = publishedFlowsQuery.data ?? [];
 
+  const primarySegmentId = selectedSegmentIds[0] ?? "";
   const selectedSegmentContactsQuery = useQuery({
-    queryKey: dashboardQueryKeys.segmentContacts(selectedSegmentId || "none"),
-    queryFn: () => fetchSegmentContacts(token, selectedSegmentId).then((response) => response.contacts),
-    enabled: mode === "new" && Boolean(selectedSegmentId)
+    queryKey: dashboardQueryKeys.segmentContacts(primarySegmentId || "none"),
+    queryFn: () => fetchSegmentContacts(token, primarySegmentId).then((response) => response.contacts),
+    enabled: mode === "new" && Boolean(primarySegmentId)
   });
   const retargetPreviewQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcastRetargetPreview(sourceCampaignId ?? "none", retargetStatus),
@@ -574,7 +756,9 @@ function BroadcastWizardPage({
       : selectedSegmentContactsQuery.data?.length ?? 0;
   const selectedSegmentName =
     mode === "new"
-      ? segments.find((segment) => segment.id === selectedSegmentId)?.name ?? "No segment selected"
+      ? selectedSegmentIds.length > 0
+        ? `${selectedSegmentIds.length} segment${selectedSegmentIds.length > 1 ? "s" : ""} selected`
+        : "No segment selected"
       : `Retarget: ${RETARGET_OPTIONS.find((option) => option.value === retargetStatus)?.label ?? "Audience"}`;
 
   const previewComponents = useMemo(
@@ -610,7 +794,7 @@ function BroadcastWizardPage({
         broadcastType: mode === "retarget" ? "retarget" : "standard",
         templateId: selectedTemplateId || null,
         templateVariables: bindings,
-        targetSegmentId: mode === "new" ? selectedSegmentId || null : null,
+        targetSegmentId: mode === "new" ? primarySegmentId || null : null,
         sourceCampaignId: mode === "retarget" ? sourceCampaignId ?? null : null,
         retargetStatus: mode === "retarget" ? retargetStatus : null,
         audienceSource:
@@ -626,7 +810,8 @@ function BroadcastWizardPage({
               }
             : {
                 kind: "segment",
-                segmentId: selectedSegmentId,
+                segmentId: primarySegmentId,
+                segmentIds: selectedSegmentIds,
                 replyRouting: {
                   mode: replyMode,
                   flowId: replyMode === "flow" ? replyFlowId || null : null
@@ -658,7 +843,7 @@ function BroadcastWizardPage({
   const canContinueStep1 =
     mode === "retarget" ? Boolean(retargetPreviewQuery.data?.count) : Boolean(selectedTemplateId);
   const canContinueStep2 =
-    mode === "retarget" ? Boolean(selectedTemplateId) : Boolean(selectedSegmentId);
+    mode === "retarget" ? Boolean(selectedTemplateId) : selectedSegmentIds.length > 0;
 
   async function handleAudienceUpload(file: File) {
     setUploadingAudience(true);
@@ -689,7 +874,7 @@ function BroadcastWizardPage({
         defaultCountryCode,
         mapping: audienceImportMapping
       });
-      setSelectedSegmentId(result.segment.id);
+      setSelectedSegmentIds((prev) => prev.includes(result.segment.id) ? prev : [...prev, result.segment.id]);
       setUploadedFileName(audienceImportFile.name);
       setUploadStep("preview");
       setAudienceImportPreview(null);
@@ -735,163 +920,138 @@ function BroadcastWizardPage({
   }
 
   return (
-    <section className="broadcast-page">
-      <div className="broadcast-hero">
-        <div className="broadcast-hero-copy">
-          <span className="broadcast-eyebrow">
-            {mode === "retarget" ? "Bring back missed recipients" : "Design and launch"}
-          </span>
-          <h2 className="broadcast-hero-title">
-            {mode === "retarget" ? "Retarget Broadcast" : "New Broadcast"}
-          </h2>
-          <p className="broadcast-hero-text">
-            Select a template, choose an audience, map variables, then schedule or launch.
-          </p>
-        </div>
-        <button type="button" className="broadcast-secondary-btn" onClick={() => navigate("/dashboard/broadcast")}>Back to Broadcasts</button>
-      </div>
-
+    <section className="broadcast-page wz-page">
       <WizardStepHeader mode={mode} step={step} />
 
-      <div className="broadcast-wizard-layout">
-        <section className="broadcast-wizard-main">
-          {step === 1 && mode === "new" ? (
-            <TemplateSelectionStep
-              templates={approvedTemplates}
-              selectedTemplateId={selectedTemplateId}
-              onSelect={setSelectedTemplateId}
-              onContinue={() => setStep(2)}
-              canContinue={canContinueStep1}
-            />
-          ) : null}
+      <section className="wz-body">
+        {step === 1 && mode === "new" ? (
+          <TemplateSelectionStep
+            templates={approvedTemplates}
+            selectedTemplateId={selectedTemplateId}
+            onSelect={setSelectedTemplateId}
+            onContinue={() => setStep(2)}
+            canContinue={canContinueStep1}
+            onBack={() => navigate("/dashboard/broadcast")}
+          />
+        ) : null}
 
-          {step === 1 && mode === "retarget" ? (
-            <RetargetAudienceStep
-              retargetStatus={retargetStatus}
-              onRetargetStatusChange={setRetargetStatus}
-              preview={retargetPreviewQuery.data}
-              onContinue={() => setStep(2)}
-              canContinue={canContinueStep1}
-            />
-          ) : null}
+        {step === 1 && mode === "retarget" ? (
+          <RetargetAudienceStep
+            retargetStatus={retargetStatus}
+            onRetargetStatusChange={setRetargetStatus}
+            preview={retargetPreviewQuery.data}
+            onContinue={() => setStep(2)}
+            canContinue={canContinueStep1}
+          />
+        ) : null}
 
-          {step === 2 && mode === "new" ? (
-            <AudienceSelectionStep
-              name={name}
-              onNameChange={setName}
-              customFields={fields}
-              segments={segments}
-              selectedSegmentId={selectedSegmentId}
-              onSelectSegment={setSelectedSegmentId}
-              onUpload={handleAudienceUpload}
-              uploadingAudience={uploadingAudience}
-              uploadedFileName={uploadedFileName}
-              importPreview={audienceImportPreview}
-              importMapping={audienceImportMapping}
-              onImportMappingChange={setAudienceImportMapping}
-              onConfirmImport={() => void handleConfirmAudienceImport()}
-              marketingOptIn={marketingOptIn}
-              onMarketingOptInChange={setMarketingOptIn}
-              phoneNumberFormat={phoneNumberFormat}
-              onPhoneNumberFormatChange={setPhoneNumberFormat}
-              defaultCountryCode={defaultCountryCode}
-              onDefaultCountryCodeChange={setDefaultCountryCode}
-              uploadStep={uploadStep}
-              onUploadStepChange={setUploadStep}
-              onOpenCreateSegment={() => setShowCreateSegmentModal(true)}
-              onDownloadTemplate={handleDownloadAudienceTemplate}
-              downloadingTemplate={downloadingTemplate}
-              onBack={() => setStep(1)}
-              onContinue={() => setStep(3)}
-              canContinue={canContinueStep2 && Boolean(name.trim())}
-            />
-          ) : null}
+        {step === 2 && mode === "new" ? (
+          <AudienceSelectionStep
+            name={name}
+            onNameChange={setName}
+            customFields={fields}
+            segments={segments}
+            selectedSegmentIds={selectedSegmentIds}
+            onToggleSegment={(id) =>
+              setSelectedSegmentIds((prev) =>
+                prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+              )
+            }
+            onToggleAll={(ids) => setSelectedSegmentIds(ids)}
+            onUpload={handleAudienceUpload}
+            uploadingAudience={uploadingAudience}
+            uploadedFileName={uploadedFileName}
+            importPreview={audienceImportPreview}
+            importMapping={audienceImportMapping}
+            onImportMappingChange={setAudienceImportMapping}
+            onConfirmImport={() => void handleConfirmAudienceImport()}
+            marketingOptIn={marketingOptIn}
+            onMarketingOptInChange={setMarketingOptIn}
+            phoneNumberFormat={phoneNumberFormat}
+            onPhoneNumberFormatChange={setPhoneNumberFormat}
+            defaultCountryCode={defaultCountryCode}
+            onDefaultCountryCodeChange={setDefaultCountryCode}
+            uploadStep={uploadStep}
+            onUploadStepChange={setUploadStep}
+            onOpenCreateSegment={() => setShowCreateSegmentModal(true)}
+            onDownloadTemplate={handleDownloadAudienceTemplate}
+            downloadingTemplate={downloadingTemplate}
+            selectedTemplate={selectedTemplate}
+            placeholders={placeholders}
+            previewComponents={previewComponents}
+            onBack={() => setStep(1)}
+            onContinue={() => setStep(3)}
+            canContinue={canContinueStep2 && Boolean(name.trim())}
+          />
+        ) : null}
 
-          {step === 2 && mode === "retarget" ? (
-            <TemplateSelectionStep
-              name={name}
-              onNameChange={setName}
-              templates={approvedTemplates}
-              selectedTemplateId={selectedTemplateId}
-              onSelect={setSelectedTemplateId}
-              onBack={() => setStep(1)}
-              onContinue={() => setStep(3)}
-              canContinue={canContinueStep2 && Boolean(name.trim())}
-            />
-          ) : null}
+        {step === 2 && mode === "retarget" ? (
+          <TemplateSelectionStep
+            name={name}
+            onNameChange={setName}
+            templates={approvedTemplates}
+            selectedTemplateId={selectedTemplateId}
+            onSelect={setSelectedTemplateId}
+            onBack={() => setStep(1)}
+            onContinue={() => setStep(3)}
+            canContinue={canContinueStep2 && Boolean(name.trim())}
+          />
+        ) : null}
 
-          {step === 3 ? (
-            <VariableMappingStep
-              placeholders={placeholders}
-              bindings={bindings}
-              setBindings={setBindings}
-              fieldOptions={fieldOptions}
-              headerMediaType={headerMediaType}
-              mediaOverrides={mediaOverrides}
-              setMediaOverrides={setMediaOverrides}
-              onMediaUpload={handleMediaUpload}
-              uploadingMedia={uploadingMedia}
-              onBack={() => setStep(2)}
-              onContinue={() => setStep(4)}
-            />
-          ) : null}
+        {step === 3 ? (
+          <VariableMappingStep
+            placeholders={placeholders}
+            bindings={bindings}
+            setBindings={setBindings}
+            fieldOptions={fieldOptions}
+            headerMediaType={headerMediaType}
+            mediaOverrides={mediaOverrides}
+            setMediaOverrides={setMediaOverrides}
+            onMediaUpload={handleMediaUpload}
+            uploadingMedia={uploadingMedia}
+            onBack={() => setStep(2)}
+            onContinue={() => setStep(4)}
+          />
+        ) : null}
 
-          {step === 4 ? (
-            <ScheduleStep
-              name={name}
-              sendMode={sendMode}
-              onSendModeChange={setSendMode}
-              scheduledAt={scheduledAt}
-              onScheduledAtChange={setScheduledAt}
-              retryEnabled={retryEnabled}
-              onRetryEnabledChange={setRetryEnabled}
-              retryType={retryType}
-              onRetryTypeChange={setRetryType}
-              retryUntil={retryUntil}
-              onRetryUntilChange={setRetryUntil}
-              policyEnabled={policyEnabled}
-              onPolicyEnabledChange={setPolicyEnabled}
-              audienceCount={targetAudienceCount}
-              selectedAudienceLabel={selectedSegmentName}
-              replyMode={replyMode}
-              onReplyModeChange={setReplyMode}
-              replyFlowId={replyFlowId}
-              onReplyFlowIdChange={setReplyFlowId}
-              availableFlows={publishedFlows}
-              onBack={() => setStep(3)}
-              onSave={() => saveMutation.mutate(false)}
-              onLaunch={() => saveMutation.mutate(true)}
-              saving={saveMutation.isPending}
-            />
-          ) : null}
+        {step === 4 ? (
+          <ScheduleStep
+            name={name}
+            onNameChange={setName}
+            sendMode={sendMode}
+            onSendModeChange={setSendMode}
+            scheduledAt={scheduledAt}
+            onScheduledAtChange={setScheduledAt}
+            retryEnabled={retryEnabled}
+            onRetryEnabledChange={setRetryEnabled}
+            retryType={retryType}
+            onRetryTypeChange={setRetryType}
+            retryUntil={retryUntil}
+            onRetryUntilChange={setRetryUntil}
+            policyEnabled={policyEnabled}
+            onPolicyEnabledChange={setPolicyEnabled}
+            audienceCount={targetAudienceCount}
+            selectedSegmentNames={selectedSegmentIds
+              .map((id) => segments.find((s) => s.id === id)?.name ?? id)
+              .filter(Boolean)}
+            replyMode={replyMode}
+            onReplyModeChange={setReplyMode}
+            replyFlowId={replyFlowId}
+            onReplyFlowIdChange={setReplyFlowId}
+            availableFlows={publishedFlows}
+            selectedTemplate={selectedTemplate}
+            bindings={bindings}
+            sampleContacts={selectedSegmentContactsQuery.data ?? []}
+            onBack={() => setStep(3)}
+            onSave={() => saveMutation.mutate(false)}
+            onLaunch={() => saveMutation.mutate(true)}
+            saving={saveMutation.isPending}
+          />
+        ) : null}
 
-          {message ? <div className="broadcast-feedback success">{message}</div> : null}
-          {error ? <div className="broadcast-feedback error">{error}</div> : null}
-        </section>
-
-        <aside className="broadcast-preview-shell">
-          <div>
-            <div className="broadcast-preview-title">Live Preview</div>
-            <div className="broadcast-preview-copy">
-              {sampleContact
-                ? `Previewing with ${sampleContact.display_name || sampleContact.phone_number}`
-                : "Select an audience to preview variable mappings."}
-            </div>
-          </div>
-          {selectedTemplate ? (
-            <div className="broadcast-preview-panel">
-              <TemplatePreviewPanel
-                components={previewComponents}
-                businessName={selectedTemplate.displayPhoneNumber ?? selectedTemplate.name}
-              />
-            </div>
-          ) : (
-            <div className="broadcast-preview-empty">
-              Choose a template to preview the broadcast.
-            </div>
-          )}
-        </aside>
-      </div>
+        {message ? <div className="broadcast-feedback success">{message}</div> : null}
+        {error ? <div className="broadcast-feedback error">{error}</div> : null}
+      </section>
 
       {showCreateSegmentModal ? (
         <BroadcastCreateSegmentModal
@@ -900,7 +1060,7 @@ function BroadcastWizardPage({
           onClose={() => setShowCreateSegmentModal(false)}
           onCreated={async (segment) => {
             setShowCreateSegmentModal(false);
-            setSelectedSegmentId(segment.id);
+            setSelectedSegmentIds((prev) => prev.includes(segment.id) ? prev : [...prev, segment.id]);
             await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactSegments });
             setMessage(`Created segment "${segment.name}".`);
           }}
@@ -929,35 +1089,115 @@ function TemplateSelectionStep({
   onContinue: () => void;
   canContinue: boolean;
 }) {
+  const [search, setSearch] = useState("");
+
+  const filtered = templates.filter(
+    (t) =>
+      !search ||
+      t.name.toLowerCase().includes(search.toLowerCase()) ||
+      t.category.toLowerCase().includes(search.toLowerCase())
+  );
+
+  function statusLabel(status: string) {
+    if (status === "APPROVED") return "Active";
+    if (status === "PENDING") return "Active - Pending";
+    return status.charAt(0) + status.slice(1).toLowerCase();
+  }
+
+  function formatTemplateDate(dateStr: string | undefined) {
+    if (!dateStr) return "";
+    return new Date(dateStr).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  }
+
   return (
-    <section className="broadcast-step-section">
-      <div className="broadcast-section-heading">
-        <h3 className="broadcast-section-title">Select Template</h3>
-        <p className="broadcast-section-text">Choose the approved WhatsApp template you want to send.</p>
+    <section className="wz-tpl-section">
+      {/* Step toolbar */}
+      <div className="wz-tpl-toolbar">
+        <button type="button" className="wz-back-btn" onClick={onBack}>
+          &#8592; Select Template
+        </button>
+        <div className="wz-tpl-toolbar-center">
+          <div className="wz-tpl-search-wrap">
+            <span className="wz-tpl-search-icon">&#128269;</span>
+            <input
+              className="wz-tpl-search"
+              type="text"
+              placeholder="Search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        <a
+          href="/dashboard/templates/new"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="wz-new-tpl-btn"
+        >
+          + New Template &#8599;
+        </a>
       </div>
+
+      {/* Optional broadcast name field (retarget step 2) */}
       {onNameChange ? (
-        <label className="broadcast-field">
+        <label className="broadcast-field wz-name-field">
           <span className="broadcast-label">Broadcast name</span>
-          <input className="broadcast-input" value={name ?? ""} onChange={(event) => onNameChange(event.target.value)} placeholder="Broadcast name" />
+          <input
+            className="broadcast-input"
+            value={name ?? ""}
+            onChange={(event) => onNameChange(event.target.value)}
+            placeholder="Enter broadcast name"
+          />
         </label>
       ) : null}
-      <div className="broadcast-template-grid">
-        {templates.map((template) => (
-          <button key={template.id} type="button" onClick={() => onSelect(template.id)} className={`broadcast-template-card ${selectedTemplateId === template.id ? "is-selected" : ""}`}>
-            <div className="broadcast-template-card-inner">
-              <div>
-                <div className="broadcast-template-name">{template.name}</div>
-                <div className="broadcast-template-meta">{template.category} • {template.language}</div>
+
+      {/* Template grid */}
+      <div className="wz-tpl-grid">
+        {filtered.map((template) => {
+          const selected = selectedTemplateId === template.id;
+          return (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => onSelect(template.id)}
+              className={`wz-tpl-card ${selected ? "is-selected" : ""}`}
+            >
+              <div className="wz-tpl-card-head">
+                <span className="wz-tpl-name">{template.name}</span>
+                <div className="wz-tpl-badges">
+                  <span className="wz-tpl-status-badge">
+                    <span className="wz-tpl-status-dot" /> {statusLabel(template.status)}
+                  </span>
+                  <span className="wz-tpl-cat-badge">{template.category}</span>
+                </div>
               </div>
-              <TemplatePreviewPanel components={template.components} businessName={template.displayPhoneNumber ?? template.name} />
-            </div>
-          </button>
-        ))}
+              <div className="wz-tpl-preview-box">
+                <TemplatePreviewPanel
+                  components={template.components}
+                  businessName={template.displayPhoneNumber ?? template.name}
+                />
+              </div>
+              <div className="wz-tpl-card-foot">
+                <span className="wz-tpl-lang">{template.language}</span>
+                <span className="wz-tpl-date">{formatTemplateDate((template as { updated_at?: string }).updated_at)}</span>
+              </div>
+            </button>
+          );
+        })}
+        {filtered.length === 0 ? (
+          <div className="wz-tpl-empty">No templates match "{search}".</div>
+        ) : null}
       </div>
-      <div className="broadcast-actions">
-        {onBack ? <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button> : null}
-        <button type="button" onClick={onContinue} disabled={!canContinue} className="broadcast-primary-btn">
-          Continue
+
+      {/* Footer actions */}
+      <div className="wz-tpl-footer">
+        <button
+          type="button"
+          onClick={onContinue}
+          disabled={!canContinue}
+          className="wz-continue-btn"
+        >
+          Continue &#8594;
         </button>
       </div>
     </section>
@@ -1124,23 +1364,24 @@ function BroadcastCreateSegmentModal({
   onCreated: (segment: { id: string; name: string }) => void;
 }) {
   const [name, setName] = useState("");
-  const [filters, setFilters] = useState<SegmentFilter[]>([{ field: "created_at", op: "after", value: "" }]);
+  const [filters, setFilters] = useState<SegmentFilter[]>([]);
   const [previewContacts, setPreviewContacts] = useState<ContactRecord[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const addFilter = () => {
-    setFilters((current) => [...current, { field: "display_name", op: "contains", value: "" }]);
+    setFilters((current) => [...current, { field: "marketing_optin", op: "is", value: "true" }]);
+    setPreviewContacts(null);
   };
 
   const updateFilter = (index: number, updated: SegmentFilter) => {
-    setFilters((current) => current.map((item, itemIndex) => (itemIndex === index ? updated : item)));
+    setFilters((current) => current.map((item, i) => (i === index ? updated : item)));
     setPreviewContacts(null);
   };
 
   const removeFilter = (index: number) => {
-    setFilters((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setFilters((current) => current.filter((_, i) => i !== index));
     setPreviewContacts(null);
   };
 
@@ -1150,89 +1391,181 @@ function BroadcastCreateSegmentModal({
     try {
       const result = await previewSegmentContacts(token, filters);
       setPreviewContacts(result.contacts);
-    } catch (previewError) {
-      setError((previewError as Error).message);
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setPreviewLoading(false);
     }
   };
 
   const handleCreate = async () => {
-    if (!name.trim()) {
-      setError("Segment name is required.");
-      return;
-    }
+    if (!name.trim()) { setError("Segment name is required."); return; }
     setSaving(true);
     setError(null);
     try {
       const result = await createContactSegment(token, { name: name.trim(), filters });
       onCreated(result.segment);
-    } catch (createError) {
-      setError((createError as Error).message);
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setSaving(false);
     }
   };
 
+  const FIELD_LABELS: Record<string, string> = {
+    display_name: "Name", phone_number: "Phone", email: "Email",
+    tags: "Tags", contact_type: "Type", created_at: "Created At",
+    order_date: "Order Date", marketing_optin: "Marketing Optin"
+  };
+  const OP_LABELS: Record<string, string> = {
+    is: "Is", is_not: "Is not", contains: "Contains", not_contains: "Does not contain",
+    before: "Before", after: "Is after", is_empty: "Is empty", is_not_empty: "Is not empty"
+  };
+
   return (
-    <div className="kb-modal-backdrop" onClick={onClose}>
-      <div className="kb-modal kb-modal-wide segment-modal" onClick={(event) => event.stopPropagation()}>
-        <h3>Create Segment From Existing Contacts</h3>
-        <div className="segment-modal-body">
-          <label className="segment-name-label">
-            Segment Name
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. April leads" autoFocus />
-          </label>
-
-          <div className="segment-filters-section">
-            <div className="segment-filters-head">
-              <strong>Filters</strong>
-              <button type="button" className="ghost-btn segment-add-filter-btn" onClick={addFilter}>
-                Add Condition
-              </button>
-            </div>
-
-            <div className="segment-filter-list">
-              {filters.map((filter, index) => (
-                <BroadcastSegmentFilterRow
-                  key={`${filter.field}-${index}`}
-                  filter={filter}
-                  index={index}
-                  customFields={customFields}
-                  onChange={updateFilter}
-                  onRemove={removeFilter}
-                />
-              ))}
-            </div>
-
-            <button type="button" className="ghost-btn segment-preview-btn" onClick={() => void handlePreview()} disabled={previewLoading}>
-              {previewLoading ? "Loading..." : "Preview Matching Contacts"}
-            </button>
-
-            {previewContacts ? (
-              <div className="segment-preview-result">
-                <strong>{previewContacts.length} contact{previewContacts.length !== 1 ? "s" : ""} match</strong>
-                {previewContacts.slice(0, 5).map((contact) => (
-                  <div key={contact.id} className="segment-preview-contact">
-                    <span className="contacts-avatar" style={{ width: 26, height: 26, fontSize: "0.75rem" }}>
-                      {(contact.display_name || "U").slice(0, 1).toUpperCase()}
-                    </span>
-                    <span>{contact.display_name || "Unknown"}</span>
-                    <span className="segment-preview-phone">{contact.phone_number}</span>
-                  </div>
-                ))}
-                {previewContacts.length > 5 ? <p className="segment-preview-more">+{previewContacts.length - 5} more</p> : null}
-              </div>
-            ) : null}
-          </div>
+    <div className="csm-backdrop" onClick={onClose}>
+      <div className="csm-modal" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="csm-header">
+          <span className="csm-title">Create Segment</span>
+          <button type="button" className="csm-close" onClick={onClose}>&#10005;</button>
         </div>
 
-        {error ? <p className="error-text">{error}</p> : null}
+        {/* Segment name */}
+        <div className="csm-name-row">
+          <input
+            className="csm-name-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Segment name"
+            autoFocus
+          />
+        </div>
 
-        <div className="kb-modal-actions">
-          <button type="button" className="ghost-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="primary-btn" disabled={saving} onClick={() => void handleCreate()}>
-            {saving ? "Creating..." : "Create Segment"}
+        {/* Filter button */}
+        <div className="csm-filter-bar">
+          <button type="button" className="csm-filter-btn" onClick={addFilter}>
+            <span className="csm-filter-icon">&#9965;</span> Filter
+          </button>
+        </div>
+
+        {/* Filter rows */}
+        {filters.length > 0 ? (
+          <div className="csm-filter-list">
+            {filters.map((filter, index) => {
+              const allFieldOptions = [
+                ...SEGMENT_FIELD_OPTIONS,
+                ...customFields.filter((f) => f.is_active).map((f) => ({
+                  value: `custom:${f.name}`,
+                  label: f.label,
+                  isDate: f.field_type === "DATE"
+                }))
+              ];
+              const selectedFieldOption = allFieldOptions.find((o) => o.value === filter.field);
+              const isDateField = selectedFieldOption?.isDate ?? false;
+              const availableOps = SEGMENT_OP_OPTIONS.filter((o) => !o.onlyDate || isDateField);
+              const selectedOp = SEGMENT_OP_OPTIONS.find((o) => o.value === filter.op);
+
+              return (
+                <div key={index} className="csm-filter-row">
+                  <div className="csm-filter-pill">
+                    <span className="csm-filter-field-icon">
+                      {filter.field === "tags" ? "🏷" : filter.field.includes("date") || filter.field === "created_at" || filter.field === "order_date" ? "📅" : "👁"}
+                    </span>
+                    <span className="csm-filter-field-name">
+                      {FIELD_LABELS[filter.field] ?? filter.field}
+                    </span>
+                    <button type="button" className="csm-filter-remove" onClick={() => removeFilter(index)}>&#10005;</button>
+                  </div>
+                  <div className="csm-filter-controls">
+                    <select
+                      className="csm-filter-select"
+                      value={filter.op}
+                      onChange={(e) => updateFilter(index, { ...filter, op: e.target.value as SegmentFilterOp })}
+                    >
+                      {availableOps.map((o) => (
+                        <option key={o.value} value={o.value}>{OP_LABELS[o.value] ?? o.label}</option>
+                      ))}
+                    </select>
+                    {!selectedOp?.noValue && (
+                      isDateField ? (
+                        <input
+                          type="date"
+                          className="csm-filter-select"
+                          value={filter.value}
+                          onChange={(e) => updateFilter(index, { ...filter, value: e.target.value })}
+                        />
+                      ) : (
+                        <select
+                          className="csm-filter-select"
+                          value={filter.value}
+                          onChange={(e) => updateFilter(index, { ...filter, value: e.target.value })}
+                        >
+                          <option value="">Select value</option>
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      )
+                    )}
+                  </div>
+                  <select
+                    className="csm-filter-select csm-filter-field-select"
+                    value={filter.field}
+                    onChange={(e) => updateFilter(index, { ...filter, field: e.target.value })}
+                  >
+                    <optgroup label="Standard Fields">
+                      {SEGMENT_FIELD_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </optgroup>
+                    {customFields.filter((f) => f.is_active).length > 0 ? (
+                      <optgroup label="Custom Fields">
+                        {customFields.filter((f) => f.is_active).map((f) => (
+                          <option key={f.id} value={`custom:${f.name}`}>{f.label}</option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                </div>
+              );
+            })}
+            <div className="csm-filter-actions">
+              <button type="button" className="csm-cancel-btn" onClick={() => { setFilters([]); setPreviewContacts(null); }}>Cancel</button>
+              <button type="button" className="csm-apply-btn" onClick={() => void handlePreview()} disabled={previewLoading}>
+                {previewLoading ? "Loading…" : "Apply"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Body — preview or placeholder */}
+        <div className="csm-body">
+          {previewContacts ? (
+            <div className="csm-preview">
+              <div className="csm-preview-count">{previewContacts.length} contact{previewContacts.length !== 1 ? "s" : ""} match</div>
+              {previewContacts.slice(0, 6).map((c) => (
+                <div key={c.id} className="csm-preview-row">
+                  <span className="csm-avatar">{(c.display_name || "U")[0].toUpperCase()}</span>
+                  <span>{c.display_name || "Unknown"}</span>
+                  <span className="csm-preview-phone">{c.phone_number}</span>
+                </div>
+              ))}
+              {previewContacts.length > 6 ? <div className="csm-preview-more">+{previewContacts.length - 6} more</div> : null}
+            </div>
+          ) : (
+            <div className="csm-placeholder">
+              Add filters to contacts to create a segment. Broadcast will be triggered to selected segments.
+            </div>
+          )}
+        </div>
+
+        {error ? <div className="csm-error">{error}</div> : null}
+
+        {/* Footer */}
+        <div className="csm-footer">
+          <button type="button" className="csm-cancel-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="csm-create-btn" disabled={saving || !name.trim()} onClick={() => void handleCreate()}>
+            {saving ? "Creating…" : "Create Segment"}
           </button>
         </div>
       </div>
@@ -1243,10 +1576,14 @@ function BroadcastCreateSegmentModal({
 function AudienceSelectionStep({
   name,
   onNameChange,
-  customFields,
   segments,
-  selectedSegmentId,
-  onSelectSegment,
+  selectedSegmentIds,
+  onToggleSegment,
+  onToggleAll,
+  onOpenCreateSegment,
+  onBack,
+  onContinue,
+  canContinue,
   onUpload,
   uploadingAudience,
   uploadedFileName,
@@ -1262,19 +1599,19 @@ function AudienceSelectionStep({
   onDefaultCountryCodeChange,
   uploadStep,
   onUploadStepChange,
-  onOpenCreateSegment,
   onDownloadTemplate,
   downloadingTemplate,
-  onBack,
-  onContinue,
-  canContinue
+  selectedTemplate,
+  placeholders,
+  previewComponents
 }: {
   name: string;
   onNameChange: (value: string) => void;
   customFields: Array<{ id: string; label: string; name: string; is_active: boolean }>;
-  segments: Array<{ id: string; name: string; created_at: string }>;
-  selectedSegmentId: string;
-  onSelectSegment: (segmentId: string) => void;
+  segments: Array<{ id: string; name: string; created_at: string; filters: SegmentFilter[] }>;
+  selectedSegmentIds: string[];
+  onToggleSegment: (id: string) => void;
+  onToggleAll: (ids: string[]) => void;
   onUpload: (file: File) => Promise<void>;
   uploadingAudience: boolean;
   uploadedFileName: string;
@@ -1293,210 +1630,454 @@ function AudienceSelectionStep({
   onOpenCreateSegment: () => void;
   onDownloadTemplate: () => Promise<void>;
   downloadingTemplate: boolean;
+  selectedTemplate: MessageTemplate | null;
+  placeholders: string[];
+  previewComponents: ReturnType<typeof buildPreviewComponents>;
   onBack: () => void;
   onContinue: () => void;
   canContinue: boolean;
 }) {
-  const mappingFields: ContactImportFieldOption[] = [
-    ...CONTACT_IMPORT_STANDARD_FIELDS,
-    ...customFields
-      .filter((field) => field.is_active)
-      .map((field) => ({ key: `custom:${field.name}`, label: `${field.label} (custom)` }))
-  ];
-  return (
-    <section className="broadcast-step-section">
-      <div className="broadcast-section-heading">
-        <h3 className="broadcast-section-title">Select Audience</h3>
-        <p className="broadcast-section-text">Import a fresh audience from Excel or pick a reusable segment.</p>
+  const [showExcelUpload, setShowExcelUpload] = useState(false);
+  const [openAccordion, setOpenAccordion] = useState<"download" | "upload" | "preview">("download");
+  const [search, setSearch] = useState("");
+  const [hoveredFilterId, setHoveredFilterId] = useState<string | null>(null);
+
+  const FIELD_LABELS: Record<string, string> = {
+    display_name: "Name", phone_number: "Phone", email: "Email",
+    tags: "Tags", contact_type: "Type", created_at: "Created At", order_date: "Order Date"
+  };
+  const OP_LABELS: Record<string, string> = {
+    is: "Is", is_not: "Is not", contains: "Contains", not_contains: "Does not contain",
+    before: "Before", after: "Is after", is_empty: "Is empty", is_not_empty: "Is not empty"
+  };
+
+  const filtered = segments.filter(
+    (s) => !search || s.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const allChecked = filtered.length > 0 && filtered.every((s) => selectedSegmentIds.includes(s.id));
+
+  function handleToggleAll() {
+    if (allChecked) {
+      onToggleAll(selectedSegmentIds.filter((id) => !filtered.some((s) => s.id === id)));
+    } else {
+      const toAdd = filtered.map((s) => s.id).filter((id) => !selectedSegmentIds.includes(id));
+      onToggleAll([...selectedSegmentIds, ...toAdd]);
+    }
+  }
+
+  function renderFilterChip(filter: SegmentFilter, index: number, extras: number) {
+    const field = FIELD_LABELS[filter.field] ?? filter.field;
+    const op = OP_LABELS[filter.op] ?? filter.op;
+    const isTag = filter.field === "tags";
+    return (
+      <div key={index} className="aud-filter-chip">
+        <span className="aud-filter-icon">{isTag ? "🏷" : "📅"}</span>
+        <span className="aud-filter-field">{field}</span>
+        <span className="aud-filter-op">{op}</span>
+        <span className="aud-filter-val">{filter.value.length > 10 ? `${filter.value.slice(0, 10)}…` : filter.value}</span>
+        {extras > 0 ? <span className="aud-filter-extra">+{extras}</span> : null}
       </div>
-      <label className="broadcast-field">
-        <span className="broadcast-label">Broadcast name</span>
-        <input className="broadcast-input" value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="April promotion" />
-      </label>
-      <section className="broadcast-surface-card">
-        <div className="broadcast-card-title">Upload contacts from Excel</div>
-        <div className="broadcast-muted-copy">
-          Download the sample first, then upload a prepared workbook so we can read the required fields, create a segment, and use it for this campaign.
-        </div>
-        <div className={`broadcast-upload-stage ${uploadStep !== "download" ? "is-open" : ""}`}>
-          <button type="button" className="broadcast-upload-stage-head" onClick={() => onUploadStepChange("download")}>
-            <span className="broadcast-upload-stage-marker is-complete">✓</span>
-            <span>Download sample file</span>
-            <small>Optional</small>
+    );
+  }
+
+  /* ── Excel Upload sub-view ── */
+  if (showExcelUpload) {
+    const audienceReady = Boolean(uploadedFileName) && uploadStep === "preview";
+
+    return (
+      <section className="eu-page">
+        {/* Back header */}
+        <div className="eu-header">
+          <button type="button" className="wz-back-btn" onClick={() => setShowExcelUpload(false)}>
+            &#8592; Upload Contacts from Excel
           </button>
-          <div className="broadcast-upload-stage-body">
-            <p className="broadcast-muted-copy">
-              Use the sample workbook to prepare columns before uploading. Required columns are read exactly from the file.
-            </p>
-            <div className="broadcast-upload-actions">
-              <button type="button" className="broadcast-secondary-btn" onClick={() => void onDownloadTemplate()} disabled={downloadingTemplate}>
-                {downloadingTemplate ? "Downloading..." : "Download sample file"}
-              </button>
-              <button type="button" className="broadcast-primary-btn" onClick={() => onUploadStepChange("upload")}>
-                I've downloaded
-              </button>
-            </div>
-          </div>
         </div>
 
-        <div className={`broadcast-upload-stage ${uploadStep === "upload" || uploadStep === "preview" ? "is-open" : ""}`}>
-          <button type="button" className="broadcast-upload-stage-head" onClick={() => onUploadStepChange("upload")}>
-            <span className={`broadcast-upload-stage-marker ${uploadedFileName ? "is-complete" : ""}`}>{uploadedFileName ? "✓" : "2"}</span>
-            <span>Upload data file</span>
-          </button>
-          <div className="broadcast-upload-stage-body">
-            <p className="broadcast-muted-copy">
-              Please ensure you have updated the workbook with the necessary information before uploading.
-            </p>
-            <label className="broadcast-dropzone">
-              <span className="broadcast-dropzone-title">Drag & drop your file here</span>
-              <span className="broadcast-dropzone-field">{uploadedFileName || "Please upload a file"}</span>
-              <span className="broadcast-dropzone-hint">Accepted file type: XLSX</span>
-              <input
-                type="file"
-                accept=".xlsx"
-                disabled={uploadingAudience}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    void onUpload(file);
-                  }
-                }}
-              />
-            </label>
-            <div className="broadcast-form-grid two-up">
-              <label className="broadcast-field">
-                <span className="broadcast-label">Marketing opt-in</span>
-                <select className="broadcast-input" value={marketingOptIn ? "yes" : "no"} onChange={(event) => onMarketingOptInChange(event.target.value === "yes")}>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                </select>
-              </label>
-              <label className="broadcast-field">
-                <span className="broadcast-label">Phone number format</span>
-                <select className="broadcast-input" value={phoneNumberFormat} onChange={(event) => onPhoneNumberFormatChange(event.target.value as "with_country_code" | "without_country_code")}>
-                  <option value="with_country_code">With country code</option>
-                  <option value="without_country_code">Without country code</option>
-                </select>
-              </label>
-              {phoneNumberFormat === "without_country_code" ? (
-                <label className="broadcast-field">
-                  <span className="broadcast-label">Default country code</span>
-                  <input className="broadcast-input" value={defaultCountryCode} onChange={(event) => onDefaultCountryCodeChange(event.target.value.replace(/\D/g, ""))} placeholder="91" />
-                </label>
+        <div className="eu-layout">
+          {/* Left: accordion */}
+          <div className="eu-accordions">
+
+            {/* ── Section 1: Download Sample ── */}
+            <div className={`eu-accordion ${openAccordion === "download" ? "is-open" : ""}`}>
+              <button
+                type="button"
+                className="eu-accordion-head"
+                onClick={() => setOpenAccordion(openAccordion === "download" ? "upload" : "download")}
+              >
+                <span className="eu-acc-check is-done">&#10003;</span>
+                <span className="eu-acc-title">Download Sample file</span>
+                <span className="eu-acc-badge">Optional</span>
+                <span className="eu-acc-chevron">{openAccordion === "download" ? "∧" : "∨"}</span>
+              </button>
+              {openAccordion === "download" ? (
+                <div className="eu-accordion-body">
+                  <p className="eu-body-text">
+                    Name and Phone numbers (with country code, e.g., +91) are mandatory fields.
+                  </p>
+                  {placeholders.length > 0 ? (
+                    <>
+                      <p className="eu-body-text">
+                        The selected WhatsApp message template contains below mandatory variables and ensure
+                        to update the necessary columns in the sample file before uploading in the next step.
+                      </p>
+                      <div className="eu-placeholder-chips">
+                        {placeholders.map((p) => (
+                          <span key={p} className="eu-placeholder-chip">{p}</span>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                  <div className="eu-acc-actions">
+                    <button
+                      type="button"
+                      className="eu-downloaded-btn"
+                      onClick={() => setOpenAccordion("upload")}
+                    >
+                      I&apos;ve downloaded
+                    </button>
+                    <button
+                      type="button"
+                      className="eu-download-btn"
+                      disabled={downloadingTemplate}
+                      onClick={() => void onDownloadTemplate()}
+                    >
+                      {downloadingTemplate ? "Downloading…" : "Download Sample file"} &#8964;
+                    </button>
+                  </div>
+                </div>
               ) : null}
             </div>
-            {importPreview ? (
-              <>
-                <div className="broadcast-card-title" style={{ marginTop: "0.25rem" }}>Map Excel fields</div>
-                <div className="broadcast-muted-copy">
-                  Match each contact field to the correct Excel column before creating the audience segment.
-                </div>
-                {mappingFields.map((field) => (
-                  <div key={field.key} className="broadcast-binding-card">
-                    <strong className="broadcast-binding-token">{field.label}{field.required ? " *" : ""}</strong>
-                    <select
-                      className="broadcast-input"
-                      value={importMapping[field.key] ?? ""}
-                      onChange={(event) =>
-                        onImportMappingChange((current) => {
-                          if (!event.target.value) {
-                            const next = { ...current };
-                            delete next[field.key];
-                            return next;
-                          }
-                          return { ...current, [field.key]: event.target.value };
-                        })
-                      }
-                    >
-                      <option value="">Do not import</option>
-                      {importPreview.columns.map((column) => (
-                        <option key={`${field.key}-${column}`} value={column}>{column}</option>
-                      ))}
-                    </select>
-                    <div className="broadcast-row-meta">Detected from workbook</div>
-                    <div className="broadcast-row-meta">{importMapping[field.key] || "No column selected"}</div>
-                  </div>
-                ))}
-                <div className="broadcast-table-shell compact">
-                  <div className="broadcast-table-header">
-                    <div>
-                      <h3 className="broadcast-section-title">Workbook preview</h3>
-                      <p className="broadcast-section-text">First rows from the uploaded Excel file.</p>
+
+            {/* ── Section 2: Upload data file ── */}
+            <div className={`eu-accordion ${openAccordion === "upload" ? "is-open" : ""}`}>
+              <button
+                type="button"
+                className="eu-accordion-head"
+                onClick={() => setOpenAccordion(openAccordion === "upload" ? "download" : "upload")}
+              >
+                <span className={`eu-acc-check ${uploadedFileName ? "is-done" : ""}`}>
+                  {uploadedFileName ? "✓" : "○"}
+                </span>
+                <span className="eu-acc-title">Upload data file</span>
+                <span className="eu-acc-chevron">{openAccordion === "upload" ? "∧" : "∨"}</span>
+              </button>
+              {openAccordion === "upload" ? (
+                <div className="eu-accordion-body">
+                  <p className="eu-body-hint">
+                    Please ensure you have updated the columns with necessary information in the file before uploading.
+                  </p>
+
+                  {/* Dropzone */}
+                  <label className="eu-dropzone">
+                    <div className="eu-dropzone-title">Drag &amp; drop your file here</div>
+                    <div className="eu-dropzone-field">
+                      <span>{uploadedFileName || "Please Upload a File"}</span>
+                      <span className="eu-dropzone-icon">&#8679;</span>
                     </div>
+                    <div className="eu-dropzone-hint">Accepted file type: .XLSX</div>
+                    <input
+                      type="file"
+                      accept=".xlsx"
+                      style={{ display: "none" }}
+                      disabled={uploadingAudience}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) { void onUpload(f); setOpenAccordion("upload"); }
+                      }}
+                    />
+                  </label>
+
+                  {/* Marketing Opt-In */}
+                  <div className="eu-field-row">
+                    <div className="eu-field-info">
+                      <span className="eu-field-label">Marketing Opt-In <span className="eu-required">*</span> <span className="eu-info-icon">&#9432;</span></span>
+                      <span className="eu-field-desc">
+                        Provide the new contacts consent to receive marketing messages.{" "}
+                        <a href="#" className="aud-bottom-link">Learn more</a>
+                      </span>
+                    </div>
+                    <select
+                      className="eu-select"
+                      value={marketingOptIn ? "yes" : "no"}
+                      onChange={(e) => onMarketingOptInChange(e.target.value === "yes")}
+                    >
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
                   </div>
-                  <table className="broadcast-table">
-                    <thead>
-                      <tr>
-                        {importPreview.columns.map((column) => (
-                          <th key={column}>{column}</th>
+
+                  {/* Phone Number Format */}
+                  <div className="eu-field-row">
+                    <div className="eu-field-info">
+                      <span className="eu-field-label">Phone Number Format <span className="eu-required">*</span></span>
+                      <span className="eu-field-desc">
+                        &quot;Without country code&quot; the default format is +91 (account&apos;s country code).
+                      </span>
+                    </div>
+                    <select
+                      className="eu-select"
+                      value={phoneNumberFormat}
+                      onChange={(e) => onPhoneNumberFormatChange(e.target.value as "with_country_code" | "without_country_code")}
+                    >
+                      <option value="">Select...</option>
+                      <option value="with_country_code">With country code</option>
+                      <option value="without_country_code">Without country code</option>
+                    </select>
+                  </div>
+
+                  {phoneNumberFormat === "without_country_code" ? (
+                    <div className="eu-field-row">
+                      <div className="eu-field-info">
+                        <span className="eu-field-label">Default country code <span className="eu-required">*</span></span>
+                      </div>
+                      <input
+                        className="eu-select"
+                        value={defaultCountryCode}
+                        onChange={(e) => onDefaultCountryCodeChange(e.target.value.replace(/\D/g, ""))}
+                        placeholder="91"
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* Column mapping after upload */}
+                  {importPreview ? (
+                    <div className="eu-mapping">
+                      <div className="eu-mapping-title">Map Excel columns to contact fields</div>
+                      <div className="eu-mapping-grid">
+                        {CONTACT_IMPORT_STANDARD_FIELDS.map((field) => (
+                          <div key={field.key} className="eu-mapping-row">
+                            <span className="eu-mapping-label">
+                              {field.label}{field.required ? " *" : ""}
+                            </span>
+                            <select
+                              className="eu-select"
+                              value={importMapping[field.key] ?? ""}
+                              onChange={(e) =>
+                                onImportMappingChange((cur) => {
+                                  if (!e.target.value) { const next = { ...cur }; delete next[field.key]; return next; }
+                                  return { ...cur, [field.key]: e.target.value };
+                                })
+                              }
+                            >
+                              <option value="">Do not import</option>
+                              {importPreview.columns.map((col) => (
+                                <option key={col} value={col}>{col}</option>
+                              ))}
+                            </select>
+                          </div>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {importPreview.sampleRows.map((row, index) => (
-                        <tr key={`sample-${index}`}>
-                          {importPreview.columns.map((column) => (
-                            <td key={`${index}-${column}`}>{row[column] || "—"}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </div>
+                      <button
+                        type="button"
+                        className="wz-continue-btn"
+                        style={{ marginTop: "0.75rem" }}
+                        disabled={uploadingAudience || !importMapping.phone_number}
+                        onClick={onConfirmImport}
+                      >
+                        {uploadingAudience ? "Importing…" : "Import & create segment"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
-                <div className="broadcast-upload-actions">
-                  <button
-                    type="button"
-                    className="broadcast-primary-btn"
-                    disabled={uploadingAudience || !importMapping.phone_number}
-                    onClick={onConfirmImport}
-                  >
-                    {uploadingAudience ? "Importing..." : "Import audience & create segment"}
+              ) : null}
+            </div>
+
+            {/* ── Section 3: Preview ── */}
+            <div className={`eu-accordion ${audienceReady ? "" : "is-disabled"} ${openAccordion === "preview" && audienceReady ? "is-open" : ""}`}>
+              <button
+                type="button"
+                className="eu-accordion-head"
+                onClick={() => audienceReady && setOpenAccordion("preview")}
+                disabled={!audienceReady}
+              >
+                <span className={`eu-acc-check ${audienceReady ? "is-done" : ""}`}>
+                  {audienceReady ? "✓" : "○"}
+                </span>
+                <span className="eu-acc-title">Preview your target audience</span>
+                <span className="eu-acc-chevron">{openAccordion === "preview" && audienceReady ? "∧" : "∨"}</span>
+              </button>
+              {openAccordion === "preview" && audienceReady ? (
+                <div className="eu-accordion-body">
+                  <p className="eu-body-text">
+                    Your uploaded contacts have been converted into a reusable segment and are ready for this broadcast.
+                  </p>
+                  <button type="button" className="wz-continue-btn" onClick={() => setShowExcelUpload(false)}>
+                    Use this audience &#8594;
                   </button>
                 </div>
-              </>
-            ) : null}
+              ) : null}
+            </div>
+
+          </div>
+
+          {/* Right: template preview */}
+          {selectedTemplate ? (
+            <div className="eu-preview-panel">
+              <div className="eu-preview-name">{selectedTemplate.name}</div>
+              <div className="eu-preview-meta">
+                &#128241; {(selectedTemplate as { displayPhoneNumber?: string }).displayPhoneNumber ?? "—"}
+              </div>
+              <div className="eu-preview-scroll">
+                <TemplatePreviewPanel
+                  components={previewComponents.length ? previewComponents : selectedTemplate.components}
+                  businessName={(selectedTemplate as { displayPhoneNumber?: string }).displayPhoneNumber ?? selectedTemplate.name}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
+  /* ── Main audience selection view ── */
+  return (
+    <section className="aud-section">
+      {/* ── Excel upload banner ── */}
+      <div className="aud-excel-card">
+        <div className="aud-excel-head">
+          <span className="aud-excel-title">Upload Contacts from Excel</span>
+        </div>
+        <div className="aud-excel-body">
+          <span className="aud-excel-badge">X</span>
+          <span className="aud-excel-text">Broadcast customized messages to your contacts available in your excel sheet</span>
+          <button type="button" className="aud-upload-btn" onClick={() => setShowExcelUpload(true)}>
+            &#128202; Upload Contacts
+          </button>
+        </div>
+      </div>
+
+      {/* ── OR divider ── */}
+      <div className="aud-or-divider">
+        <span className="aud-or-line" />
+        <span className="aud-or-text">OR</span>
+        <span className="aud-or-line" />
+      </div>
+
+      {/* ── Segments section ── */}
+      <div className="aud-segments-card">
+        {/* Broadcast name */}
+        <div className="aud-name-row">
+          <label className="aud-name-label">Broadcast name</label>
+          <input
+            className="aud-name-input"
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="e.g. April promotion"
+          />
+        </div>
+
+        {/* Segment list header */}
+        <div className="aud-segments-head">
+          <div className="aud-segments-title-wrap">
+            <span className="aud-segments-title">Pick from Segments</span>
+            <a href="/dashboard/contacts" target="_blank" rel="noopener noreferrer" className="aud-segments-link">
+              What are segments? &#8599;
+            </a>
+          </div>
+          <div className="aud-segments-actions">
+            <div className="aud-seg-search-wrap">
+              <span className="aud-seg-search-icon">&#128269;</span>
+              <input
+                className="aud-seg-search"
+                type="text"
+                placeholder="Search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <button type="button" className="aud-new-seg-btn" onClick={onOpenCreateSegment}>
+              + New Segment
+            </button>
           </div>
         </div>
 
-        <div className={`broadcast-upload-stage ${uploadStep === "preview" ? "is-open" : ""}`}>
-          <button type="button" className="broadcast-upload-stage-head" onClick={() => onUploadStepChange("preview")}>
-            <span className={`broadcast-upload-stage-marker ${selectedSegmentId ? "is-complete" : ""}`}>{selectedSegmentId ? "✓" : "3"}</span>
-            <span>Preview your target audience</span>
-          </button>
-          <div className="broadcast-upload-stage-body">
-            <p className="broadcast-muted-copy">
-              {selectedSegmentId
-                ? "Your uploaded contacts have been converted into a reusable segment and are ready for this broadcast."
-                : "Upload a workbook to create a segment and preview the audience state here."}
-            </p>
-          </div>
+        {/* Segment table */}
+        <div className="aud-table-wrap">
+          <table className="aud-table">
+            <thead>
+              <tr>
+                <th className="aud-th-check">
+                  <input type="checkbox" checked={allChecked} onChange={handleToggleAll} className="aud-checkbox" />
+                </th>
+                <th>Segment Name</th>
+                <th>Filters</th>
+                <th>Total Contacts</th>
+                <th>Created By</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((segment) => {
+                const checked = selectedSegmentIds.includes(segment.id);
+                const firstFilter = segment.filters[0];
+                const extras = segment.filters.length - 1;
+                return (
+                  <tr key={segment.id} className={`aud-row ${checked ? "is-checked" : ""}`} onClick={() => onToggleSegment(segment.id)}>
+                    <td className="aud-td-check" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={checked} onChange={() => onToggleSegment(segment.id)} className="aud-checkbox" />
+                    </td>
+                    <td>
+                      <div className="aud-seg-name">{segment.name}</div>
+                      <div className="aud-seg-date">{formatDateTime(segment.created_at)}</div>
+                    </td>
+                    <td
+                      className="aud-td-filters"
+                      onMouseEnter={() => segment.filters.length > 1 ? setHoveredFilterId(segment.id) : null}
+                      onMouseLeave={() => setHoveredFilterId(null)}
+                    >
+                      {firstFilter ? renderFilterChip(firstFilter, 0, extras) : <span className="aud-no-filter">—</span>}
+                      {hoveredFilterId === segment.id && segment.filters.length > 1 ? (
+                        <div className="aud-filter-tooltip">
+                          {segment.filters.map((f, i) => (
+                            <div key={i} className="aud-tooltip-row">
+                              <span className="aud-filter-icon">{f.field === "tags" ? "🏷" : "📅"}</span>
+                              <span>{FIELD_LABELS[f.field] ?? f.field}</span>
+                              <span className="aud-filter-op">{OP_LABELS[f.op] ?? f.op}</span>
+                              <span>{f.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <button type="button" className="aud-view-count" onClick={(e) => e.stopPropagation()}>
+                        View count
+                      </button>
+                    </td>
+                    <td><span className="aud-created-by">—</span></td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="aud-more-btn">&#8942;</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="aud-empty">
+                    {search ? `No segments match "${search}".` : "No segments yet. Create one above."}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
-      </section>
-      <section className="broadcast-surface-card">
-        <div className="broadcast-card-row">
-          <div className="broadcast-card-title">Use existing contacts</div>
-          <button type="button" className="broadcast-secondary-btn" onClick={onOpenCreateSegment}>
-            Create Segment
+      </div>
+
+      {/* ── Bottom sticky bar ── */}
+      <div className="aud-bottom-bar">
+        <span className="aud-bottom-note">
+          These segments update dynamically according to the filters. Click "View count" to see the count.{" "}
+          <a href="#" className="aud-bottom-link">Learn more &#8599;</a>
+        </span>
+        <div className="aud-bottom-right">
+          {selectedSegmentIds.length > 0 ? (
+            <span className="aud-selected-count">{selectedSegmentIds.length} Segment{selectedSegmentIds.length > 1 ? "s" : ""} Selected</span>
+          ) : null}
+          <button type="button" className="wz-continue-btn" disabled={!canContinue} onClick={onContinue}>
+            Continue
           </button>
         </div>
-        <div className="broadcast-muted-copy">
-          Create a new segment from your existing contacts using filters, or pick a segment you already have.
-        </div>
-        <div className="broadcast-card-title" style={{ marginTop: "0.55rem" }}>Pick existing segment</div>
-        {segments.map((segment) => (
-          <button key={segment.id} type="button" onClick={() => onSelectSegment(segment.id)} className={`broadcast-segment-card ${selectedSegmentId === segment.id ? "is-selected" : ""}`}>
-            <div className="broadcast-segment-name">{segment.name}</div>
-            <div className="broadcast-row-meta">Created {new Date(segment.created_at).toLocaleDateString()}</div>
-            <span className="broadcast-segment-check">{selectedSegmentId === segment.id ? "Selected" : "Select"}</span>
-          </button>
-        ))}
-      </section>
-      <div className="broadcast-actions">
-        <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button>
-        <button type="button" onClick={onContinue} disabled={!canContinue} className="broadcast-primary-btn">
-          Continue
-        </button>
       </div>
     </section>
   );
@@ -1589,8 +2170,91 @@ function VariableMappingStep({
   );
 }
 
+function TestBroadcastModal({
+  onClose,
+  onSend
+}: {
+  onClose: () => void;
+  onSend: (phones: string[]) => void;
+}) {
+  const [phones, setPhones] = useState(["+91"]);
+
+  function updatePhone(index: number, value: string) {
+    setPhones((prev) => prev.map((p, i) => (i === index ? value : p)));
+  }
+
+  function addPhone() {
+    if (phones.length < 10) setPhones((prev) => [...prev, "+91"]);
+  }
+
+  function removePhone(index: number) {
+    setPhones((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  return (
+    <div className="tbm-backdrop" onClick={onClose}>
+      <div className="tbm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="tbm-header">
+          <span className="tbm-title">Test Broadcast</span>
+          <button type="button" className="csm-close" onClick={onClose}>&#10005;</button>
+        </div>
+
+        <div className="tbm-body">
+          <div className="tbm-info">
+            <span className="tbm-info-icon">&#9432;</span>
+            <span>Required data for template variables and URL&apos;s will be taken from the first contact in the dynamic segment or excel sheet used. This is to ensure both the message quality and engagement will be tested by you.</span>
+          </div>
+
+          <div className="tbm-phones-label">Phone Number</div>
+          <div className="tbm-phones">
+            {phones.map((phone, index) => (
+              <div key={index} className="tbm-phone-row">
+                <div className="tbm-phone-input-wrap">
+                  <span className="tbm-flag">🇮🇳</span>
+                  <input
+                    className="tbm-phone-input"
+                    value={phone}
+                    onChange={(e) => updatePhone(index, e.target.value)}
+                    placeholder="+91 XXXXX XXXXX"
+                  />
+                </div>
+                {phones.length > 1 ? (
+                  <button type="button" className="tbm-remove-btn" onClick={() => removePhone(index)}>
+                    🗑
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          {phones.length < 10 ? (
+            <button type="button" className="tbm-add-btn" onClick={addPhone}>
+              + Add new
+            </button>
+          ) : null}
+        </div>
+
+        <div className="tbm-footer">
+          <span className="tbm-limit">Max limit 10 numbers</span>
+          <div className="tbm-footer-actions">
+            <button type="button" className="csm-cancel-btn" onClick={onClose}>Cancel</button>
+            <button
+              type="button"
+              className="csm-apply-btn"
+              onClick={() => onSend(phones.filter((p) => p.trim().length > 2))}
+            >
+              Send now
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScheduleStep({
   name,
+  onNameChange,
   sendMode,
   onSendModeChange,
   scheduledAt,
@@ -1604,18 +2268,22 @@ function ScheduleStep({
   policyEnabled,
   onPolicyEnabledChange,
   audienceCount,
-  selectedAudienceLabel,
+  selectedSegmentNames,
   replyMode,
   onReplyModeChange,
   replyFlowId,
   onReplyFlowIdChange,
   availableFlows,
+  selectedTemplate,
+  bindings,
+  sampleContacts,
   onBack,
   onSave,
   onLaunch,
   saving
 }: {
   name: string;
+  onNameChange: (v: string) => void;
   sendMode: "now" | "schedule";
   onSendModeChange: (value: "now" | "schedule") => void;
   scheduledAt: string;
@@ -1629,154 +2297,344 @@ function ScheduleStep({
   policyEnabled: boolean;
   onPolicyEnabledChange: (value: boolean) => void;
   audienceCount: number;
-  selectedAudienceLabel: string;
+  selectedSegmentNames: string[];
   replyMode: BroadcastReplyMode;
   onReplyModeChange: (value: BroadcastReplyMode) => void;
   replyFlowId: string;
   onReplyFlowIdChange: (value: string) => void;
   availableFlows: Array<{ id: string; name: string }>;
+  selectedTemplate: MessageTemplate | null;
+  bindings: CampaignTemplateVariables;
+  sampleContacts: ContactRecord[];
   onBack: () => void;
   onSave: () => void;
   onLaunch: () => void;
   saving: boolean;
 }) {
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [showTestModal, setShowTestModal] = useState(false);
+
+  // Auto-generate name if empty
+  useEffect(() => {
+    if (!name.trim()) {
+      const now = new Date();
+      onNameChange(
+        now.toLocaleString([], {
+          day: "2-digit", month: "short", year: "2-digit",
+          hour: "2-digit", minute: "2-digit"
+        })
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const replyConfigValid = replyMode !== "flow" || Boolean(replyFlowId);
+  const totalPreview = Math.max(sampleContacts.length, 1);
+  const safeIndex = Math.min(previewIndex, totalPreview - 1);
+
+  const currentContact = sampleContacts[safeIndex] ?? null;
+  const livePreviewComponents = useMemo(
+    () => buildPreviewComponents(selectedTemplate, bindings, currentContact),
+    [selectedTemplate, bindings, currentContact]
+  );
 
   return (
-    <section className="broadcast-step-section">
-      <div className="broadcast-section-heading">
-        <h3 className="broadcast-section-title">Schedule Broadcast</h3>
-        <p className="broadcast-section-text">Review the final send settings, timing, retry behavior, and audience rules before launch.</p>
-      </div>
+    <>
+      <section className="sch-page">
+        {/* Header */}
+        <div className="sch-header">
+          <button type="button" className="wz-back-btn" onClick={onBack}>
+            &#8592; Schedule Broadcast
+          </button>
+        </div>
 
-      <section className="broadcast-surface-card">
-        <div className="broadcast-card-title">Broadcast details</div>
-        <div className="broadcast-form-grid">
-          <label className="broadcast-field">
-            <span className="broadcast-label">Broadcast name</span>
-            <input className="broadcast-input" value={name} readOnly />
-          </label>
-          <label className="broadcast-field">
-            <span className="broadcast-label">Send broadcast</span>
-            <select className="broadcast-input" value={sendMode} onChange={(event) => onSendModeChange(event.target.value as "now" | "schedule")}>
-              <option value="now">Send immediately</option>
-              <option value="schedule">Schedule for later</option>
-            </select>
-          </label>
-          {sendMode === "schedule" ? (
-            <label className="broadcast-field broadcast-form-span">
-              <span className="broadcast-label">Schedule date and time</span>
-              <input className="broadcast-input" type="datetime-local" value={scheduledAt} onChange={(event) => onScheduledAtChange(event.target.value)} />
-            </label>
+        <div className="sch-layout">
+          {/* ── Left: form ── */}
+          <div className="sch-form-col">
+
+            {/* Limit info banner */}
+            <div className="sch-info-banner">
+              <span className="sch-info-icon">&#9432;</span>
+              <span>
+                0 broadcast messages sent in the last 24 hours for a limit of 250 messages per day.
+                You can send another <strong>250 messages</strong> for now.
+              </span>
+            </div>
+
+            {/* Broadcast details */}
+            <div className="sch-section">
+              <div className="sch-section-title">Broadcast details</div>
+              <div className="sch-field-row">
+                <span className="sch-field-label">Broadcast name</span>
+                <input
+                  className="sch-input"
+                  value={name}
+                  onChange={(e) => onNameChange(e.target.value)}
+                  placeholder="e.g. April promotion"
+                />
+              </div>
+              <div className="sch-field-row">
+                <span className="sch-field-label">
+                  Send broadcast <span className="sch-info-icon-sm">&#9432;</span>
+                </span>
+                <select
+                  className="sch-select"
+                  value={sendMode}
+                  onChange={(e) => onSendModeChange(e.target.value as "now" | "schedule")}
+                >
+                  <option value="now">Send immediately</option>
+                  <option value="schedule">Schedule for later</option>
+                </select>
+              </div>
+              {sendMode === "schedule" ? (
+                <div className="sch-field-row">
+                  <span className="sch-field-label">Schedule date &amp; time</span>
+                  <input
+                    className="sch-input"
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={(e) => onScheduledAtChange(e.target.value)}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            {/* Retry Mode */}
+            <div className="sch-section">
+              <div className="sch-section-title">Retry Mode</div>
+              <div className="sch-field-row">
+                <span className="sch-field-label">
+                  Enable Retry <span className="sch-info-icon-sm">&#9432;</span>
+                </span>
+                <label className="sch-toggle">
+                  <input
+                    type="checkbox"
+                    checked={retryEnabled}
+                    onChange={(e) => onRetryEnabledChange(e.target.checked)}
+                  />
+                  <span className="sch-toggle-track" />
+                </label>
+              </div>
+              <div className={`sch-retry-body ${retryEnabled ? "" : "is-disabled"}`}>
+                <div className="sch-field-row">
+                  <span className="sch-field-label">Retry type <span className="sch-required">*</span></span>
+                  <div className="sch-radio-group">
+                    <label className="sch-radio-label">
+                      <input
+                        type="radio"
+                        name="retryType"
+                        checked={retryType === "smart"}
+                        onChange={() => onRetryTypeChange("smart")}
+                        disabled={!retryEnabled}
+                      />
+                      <span>Smart retry</span>
+                      <span className="sch-recommended">Recommended</span>
+                    </label>
+                    <label className="sch-radio-label">
+                      <input
+                        type="radio"
+                        name="retryType"
+                        checked={retryType === "manual"}
+                        onChange={() => onRetryTypeChange("manual")}
+                        disabled={!retryEnabled}
+                      />
+                      <span>Manual retry</span>
+                    </label>
+                  </div>
+                </div>
+                <div className="sch-field-row">
+                  <span className="sch-field-label">Retry until</span>
+                  <div className="sch-input-icon-wrap">
+                    <input
+                      className="sch-input"
+                      type="datetime-local"
+                      value={retryUntil}
+                      onChange={(e) => onRetryUntilChange(e.target.value)}
+                      disabled={!retryEnabled}
+                      placeholder="Retry until"
+                    />
+                    <span className="sch-cal-icon">&#128197;</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Target audience */}
+            <div className="sch-section">
+              <div className="sch-section-title">Target audience</div>
+              <div className="sch-field-row">
+                <span className="sch-field-label">Total contacts</span>
+                <span className="sch-audience-count">
+                  &#128101; <strong>{audienceCount}</strong>
+                </span>
+              </div>
+              <div className="sch-field-row">
+                <span className="sch-field-label">Selected segments</span>
+                <div className="sch-segment-chips">
+                  {selectedSegmentNames.length > 0
+                    ? selectedSegmentNames.map((n) => (
+                        <span key={n} className="sch-segment-chip">{n}</span>
+                      ))
+                    : <span className="sch-muted">—</span>}
+                </div>
+              </div>
+              <div className="sch-policy-row">
+                <div>
+                  <div className="sch-policy-title">
+                    Follow WhatsApp Business Policy{" "}
+                    <a href="#" className="sch-learn-more">Learn more &#8599;</a>
+                  </div>
+                  <div className="sch-policy-desc">
+                    We&apos;ll only message contacts those who have opted in for marketing messages.
+                  </div>
+                </div>
+                <label className="sch-toggle">
+                  <input
+                    type="checkbox"
+                    checked={policyEnabled}
+                    onChange={(e) => onPolicyEnabledChange(e.target.checked)}
+                  />
+                  <span className="sch-toggle-track" />
+                </label>
+              </div>
+            </div>
+
+            {/* Broadcast reply settings */}
+            <div className="sch-section">
+              <div className="sch-section-head">
+                <span className="sch-section-title">Broadcast reply settings</span>
+                <span className="sch-optional-badge">Optional</span>
+                <a href="#" className="sch-learn-more sch-section-learn">Learn more &#8599;</a>
+              </div>
+              <p className="sch-section-desc">
+                Set how replies to your broadcast messages are managed when contacts interact with them.
+                <span className="sch-info-icon-sm"> &#9432;</span>
+              </p>
+              <div className="sch-field-row">
+                <span className="sch-field-label">Assign conversations to</span>
+                <div className="sch-reply-selects">
+                  <select
+                    className="sch-select"
+                    value={replyMode}
+                    onChange={(e) => onReplyModeChange(e.target.value as BroadcastReplyMode)}
+                  >
+                    <option value="ai">Select Assignee</option>
+                    <option value="flow">Flow</option>
+                  </select>
+                  <select
+                    className="sch-select"
+                    value={replyFlowId}
+                    onChange={(e) => onReplyFlowIdChange(e.target.value)}
+                    disabled={replyMode !== "flow"}
+                  >
+                    <option value="">--Select--</option>
+                    {availableFlows.map((flow) => (
+                      <option key={flow.id} value={flow.id}>{flow.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <label className="sch-checkbox-row">
+                <input type="checkbox" className="aud-checkbox" defaultChecked />
+                <span className="sch-checkbox-text">
+                  Use the above configuration, though the conversation is currently assigned to some assignee.
+                </span>
+              </label>
+            </div>
+
+          </div>
+
+          {/* ── Right: message preview ── */}
+          {selectedTemplate ? (
+            <div className="sch-preview-col">
+              <div className="sch-preview-nav">
+                <button
+                  type="button"
+                  className="sch-nav-btn"
+                  disabled={safeIndex <= 0}
+                  onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
+                >
+                  &#8592;
+                </button>
+                <span className="sch-nav-label">
+                  Message preview {safeIndex + 1} / {totalPreview}
+                </span>
+                <button
+                  type="button"
+                  className="sch-nav-btn"
+                  disabled={safeIndex >= totalPreview - 1}
+                  onClick={() => setPreviewIndex((i) => Math.min(totalPreview - 1, i + 1))}
+                >
+                  &#8594;
+                </button>
+              </div>
+              <div className="sch-preview-card">
+                <div className="sch-preview-tpl-name">{selectedTemplate.name}</div>
+                <div className="sch-preview-tpl-meta">
+                  <span className="sch-tpl-status">
+                    <span className="wz-tpl-status-dot" />
+                    Active
+                  </span>
+                  <span className="sch-tpl-cat">
+                    {selectedTemplate.category}
+                  </span>
+                </div>
+                <div className="sch-preview-tpl-phone">
+                  &#128241; {(selectedTemplate as { displayPhoneNumber?: string }).displayPhoneNumber ?? "—"}
+                </div>
+                <div className="sch-preview-scroll">
+                  <TemplatePreviewPanel
+                    components={livePreviewComponents.length ? livePreviewComponents : selectedTemplate.components}
+                    businessName={(selectedTemplate as { displayPhoneNumber?: string }).displayPhoneNumber ?? selectedTemplate.name}
+                  />
+                </div>
+              </div>
+            </div>
           ) : null}
         </div>
-      </section>
 
-      <section className="broadcast-surface-card">
-        <div className="broadcast-card-row">
-          <div className="broadcast-card-title">Retry Mode</div>
-          <label className="broadcast-switch">
-            <input type="checkbox" checked={retryEnabled} onChange={(event) => onRetryEnabledChange(event.target.checked)} />
-            <span />
-          </label>
-        </div>
-        <div className={`broadcast-retry-grid ${retryEnabled ? "" : "is-disabled"}`}>
-          <div className="broadcast-radio-row">
-            <label className="broadcast-radio-card">
-              <input type="radio" checked={retryType === "smart"} onChange={() => onRetryTypeChange("smart")} />
-              <span>Smart retry</span>
-              <em>Recommended</em>
-            </label>
-            <label className="broadcast-radio-card">
-              <input type="radio" checked={retryType === "manual"} onChange={() => onRetryTypeChange("manual")} />
-              <span>Manual retry</span>
-            </label>
-          </div>
-          <label className="broadcast-field">
-            <span className="broadcast-label">Retry until</span>
-            <input className="broadcast-input" type="datetime-local" value={retryUntil} onChange={(event) => onRetryUntilChange(event.target.value)} disabled={!retryEnabled} />
-          </label>
-        </div>
-      </section>
-
-      <section className="broadcast-surface-card">
-        <div className="broadcast-card-title">Target audience</div>
-        <div className="broadcast-audience-summary">
-          <div className="broadcast-audience-row">
-            <span>Total contacts</span>
-            <strong>{audienceCount}</strong>
-          </div>
-          <div className="broadcast-audience-row">
-            <span>Selected audience</span>
-            <strong>{selectedAudienceLabel}</strong>
-          </div>
-        </div>
-        <div className="broadcast-policy-row">
-          <div>
-            <div className="broadcast-policy-title">Follow WhatsApp Business Policy</div>
-            <div className="broadcast-muted-copy">
-              We'll only message contacts who have opted in for marketing messages.
-            </div>
-          </div>
-          <label className="broadcast-switch">
-            <input type="checkbox" checked={policyEnabled} onChange={(event) => onPolicyEnabledChange(event.target.checked)} />
-            <span />
-          </label>
-        </div>
-      </section>
-
-      <section className="broadcast-surface-card">
-        <div className="broadcast-card-row">
-          <div className="broadcast-card-title">Broadcast reply settings</div>
-          <span className="broadcast-optional-badge">Optional</span>
-        </div>
-        <div className="broadcast-muted-copy">
-          Set how replies to your broadcast messages are managed when contacts interact with them.
-        </div>
-        <div className="broadcast-form-grid two-up">
-          <label className="broadcast-field">
-            <span className="broadcast-label">Assign conversations to</span>
-            <select className="broadcast-input" value={replyMode} onChange={(event) => onReplyModeChange(event.target.value as BroadcastReplyMode)}>
-              <option value="ai">AI</option>
-              <option value="flow">Flow</option>
-            </select>
-          </label>
-          <label className="broadcast-field">
-            <span className="broadcast-label">Target</span>
-            <select
-              className="broadcast-input"
-              value={replyFlowId}
-              onChange={(event) => onReplyFlowIdChange(event.target.value)}
-              disabled={replyMode !== "flow"}
+        {/* ── Bottom sticky bar ── */}
+        <div className="sch-bottom-bar">
+          <div className="sch-bottom-left" />
+          <div className="sch-bottom-right">
+            <button type="button" className="sch-cancel-btn" onClick={onBack}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="sch-test-btn"
+              onClick={() => setShowTestModal(true)}
+              disabled={saving}
             >
-              <option value="">
-                {replyMode === "flow" ? "--Select flow--" : "AI handles replies automatically"}
-              </option>
-              {availableFlows.map((flow) => (
-                <option key={flow.id} value={flow.id}>
-                  {flow.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {replyMode === "flow" && availableFlows.length === 0 ? (
-          <div className="broadcast-muted-copy">
-            No published flows are available yet. Publish a flow first to route broadcast replies into it.
+              Test Broadcast
+            </button>
+            <button
+              type="button"
+              className="sch-launch-btn"
+              disabled={saving || !replyConfigValid}
+              onClick={sendMode === "schedule" ? onSave : onLaunch}
+            >
+              {saving
+                ? "Sending…"
+                : sendMode === "schedule"
+                  ? "Save Scheduled Broadcast"
+                  : "Send Broadcast Now"}
+            </button>
           </div>
-        ) : null}
+        </div>
       </section>
 
-      <div className="broadcast-actions">
-        <button type="button" className="broadcast-secondary-btn" onClick={onBack}>Back</button>
-        <button type="button" className="broadcast-secondary-btn" onClick={onSave} disabled={saving || !replyConfigValid}>
-          {saving ? "Saving..." : sendMode === "schedule" ? "Save Scheduled Broadcast" : "Save Broadcast"}
-        </button>
-        <button type="button" onClick={onLaunch} disabled={saving || !replyConfigValid} className="broadcast-primary-btn">
-          {saving ? "Launching..." : sendMode === "schedule" ? "Save & Launch" : "Launch Now"}
-        </button>
-      </div>
-    </section>
+      {showTestModal ? (
+        <TestBroadcastModal
+          onClose={() => setShowTestModal(false)}
+          onSend={(phones) => {
+            setShowTestModal(false);
+            // eslint-disable-next-line no-console
+            console.info("Test broadcast to:", phones);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
