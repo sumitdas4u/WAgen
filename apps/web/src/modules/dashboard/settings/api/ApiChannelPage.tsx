@@ -212,7 +212,8 @@ export function ApiChannelPage() {
             config_id: config.embeddedSignupConfigId,
             response_type: "code",
             override_default_response_type: true,
-            redirect_uri: redirectUri
+            redirect_uri: redirectUri,
+            extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" }
           });
         });
         const code = response.authResponse?.code?.trim();
