@@ -197,42 +197,50 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.get("/api/auth/google/start", async (request, reply) => {
-    const parsed = GoogleAuthStartSchema.safeParse(request.query ?? {});
-    if (!parsed.success) {
-      return reply
-        .status(400)
-        .type("text/html")
-        .send(
-          renderGoogleAuthPopupPage({
-            status: "error",
-            message: "Invalid Google auth start request."
-          })
-        );
-    }
-
-    try {
-      const redirectUri = getGoogleAuthRedirectUri(request);
-      if (!redirectUri) {
-        throw new Error("Unable to determine the public Google login callback URL.");
+  fastify.get("/api/auth/google/start", {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: "1 minute"
       }
-      const url = buildGoogleAuthConnectUrl({
-        mode: parsed.data.mode,
-        businessType: parsed.data.businessType,
-        redirectUri
-      });
-      return reply.redirect(url);
-    } catch (error) {
-      return reply
-        .status(500)
-        .type("text/html")
-        .send(
-          renderGoogleAuthPopupPage({
-            status: "error",
-            message: (error as Error).message,
-            appOrigin: getRequestOrigin(request)
-          })
-        );
+    },
+    handler: async (request, reply) => {
+      const parsed = GoogleAuthStartSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .type("text/html")
+          .send(
+            renderGoogleAuthPopupPage({
+              status: "error",
+              message: "Invalid Google auth start request."
+            })
+          );
+      }
+
+      try {
+        const redirectUri = getGoogleAuthRedirectUri(request);
+        if (!redirectUri) {
+          throw new Error("Unable to determine the public Google login callback URL.");
+        }
+        const url = buildGoogleAuthConnectUrl({
+          mode: parsed.data.mode,
+          businessType: parsed.data.businessType,
+          redirectUri
+        });
+        return reply.redirect(url);
+      } catch (error) {
+        return reply
+          .status(500)
+          .type("text/html")
+          .send(
+            renderGoogleAuthPopupPage({
+              status: "error",
+              message: (error as Error).message,
+              appOrigin: getRequestOrigin(request)
+            })
+          );
+      }
     }
   });
 
