@@ -833,14 +833,25 @@ body.flow-builder-mode .chatbot-studio-content {
   min-width: 0;
 }
 
-.fn-delete-btn {
+.fn-node-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.fn-node-header .fn-icon-btn {
   opacity: 0;
   transition: opacity .15s, background .12s, color .12s;
   color: currentColor;
 }
-.fn-node-header:hover .fn-delete-btn,
-.fn-node.selected .fn-delete-btn { opacity: 0.55; }
+.fn-node-header:hover .fn-icon-btn,
+.fn-node.selected .fn-icon-btn { opacity: 0.55; }
+.fn-node-header:hover .fn-node-header-actions .fn-icon-btn,
+.fn-node.selected .fn-node-header-actions .fn-icon-btn {
+  opacity: 0.5;
+}
 .fn-delete-btn:hover { opacity: 1 !important; }
+.fn-node-header-actions .fn-icon-btn:hover { opacity: 1 !important; }
 
 .fn-node-body { padding: 0.55rem 0.72rem 0.5rem; display: flex; flex-direction: column; gap: 0.38rem; }
 
@@ -926,9 +937,6 @@ body.flow-builder-mode .chatbot-studio-content {
   border-radius: 0;
 }
 
-/* canvas node: hide delete btn (no interaction) */
-.fn-canvas .fn-node .fn-delete-btn { display: none; }
-
 /* ── Canvas node: output handle rows ──────────────────── */
 .fn-canvas .fn-node .fn-api-outputs,
 .fn-canvas .fn-node .fn-cond-outputs {
@@ -981,6 +989,7 @@ body.flow-builder-mode .chatbot-studio-content {
 .fn-node-googleSheetsFetchRows .fn-node-header { background: #f8fafc; color: #334155; border-bottom: 1px solid #cbd5e1; }
 .fn-node-googleCalendarBooking .fn-node-header { background: #eef6ff; color: #1d4ed8; border-bottom: 1px solid #bfdbfe; }
 .fn-node-googleSheets          .fn-node-header { background: #eefbf3; color: #166534; border-bottom: 1px solid #bbf7d0; }
+.fn-node-updateContactField    .fn-node-header { background: #ecfeff; color: #0f766e; border-bottom: 1px solid #a5f3fc; }
 
 /* Left color bar */
 .fn-node-flowStart          { border-left: 3.5px solid var(--fn-teal);   }
@@ -1004,6 +1013,7 @@ body.flow-builder-mode .chatbot-studio-content {
 .fn-node-googleCalendarBooking { border-left: 3.5px solid var(--fn-blue); }
 .fn-node-googleSheets          { border-left: 3.5px solid var(--fn-green); }
 .fn-node-aiReply            { border-left: 3.5px solid var(--fn-violet); }
+.fn-node-updateContactField { border-left: 3.5px solid var(--fn-teal); }
 .fn-node-aiReply            .fn-node-header { background: var(--fn-violet-bg); color: #5b21b6; border-bottom: 1px solid var(--fn-violet-bdr); }
 
 /* ── Inline editing fields inside nodes ────────────────── */
@@ -1032,6 +1042,51 @@ body.flow-builder-mode .chatbot-studio-content {
   box-shadow: 0 0 0 2px rgba(20,184,166,.1);
 }
 .fn-node-textarea { min-height: 60px; line-height: 1.45; }
+
+.fn-node-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  color: var(--text-2);
+}
+
+.fn-node-check input {
+  margin: 0;
+}
+
+.fn-op-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.fn-op-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.26rem;
+  border: 1px solid #dbe7f1;
+  border-radius: 999px;
+  padding: 0.24rem 0.46rem;
+  background: #f8fafc;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.fn-op-pill input {
+  margin: 0;
+}
+
+.fn-node-summary {
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #f8fafc;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
 
 /* ── Button rows (textButtons / mediaButtons) ──────────── */
 .fn-btn-rows { display: flex; flex-direction: column; gap: 0.28rem; }

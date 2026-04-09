@@ -74,6 +74,16 @@ export interface SendContactData {
   org: string;
 }
 
+export type UpdateContactFieldOperation = "replace" | "append" | "add_if_empty";
+
+export interface UpdateContactFieldData {
+  kind: "updateContactField";
+  fieldKey: string;
+  value: string;
+  dynamicValue: boolean;
+  operation: UpdateContactFieldOperation;
+}
+
 export interface SendPollData {
   kind: "sendPoll";
   question: string;
@@ -305,6 +315,7 @@ export type AnyNodeData =
   | SendMediaData
   | SendLocationData
   | SendContactData
+  | UpdateContactFieldData
   | SendPollData
   | SendTextMenuData
   | SendImageMenuData

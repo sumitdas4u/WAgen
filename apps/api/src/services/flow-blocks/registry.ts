@@ -24,6 +24,7 @@ import { sendTextBlock } from "./basic/send-text.js";
 import { sendTextMenuBlock } from "./basic/send-text-menu.js";
 import { templateBlock } from "./basic/template.js";
 import { textButtonsBlock } from "./basic/text-buttons.js";
+import { updateContactFieldBlock } from "./basic/update-contact-field.js";
 import { multiProductBlock } from "./legacy/multi-product.js";
 import { singleProductBlock } from "./legacy/single-product.js";
 import { whatsappPayBlock } from "./legacy/whatsapp-pay.js";
@@ -34,6 +35,7 @@ const blockModules: FlowBlockModule[] = [
   sendMediaBlock,
   sendLocationBlock,
   sendContactBlock,
+  updateContactFieldBlock,
   sendPollBlock,
   sendTextMenuBlock,
   sendImageMenuBlock,
