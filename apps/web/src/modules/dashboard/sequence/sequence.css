@@ -93,21 +93,52 @@
   flex-shrink: 0;
 }
 
-/* ─── Stat strip ─── */
+/* ─── Stat strip / list overview ─── */
+.seq-overview-card,
 .seq-stat-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   background: #fff;
   border: 1px solid #e2eaf4;
   border-radius: 14px;
   overflow: hidden;
 }
 
+.seq-overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.seq-overview-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #122033;
+}
+
+.seq-overview-stats,
+.seq-stat-strip {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.seq-list-actions,
+.seq-view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.seq-stat-cell,
 .seq-stat-card {
   padding: 0.85rem 1rem;
   border-right: 1px solid #edf2f7;
 }
 
+.seq-stat-cell:last-child,
 .seq-stat-card:last-child { border-right: none; }
 
 .seq-stat-label {
@@ -133,15 +164,6 @@
 .seq-stat-card.tone-amber .seq-stat-value { color: #d97706; }
 .seq-stat-card.tone-blue  .seq-stat-value { color: #2563eb; }
 .seq-stat-card.tone-rose  .seq-stat-value { color: #be123c; }
-
-/* ─── View controls bar ─── */
-.seq-view-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
 
 .seq-view-toggle {
   display: flex;
@@ -1521,6 +1543,7 @@
    RESPONSIVE
 ═══════════════════════════════════════ */
 @media (max-width: 1100px) {
+  .seq-overview-stats,
   .seq-stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .seq-activity-inline .seq-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1528,6 +1551,7 @@
 @media (max-width: 860px) {
   .seq-create-shell { grid-template-columns: 1fr; }
   .seq-builder-bar  { position: static; }
+  .seq-overview-stats,
   .seq-stat-strip   { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .seq-wstep-desc,
   .seq-wstep-text   { display: none; }
@@ -1536,5 +1560,6 @@
 
 @media (max-width: 620px) {
   .seq-grid       { grid-template-columns: 1fr; }
+  .seq-overview-stats,
   .seq-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

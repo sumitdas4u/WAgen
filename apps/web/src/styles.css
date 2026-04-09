@@ -7816,6 +7816,16 @@ textarea {
   overflow: auto;
 }
 
+.dashboard-route-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dashboard-route-viewport > * {
+  min-height: 100%;
+}
+
 .dashboard-shell.dashboard-clone-shell .clone-chat-wrap {
   overflow: hidden;
 }
@@ -9165,6 +9175,10 @@ select:focus {
 
 .dashboard-flat-main {
   background: #ffffff !important;
+}
+
+.dashboard-flat-main .dashboard-route-viewport {
+  background: #f7fbf8 !important;
 }
 
 .dashboard-flat-header {

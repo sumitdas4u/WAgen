@@ -544,7 +544,9 @@ function DashboardShellLayout() {
             </div>
           ) : null}
 
-          {renderOutlet()}
+          <div className="dashboard-route-viewport">
+            {renderOutlet()}
+          </div>
         </section>
       </section>
     </main>
