@@ -1568,6 +1568,8 @@ export interface Conversation {
   last_message_at: string | null;
   ai_paused: boolean;
   manual_takeover: boolean;
+  unread_count?: number;
+  visitor_online?: boolean;
 }
 
 export function fetchConversations(token: string) {
@@ -1806,6 +1808,13 @@ export interface ConversationMessage {
 
 export function fetchConversationMessages(token: string, conversationId: string) {
   return apiRequest<{ messages: ConversationMessage[] }>(`/api/conversations/${conversationId}/messages`, { token });
+}
+
+export function markConversationRead(token: string, conversationId: string) {
+  return apiRequest<{ ok: boolean; unreadCount: number }>(`/api/conversations/${conversationId}/read`, {
+    method: "POST",
+    token
+  });
 }
 
 export interface ConversationNote {

@@ -73,6 +73,8 @@ export interface ContactUpsertResult {
   action: "created" | "updated" | "skipped";
 }
 
+export type FlowContactUpdateOperation = "replace" | "append" | "add_if_empty";
+
 async function emitSequenceContactEvent(result: ContactUpsertResult): Promise<void> {
   if (result.action === "skipped") {
     return;
@@ -277,6 +279,32 @@ function isSourcePreserved(existingSource: ContactSourceType | null | undefined)
 
 function mergeTags(left: string[], right: string[]): string[] {
   return normalizeTags([...left, ...right]);
+}
+
+function applyTextOperation(
+  currentValue: string | null | undefined,
+  incomingValue: string | null | undefined,
+  operation: FlowContactUpdateOperation,
+  options?: { separator?: string }
+): string | null {
+  const current = String(currentValue ?? "").trim();
+  const incoming = String(incomingValue ?? "").trim();
+
+  if (operation === "add_if_empty") {
+    return current ? current : incoming || null;
+  }
+
+  if (operation === "append") {
+    if (!incoming) {
+      return current || null;
+    }
+    if (!current) {
+      return incoming;
+    }
+    return `${current}${options?.separator ?? ", "}${incoming}`;
+  }
+
+  return incoming || null;
 }
 
 function formatWorkbookDate(value: string | null | undefined): string {
@@ -776,6 +804,229 @@ export async function syncConversationContact(input: {
 
   await emitSequenceContactEvent(result);
   return result.contact;
+}
+
+export async function updateContactFieldValueFromFlow(input: {
+  userId: string;
+  fieldKey: string;
+  value: string;
+  operation: FlowContactUpdateOperation;
+  conversationId?: string | null;
+  contactId?: string | null;
+}): Promise<Contact | null> {
+  const fieldKey = input.fieldKey.trim();
+  if (!fieldKey) {
+    return null;
+  }
+
+  const result = await withTransaction(async (client) => {
+    let contact: Contact | null = null;
+
+    if (input.contactId) {
+      const byIdResult = await client.query<Contact>(
+        `SELECT *
+         FROM contacts
+         WHERE user_id = $1 AND id = $2
+         LIMIT 1`,
+        [input.userId, input.contactId]
+      );
+      contact = byIdResult.rows[0] ?? null;
+    }
+
+    if (!contact && input.conversationId) {
+      contact = await getContactByConversationId(input.userId, input.conversationId);
+    }
+
+    if (!contact && input.conversationId) {
+      const conversationResult = await client.query<{
+        id: string;
+        phone_number: string;
+        channel_type: ContactSourceType | null;
+      }>(
+        `SELECT id, phone_number, channel_type
+         FROM conversations
+         WHERE user_id = $1 AND id = $2
+         LIMIT 1`,
+        [input.userId, input.conversationId]
+      );
+
+      const conversation = conversationResult.rows[0] ?? null;
+      if (conversation?.phone_number) {
+        const upserted = await upsertContact(client, {
+          userId: input.userId,
+          phoneNumber: conversation.phone_number,
+          sourceType: conversation.channel_type ?? "api",
+          linkedConversationId: conversation.id
+        });
+        contact = upserted.contact;
+      }
+    }
+
+    if (!contact) {
+      return null;
+    }
+
+    const op = input.operation;
+    const rawValue = String(input.value ?? "").trim();
+
+    if (fieldKey === "tags") {
+      const nextTags =
+        op === "add_if_empty"
+          ? contact.tags.length > 0
+            ? contact.tags
+            : parseTagCell(rawValue)
+          : op === "append"
+            ? mergeTags(contact.tags, parseTagCell(rawValue))
+            : parseTagCell(rawValue);
+
+      contact = await updateContact(client, contact.id, {
+        displayName: contact.display_name,
+        email: contact.email,
+        contactType: contact.contact_type,
+        tags: nextTags,
+        sourceType: contact.source_type,
+        sourceId: contact.source_id,
+        sourceUrl: contact.source_url,
+        linkedConversationId: contact.linked_conversation_id
+      });
+    } else if (fieldKey === "name") {
+      contact = await updateContact(client, contact.id, {
+        displayName: normalizeDisplayName(applyTextOperation(contact.display_name, rawValue, op)),
+        email: contact.email,
+        contactType: contact.contact_type,
+        tags: contact.tags,
+        sourceType: contact.source_type,
+        sourceId: contact.source_id,
+        sourceUrl: contact.source_url,
+        linkedConversationId: contact.linked_conversation_id
+      });
+    } else if (fieldKey === "email") {
+      const nextEmailValue = applyTextOperation(contact.email, rawValue, op);
+      contact = await updateContact(client, contact.id, {
+        displayName: contact.display_name,
+        email: nextEmailValue ? normalizeEmail(nextEmailValue) ?? contact.email : null,
+        contactType: contact.contact_type,
+        tags: contact.tags,
+        sourceType: contact.source_type,
+        sourceId: contact.source_id,
+        sourceUrl: contact.source_url,
+        linkedConversationId: contact.linked_conversation_id
+      });
+    } else if (fieldKey === "phone") {
+      const nextPhoneValue = applyTextOperation(contact.phone_number, rawValue, op);
+      const normalizedPhone = normalizePhoneNumber(nextPhoneValue);
+      if (normalizedPhone) {
+        await client.query(
+          `UPDATE contacts
+           SET phone_number = $1,
+               linked_conversation_id = COALESCE($2, linked_conversation_id),
+               updated_at = NOW()
+           WHERE id = $3`,
+          [normalizedPhone, contact.linked_conversation_id, contact.id]
+        );
+        contact = await getContactByPhone(client, input.userId, normalizedPhone);
+      }
+    } else if (fieldKey === "type") {
+      const nextTypeValue = applyTextOperation(contact.contact_type, rawValue, op);
+      const normalizedType = normalizeContactType(nextTypeValue) ?? contact.contact_type;
+      contact = await updateContact(client, contact.id, {
+        displayName: contact.display_name,
+        email: contact.email,
+        contactType: normalizedType,
+        tags: contact.tags,
+        sourceType: contact.source_type,
+        sourceId: contact.source_id,
+        sourceUrl: contact.source_url,
+        linkedConversationId: contact.linked_conversation_id
+      });
+    } else if (fieldKey === "source") {
+      const nextSourceValue = applyTextOperation(contact.source_type, rawValue, op);
+      const normalizedSource = normalizeSourceType(nextSourceValue) ?? contact.source_type;
+      contact = await updateContact(client, contact.id, {
+        displayName: contact.display_name,
+        email: contact.email,
+        contactType: contact.contact_type,
+        tags: contact.tags,
+        sourceType: normalizedSource,
+        sourceId: contact.source_id,
+        sourceUrl: contact.source_url,
+        linkedConversationId: contact.linked_conversation_id
+      });
+    } else if (fieldKey === "source_id") {
+      contact = await updateContact(client, contact.id, {
+        displayName: contact.display_name,
+        email: contact.email,
+        contactType: contact.contact_type,
+        tags: contact.tags,
+        sourceType: contact.source_type,
+        sourceId: applyTextOperation(contact.source_id, rawValue, op),
+        sourceUrl: contact.source_url,
+        linkedConversationId: contact.linked_conversation_id
+      });
+    } else if (fieldKey === "source_url") {
+      contact = await updateContact(client, contact.id, {
+        displayName: contact.display_name,
+        email: contact.email,
+        contactType: contact.contact_type,
+        tags: contact.tags,
+        sourceType: contact.source_type,
+        sourceId: contact.source_id,
+        sourceUrl: applyTextOperation(contact.source_url, rawValue, op),
+        linkedConversationId: contact.linked_conversation_id
+      });
+    } else if (fieldKey.startsWith("custom.")) {
+      const fieldName = fieldKey.slice("custom.".length).trim();
+      if (fieldName) {
+        const customFieldResult = await client.query<{
+          id: string;
+          field_type: string;
+          value: string | null;
+        }>(
+          `SELECT cf.id, cf.field_type, cfv.value
+           FROM contact_fields cf
+           LEFT JOIN contact_field_values cfv
+             ON cfv.field_id = cf.id
+            AND cfv.contact_id = $2
+           WHERE cf.user_id = $1
+             AND cf.name = $3
+           LIMIT 1`,
+          [input.userId, contact.id, fieldName]
+        );
+
+        const customField = customFieldResult.rows[0] ?? null;
+        if (customField) {
+          const nextValue =
+            op === "append" && customField.field_type === "MULTI_TEXT"
+              ? mergeTags(parseTagCell(customField.value), parseTagCell(rawValue)).join(", ")
+              : applyTextOperation(customField.value, rawValue, op);
+
+          await client.query(
+            `INSERT INTO contact_field_values (contact_id, field_id, value)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (contact_id, field_id)
+             DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+            [contact.id, customField.id, nextValue]
+          );
+        }
+      }
+    }
+
+    if (!contact) {
+      return null;
+    }
+
+    const fieldValuesMap = await loadFieldValues(client, [contact.id]);
+    return {
+      ...contact,
+      custom_field_values: fieldValuesMap.get(contact.id) ?? []
+    };
+  });
+
+  if (result) {
+    await emitSequenceContactEvent({ action: "updated", contact: result });
+  }
+
+  return result;
 }
 
 export async function reconcileContactPhone(

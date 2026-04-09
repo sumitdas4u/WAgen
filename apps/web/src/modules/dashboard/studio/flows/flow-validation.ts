@@ -57,6 +57,7 @@ const BLOCK_CHANNELS: Record<AnyNodeData["kind"], FlowChannel[]> = {
   singleProduct: ["api"],
   template: ["api"],
   textButtons: ["api"],
+  updateContactField: ["web", "qr", "api"],
   whatsappPay: ["api"]
 };
 

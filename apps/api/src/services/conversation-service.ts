@@ -5,6 +5,7 @@ import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-co
 import { openAIService } from "./openai-service.js";
 import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
 import { extractCapturedProfileDetails, reconcileContactPhone, syncConversationContact } from "./contacts-service.js";
+import { isWidgetVisitorConnected } from "./widget-connection-registry.js";
 import {
   deriveRendererMessageType,
   type FlowMessagePayload,
@@ -460,6 +461,33 @@ export async function getConversationById(conversationId: string): Promise<Conve
   return result.rows[0] ?? null;
 }
 
+export async function incrementConversationUnreadCount(userId: string, conversationId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO conversation_read_state (user_id, conversation_id, unread_count, last_read_at, updated_at)
+     VALUES ($1, $2, 1, NULL, NOW())
+     ON CONFLICT (user_id, conversation_id)
+     DO UPDATE SET
+       unread_count = conversation_read_state.unread_count + 1,
+       updated_at = NOW()`,
+    [userId, conversationId]
+  );
+}
+
+export async function markConversationRead(userId: string, conversationId: string): Promise<number> {
+  await pool.query(
+    `INSERT INTO conversation_read_state (user_id, conversation_id, unread_count, last_read_at, updated_at)
+     VALUES ($1, $2, 0, NOW(), NOW())
+     ON CONFLICT (user_id, conversation_id)
+     DO UPDATE SET
+       unread_count = 0,
+       last_read_at = NOW(),
+       updated_at = NOW()`,
+    [userId, conversationId]
+  );
+
+  return 0;
+}
+
 export async function trackInboundMessage(
   userId: string,
   phoneNumber: string,
@@ -542,6 +570,7 @@ export async function trackInboundMessage(
       [conversation.id, senderName ?? null, message]
     );
   }
+  await incrementConversationUnreadCount(userId, conversation.id);
 
   const capturedProfile = extractCapturedProfileDetails(message);
   const contactPhoneNumber = capturedProfile.phoneNumber ?? phoneNumber;
@@ -705,6 +734,8 @@ export async function listConversations(
       contact_phone: string | null;
       contact_email: string | null;
       assigned_agent_name: string | null;
+      unread_count: number;
+      visitor_online: boolean;
     }
   >
 > {
@@ -714,12 +745,14 @@ export async function listConversations(
       contact_phone: string | null;
       contact_email: string | null;
       assigned_agent_name: string | null;
+      unread_count: number;
     }
   >(
     `SELECT
        c.*,
        COALESCE(ct.contact_type, c.lead_kind) AS lead_kind,
        ap.name AS assigned_agent_name,
+       COALESCE(crs.unread_count, 0) AS unread_count,
        COALESCE(
          ct.display_name,
          (
@@ -768,6 +801,9 @@ export async function listConversations(
        ) AS contact_email
      FROM conversations c
      LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
+     LEFT JOIN conversation_read_state crs
+       ON crs.user_id = c.user_id
+      AND crs.conversation_id = c.id
      LEFT JOIN LATERAL (
        SELECT *
        FROM contacts ct
@@ -781,7 +817,11 @@ export async function listConversations(
     [userId]
   );
 
-  return result.rows;
+  return result.rows.map((row) => ({
+    ...row,
+    unread_count: Number(row.unread_count ?? 0),
+    visitor_online: row.channel_type === "web" ? isWidgetVisitorConnected(userId, row.phone_number) : false
+  }));
 }
 
 export interface LeadConversation extends Conversation {

@@ -25,6 +25,7 @@ import { sendMediaStudioBlock } from "./basic/send-media";
 import { sendPollStudioBlock } from "./basic/send-poll";
 import { sendTextMenuStudioBlock } from "./basic/send-text-menu";
 import { sendTextStudioBlock } from "./basic/send-text";
+import { updateContactFieldStudioBlock } from "./basic/update-contact-field";
 import { templateStudioBlock } from "./basic/template";
 import { textButtonsStudioBlock } from "./basic/text-buttons";
 import { multiProductStudioBlock } from "./legacy/multi-product";
@@ -44,6 +45,7 @@ export const studioFlowBlocks: StudioFlowBlockDefinition[] = [
   sendMediaStudioBlock,
   sendLocationStudioBlock,
   sendContactStudioBlock,
+  updateContactFieldStudioBlock,
   sendPollStudioBlock,
   sendTextMenuStudioBlock,
   sendImageMenuStudioBlock,

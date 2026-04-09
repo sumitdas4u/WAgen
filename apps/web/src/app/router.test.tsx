@@ -348,4 +348,5 @@ describe("dashboard router", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Connect to Website")).not.toBeInTheDocument();
   });
+
 });

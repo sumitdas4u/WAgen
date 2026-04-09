@@ -1,10 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { pool } from "../db/pool.js";
-import { getOrCreateConversation } from "./conversation-service.js";
+import { getOrCreateConversation, incrementConversationUnreadCount } from "./conversation-service.js";
 import { syncConversationContact } from "./contacts-service.js";
 import { processIncomingMessage } from "./message-router-service.js";
 import { getUserById } from "./user-service.js";
+import {
+  addWidgetConnection,
+  getWidgetConnections,
+  removeWidgetConnection
+} from "./widget-connection-registry.js";
 
 type WidgetSocketEvent =
   | { event: "ready"; data: { visitorId: string } }
@@ -21,7 +26,6 @@ interface WidgetInboundPayload {
   email?: string;
 }
 
-const widgetConnections = new Map<string, Set<WebSocket>>();
 const widgetLeadProfiles = new Map<string, { name: string; phone: string; email: string }>();
 
 function safeJsonParse(raw: string): unknown {
@@ -71,29 +75,6 @@ function sendEvent(socket: WebSocket, event: WidgetSocketEvent): void {
   socket.send(JSON.stringify(event));
 }
 
-function connectionKey(userId: string, visitorId: string): string {
-  return `${userId}::${visitorId}`;
-}
-
-function addWidgetConnection(userId: string, visitorId: string, socket: WebSocket): void {
-  const key = connectionKey(userId, visitorId);
-  const sockets = widgetConnections.get(key) ?? new Set<WebSocket>();
-  sockets.add(socket);
-  widgetConnections.set(key, sockets);
-}
-
-function removeWidgetConnection(userId: string, visitorId: string, socket: WebSocket): void {
-  const key = connectionKey(userId, visitorId);
-  const sockets = widgetConnections.get(key);
-  if (!sockets) {
-    return;
-  }
-  sockets.delete(socket);
-  if (sockets.size === 0) {
-    widgetConnections.delete(key);
-  }
-}
-
 async function persistWidgetLeadProfile(input: {
   userId: string;
   visitorId: string;
@@ -136,6 +117,7 @@ async function persistWidgetLeadProfile(input: {
      WHERE id = $1`,
     [conversation.id, leadMessage]
   );
+  await incrementConversationUnreadCount(input.userId, conversation.id);
 
   await syncConversationContact({
     userId: input.userId,
@@ -159,8 +141,7 @@ export async function sendWidgetConversationMessage(input: {
     return false;
   }
 
-  const key = connectionKey(input.userId, visitorId);
-  const sockets = widgetConnections.get(key);
+  const sockets = getWidgetConnections(input.userId, visitorId);
   if (!sockets || sockets.size === 0) {
     return false;
   }
@@ -233,7 +214,7 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
             return;
           }
 
-          const key = connectionKey(wid, visitorId);
+          const key = `${wid}::${visitorId}`;
           widgetLeadProfiles.set(key, { name, phone, email });
 
           try {
@@ -269,7 +250,7 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
           return;
         }
 
-        const rememberedProfile = widgetLeadProfiles.get(connectionKey(wid, visitorId));
+        const rememberedProfile = widgetLeadProfiles.get(`${wid}::${visitorId}`);
 
         try {
           const result = await processIncomingMessage({
