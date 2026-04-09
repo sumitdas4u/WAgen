@@ -4,14 +4,18 @@ import { env } from "../config/env.js";
 import {
   completeMetaEmbeddedSignup,
   disconnectMetaBusinessConnection,
+  getMetaBusinessProfile,
   getMetaBusinessConfig,
   getMetaBusinessStatus,
   handleMetaWebhookPayload,
   sendMetaTextMessage,
+  updateMetaBusinessProfile,
+  uploadMetaBusinessProfileLogo,
   verifyMetaWebhookSignature
 } from "../services/meta-whatsapp-service.js";
 import { processMetaDeliveryStatuses } from "../services/message-delivery-service.js";
 import { applyTemplateWebhookUpdate } from "../services/template-service.js";
+import { readFile } from "node:fs/promises";
 
 const CompleteEmbeddedSignupSchema = z.object({
   code: z.string().trim().min(4),
@@ -30,6 +34,21 @@ const SendTextSchema = z.object({
 
 const DisconnectSchema = z.object({
   connectionId: z.string().uuid().optional()
+});
+
+const BusinessProfileQuerySchema = z.object({
+  connectionId: z.string().uuid().optional()
+});
+
+const BusinessProfileUpdateSchema = z.object({
+  connectionId: z.string().uuid().optional(),
+  address: z.string().trim().max(256).optional().nullable(),
+  businessDescription: z.string().trim().max(256).optional().nullable(),
+  email: z.string().trim().email().max(128).optional().nullable().or(z.literal("")),
+  vertical: z.string().trim().max(64).optional().nullable(),
+  websiteUrl: z.string().trim().url().max(256).optional().nullable().or(z.literal("")),
+  about: z.string().trim().max(139).optional().nullable(),
+  profilePictureHandle: z.string().trim().max(512).optional().nullable()
 });
 
 const perMinuteCounter = new Map<string, { count: number; resetAt: number }>();
@@ -125,6 +144,85 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
         parsed.data.connectionId
       );
       return { ok: disconnected };
+    }
+  );
+
+  fastify.get(
+    "/api/meta/business/profile",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = BusinessProfileQuerySchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid profile query" });
+      }
+
+      const profile = await getMetaBusinessProfile(request.authUser.userId, parsed.data.connectionId);
+      return { profile };
+    }
+  );
+
+  fastify.post(
+    "/api/meta/business/profile",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = BusinessProfileUpdateSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid business profile payload" });
+      }
+
+      const profile = await updateMetaBusinessProfile({
+        userId: request.authUser.userId,
+        connectionId: parsed.data.connectionId,
+        address: parsed.data.address ?? null,
+        businessDescription: parsed.data.businessDescription ?? null,
+        email: parsed.data.email || null,
+        vertical: parsed.data.vertical ?? null,
+        websiteUrl: parsed.data.websiteUrl || null,
+        about: parsed.data.about ?? null,
+        profilePictureHandle: parsed.data.profilePictureHandle ?? null
+      });
+      return { ok: true, profile };
+    }
+  );
+
+  fastify.post(
+    "/api/meta/business/profile/logo",
+    { preHandler: [fastify.requireAuth] },
+    async (request: import("fastify").FastifyRequest, reply) => {
+      const parsed = BusinessProfileQuerySchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid logo upload query" });
+      }
+
+      const files = await request.saveRequestFiles();
+      try {
+        if (files.length === 0) {
+          return reply.status(400).send({ error: "A logo file is required" });
+        }
+
+        const file = files[0]!;
+        const mimeType = (file.mimetype ?? "").toLowerCase();
+        if (!["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(mimeType)) {
+          return reply.status(400).send({ error: "Logo must be a PNG, JPG, or WEBP image." });
+        }
+
+        const buffer = await readFile(file.filepath);
+        if (buffer.byteLength > 5 * 1024 * 1024) {
+          return reply.status(400).send({ error: "Logo file exceeds 5MB limit." });
+        }
+
+        const result = await uploadMetaBusinessProfileLogo({
+          userId: request.authUser.userId,
+          connectionId: parsed.data.connectionId,
+          fileBuffer: buffer,
+          mimeType,
+          fileName: file.filename ?? null
+        });
+
+        return { ok: true, ...result };
+      } finally {
+        await request.cleanRequestFiles();
+      }
     }
   );
 

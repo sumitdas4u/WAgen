@@ -4,10 +4,13 @@ import {
   deleteMyAccount,
   disconnectMetaBusiness,
   disconnectWhatsApp,
+  fetchMetaBusinessProfile,
   fetchMetaBusinessConfig,
   fetchMetaBusinessStatus,
   setAgentActive,
-  type CompleteMetaSignupPayload
+  type CompleteMetaSignupPayload,
+  updateMetaBusinessProfile,
+  uploadMetaBusinessProfileLogo
 } from "../../../lib/api";
 
 export function fetchSettingsMetaConfig(token: string) {
@@ -32,6 +35,21 @@ export function completeMetaSignup(token: string, payload: CompleteMetaSignupPay
 
 export function deactivateMetaChannel(token: string, connectionId?: string) {
   return disconnectMetaBusiness(token, { connectionId });
+}
+
+export function fetchSettingsMetaProfile(token: string, connectionId?: string) {
+  return fetchMetaBusinessProfile(token, { connectionId });
+}
+
+export function saveSettingsMetaProfile(
+  token: string,
+  payload: Parameters<typeof updateMetaBusinessProfile>[1]
+) {
+  return updateMetaBusinessProfile(token, payload);
+}
+
+export function uploadSettingsMetaProfileLogo(token: string, file: File, connectionId?: string) {
+  return uploadMetaBusinessProfileLogo(token, file, { connectionId });
 }
 
 export function toggleWebsiteAgent(token: string, active: boolean) {

@@ -64,6 +64,18 @@ export interface MetaConnection {
   updatedAt: string;
 }
 
+export interface MetaBusinessProfile {
+  connectionId: string;
+  phoneNumberId: string;
+  displayPictureUrl: string | null;
+  address: string | null;
+  businessDescription: string | null;
+  email: string | null;
+  vertical: string | null;
+  websites: string[];
+  about: string | null;
+}
+
 export interface CompleteEmbeddedSignupInput {
   code: string;
   redirectUri?: string;
@@ -91,6 +103,16 @@ interface GraphPhone {
   id: string;
   display_phone_number?: string;
   verified_name?: string;
+}
+
+interface GraphWhatsAppBusinessProfile {
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  profile_picture_url?: string;
+  websites?: unknown;
+  vertical?: string;
 }
 
 type MetaStatusSnapshot = {
@@ -215,6 +237,35 @@ function normalizePhoneDigits(input: string | null | undefined): string | null {
     return null;
   }
   return digits;
+}
+
+function trimToNull(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter((item) => item.length > 0);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return parseStringArray(parsed);
+    } catch {
+      return [trimmed];
+    }
+  }
+  return [];
 }
 
 function getTokenCipherKey(): Buffer {
@@ -1143,6 +1194,58 @@ async function getLatestConnectionRowByUserId(userId: string): Promise<MetaConne
   return result.rows[0] ?? null;
 }
 
+async function getProfileTargetConnectionRow(userId: string, connectionId?: string): Promise<MetaConnectionRow | null> {
+  if (connectionId) {
+    const result = await pool.query<MetaConnectionRow>(
+      `SELECT id,
+              user_id,
+              meta_business_id,
+              waba_id,
+              phone_number_id,
+              display_phone_number,
+              linked_number,
+              access_token_encrypted,
+              token_expires_at::text,
+              subscription_status,
+              status,
+              billing_mode,
+              billing_status,
+              billing_owner_business_id,
+              billing_attached_at::text,
+              billing_error,
+              billing_credit_line_id,
+              billing_allocation_config_id,
+              billing_currency,
+              metadata_json,
+              created_at::text,
+              updated_at::text
+       FROM whatsapp_business_connections
+       WHERE user_id = $1
+         AND id = $2
+         AND status <> 'disconnected'
+       LIMIT 1`,
+      [userId, connectionId]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  return getLatestConnectionRowByUserId(userId);
+}
+
+function mapMetaBusinessProfile(row: MetaConnectionRow, profile: GraphWhatsAppBusinessProfile | null): MetaBusinessProfile {
+  return {
+    connectionId: row.id,
+    phoneNumberId: row.phone_number_id,
+    displayPictureUrl: trimToNull(profile?.profile_picture_url),
+    address: trimToNull(profile?.address),
+    businessDescription: trimToNull(profile?.description),
+    email: trimToNull(profile?.email),
+    vertical: trimToNull(profile?.vertical),
+    websites: parseStringArray(profile?.websites),
+    about: trimToNull(profile?.about)
+  };
+}
+
 async function getConnectionRowByUserAndLinkedNumber(
   userId: string,
   linkedNumber: string
@@ -1501,6 +1604,91 @@ export async function getMetaBusinessStatus(
   return {
     connected: row?.status === "connected",
     connection: row ? mapConnection(row) : null
+  };
+}
+
+export async function getMetaBusinessProfile(userId: string, connectionId?: string): Promise<MetaBusinessProfile> {
+  const row = await getProfileTargetConnectionRow(userId, connectionId);
+  if (!row) {
+    throw new Error("No connected WhatsApp Business API number found.");
+  }
+
+  const accessToken = decryptToken(row.access_token_encrypted);
+  const response = await graphGet<GraphListResponse<GraphWhatsAppBusinessProfile>>(
+    `/${row.phone_number_id}/whatsapp_business_profile`,
+    accessToken,
+    {
+      fields: "about,address,description,email,profile_picture_url,websites,vertical"
+    }
+  );
+
+  return mapMetaBusinessProfile(row, response.data?.[0] ?? null);
+}
+
+export async function updateMetaBusinessProfile(input: {
+  userId: string;
+  connectionId?: string;
+  address?: string | null;
+  businessDescription?: string | null;
+  email?: string | null;
+  vertical?: string | null;
+  websiteUrl?: string | null;
+  about?: string | null;
+  profilePictureHandle?: string | null;
+}): Promise<MetaBusinessProfile> {
+  const row = await getProfileTargetConnectionRow(input.userId, input.connectionId);
+  if (!row) {
+    throw new Error("No connected WhatsApp Business API number found.");
+  }
+
+  const accessToken = decryptToken(row.access_token_encrypted);
+  const websites = trimToNull(input.websiteUrl) ? [trimToNull(input.websiteUrl)!] : [];
+  await graphPostForm<{ success?: boolean }>(
+    `/${row.phone_number_id}/whatsapp_business_profile`,
+    accessToken,
+    {
+      messaging_product: "whatsapp",
+      address: trimToNull(input.address) ?? undefined,
+      description: trimToNull(input.businessDescription) ?? undefined,
+      email: trimToNull(input.email) ?? undefined,
+      vertical: trimToNull(input.vertical) ?? undefined,
+      websites: websites.length > 0 ? JSON.stringify(websites) : undefined,
+      about: trimToNull(input.about) ?? undefined,
+      profile_picture_handle: trimToNull(input.profilePictureHandle) ?? undefined
+    }
+  );
+
+  return getMetaBusinessProfile(input.userId, row.id);
+}
+
+export async function uploadMetaBusinessProfileLogo(input: {
+  userId: string;
+  connectionId?: string;
+  fileBuffer: Buffer;
+  mimeType: string;
+  fileName?: string | null;
+}): Promise<{ connectionId: string; phoneNumberId: string; handle: string }> {
+  if (!env.META_APP_ID?.trim()) {
+    throw new Error("Meta app configuration is missing. Set META_APP_ID before uploading a logo.");
+  }
+
+  const row = await getProfileTargetConnectionRow(input.userId, input.connectionId);
+  if (!row) {
+    throw new Error("No connected WhatsApp Business API number found.");
+  }
+
+  const accessToken = decryptToken(row.access_token_encrypted);
+  const uploadSession = await graphStartUploadSession(env.META_APP_ID.trim(), accessToken, {
+    fileName: trimToNull(input.fileName) ?? `profile-logo.${input.mimeType.split("/")[1] ?? "png"}`,
+    fileLength: input.fileBuffer.byteLength,
+    fileType: input.mimeType
+  });
+  const result = await graphUploadFileHandle(uploadSession.id, accessToken, input.fileBuffer, input.mimeType);
+
+  return {
+    connectionId: row.id,
+    phoneNumberId: row.phone_number_id,
+    handle: result.h
   };
 }
 

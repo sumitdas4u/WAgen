@@ -413,7 +413,10 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
   const apiDisconnectMutation = useMutation({
     mutationFn: () => deactivateMetaChannel(token, metaBusinessStatus.connection?.id),
     onSuccess: async () => {
-      await updateShellState();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus }),
+        updateShellState()
+      ]);
       setInfo("Official WhatsApp API channel deactivated.");
     },
     onError: (mutationError) => setError((mutationError as Error).message)

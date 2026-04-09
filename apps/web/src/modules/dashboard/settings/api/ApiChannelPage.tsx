@@ -1,13 +1,15 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import type { MetaBusinessConfig, MetaBusinessStatus } from "../../../../lib/api";
-import { useAuth } from "../../../../lib/auth-context";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import type { MetaBusinessConfig, MetaBusinessProfile, MetaBusinessStatus } from "../../../../lib/api";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import {
   completeMetaSignup,
   deactivateMetaChannel,
-  fetchSettingsMetaStatus
+  fetchSettingsMetaProfile,
+  fetchSettingsMetaStatus,
+  saveSettingsMetaProfile,
+  uploadSettingsMetaProfileLogo
 } from "../api";
 import { useSettingsMetaConfigQuery, useSettingsMetaStatusQuery } from "../queries";
 
@@ -44,6 +46,9 @@ const DEFAULT_PROFILE_DRAFT: WhatsAppBusinessProfileDraft = {
   websiteUrl: "",
   about: ""
 };
+
+const PROFILE_QUERY_KEY = [...dashboardQueryKeys.settingsMetaStatus, "profile"] as const;
+const PROFILE_VERTICAL_OPTIONS = ["Restaurant", "Retail", "Education", "Healthcare", "Services", "Other"];
 
 declare global {
   interface Window {
@@ -136,21 +141,24 @@ async function ensureFacebookSdk(appId: string, graphVersion: string): Promise<v
 
 export function ApiChannelPage() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const { token, bootstrap, refetchBootstrap } = useDashboardShell();
   const [busy, setBusy] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupLoadingText, setSetupLoadingText] = useState<string | null>(null);
   const [profileDraft, setProfileDraft] = useState(DEFAULT_PROFILE_DRAFT);
+  const [profilePictureHandle, setProfilePictureHandle] = useState<string | null>(null);
+  const [profilePicturePreviewUrl, setProfilePicturePreviewUrl] = useState<string | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const metaConfigQuery = useSettingsMetaConfigQuery(token);
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
   const metaStatus: MetaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, connection: null } as MetaBusinessStatus);
   const metaConfig = metaConfigQuery.data ?? null;
+  const connectionId = metaStatus.connection?.id;
 
   const metaHealthRecord = getNestedRecord(metaStatus.connection?.metadata?.metaHealth);
   const businessVerificationStatus = readMetaString(metaHealthRecord, "businessVerificationStatus");
@@ -159,6 +167,7 @@ export function ApiChannelPage() {
   const messagingLimitTier = readMetaString(metaHealthRecord, "messagingLimitTier");
   const codeVerificationStatus = readMetaString(metaHealthRecord, "codeVerificationStatus");
   const nameStatus = readMetaString(metaHealthRecord, "nameStatus");
+  const verifiedName = readMetaString(metaHealthRecord, "verifiedName");
   const lastMetaSyncLabel = parseMetaTimestamp(readMetaString(metaHealthRecord, "syncedAt"));
   const businessVerificationLower = (businessVerificationStatus ?? "").toLowerCase();
   const businessVerificationPending = !/(verified|approved|complete)/.test(businessVerificationLower);
@@ -168,6 +177,38 @@ export function ApiChannelPage() {
     metaStatus.connection?.billingStatus,
     sharedBillingSupported ? "Pending" : "Not configured"
   );
+  const profileQuery = useQuery({
+    queryKey: [...PROFILE_QUERY_KEY, connectionId ?? "none"],
+    enabled: Boolean(connectionId),
+    queryFn: async () => {
+      const response = await fetchSettingsMetaProfile(token, connectionId);
+      return response.profile;
+    }
+  });
+
+  useEffect(() => {
+    if (!connectionId) {
+      setProfileDraft(DEFAULT_PROFILE_DRAFT);
+      setProfilePictureHandle(null);
+      setProfilePicturePreviewUrl(null);
+      return;
+    }
+    const profile = profileQuery.data;
+    if (!profile) {
+      return;
+    }
+    setProfileDraft({
+      displayPictureUrl: profile.displayPictureUrl ?? "",
+      address: profile.address ?? "",
+      businessDescription: profile.businessDescription ?? "",
+      email: profile.email ?? "",
+      vertical: profile.vertical ?? DEFAULT_PROFILE_DRAFT.vertical,
+      websiteUrl: profile.websites[0] ?? "",
+      about: profile.about ?? ""
+    });
+    setProfilePictureHandle(null);
+    setProfilePicturePreviewUrl(null);
+  }, [connectionId, profileQuery.data]);
 
   const updateShellState = async () => {
     await Promise.all([
@@ -178,11 +219,96 @@ export function ApiChannelPage() {
 
   const disconnectMutation = useMutation({
     mutationFn: () => deactivateMetaChannel(token, metaStatus.connection?.id),
-    onSuccess: async () => { await updateShellState(); setInfo("Official WhatsApp API channel deactivated."); },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus }),
+        queryClient.removeQueries({ queryKey: PROFILE_QUERY_KEY }),
+        updateShellState()
+      ]);
+      setInfo("Official WhatsApp API channel deactivated.");
+    },
+    onError: (err) => setError((err as Error).message)
+  });
+  const saveProfileMutation = useMutation({
+    mutationFn: async () => {
+      const response = await saveSettingsMetaProfile(token, {
+        connectionId,
+        address: profileDraft.address,
+        businessDescription: profileDraft.businessDescription,
+        email: profileDraft.email,
+        vertical: profileDraft.vertical,
+        websiteUrl: profileDraft.websiteUrl,
+        about: profileDraft.about,
+        profilePictureHandle
+      });
+      return response.profile;
+    },
+    onSuccess: async (profile) => {
+      queryClient.setQueryData([...PROFILE_QUERY_KEY, connectionId ?? "none"], profile);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus }),
+        updateShellState()
+      ]);
+      setProfilePictureHandle(null);
+      setProfileDraft({
+        displayPictureUrl: profile.displayPictureUrl ?? "",
+        address: profile.address ?? "",
+        businessDescription: profile.businessDescription ?? "",
+        email: profile.email ?? "",
+        vertical: profile.vertical ?? DEFAULT_PROFILE_DRAFT.vertical,
+        websiteUrl: profile.websites[0] ?? "",
+        about: profile.about ?? ""
+      });
+      setInfo("WhatsApp Business profile updated on Meta.");
+    },
+    onError: (err) => setError((err as Error).message)
+  });
+  const uploadLogoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const response = await uploadSettingsMetaProfileLogo(token, file, connectionId);
+      return { file, handle: response.handle };
+    },
+    onSuccess: ({ file, handle }) => {
+      const previewUrl = URL.createObjectURL(file);
+      if (profilePicturePreviewUrl) {
+        URL.revokeObjectURL(profilePicturePreviewUrl);
+      }
+      setProfilePicturePreviewUrl(previewUrl);
+      setProfilePictureHandle(handle);
+      setProfileDraft((current) => ({ ...current, displayPictureUrl: previewUrl }));
+      setInfo("Logo uploaded. Click Apply to publish it to Meta.");
+    },
     onError: (err) => setError((err as Error).message)
   });
 
   const currentBusy = busy || setupLoading || disconnectMutation.isPending;
+
+  const resetProfileDraft = (profile?: MetaBusinessProfile | null) => {
+    const nextProfile = profile ?? profileQuery.data ?? null;
+    if (!nextProfile) {
+      setProfileDraft(DEFAULT_PROFILE_DRAFT);
+      setProfilePictureHandle(null);
+      if (profilePicturePreviewUrl) {
+        URL.revokeObjectURL(profilePicturePreviewUrl);
+      }
+      setProfilePicturePreviewUrl(null);
+      return;
+    }
+    if (profilePicturePreviewUrl) {
+      URL.revokeObjectURL(profilePicturePreviewUrl);
+    }
+    setProfileDraft({
+      displayPictureUrl: nextProfile.displayPictureUrl ?? "",
+      address: nextProfile.address ?? "",
+      businessDescription: nextProfile.businessDescription ?? "",
+      email: nextProfile.email ?? "",
+      vertical: nextProfile.vertical ?? DEFAULT_PROFILE_DRAFT.vertical,
+      websiteUrl: nextProfile.websites[0] ?? "",
+      about: nextProfile.about ?? ""
+    });
+    setProfilePictureHandle(null);
+    setProfilePicturePreviewUrl(null);
+  };
 
   const openBusinessApiSetup = async () => {
     setBusy(true); setSetupLoading(true); setSetupLoadingText("Opening Facebook login..."); setError(null); setInfo(null);
@@ -318,32 +444,88 @@ export function ApiChannelPage() {
           <div><h3>Last Meta Sync</h3><p>{lastMetaSyncLabel ?? "Not synced"}</p></div>
         </div>
 
-        <div className="api-profile-tabs">
-          {["Profile", "Compliance Info", "Assignments", "Configuration", "Channel Logs"].map((tab) => (
-            <button key={tab} type="button" className={tab === "Profile" ? "active" : ""}>{tab}</button>
-          ))}
+        <div className="api-setup-alert">
+          <strong>Profile Approval</strong>
+          <p>
+            Business name status is {formatMetaStatusLabel(nameStatus, "Pending")}. Upload your logo and apply profile details here to sync them directly to Meta.
+          </p>
+        </div>
+
+        <div className="clone-channel-meta">
+          <div><h3>Display Name</h3><p>{verifiedName ?? "Not available"}</p></div>
+          <div><h3>Name Approval</h3><p>{formatMetaStatusLabel(nameStatus, "Pending")}</p></div>
+          <div><h3>Official Business</h3><p>{nameStatus && /approved|available|verified/i.test(nameStatus) ? "Eligible / healthy" : "Manage in Meta"}</p></div>
+        </div>
+
+        <div className="api-setup-alert">
+          <strong>Display name and blue tick</strong>
+          <p>
+            This page now manages the synced business profile fields directly with Meta. Display name review and Official Business Account approval still depend on Meta review rules and may need action inside Meta if they are rejected.
+          </p>
         </div>
 
         <form className="api-profile-form" onSubmit={(e) => {
           e.preventDefault();
-          if (!user?.id) return;
-          window.localStorage.setItem(`wagenai_whatsapp_business_profile_draft_${user.id}`, JSON.stringify(profileDraft));
-          setInfo("WhatsApp Business profile draft saved.");
+          setError(null);
+          setInfo(null);
+          saveProfileMutation.mutate();
         }}>
-          <label>WhatsApp Display Picture URL<input value={profileDraft.displayPictureUrl} onChange={(e) => setProfileDraft((c) => ({ ...c, displayPictureUrl: e.target.value }))} placeholder="https://..." /></label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) {
+                return;
+              }
+              setError(null);
+              setInfo(null);
+              uploadLogoMutation.mutate(file);
+              event.currentTarget.value = "";
+            }}
+          />
+          <label>
+            WhatsApp Display Picture
+            <div className="clone-hero-actions" style={{ alignItems: "center" }}>
+              <input value={profileDraft.displayPictureUrl} readOnly placeholder="Upload logo to generate Meta profile image handle" />
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={!connectionId || uploadLogoMutation.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploadLogoMutation.isPending ? "Uploading..." : "Upload logo"}
+              </button>
+            </div>
+            {profileDraft.displayPictureUrl ? (
+              <div style={{ marginTop: 12 }}>
+                <img
+                  src={profileDraft.displayPictureUrl}
+                  alt="WhatsApp business logo preview"
+                  style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 12, border: "1px solid rgba(15, 23, 42, 0.12)" }}
+                />
+              </div>
+            ) : null}
+          </label>
           <label>Address<textarea rows={2} maxLength={256} value={profileDraft.address} onChange={(e) => setProfileDraft((c) => ({ ...c, address: e.target.value }))} placeholder="Enter address" /></label>
-          <label>Business Description<textarea rows={3} maxLength={256} value={profileDraft.businessDescription} onChange={(e) => setProfileDraft((c) => ({ ...c, businessDescription: e.target.value }))} placeholder="Message not available now, leave a message" /></label>
-          <label>Email<input type="email" maxLength={128} value={profileDraft.email} onChange={(e) => setProfileDraft((c) => ({ ...c, email: e.target.value }))} placeholder="Enter email" /></label>
-          <label>Vertical
+          <label>Category
             <select value={profileDraft.vertical} onChange={(e) => setProfileDraft((c) => ({ ...c, vertical: e.target.value }))}>
-              {["Restaurant", "Retail", "Education", "Healthcare", "Services"].map((v) => <option key={v} value={v}>{v}</option>)}
+              {PROFILE_VERTICAL_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
           </label>
+          <label>Description<textarea rows={3} maxLength={256} value={profileDraft.businessDescription} onChange={(e) => setProfileDraft((c) => ({ ...c, businessDescription: e.target.value }))} placeholder="Message not available now, leave a message" /></label>
+          <label>Email<input type="email" maxLength={128} value={profileDraft.email} onChange={(e) => setProfileDraft((c) => ({ ...c, email: e.target.value }))} placeholder="Enter email" /></label>
           <label>Website URL<input value={profileDraft.websiteUrl} onChange={(e) => setProfileDraft((c) => ({ ...c, websiteUrl: e.target.value }))} placeholder="https://your-website.com" /></label>
           <label>About<input maxLength={139} value={profileDraft.about} onChange={(e) => setProfileDraft((c) => ({ ...c, about: e.target.value }))} placeholder="Official WhatsApp Business Account" /></label>
           <div className="clone-hero-actions">
-            <button type="submit" className="primary-btn">Apply</button>
-            <button type="button" className="ghost-btn" onClick={() => setProfileDraft(DEFAULT_PROFILE_DRAFT)}>Cancel</button>
+            <button type="submit" className="primary-btn" disabled={!connectionId || saveProfileMutation.isPending || uploadLogoMutation.isPending}>
+              {saveProfileMutation.isPending ? "Applying..." : "Apply"}
+            </button>
+            <button type="button" className="ghost-btn" disabled={!connectionId} onClick={() => resetProfileDraft()}>
+              Cancel
+            </button>
           </div>
         </form>
 
@@ -359,6 +541,7 @@ export function ApiChannelPage() {
           </button>
         </div>
         <p className="tiny-note">Official API channel is recommended for long-term growth and higher reliability.</p>
+        {profileQuery.isFetching && connectionId ? <p className="tiny-note">Refreshing business profile from Meta...</p> : null}
       </article>
 
       <article className="channel-setup-panel account-danger-panel">

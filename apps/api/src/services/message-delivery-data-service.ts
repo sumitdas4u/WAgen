@@ -594,47 +594,52 @@ async function openOrRefreshAlert(input: {
   campaignId?: string | null;
   connectionId?: string | null;
 }): Promise<void> {
-  const existing = await pool.query<{ id: string }>(
-    `SELECT id
-     FROM message_delivery_alerts
+  try {
+    await pool.query(
+      `INSERT INTO message_delivery_alerts (
+         user_id,
+         campaign_id,
+         connection_id,
+         alert_type,
+         severity,
+         summary,
+         details_json
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [
+        input.userId,
+        input.campaignId ?? null,
+        input.connectionId ?? null,
+        input.alertType,
+        input.severity,
+        input.summary,
+        JSON.stringify(input.details)
+      ]
+    );
+    return;
+  } catch (error) {
+    const cause = error as { code?: string };
+    if (cause?.code !== "23505") {
+      throw error;
+    }
+  }
+
+  await pool.query(
+    `UPDATE message_delivery_alerts
+     SET severity = $5,
+         summary = $6,
+         details_json = $7::jsonb,
+         updated_at = NOW()
      WHERE user_id = $1
        AND alert_type = $2
        AND status = 'open'
        AND campaign_id IS NOT DISTINCT FROM $3
-       AND connection_id IS NOT DISTINCT FROM $4
-     LIMIT 1`,
-    [input.userId, input.alertType, input.campaignId ?? null, input.connectionId ?? null]
-  );
-
-  if (existing.rows[0]?.id) {
-    await pool.query(
-      `UPDATE message_delivery_alerts
-       SET severity = $2,
-           summary = $3,
-           details_json = $4::jsonb,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [existing.rows[0].id, input.severity, input.summary, JSON.stringify(input.details)]
-    );
-    return;
-  }
-
-  await pool.query(
-    `INSERT INTO message_delivery_alerts (
-       user_id,
-       campaign_id,
-       connection_id,
-       alert_type,
-       severity,
-       summary,
-       details_json
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+       AND connection_id IS NOT DISTINCT FROM $4`,
     [
       input.userId,
+      input.alertType,
       input.campaignId ?? null,
       input.connectionId ?? null,
-      input.alertType,
       input.severity,
       input.summary,
       JSON.stringify(input.details)

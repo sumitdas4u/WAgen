@@ -1101,6 +1101,18 @@ export interface MetaBusinessStatus {
   connection: MetaBusinessConnection | null;
 }
 
+export interface MetaBusinessProfile {
+  connectionId: string;
+  phoneNumberId: string;
+  displayPictureUrl: string | null;
+  address: string | null;
+  businessDescription: string | null;
+  email: string | null;
+  vertical: string | null;
+  websites: string[];
+  about: string | null;
+}
+
 export interface CompleteMetaSignupPayload {
   code: string;
   redirectUri?: string;
@@ -1137,6 +1149,52 @@ export function disconnectMetaBusiness(token: string, payload?: { connectionId?:
     method: "POST",
     token,
     body: JSON.stringify(payload ?? {})
+  });
+}
+
+export function fetchMetaBusinessProfile(token: string, options?: { connectionId?: string }) {
+  const params = new URLSearchParams();
+  if (options?.connectionId) {
+    params.set("connectionId", options.connectionId);
+  }
+  const query = params.toString();
+  const path = query ? `/api/meta/business/profile?${query}` : "/api/meta/business/profile";
+  return apiRequest<{ profile: MetaBusinessProfile }>(path, { token });
+}
+
+export function updateMetaBusinessProfile(
+  token: string,
+  payload: {
+    connectionId?: string;
+    address?: string | null;
+    businessDescription?: string | null;
+    email?: string | null;
+    vertical?: string | null;
+    websiteUrl?: string | null;
+    about?: string | null;
+    profilePictureHandle?: string | null;
+  }
+) {
+  return apiRequest<{ ok: boolean; profile: MetaBusinessProfile }>("/api/meta/business/profile", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function uploadMetaBusinessProfileLogo(token: string, file: File, options?: { connectionId?: string }) {
+  const params = new URLSearchParams();
+  if (options?.connectionId) {
+    params.set("connectionId", options.connectionId);
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  const query = params.toString();
+  const path = query ? `/api/meta/business/profile/logo?${query}` : "/api/meta/business/profile/logo";
+  return apiRequest<{ ok: boolean; connectionId: string; phoneNumberId: string; handle: string }>(path, {
+    method: "POST",
+    token,
+    body: formData
   });
 }
 
