@@ -2013,9 +2013,23 @@ export async function disconnectMetaBusinessConnection(
   }
 
   const shouldPurgeConnectionData = options?.purgeConnectionData ?? true;
+  const targetConnectionIds = Array.from(new Set(rows.map((row) => row.id).filter(Boolean)));
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    if (targetConnectionIds.length > 0) {
+      await client.query(
+        `UPDATE message_delivery_alerts
+         SET status = 'resolved',
+             resolved_at = NOW(),
+             updated_at = NOW()
+         WHERE user_id = $1
+           AND status = 'open'
+           AND connection_id = ANY($2::uuid[])`,
+        [userId, targetConnectionIds]
+      );
+    }
 
     if (shouldPurgeConnectionData) {
       if (connectionId) {
