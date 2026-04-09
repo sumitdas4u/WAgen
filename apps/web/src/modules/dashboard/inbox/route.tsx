@@ -11,6 +11,7 @@ import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import {
   assignInboxFlow,
   createInboxNote,
+  markInboxConversationRead,
   sendManualConversationMessage,
   updateConversationAiMode,
   aiAssistText,
@@ -343,6 +344,14 @@ function getMessagePreview(text: string | null): string {
   return text.slice(0, 80);
 }
 
+function formatUnreadCount(value: number | null | undefined): string {
+  const unreadCount = Math.max(0, Number(value ?? 0));
+  if (unreadCount <= 0) {
+    return "";
+  }
+  return unreadCount > 99 ? "99+" : String(unreadCount);
+}
+
 
 // ─── Filter logic ─────────────────────────────────────────────────────────────
 
@@ -591,6 +600,10 @@ export function Component() {
     () => filteredConversations.find((c) => c.id === selectedConversationId) ?? null,
     [filteredConversations, selectedConversationId]
   );
+  const selectedConversationFromAll = useMemo(
+    () => allConversations.find((c) => c.id === selectedConversationId) ?? null,
+    [allConversations, selectedConversationId]
+  );
 
   const selectedConversationMessages = messagesQuery.data ?? [];
   const selectedConversationNotes = notesQuery.data ?? [];
@@ -613,6 +626,32 @@ export function Component() {
 
   const isQrConnected = Boolean(bootstrap?.channelSummary.whatsapp.status === "connected");
   const isApiConnected = Boolean(bootstrap?.channelSummary.metaApi.connected);
+  const selectedConversationCanDeliver = useMemo(() => {
+    if (!selectedConversation) {
+      return false;
+    }
+    if (selectedConversation.channel_type === "web") {
+      return Boolean(selectedConversation.visitor_online);
+    }
+    if (selectedConversation.channel_type === "qr") {
+      return isQrConnected;
+    }
+    return isApiConnected;
+  }, [isApiConnected, isQrConnected, selectedConversation]);
+  const selectedConversationOfflineReason = useMemo(() => {
+    if (!selectedConversation) {
+      return "Select a conversation to reply.";
+    }
+    if (selectedConversation.channel_type === "web") {
+      return selectedConversation.visitor_online
+        ? null
+        : "Visitor offline. History is available, but replies can only be delivered while the visitor is connected.";
+    }
+    if (selectedConversation.channel_type === "qr") {
+      return isQrConnected ? null : "WhatsApp QR is disconnected. Reconnect it to send replies in this chat.";
+    }
+    return isApiConnected ? null : "WhatsApp API is disconnected. Reconnect it to send replies or templates in this chat.";
+  }, [isApiConnected, isQrConnected, selectedConversation]);
 
   const newChatFilteredContacts = useMemo(() => {
     const q = newChatContactSearch.trim().toLowerCase();
@@ -845,6 +884,43 @@ export function Component() {
   }, [filteredConversations, navigate, searchParamString, selectedConversation, selectedConversationId]);
 
   // ─── Mutations ────────────────────────────────────────────────────────────
+
+  const markReadMutation = useMutation({
+    mutationFn: async (conversationId: string) => {
+      await markInboxConversationRead(token, conversationId);
+      return conversationId;
+    },
+    onMutate: async (conversationId) => {
+      const queryKey = dashboardQueryKeys.inboxConversations({ folder: "all", search });
+      await queryClient.cancelQueries({ queryKey });
+      const previousConversations = queryClient.getQueryData<Conversation[]>(queryKey);
+      queryClient.setQueryData<Conversation[]>(queryKey, (current) =>
+        (current ?? []).map((conversation) =>
+          conversation.id === conversationId ? { ...conversation, unread_count: 0 } : conversation
+        )
+      );
+      return { previousConversations, queryKey };
+    },
+    onError: (e, _conversationId, context) => {
+      if (context?.previousConversations) {
+        queryClient.setQueryData(context.queryKey, context.previousConversations);
+      }
+      setError((e as Error).message);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+    }
+  });
+
+  useEffect(() => {
+    if (!selectedConversationId || !selectedConversationFromAll) {
+      return;
+    }
+    if ((selectedConversationFromAll.unread_count ?? 0) <= 0 || markReadMutation.isPending) {
+      return;
+    }
+    markReadMutation.mutate(selectedConversationId);
+  }, [markReadMutation, selectedConversationFromAll, selectedConversationId]);
 
   const toggleMutation = useMutation({
     mutationFn: async ({ conversationId, paused, durationMinutes }: { conversationId: string; paused: boolean; durationMinutes: number | null }) => {
@@ -1146,6 +1222,10 @@ export function Component() {
   const handleSelectTemplate = useCallback((template: MessageTemplate) => {
     if (!selectedConversation) return;
     setShowTemplateMenu(false);
+    if (!selectedConversationCanDeliver) {
+      setError(selectedConversationOfflineReason ?? "This conversation is offline.");
+      return;
+    }
     if (selectedConversation.channel_type !== "api") {
       setError("Templates can only be sent on the WhatsApp API channel.");
       return;
@@ -1163,10 +1243,14 @@ export function Component() {
       setTemplateUploadingFieldKey(null);
       setTemplateVarsDialog({ template, fields, values: initialValues, uploads: {} });
     }
-  }, [selectedConversation, sendTemplateMutation]);
+  }, [selectedConversation, selectedConversationCanDeliver, selectedConversationOfflineReason, sendTemplateMutation]);
 
   const handleSendMessage = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (!selectedConversationCanDeliver) {
+      setError(selectedConversationOfflineReason ?? "This conversation is offline.");
+      return;
+    }
     const text = replyDraftText.trim();
     if (!text && attachedFiles.length === 0) return;
     if (sendMessageMutation.isPending || uploadMutation.isPending) return;
@@ -1184,7 +1268,7 @@ export function Component() {
       }
     }
     sendMessageMutation.mutate({ text, mediaUrl, mediaMimeType });
-  }, [replyDraftText, attachedFiles, sendMessageMutation, uploadMutation]);
+  }, [attachedFiles, replyDraftText, selectedConversationCanDeliver, selectedConversationOfflineReason, sendMessageMutation, uploadMutation]);
 
   const handleSaveNote = useCallback((e?: React.FormEvent) => {
     e?.preventDefault();
@@ -1216,7 +1300,11 @@ export function Component() {
   }, [composeTab, selectedConversation]);
 
   const publishedFlows = publishedFlowsQuery.data ?? [];
-  const isReplySendDisabled = sendMessageMutation.isPending || uploadMutation.isPending || (!replyDraftText.trim() && attachedFiles.length === 0);
+  const isReplySendDisabled =
+    !selectedConversationCanDeliver ||
+    sendMessageMutation.isPending ||
+    uploadMutation.isPending ||
+    (!replyDraftText.trim() && attachedFiles.length === 0);
   const isNoteSendDisabled = saveNoteMutation.isPending || !noteDraftText.trim();
   const isTemplateDialogReady = templateVarsDialog ? templateVarsDialog.fields.every((field) => Boolean(templateVarsDialog.values[field.key]?.trim())) : false;
 
@@ -1431,11 +1519,12 @@ export function Component() {
                     const stage = normalizeStage(c.stage);
                     const scoreBand = getLeadScoreBand(c);
                     const initials = label.split(" ").map((p) => p[0] ?? "").join("").slice(0, 2).toUpperCase();
+                    const unreadCount = c.unread_count ?? 0;
                     return (
                       <button
                         key={c.id}
                         type="button"
-                        className={`clone-thread-item inbox-thread-item stage-${stage}${c.id === selectedConversationId ? " active" : ""}`}
+                        className={`clone-thread-item inbox-thread-item stage-${stage}${c.id === selectedConversationId ? " active" : ""}${unreadCount > 0 ? " unread" : ""}`}
                         onClick={() => openConversation(c.id)}
                       >
                         <span className="clone-thread-avatar">{initials || "U"}</span>
@@ -1446,6 +1535,7 @@ export function Component() {
                               <div className="inbox-thread-badges">
                                 <span className={`clone-thread-stage ${stage}`}>{stage}</span>
                                 <span className={`inbox-chip inbox-chip-score ${scoreBand}`}>{getLeadScoreLabel(c)}</span>
+                                {unreadCount > 0 && <span className="inbox-unread-badge">{formatUnreadCount(unreadCount)}</span>}
                               </div>
                             </div>
                             <small>{formatRelativeTime(c.last_message_at, clockTick)}</small>
@@ -1665,7 +1755,7 @@ export function Component() {
                         )}
 
                         {/* Textarea */}
-                        <div className={`chat-compose-rich-wrap${replyDraftText ? " has-value" : ""}${!isAnyChannelConnected ? " is-disabled" : ""}`}>
+                        <div className={`chat-compose-rich-wrap${replyDraftText ? " has-value" : ""}`}>
                           <div className="chat-compose-rich-preview">
                             {replyDraftText ? renderFormattedText(replyDraftText, "compose-reply") : null}
                           </div>
@@ -1681,7 +1771,6 @@ export function Component() {
                             onPaste={handlePaste}
                             rows={2}
                             maxLength={4000}
-                            disabled={!isAnyChannelConnected}
                           />
                         </div>
 
@@ -1765,7 +1854,7 @@ export function Component() {
                                 <button type="button" disabled>No approved templates</button>
                               ) : (
                                 availableTemplates.map((t) => (
-                                  <button key={t.id} type="button" className="compose-template-item" disabled={sendTemplateMutation.isPending} onClick={() => handleSelectTemplate(t)}>
+                                  <button key={t.id} type="button" className="compose-template-item" disabled={!selectedConversationCanDeliver || sendTemplateMutation.isPending} onClick={() => handleSelectTemplate(t)}>
                                     <strong>{t.name} <span style={{ color: t.category === "MARKETING" ? "#b45309" : "#0f766e", fontWeight: 700 }}>{t.category}</span></strong>
                                     <span>{getTemplateBodyText(t).slice(0, 80)}{getTemplateBodyText(t).length > 80 ? "…" : ""}</span>
                                   </button>
@@ -1785,11 +1874,11 @@ export function Component() {
 
                           <div className="compose-toolbar">
                             <div className="compose-toolbar-left">
-                              <button type="button" className="compose-tool" title="Attach file" disabled={!isAnyChannelConnected || attachedFiles.length >= 5} onClick={() => fileInputRef.current?.click()}>＋</button>
+                              <button type="button" className="compose-tool" title="Attach file" disabled={attachedFiles.length >= 5} onClick={() => fileInputRef.current?.click()}>＋</button>
                               <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt" style={{ display: "none" }} multiple onChange={handleFileSelect} />
 
                               <div className="chat-emoji-wrap" ref={emojiPickerRef}>
-                                <button type="button" className="compose-tool" title="Emoji" disabled={!isAnyChannelConnected} onClick={() => setShowEmojiPicker((v) => !v)}>😊</button>
+                                <button type="button" className="compose-tool" title="Emoji" onClick={() => setShowEmojiPicker((v) => !v)}>😊</button>
                                 {showEmojiPicker && (
                                   <div className="chat-emoji-picker">
                                     {QUICK_EMOJIS.map((emoji) => (
@@ -1804,7 +1893,7 @@ export function Component() {
                               <button
                                 type="button"
                                 className={`compose-action-btn compose-toolbar-pill${showToolbarFlowMenu ? " active" : ""}`}
-                                disabled={!isAnyChannelConnected || assignFlowMutation.isPending}
+                                disabled={!selectedConversationCanDeliver || assignFlowMutation.isPending}
                                 onClick={() => { setShowToolbarFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
                               >
                                 Flow
@@ -1814,7 +1903,7 @@ export function Component() {
                                 <button
                                   type="button"
                                   className={`compose-action-btn compose-toolbar-pill${showTemplateMenu ? " active" : ""}`}
-                                  disabled={!isAnyChannelConnected || sendTemplateMutation.isPending}
+                                  disabled={!selectedConversationCanDeliver || !isApiConnected || sendTemplateMutation.isPending}
                                   onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
                                 >
                                   {sendTemplateMutation.isPending ? "Template..." : "Template"}
@@ -1824,7 +1913,6 @@ export function Component() {
                               <button
                                 type="button"
                                 className={`compose-ai-assist-btn compose-toolbar-pill${showAiAssistPopup ? " active" : ""}`}
-                                disabled={!isAnyChannelConnected}
                                 onClick={() => { setShowAiAssistPopup((v) => !v); setShowToolbarFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
                               >
                                 AI Assist
@@ -1838,8 +1926,8 @@ export function Component() {
 
                               <button type="button" className="compose-tool" title="Clear message" onClick={() => setReplyDraftText("")}>↩</button>
 
-                              {!isAnyChannelConnected ? (
-                                <span className="chat-compose-offline-note">Connect a channel</span>
+                              {!selectedConversationCanDeliver ? (
+                                <span className="chat-compose-offline-note">{selectedConversationOfflineReason}</span>
                               ) : (
                                 <button type="submit" className="compose-send-btn" disabled={isReplySendDisabled}>
                                   {uploadMutation.isPending ? "Uploading…" : sendMessageMutation.isPending ? "Sending…" : "Send"}
@@ -2065,8 +2153,12 @@ export function Component() {
                       <button
                         type="button"
                         className="compose-send-btn"
-                        disabled={sendTemplateMutation.isPending || templateUploadMutation.isPending || !isTemplateDialogReady}
+                        disabled={!selectedConversationCanDeliver || sendTemplateMutation.isPending || templateUploadMutation.isPending || !isTemplateDialogReady}
                         onClick={() => {
+                          if (!selectedConversationCanDeliver) {
+                            setError(selectedConversationOfflineReason ?? "This conversation is offline.");
+                            return;
+                          }
                           if (!selectedConversation) return;
                           sendTemplateMutation.mutate({
                             conversationId: selectedConversation.id,
