@@ -163,10 +163,7 @@ export function ApiChannelPage() {
 
   const metaHealthRecord = getNestedRecord(metaStatus.connection?.metadata?.metaHealth);
   const businessVerificationStatus = readMetaString(metaHealthRecord, "businessVerificationStatus");
-  const wabaReviewStatus = readMetaString(metaHealthRecord, "wabaReviewStatus");
-  const qualityRating = readMetaString(metaHealthRecord, "phoneQualityRating");
   const messagingLimitTier = readMetaString(metaHealthRecord, "messagingLimitTier");
-  const codeVerificationStatus = readMetaString(metaHealthRecord, "codeVerificationStatus");
   const nameStatus = readMetaString(metaHealthRecord, "nameStatus");
   const verifiedName = readMetaString(metaHealthRecord, "verifiedName");
   const lastMetaSyncLabel = parseMetaTimestamp(readMetaString(metaHealthRecord, "syncedAt"));
