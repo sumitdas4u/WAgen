@@ -265,53 +265,73 @@ function FieldLabel({ label, required, hint, children }: { label: string; requir
 function SequenceListPage({ token }: { token: string }) {
   const navigate  = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [search, setSearch]     = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const sequences = useSequencesQuery(token).data ?? [];
 
   const summary = useMemo(() => ({
-    active:    sequences.filter((s) => s.active_count > 0).length,
+    total:     sequences.length,
     published: sequences.filter((s) => s.status === "published").length,
     paused:    sequences.filter((s) => s.status === "paused").length,
     completed: sequences.reduce((n, s) => n + s.completed_count, 0),
     failed:    sequences.reduce((n, s) => n + s.failed_count, 0)
   }), [sequences]);
 
-  const STATS = [
-    { label: "Active",     value: summary.active,    tone: "tone-teal"  },
-    { label: "Published",  value: summary.published, tone: "tone-green" },
-    { label: "Paused",     value: summary.paused,    tone: "tone-amber" },
-    { label: "Completed",  value: summary.completed, tone: "tone-blue"  },
-    { label: "Failed",     value: summary.failed,    tone: "tone-rose"  }
-  ];
+  const filtered = useMemo(() => sequences.filter((s) => {
+    const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === "all" || s.status === statusFilter;
+    return matchSearch && matchStatus;
+  }), [sequences, search, statusFilter]);
 
   return (
     <section className="seq-page">
-      {/* Hero */}
-      <div className="seq-list-hero">
-        <div className="seq-hero-copy">
-          <p className="seq-eyebrow">Automation</p>
-          <h1 className="seq-hero-title">Sequences</h1>
-          <p className="seq-hero-desc">Automate timed WhatsApp follow-ups and trigger-based customer journeys.</p>
-        </div>
-        <div className="seq-hero-actions">
-          <button type="button" className="seq-btn seq-btn-ghost"
-            onClick={() => setViewMode((m) => m === "grid" ? "list" : "grid")}>
-            {viewMode === "grid" ? "⊞ Grid" : "☰ List"}
+      {/* Actions bar */}
+      <div className="seq-list-actions">
+        <div className="seq-view-toggle">
+          <button type="button"
+            className={`seq-view-btn${viewMode === "grid" ? " is-active" : ""}`}
+            onClick={() => setViewMode("grid")}>
+            ⊞ Grid
           </button>
-          <button type="button" className="seq-btn seq-btn-primary"
-            onClick={() => navigate("/dashboard/sequence/new")}>
-            + Create Sequence
+          <button type="button"
+            className={`seq-view-btn${viewMode === "list" ? " is-active" : ""}`}
+            onClick={() => setViewMode("list")}>
+            ☰ List
           </button>
         </div>
+        <button type="button" className="seq-btn seq-btn-primary"
+          onClick={() => navigate("/dashboard/sequence/new")}>
+          + Create Sequence
+        </button>
       </div>
 
-      {/* Stats */}
-      <div className="seq-stat-strip">
-        {STATS.map(({ label, value, tone }) => (
-          <div key={label} className={`seq-stat-card ${tone}`}>
-            <p className="seq-stat-label">{label}</p>
-            <p className="seq-stat-value">{value}</p>
+      {/* Overview stats card */}
+      <div className="seq-overview-card">
+        <div className="seq-overview-head">
+          <span className="seq-overview-title">Overview</span>
+        </div>
+        <div className="seq-overview-stats">
+          <div className="seq-stat-cell">
+            <p className="seq-stat-label">Total</p>
+            <p className="seq-stat-value">{summary.total}</p>
           </div>
-        ))}
+          <div className="seq-stat-cell">
+            <p className="seq-stat-label">Published</p>
+            <p className="seq-stat-value is-green">{summary.published}</p>
+          </div>
+          <div className="seq-stat-cell">
+            <p className="seq-stat-label">Paused</p>
+            <p className="seq-stat-value is-amber">{summary.paused}</p>
+          </div>
+          <div className="seq-stat-cell">
+            <p className="seq-stat-label">Completed</p>
+            <p className="seq-stat-value is-blue">{summary.completed}</p>
+          </div>
+          <div className="seq-stat-cell">
+            <p className="seq-stat-label">Failed</p>
+            <p className="seq-stat-value is-rose">{summary.failed}</p>
+          </div>
+        </div>
       </div>
 
       {/* Grid view */}
@@ -328,40 +348,72 @@ function SequenceListPage({ token }: { token: string }) {
           ))}
         </div>
       ) : (
-        /* List view */
-        <div className="seq-card" style={{ padding: 0, overflow: "hidden" }}>
-          <table className="seq-table">
-            <thead>
-              <tr>
-                {["Sequence", "Status", "Trigger", "Steps", "Enrolled", "Completed", "Created", ""].map((h) => (
-                  <th key={h}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sequences.length === 0 ? (
-                <tr><td colSpan={8} className="seq-empty-row">No sequences yet — create your first one above.</td></tr>
-              ) : (
-                sequences.map((s) => (
-                  <tr key={s.id}>
-                    <td className="seq-table-name">{s.name}</td>
-                    <td><StatusPill status={s.status} /></td>
-                    <td>{s.trigger_type}</td>
-                    <td>{s.steps_count}</td>
-                    <td>{s.enrolled_count}</td>
-                    <td>{s.completed_count}</td>
-                    <td style={{ color: "var(--seq-muted)", fontSize: "0.82rem" }}>{formatDateTime(s.created_at)}</td>
-                    <td>
-                      <button type="button" className="seq-btn seq-btn-ghost seq-btn-sm"
-                        onClick={() => navigate(`/dashboard/sequence/${s.id}`)}>
-                        Open
-                      </button>
+        /* List / table view */
+        <div className="seq-table-card">
+          <div className="seq-toolbar">
+            <div className="seq-toolbar-left">
+              <div className="seq-search-wrap">
+                <span className="seq-search-icon">
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                  </svg>
+                </span>
+                <input
+                  className="seq-search-input"
+                  placeholder="Search sequences…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <select
+                className="seq-filter-sel"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}>
+                <option value="all">All statuses</option>
+                <option value="published">Published</option>
+                <option value="paused">Paused</option>
+                <option value="draft">Draft</option>
+              </select>
+            </div>
+          </div>
+          <div className="seq-table-wrap">
+            <table className="seq-table">
+              <thead>
+                <tr>
+                  {["Sequence", "Status", "Trigger", "Steps", "Enrolled", "Completed", "Created", ""].map((h) => (
+                    <th key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="seq-table-empty">
+                      {sequences.length === 0 ? "No sequences yet — create your first one." : "No sequences match your filters."}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filtered.map((s) => (
+                    <tr key={s.id}>
+                      <td className="seq-table-name">{s.name}</td>
+                      <td><StatusPill status={s.status} /></td>
+                      <td>{s.trigger_type}</td>
+                      <td>{s.steps_count}</td>
+                      <td>{s.enrolled_count}</td>
+                      <td>{s.completed_count}</td>
+                      <td style={{ color: "var(--seq-muted)", fontSize: "0.82rem" }}>{formatDateTime(s.created_at)}</td>
+                      <td>
+                        <button type="button" className="seq-btn seq-btn-ghost seq-btn-sm"
+                          onClick={() => navigate(`/dashboard/sequence/${s.id}`)}>
+                          Open
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </section>

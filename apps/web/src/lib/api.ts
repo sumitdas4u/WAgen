@@ -1644,7 +1644,7 @@ export type ContactImportColumnMapping = Record<string, string>;
 
 export function fetchContacts(
   token: string,
-  options?: { q?: string; type?: ContactType; source?: ContactSourceType; limit?: number }
+  options?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; limit?: number }
 ) {
   const params = new URLSearchParams();
   if (options?.q) {
@@ -1655,6 +1655,9 @@ export function fetchContacts(
   }
   if (options?.source) {
     params.set("source", options.source);
+  }
+  if (options?.tag) {
+    params.set("tag", options.tag);
   }
   if (typeof options?.limit === "number") {
     params.set("limit", String(options.limit));
@@ -1725,7 +1728,8 @@ export function exportContactsWorkbook(
   token: string,
   payload: {
     ids?: string[];
-    filters?: { q?: string; type?: ContactType; source?: ContactSourceType; limit?: number };
+    filters?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; limit?: number };
+    columns?: string[];
   }
 ): Promise<{ blob: Blob; filename: string }> {
   return downloadBinaryFile("/api/contacts/export", token, {

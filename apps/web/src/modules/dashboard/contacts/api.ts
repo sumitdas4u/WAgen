@@ -17,6 +17,7 @@ export interface ContactsFilters {
   q?: string;
   type?: ContactType;
   source?: ContactSourceType;
+  tag?: string;
   limit?: number;
 }
 

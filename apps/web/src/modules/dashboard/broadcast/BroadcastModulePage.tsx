@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -91,6 +91,15 @@ const CONTACT_IMPORT_STANDARD_FIELDS: ContactImportFieldOption[] = [
   { key: "source_type", label: "Source type" },
   { key: "source_id", label: "Source ID" },
   { key: "source_url", label: "Source URL" }
+];
+
+const BROADCAST_STATUS_OPTIONS: Campaign["status"][] = [
+  "draft",
+  "scheduled",
+  "running",
+  "paused",
+  "completed",
+  "cancelled"
 ];
 
 function extractTemplatePlaceholders(template: MessageTemplate | null): string[] {
@@ -216,13 +225,118 @@ function pct(part: number, total: number): string {
   return `${Math.round((part / total) * 100)}%`;
 }
 
+function formatShortDate(value: string): string {
+  const timestamp = Date.parse(`${value}T00:00:00`);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Date(timestamp).toLocaleDateString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+}
+
+function formatDateRangeLabel(fromDate: string, toDate: string): string {
+  if (fromDate && toDate) {
+    return `${formatShortDate(fromDate)} to ${formatShortDate(toDate)}`;
+  }
+  if (fromDate) {
+    return `From ${formatShortDate(fromDate)}`;
+  }
+  if (toDate) {
+    return `Until ${formatShortDate(toDate)}`;
+  }
+  return "From date | To date";
+}
+
+function matchesCreatedDateRange(value: string, fromDate: string, toDate: string): boolean {
+  const createdAt = Date.parse(value);
+  if (!Number.isFinite(createdAt)) {
+    return false;
+  }
+  if (fromDate) {
+    const startAt = Date.parse(`${fromDate}T00:00:00`);
+    if (Number.isFinite(startAt) && createdAt < startAt) {
+      return false;
+    }
+  }
+  if (toDate) {
+    const endAt = Date.parse(`${toDate}T23:59:59.999`);
+    if (Number.isFinite(endAt) && createdAt > endAt) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function escapeCsvCell(value: string | number | null | undefined): string {
+  const normalized = String(value ?? "");
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, "\"\"")}"`;
+  }
+  return normalized;
+}
+
+function downloadBroadcastsCsv(broadcasts: Campaign[]): void {
+  const headers = [
+    "Broadcast Name",
+    "Status",
+    "Broadcast Type",
+    "Recipients",
+    "Sent",
+    "Delivered",
+    "Read",
+    "Failed",
+    "Skipped",
+    "Scheduled",
+    "Started",
+    "Completed",
+    "Created",
+    "Updated"
+  ];
+
+  const csvRows = broadcasts.map((broadcast) => [
+    broadcast.name,
+    formatCampaignStatus(broadcast.status),
+    broadcast.broadcast_type,
+    broadcast.total_count,
+    broadcast.sent_count,
+    broadcast.delivered_count,
+    broadcast.read_count,
+    broadcast.failed_count,
+    broadcast.skipped_count,
+    broadcast.scheduled_at ? formatDateTime(broadcast.scheduled_at) : "",
+    broadcast.started_at ? formatDateTime(broadcast.started_at) : "",
+    broadcast.completed_at ? formatDateTime(broadcast.completed_at) : "",
+    formatDateTime(broadcast.created_at),
+    formatDateTime(broadcast.updated_at)
+  ]);
+
+  const csv = [headers, ...csvRows]
+    .map((row) => row.map((cell) => escapeCsvCell(cell)).join(","))
+    .join("\n");
+
+  downloadBlob(
+    new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8;" }),
+    `broadcasts-export-${new Date().toISOString().slice(0, 10)}.csv`
+  );
+}
+
 function BroadcastListPage({ token }: { token: string }) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const [page, setPage] = useState(1);
   const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "all">("7d");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [selectedStatuses, setSelectedStatuses] = useState<Campaign["status"][]>([]);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [showDateMenu, setShowDateMenu] = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const dateMenuRef = useRef<HTMLDivElement | null>(null);
+  const filterMenuRef = useRef<HTMLDivElement | null>(null);
 
   const broadcastsQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcasts,
@@ -238,11 +352,73 @@ function BroadcastListPage({ token }: { token: string }) {
   const hasLiveBroadcast = (data?.broadcasts ?? []).some((broadcast) => shouldPollCampaign(broadcast.status));
 
   const allBroadcasts = data?.broadcasts ?? [];
-  const filtered = allBroadcasts.filter((b) =>
-    !search || b.name.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(
+    () =>
+      allBroadcasts.filter((broadcast) => {
+        const normalizedSearch = search.trim().toLowerCase();
+        const matchesSearch =
+          !normalizedSearch ||
+          broadcast.name.toLowerCase().includes(normalizedSearch) ||
+          formatCampaignStatus(broadcast.status).toLowerCase().includes(normalizedSearch);
+        const matchesStatus =
+          selectedStatuses.length === 0 || selectedStatuses.includes(broadcast.status);
+        const matchesDate = matchesCreatedDateRange(broadcast.created_at, fromDate, toDate);
+        return matchesSearch && matchesStatus && matchesDate;
+      }),
+    [allBroadcasts, search, selectedStatuses, fromDate, toDate]
   );
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const paginated = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+  const hasActiveHeaderFilters = Boolean(fromDate || toDate || selectedStatuses.length > 0);
+  const dateFilterLabel = formatDateRangeLabel(fromDate, toDate);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, fromDate, toDate, selectedStatuses, rowsPerPage]);
+
+  useEffect(() => {
+    setPage((currentPage) => Math.min(currentPage, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    const closeMenus = (event: MouseEvent) => {
+      if (dateMenuRef.current && event.target instanceof Node && !dateMenuRef.current.contains(event.target)) {
+        setShowDateMenu(false);
+      }
+      if (filterMenuRef.current && event.target instanceof Node && !filterMenuRef.current.contains(event.target)) {
+        setShowFilterMenu(false);
+      }
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowDateMenu(false);
+        setShowFilterMenu(false);
+        setOpenMenuId(null);
+      }
+    };
+
+    window.addEventListener("mousedown", closeMenus);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("mousedown", closeMenus);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
+  const toggleStatusFilter = (status: Campaign["status"]) => {
+    setSelectedStatuses((current) =>
+      current.includes(status)
+        ? current.filter((item) => item !== status)
+        : [...current, status]
+    );
+  };
+
+  const clearHeaderFilters = () => {
+    setFromDate("");
+    setToDate("");
+    setSelectedStatuses([]);
+  };
 
   const DATE_RANGE_LABELS: Record<typeof dateRange, string> = {
     "7d": "Past 7 days",
@@ -335,18 +511,101 @@ function BroadcastListPage({ token }: { token: string }) {
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               />
             </div>
-            <div className="bl-date-filter">
-              <span className="bl-date-filter-label">From date</span>
-              <span className="bl-date-filter-sep">|</span>
-              <span className="bl-date-filter-label">To date</span>
-              <span className="bl-date-filter-icon">&#128197;</span>
+            <div className="dd-wrap" ref={dateMenuRef}>
+              <button
+                type="button"
+                className={`bl-date-filter${showDateMenu ? " is-active" : ""}`}
+                onClick={() => {
+                  setOpenMenuId(null);
+                  setShowFilterMenu(false);
+                  setShowDateMenu((current) => !current);
+                }}
+              >
+                <span className="bl-date-filter-label">{dateFilterLabel}</span>
+                <span className="bl-date-filter-icon">&#128197;</span>
+              </button>
+              {showDateMenu ? (
+                <div className="dd-menu bl-toolbar-menu bl-date-menu">
+                  <div className="bl-toolbar-menu-title">Filter by created date</div>
+                  <label className="bl-toolbar-field">
+                    <span>From date</span>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      max={toDate || undefined}
+                      onChange={(e) => setFromDate(e.target.value)}
+                    />
+                  </label>
+                  <label className="bl-toolbar-field">
+                    <span>To date</span>
+                    <input
+                      type="date"
+                      value={toDate}
+                      min={fromDate || undefined}
+                      onChange={(e) => setToDate(e.target.value)}
+                    />
+                  </label>
+                  <div className="bl-toolbar-menu-footer">
+                    <button type="button" className="bl-toolbar-link" onClick={() => { setFromDate(""); setToDate(""); }}>
+                      Clear dates
+                    </button>
+                    <button type="button" className="bl-toolbar-btn bl-toolbar-btn-compact" onClick={() => setShowDateMenu(false)}>
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <button type="button" className="bl-toolbar-btn">
+            <button
+              type="button"
+              className="bl-toolbar-btn"
+              disabled={filtered.length === 0}
+              onClick={() => downloadBroadcastsCsv(filtered)}
+            >
               &#11123; Export
             </button>
-            <button type="button" className="bl-toolbar-btn">
-              &#9965; Filter
-            </button>
+            <div className="dd-wrap" ref={filterMenuRef}>
+              <button
+                type="button"
+                className={`bl-toolbar-btn${showFilterMenu ? " is-active" : ""}`}
+                onClick={() => {
+                  setOpenMenuId(null);
+                  setShowDateMenu(false);
+                  setShowFilterMenu((current) => !current);
+                }}
+              >
+                &#9965; Filter
+                {selectedStatuses.length > 0 ? <span className="bl-filter-count">{selectedStatuses.length}</span> : null}
+              </button>
+              {showFilterMenu ? (
+                <div className="dd-menu bl-toolbar-menu bl-filter-menu">
+                  <div className="bl-toolbar-menu-title">Campaign status</div>
+                  {BROADCAST_STATUS_OPTIONS.map((status) => (
+                    <label key={status} className="bl-filter-option">
+                      <input
+                        type="checkbox"
+                        checked={selectedStatuses.includes(status)}
+                        onChange={() => toggleStatusFilter(status)}
+                      />
+                      <span>{formatCampaignStatus(status)}</span>
+                    </label>
+                  ))}
+                  <div className="bl-toolbar-menu-footer">
+                    <button type="button" className="bl-toolbar-link" onClick={clearHeaderFilters}>
+                      Clear filters
+                    </button>
+                    <button type="button" className="bl-toolbar-btn bl-toolbar-btn-compact" onClick={() => setShowFilterMenu(false)}>
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            {hasActiveHeaderFilters ? (
+              <button type="button" className="bl-toolbar-btn" onClick={clearHeaderFilters}>
+                Clear
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -487,7 +746,7 @@ function BroadcastListPage({ token }: { token: string }) {
             {!broadcastsQuery.isLoading && filtered.length === 0 ? (
               <tr>
                 <td colSpan={12} className="broadcast-empty-state">
-                  {search ? "No broadcasts match your search." : "No broadcasts created yet."}
+                  {search || hasActiveHeaderFilters ? "No broadcasts match your current filters." : "No broadcasts created yet."}
                 </td>
               </tr>
             ) : null}

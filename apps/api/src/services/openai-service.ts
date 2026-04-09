@@ -170,6 +170,36 @@ export class OpenAIService {
     const content = response.choices[0]?.message?.content?.trim() ?? "";
     return content === "NO_TEXT" ? "" : content;
   }
+
+  async analyzeImage(imageBuffer: Buffer, mimeType: string, modelOverride?: string): Promise<string> {
+    if (!this.client) {
+      throw new Error("OPENAI_API_KEY is not configured");
+    }
+
+    const dataUrl = `data:${mimeType};base64,${imageBuffer.toString("base64")}`;
+    const model = modelOverride?.trim() || (await getEffectiveChatModel());
+    const response = await this.client.chat.completions.create({
+      model,
+      temperature: 0,
+      max_tokens: Math.max(500, env.OPENAI_MAX_OUTPUT_TOKENS),
+      messages: [
+        {
+          role: "system",
+          content:
+            "Describe this image concisely and factually. Include: what you see visually (objects, people, scene, context), and any text visible in the image. Be brief."
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is in this image?" },
+            { type: "image_url", image_url: { url: dataUrl } }
+          ] as any
+        }
+      ] as any
+    });
+
+    return response.choices[0]?.message?.content?.trim() ?? "";
+  }
 }
 
 export const openAIService = new OpenAIService();
