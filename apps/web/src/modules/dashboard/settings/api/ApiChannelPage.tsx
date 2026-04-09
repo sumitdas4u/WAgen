@@ -128,7 +128,6 @@ export function ApiChannelPage() {
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
   const metaStatus: MetaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, connection: null } as MetaBusinessStatus);
   const metaConfig = metaConfigQuery.data ?? null;
-  const connectionId = metaStatus.connection?.id;
   const isConnected = Boolean(metaStatus.connected && metaStatus.connection);
 
   const metaHealthRecord = getNestedRecord(metaStatus.connection?.metadata?.metaHealth);
