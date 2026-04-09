@@ -260,6 +260,44 @@
   appearance: auto;
 }
 
+.ct-tag-filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ct-tag-filter-icon {
+  position: absolute;
+  left: 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #5f6f86;
+  pointer-events: none;
+}
+
+.ct-tag-filter-input {
+  height: 2.2rem;
+  width: 170px;
+  padding: 0 0.75rem 0 1.75rem;
+  border: 1px solid #e2eaf4;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  color: #122033;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.ct-tag-filter-input:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(147,197,253,0.2);
+}
+
+.ct-tag-filter-input::placeholder {
+  color: #94a3b8;
+}
+
 /* ── Selected badge ── */
 .ct-selected-badge {
   height: 2.2rem;
@@ -396,10 +434,14 @@
 }
 
 /* ── Table ── */
-.ct-table-wrap { overflow-x: auto; }
+.ct-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 .ct-table-wrap table {
   width: 100%;
+  min-width: max-content;
   border-collapse: collapse;
 }
 
@@ -731,7 +773,44 @@
    SEGMENTS TABLE
 ═══════════════════════════════ */
 
-.seg-table-wrap { overflow-x: auto; }
+.seg-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.seg-table-wrap table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+}
+
+.seg-table-wrap thead tr {
+  border-bottom: 1px solid #edf2f7;
+}
+
+.seg-table-wrap th {
+  padding: 0.65rem 1rem;
+  text-align: left;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #5f6f86;
+  white-space: nowrap;
+  background: #fafbfd;
+}
+
+.seg-table-wrap tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 80ms ease;
+}
+.seg-table-wrap tbody tr:last-child { border-bottom: none; }
+.seg-table-wrap tbody tr:hover { background: #fafbfd; }
+
+.seg-table-wrap td {
+  padding: 0.75rem 1rem;
+  vertical-align: middle;
+}
 
 .seg-row-filters {
   display: flex;
@@ -794,8 +873,8 @@
   border-top: 1px solid #e2eaf4;
 }
 
-.seg-expanded-inner .ct-table-wrap { background: #f8fafc; }
-.seg-expanded-inner .ct-table-wrap table { border-collapse: collapse; }
+.seg-expanded-inner .ct-table-wrap { background: #f8fafc; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.seg-expanded-inner .ct-table-wrap table { min-width: max-content; border-collapse: collapse; }
 .seg-expanded-inner .ct-table-wrap th { background: #f1f5f9; }
 .seg-expanded-inner .ct-table-wrap tbody tr:hover { background: #fff; }
 .seg-expanded-inner .ct-table-wrap tbody tr:last-child { border-bottom: none; }

@@ -1568,6 +1568,8 @@ export interface Conversation {
   last_message_at: string | null;
   ai_paused: boolean;
   manual_takeover: boolean;
+  unread_count?: number;
+  visitor_online?: boolean;
 }
 
 export function fetchConversations(token: string) {
@@ -1642,7 +1644,7 @@ export type ContactImportColumnMapping = Record<string, string>;
 
 export function fetchContacts(
   token: string,
-  options?: { q?: string; type?: ContactType; source?: ContactSourceType; limit?: number }
+  options?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; limit?: number }
 ) {
   const params = new URLSearchParams();
   if (options?.q) {
@@ -1653,6 +1655,9 @@ export function fetchContacts(
   }
   if (options?.source) {
     params.set("source", options.source);
+  }
+  if (options?.tag) {
+    params.set("tag", options.tag);
   }
   if (typeof options?.limit === "number") {
     params.set("limit", String(options.limit));
@@ -1723,7 +1728,8 @@ export function exportContactsWorkbook(
   token: string,
   payload: {
     ids?: string[];
-    filters?: { q?: string; type?: ContactType; source?: ContactSourceType; limit?: number };
+    filters?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; limit?: number };
+    columns?: string[];
   }
 ): Promise<{ blob: Blob; filename: string }> {
   return downloadBinaryFile("/api/contacts/export", token, {
@@ -1806,6 +1812,13 @@ export interface ConversationMessage {
 
 export function fetchConversationMessages(token: string, conversationId: string) {
   return apiRequest<{ messages: ConversationMessage[] }>(`/api/conversations/${conversationId}/messages`, { token });
+}
+
+export function markConversationRead(token: string, conversationId: string) {
+  return apiRequest<{ ok: boolean; unreadCount: number }>(`/api/conversations/${conversationId}/read`, {
+    method: "POST",
+    token
+  });
 }
 
 export interface ConversationNote {

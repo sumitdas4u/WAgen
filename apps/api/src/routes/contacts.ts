@@ -17,6 +17,7 @@ const ListContactsQuerySchema = z.object({
   q: z.string().trim().optional(),
   type: ContactTypeSchema.optional(),
   source: ContactSourceSchema.optional(),
+  tag: z.string().trim().optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional()
 });
 
@@ -33,7 +34,8 @@ const CreateContactBodySchema = z.object({
 
 const ExportContactsBodySchema = z.object({
   ids: z.array(z.string().uuid()).max(1000).optional(),
-  filters: ListContactsQuerySchema.optional()
+  filters: ListContactsQuerySchema.optional(),
+  columns: z.array(z.string().trim().min(1).max(160)).max(200).optional()
 });
 
 export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
@@ -167,7 +169,8 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
       const { filename, content } = await generateContactsExportWorkbook({
         userId: request.authUser.userId,
         ids: parsed.data.ids,
-        filters: parsed.data.filters
+        filters: parsed.data.filters,
+        columns: parsed.data.columns
       });
 
       reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

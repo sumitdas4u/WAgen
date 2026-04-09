@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
+import "./analytics.css";
 import { Link, useLocation, useNavigate, useRoutes, useSearchParams } from "react-router-dom";
 import type {
   Campaign,
@@ -149,65 +150,6 @@ function getLeadScoreTone(conversation: Conversation): string {
   return "#166534";
 }
 
-function getStatusPillStyle(status: DeliveryReportStatus): CSSProperties {
-  if (status === "failed") {
-    return {
-      background: "#fff1f2",
-      color: "#dc2626",
-      border: "1px solid #fecdd3"
-    };
-  }
-  if (status === "read") {
-    return {
-      background: "#ecfdf5",
-      color: "#16a34a",
-      border: "1px solid #bbf7d0"
-    };
-  }
-  if (status === "delivered") {
-    return {
-      background: "#eff6ff",
-      color: "#2563eb",
-      border: "1px solid #bfdbfe"
-    };
-  }
-  if (status === "retrying") {
-    return {
-      background: "#fff7ed",
-      color: "#c2410c",
-      border: "1px solid #fed7aa"
-    };
-  }
-  if (status === "sending") {
-    return {
-      background: "#f8fafc",
-      color: "#475569",
-      border: "1px solid #cbd5e1"
-    };
-  }
-  return {
-    background: "#f8fafc",
-    color: "#334155",
-    border: "1px solid #cbd5e1"
-  };
-}
-
-function getCardTone(key: string): { background: string; border: string; count: string } {
-  if (key === "failed" || key === "notInWhatsApp") {
-    return { background: "#fff7f7", border: "#fecaca", count: "#dc2626" };
-  }
-  if (key === "frequencyLimit") {
-    return { background: "#fffaf0", border: "#fed7aa", count: "#c2410c" };
-  }
-  if (key === "engaged") {
-    return { background: "#f0fdf4", border: "#bbf7d0", count: "#16a34a" };
-  }
-  if (key === "delivered") {
-    return { background: "#eff6ff", border: "#bfdbfe", count: "#2563eb" };
-  }
-  return { background: "#f8fafc", border: "#dbe4f0", count: "#0f172a" };
-}
-
 function getChannelLabel(channels: DeliveryReportChannel[], channelKey: string): string {
   return channels.find((channel) => channel.key === channelKey)?.label ?? "Selected channel";
 }
@@ -222,20 +164,10 @@ function SectionHeader({
   right?: ReactNode;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        gap: "16px",
-        flexWrap: "wrap"
-      }}
-    >
+    <div className="an-section-head">
       <div>
-        <h2 style={{ margin: 0, fontSize: "1.5rem", color: "#0f172a" }}>{title}</h2>
-        {subtitle ? (
-          <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: "0.96rem" }}>{subtitle}</p>
-        ) : null}
+        <h2 className="an-section-title">{title}</h2>
+        {subtitle ? <p className="an-section-sub">{subtitle}</p> : null}
       </div>
       {right}
     </div>
@@ -260,94 +192,43 @@ function AnalyticsFilters({
   onStatusChange?: (value: NotificationStatusFilter) => void;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: "14px",
-        flexWrap: "wrap",
-        marginTop: "18px",
-        marginBottom: "18px"
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-        <span style={{ color: "#64748b", fontSize: "0.92rem", fontWeight: 600 }}>Overview</span>
+    <div className="an-filters-bar">
+      <div className="an-filters-left">
+        <span className="an-range-label">Range</span>
         {RANGE_OPTIONS.map((option) => (
           <button
             key={option}
             type="button"
+            className={`an-range-pill${option === days ? " is-active" : ""}`}
             onClick={() => onDaysChange(option)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: "999px",
-              border: option === days ? "1px solid #86efac" : "1px solid #d7dee8",
-              background: option === days ? "#f0fdf4" : "#ffffff",
-              color: option === days ? "#166534" : "#475569",
-              fontWeight: 600,
-              cursor: "pointer"
-            }}
           >
             Past {option} days
           </button>
         ))}
       </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+      <div className="an-filters-right">
         <select
+          className="an-filter-sel"
           value={channelKey}
           onChange={(event) => onChannelChange(event.target.value)}
-          style={{
-            minWidth: "190px",
-            padding: "10px 12px",
-            borderRadius: "999px",
-            border: "1px solid #d7dee8",
-            background: "#ffffff",
-            color: "#334155"
-          }}
         >
           <option value={EMPTY_CHANNEL}>All channels</option>
           {channels.map((channel) => (
-            <option key={channel.key} value={channel.key}>
-              {channel.label}
-            </option>
+            <option key={channel.key} value={channel.key}>{channel.label}</option>
           ))}
         </select>
-
         {channelKey ? (
-          <button
-            type="button"
-            onClick={() => onChannelChange(EMPTY_CHANNEL)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "9px 14px",
-              borderRadius: "999px",
-              border: "1px solid #93c5fd",
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              fontWeight: 600,
-              cursor: "pointer"
-            }}
-          >
+          <button type="button" className="an-filter-chip"
+            onClick={() => onChannelChange(EMPTY_CHANNEL)}>
             {getChannelLabel(channels, channelKey)}
-            <span aria-hidden="true">x</span>
+            <span aria-hidden="true">×</span>
           </button>
         ) : null}
-
         {onStatusChange ? (
           <select
+            className="an-filter-sel"
             value={status ?? EMPTY_STATUS}
             onChange={(event) => onStatusChange(parseStatus(event.target.value))}
-            style={{
-              minWidth: "160px",
-              padding: "10px 12px",
-              borderRadius: "999px",
-              border: "1px solid #d7dee8",
-              background: "#ffffff",
-              color: "#334155"
-            }}
           >
             <option value={EMPTY_STATUS}>All statuses</option>
             <option value="sending">Sending</option>
@@ -376,38 +257,15 @@ function SummaryCard({
   toneKey: string;
   href?: string;
 }) {
-  const tone = getCardTone(toneKey);
   const content = (
-    <div
-      style={{
-        borderRadius: "20px",
-        border: `1px solid ${tone.border}`,
-        background: tone.background,
-        padding: "18px",
-        minHeight: "124px",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        boxShadow: "0 18px 40px -32px rgba(15, 23, 42, 0.35)"
-      }}
-    >
-      <div style={{ color: "#64748b", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase" }}>
-        {label}
-      </div>
-      <div style={{ fontSize: "2rem", fontWeight: 700, color: tone.count }}>{formatNumber(count)}</div>
-      <div style={{ color: "#475569", fontSize: "0.95rem", fontWeight: 600 }}>{formatPercent(percentage)}</div>
+    <div className={`an-summary-card tone-${toneKey}`}>
+      <div className="an-summary-card-label">{label}</div>
+      <div className="an-summary-card-count">{formatNumber(count)}</div>
+      <div className="an-summary-card-pct">{formatPercent(percentage)}</div>
     </div>
   );
-
-  if (!href) {
-    return content;
-  }
-
-  return (
-    <Link to={href} style={{ color: "inherit", textDecoration: "none" }}>
-      {content}
-    </Link>
-  );
+  if (!href) return content;
+  return <Link to={href} style={{ textDecoration: "none" }}>{content}</Link>;
 }
 
 function TableShell({
@@ -422,16 +280,7 @@ function TableShell({
   children: ReactNode;
 }) {
   return (
-    <article
-      className="finance-panel"
-      style={{
-        padding: "24px",
-        borderRadius: "24px",
-        background: "#ffffff",
-        border: "1px solid #e2e8f0",
-        boxShadow: "0 24px 60px -45px rgba(15, 23, 42, 0.45)"
-      }}
-    >
+    <article className="an-table-panel">
       <SectionHeader title={title} subtitle={subtitle} right={note} />
       {children}
     </article>
@@ -440,67 +289,33 @@ function TableShell({
 
 function StatusPill({ status }: { status: DeliveryReportStatus }) {
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minWidth: "88px",
-        padding: "6px 12px",
-        borderRadius: "999px",
-        fontSize: "0.88rem",
-        fontWeight: 700,
-        ...getStatusPillStyle(status)
-      }}
-    >
+    <span className={`an-status-pill st-${status}`}>
       {getStatusLabel(status)}
     </span>
   );
 }
 
 function LoadingState({ label }: { label: string }) {
-  return <p style={{ margin: "18px 0 0", color: "#64748b" }}>{label}</p>;
+  return <p className="an-loading">{label}</p>;
 }
 
 function EmptyState({ label }: { label: string }) {
-  return (
-    <div
-      style={{
-        marginTop: "18px",
-        borderRadius: "18px",
-        border: "1px dashed #cbd5e1",
-        padding: "26px",
-        textAlign: "center",
-        color: "#64748b",
-        background: "#f8fafc"
-      }}
-    >
-      {label}
-    </div>
-  );
+  return <div className="an-empty">{label}</div>;
 }
 
 function CopyButton({ value }: { value: string }) {
   return (
     <button
       type="button"
+      className="an-copy-btn"
       onClick={() => {
         if (typeof navigator !== "undefined" && navigator.clipboard) {
           void navigator.clipboard.writeText(value);
         }
       }}
-      style={{
-        width: "28px",
-        height: "28px",
-        borderRadius: "8px",
-        border: "1px solid #d7dee8",
-        background: "#ffffff",
-        color: "#475569",
-        cursor: "pointer"
-      }}
       title="Copy message id"
     >
-      <span aria-hidden="true">+</span>
+      <span aria-hidden="true">⧉</span>
     </button>
   );
 }
@@ -569,51 +384,22 @@ function PaginationBar({
 
 function OperationalCard({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        borderRadius: "18px",
-        border: "1px solid #e2e8f0",
-        background: "#ffffff",
-        padding: "16px"
-      }}
-    >
-      <div style={{ color: "#64748b", fontSize: "0.85rem", fontWeight: 700 }}>{label}</div>
-      <div style={{ marginTop: "8px", color: "#0f172a", fontSize: "1.4rem", fontWeight: 700 }}>{value}</div>
+    <div className="an-sub-panel" style={{ minHeight: 0 }}>
+      <div className="an-stat-label">{label}</div>
+      <div className="an-stat-value" style={{ fontSize: "1.4rem" }}>{value}</div>
     </div>
   );
 }
 
 function UsageMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: "16px",
-        alignItems: "center",
-        borderRadius: "14px",
-        border: "1px solid #e2e8f0",
-        background: "#fcfdff",
-        padding: "12px 14px"
-      }}
-    >
-      <span style={{ color: "#64748b", fontWeight: 600 }}>{label}</span>
-      <strong style={{ color: "#0f172a" }}>{value}</strong>
+    <div className="an-channel-row">
+      <span className="an-channel-msgs">{label}</span>
+      <strong className="an-channel-name">{value}</strong>
     </div>
   );
 }
 
-const tableHeaderStyle: CSSProperties = {
-  padding: "0 12px 12px 0",
-  fontWeight: 700,
-  letterSpacing: "0.04em"
-};
-
-const tableCellStyle: CSSProperties = {
-  padding: "14px 12px 14px 0",
-  verticalAlign: "top",
-  color: "#334155"
-};
 
 function DashboardPage({
   token,
@@ -652,187 +438,120 @@ function DashboardPage({
   const overview = overviewQuery.data ?? null;
 
   return (
-    <section className="finance-shell" style={{ display: "grid", gap: "18px" }}>
-      <TableShell
-        title="Message Delivery Overview"
-        subtitle={`Past ${days} days${channelKey ? ` for ${getChannelLabel(channels, channelKey)}` : ""}`}
-      >
-        {!summary ? (
-          summary === null && overviewQuery.isLoading ? (
-            <LoadingState label="Loading delivery summary..." />
-          ) : (
-            <EmptyState label="No delivery activity found for this range yet." />
-          )
+    <TableShell
+      title="Message Delivery Overview"
+      subtitle={`Past ${days} days${channelKey ? ` for ${getChannelLabel(channels, channelKey)}` : ""}`}
+    >
+      {!summary ? (
+        overviewQuery.isLoading ? (
+          <LoadingState label="Loading delivery summary..." />
         ) : (
-          <>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "14px",
-                marginTop: "18px"
-              }}
-            >
-              {cards.map((card) => (
-                <SummaryCard
-                  key={card.key}
-                  label={card.value.label}
-                  count={card.value.count}
-                  percentage={card.value.percentage}
-                  toneKey={card.key}
-                  href={card.href}
-                />
-              ))}
+          <EmptyState label="No delivery activity found for this range yet." />
+        )
+      ) : (
+        <>
+          <div className="an-summary-grid">
+            {cards.map((card) => (
+              <SummaryCard
+                key={card.key}
+                label={card.value.label}
+                count={card.value.count}
+                percentage={card.value.percentage}
+                toneKey={card.key}
+                href={card.href}
+              />
+            ))}
+          </div>
+
+          <div className="an-detail-grid">
+            <div className="an-sub-panel">
+              <h3>Daily trend</h3>
+              {summary.daily.length === 0 ? (
+                <EmptyState label="No daily delivery events for this range yet." />
+              ) : (
+                <div className="an-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Day</th>
+                        <th>Sent</th>
+                        <th>Delivered</th>
+                        <th>Engaged</th>
+                        <th>Failed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.daily.map((item) => (
+                        <tr key={item.day}>
+                          <td style={{ fontWeight: 600 }}>{formatDateLabel(item.day)}</td>
+                          <td>{formatNumber(item.sent)}</td>
+                          <td style={{ color: "#2563eb" }}>{formatNumber(item.delivered)}</td>
+                          <td style={{ color: "#16a34a" }}>{formatNumber(item.engaged)}</td>
+                          <td style={{ color: "#dc2626" }}>{formatNumber(item.failed)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 1fr)",
-                gap: "16px",
-                marginTop: "20px"
-              }}
-            >
-              <div
-                style={{
-                  borderRadius: "20px",
-                  border: "1px solid #e2e8f0",
-                  padding: "18px",
-                  background: "#fcfdff"
-                }}
-              >
-                <h3 style={{ margin: 0, fontSize: "1.05rem", color: "#0f172a" }}>Daily trend</h3>
-                {summary.daily.length === 0 ? (
-                  <EmptyState label="No daily delivery events for this range yet." />
+            <div className="an-sub-column">
+              <div className="an-sub-panel">
+                <h3>Top failure reasons</h3>
+                {summary.topFailureReasons.length === 0 ? (
+                  <EmptyState label="No failure reasons recorded in this range." />
                 ) : (
-                  <div style={{ overflowX: "auto", marginTop: "14px" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "420px" }}>
-                      <thead>
-                        <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.82rem" }}>
-                          <th style={{ padding: "0 0 12px" }}>Day</th>
-                          <th style={{ padding: "0 0 12px" }}>Sent</th>
-                          <th style={{ padding: "0 0 12px" }}>Delivered</th>
-                          <th style={{ padding: "0 0 12px" }}>Engaged</th>
-                          <th style={{ padding: "0 0 12px" }}>Failed</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {summary.daily.map((item) => (
-                          <tr key={item.day} style={{ borderTop: "1px solid #eef2f7" }}>
-                            <td style={{ padding: "12px 0", fontWeight: 600, color: "#0f172a" }}>{formatDateLabel(item.day)}</td>
-                            <td style={{ padding: "12px 0", color: "#334155" }}>{formatNumber(item.sent)}</td>
-                            <td style={{ padding: "12px 0", color: "#2563eb" }}>{formatNumber(item.delivered)}</td>
-                            <td style={{ padding: "12px 0", color: "#16a34a" }}>{formatNumber(item.engaged)}</td>
-                            <td style={{ padding: "12px 0", color: "#dc2626" }}>{formatNumber(item.failed)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div style={{ display: "grid", gap: "0.6rem" }}>
+                    {summary.topFailureReasons.map((reason, index) => (
+                      <div key={`${reason.errorCode ?? "na"}-${index}`} className="an-failure-reason">
+                        <div className="an-failure-reason-head">
+                          <span className="an-failure-reason-msg">{truncateText(reason.message, 52)}</span>
+                          <span className="an-failure-reason-count">{formatNumber(reason.count)}</span>
+                        </div>
+                        <div className="an-failure-reason-code">Code: {reason.errorCode ?? "n/a"}</div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
 
-              <div style={{ display: "grid", gap: "16px" }}>
-                <div
-                  style={{
-                    borderRadius: "20px",
-                    border: "1px solid #e2e8f0",
-                    padding: "18px",
-                    background: "#fcfdff"
-                  }}
-                >
-                  <h3 style={{ margin: 0, fontSize: "1.05rem", color: "#0f172a" }}>Top failure reasons</h3>
-                  {summary.topFailureReasons.length === 0 ? (
-                    <p style={{ margin: "14px 0 0", color: "#64748b" }}>No failure reasons recorded in this range.</p>
-                  ) : (
-                    <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
-                      {summary.topFailureReasons.map((reason, index) => (
-                        <div
-                          key={`${reason.errorCode ?? "na"}-${index}`}
-                          style={{
-                            borderRadius: "14px",
-                            border: "1px solid #fee2e2",
-                            padding: "12px 14px",
-                            background: "#fffafa"
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-                            <strong style={{ color: "#991b1b" }}>{truncateText(reason.message, 52)}</strong>
-                            <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatNumber(reason.count)}</span>
-                          </div>
-                          <div style={{ marginTop: "6px", color: "#7f1d1d", fontSize: "0.85rem" }}>
-                            Code: {reason.errorCode ?? "n/a"}
-                          </div>
+              <div className="an-sub-panel">
+                <h3>Channel health</h3>
+                {summary.channels.length === 0 ? (
+                  <EmptyState label="No channel activity yet." />
+                ) : (
+                  <div style={{ display: "grid", gap: "0.5rem" }}>
+                    {summary.channels.map((channel) => (
+                      <div key={channel.key} className="an-channel-row">
+                        <div>
+                          <div className="an-channel-name">{channel.label}</div>
+                          <div className="an-channel-msgs">{formatNumber(channel.messages)} messages</div>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    borderRadius: "20px",
-                    border: "1px solid #e2e8f0",
-                    padding: "18px",
-                    background: "#fcfdff"
-                  }}
-                >
-                  <h3 style={{ margin: 0, fontSize: "1.05rem", color: "#0f172a" }}>Channel health</h3>
-                  {summary.channels.length === 0 ? (
-                    <p style={{ margin: "14px 0 0", color: "#64748b" }}>No channel activity yet.</p>
-                  ) : (
-                    <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
-                      {summary.channels.map((channel) => (
-                        <div
-                          key={channel.key}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: "12px",
-                            alignItems: "center",
-                            borderRadius: "14px",
-                            border: "1px solid #eef2f7",
-                            padding: "12px 14px"
-                          }}
-                        >
-                          <div>
-                            <strong style={{ color: "#0f172a" }}>{channel.label}</strong>
-                            <div style={{ color: "#64748b", fontSize: "0.85rem" }}>
-                              {formatNumber(channel.messages)} messages
-                            </div>
-                          </div>
-                          <div style={{ color: channel.failed > 0 ? "#dc2626" : "#16a34a", fontWeight: 700 }}>
-                            {channel.failed > 0 ? `${formatNumber(channel.failed)} failed` : "Healthy"}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        <span className={`an-channel-status ${channel.failed > 0 ? "is-failed" : "is-healthy"}`}>
+                          {channel.failed > 0 ? `${formatNumber(channel.failed)} failed` : "Healthy"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
+          </div>
 
-            {overview ? (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                  gap: "14px",
-                  marginTop: "18px"
-                }}
-              >
-                <OperationalCard label="Attempts" value={formatNumber(overview.attempts.total)} />
-                <OperationalCard label="Success rate" value={formatPercent(overview.attempts.successRate)} />
-                <OperationalCard label="Retry scheduled" value={formatNumber(overview.attempts.retryScheduled)} />
-                <OperationalCard label="Queued campaign messages" value={formatNumber(overview.queuedCampaignMessages)} />
-                <OperationalCard label="Open alerts" value={formatNumber(overview.openAlerts)} />
-                <OperationalCard label="Suppressed recipients" value={formatNumber(overview.suppressedRecipients)} />
-              </div>
-            ) : null}
-          </>
-        )}
-      </TableShell>
-    </section>
+          {overview ? (
+            <div className="an-summary-grid" style={{ marginTop: "1rem" }}>
+              <OperationalCard label="Attempts" value={formatNumber(overview.attempts.total)} />
+              <OperationalCard label="Success rate" value={formatPercent(overview.attempts.successRate)} />
+              <OperationalCard label="Retry scheduled" value={formatNumber(overview.attempts.retryScheduled)} />
+              <OperationalCard label="Queued campaigns" value={formatNumber(overview.queuedCampaignMessages)} />
+              <OperationalCard label="Open alerts" value={formatNumber(overview.openAlerts)} />
+              <OperationalCard label="Suppressed" value={formatNumber(overview.suppressedRecipients)} />
+            </div>
+          ) : null}
+        </>
+      )}
+    </TableShell>
   );
 }
 
@@ -866,7 +585,7 @@ function FailedMessagesPage({
   const result = failuresQuery.data;
 
   return (
-    <section className="finance-shell">
+    <section className="an-shell">
       <TableShell
         title="WhatsApp Failed Messages"
         subtitle="Failure report with sender, recipient, and delivery remarks."
@@ -891,37 +610,37 @@ function FailedMessagesPage({
           <EmptyState label="No failed WhatsApp messages found for this range." />
         ) : (
           <>
-            <div style={{ overflowX: "auto", marginTop: "18px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "980px" }}>
+            <div className="an-table-wrap">
+              <table>
                 <thead>
-                  <tr style={{ textAlign: "left", fontSize: "0.82rem", color: "#64748b", textTransform: "uppercase" }}>
-                    <th style={tableHeaderStyle}>Message ID</th>
-                    <th style={tableHeaderStyle}>Sender</th>
-                    <th style={tableHeaderStyle}>Message content</th>
-                    <th style={tableHeaderStyle}>To</th>
-                    <th style={tableHeaderStyle}>Date time</th>
-                    <th style={tableHeaderStyle}>Remarks</th>
+                  <tr>
+                    <th>Message ID</th>
+                    <th>Sender</th>
+                    <th>Message content</th>
+                    <th>To</th>
+                    <th>Date time</th>
+                    <th>Remarks</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((row) => (
-                    <tr key={row.rowId} style={{ borderTop: "1px solid #edf2f7" }}>
-                      <td style={tableCellStyle}>
+                    <tr key={row.rowId}>
+                      <td>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                           <span style={{ fontWeight: 600, color: "#0f172a" }}>{truncateText(row.messageId, 18)}</span>
                           <CopyButton value={row.messageId} />
                         </div>
                       </td>
-                      <td style={tableCellStyle}>
+                      <td>
                         <div style={{ fontWeight: 600, color: "#334155" }}>{row.sender}</div>
                         <div style={{ marginTop: "4px", color: "#64748b", fontSize: "0.84rem" }}>{row.channelLabel}</div>
                       </td>
-                      <td style={tableCellStyle} title={row.messageContent}>
+                      <td title={row.messageContent}>
                         {truncateText(row.messageContent, 56)}
                       </td>
-                      <td style={tableCellStyle}>{formatPhone(row.to)}</td>
-                      <td style={tableCellStyle}>{formatDateTime(row.dateTime)}</td>
-                      <td style={{ ...tableCellStyle, color: "#7f1d1d" }} title={row.remarks ?? undefined}>
+                      <td>{formatPhone(row.to)}</td>
+                      <td>{formatDateTime(row.dateTime)}</td>
+                      <td style={{ color: "#7f1d1d" }} title={row.remarks ?? undefined}>
                         {truncateText(row.remarks ?? "No remarks", 64)}
                       </td>
                     </tr>
@@ -975,7 +694,7 @@ function NotificationMessagesPage({
   const result = notificationsQuery.data;
 
   return (
-    <section className="finance-shell">
+    <section className="an-shell">
       <TableShell
         title="WhatsApp Notification Messages"
         subtitle="Tracked outbound notifications across campaigns and inbox sends."
@@ -1000,33 +719,33 @@ function NotificationMessagesPage({
           <EmptyState label="No notification messages found for this range." />
         ) : (
           <>
-            <div style={{ overflowX: "auto", marginTop: "18px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "920px" }}>
+            <div className="an-table-wrap">
+              <table>
                 <thead>
-                  <tr style={{ textAlign: "left", fontSize: "0.82rem", color: "#64748b", textTransform: "uppercase" }}>
-                    <th style={tableHeaderStyle}>Message ID</th>
-                    <th style={tableHeaderStyle}>Message content</th>
-                    <th style={tableHeaderStyle}>To</th>
-                    <th style={tableHeaderStyle}>Date time</th>
-                    <th style={tableHeaderStyle}>Status</th>
+                  <tr>
+                    <th>Message ID</th>
+                    <th>Message content</th>
+                    <th>To</th>
+                    <th>Date time</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((row) => (
-                    <tr key={row.rowId} style={{ borderTop: "1px solid #edf2f7" }}>
-                      <td style={tableCellStyle}>
+                    <tr key={row.rowId}>
+                      <td>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                           <span style={{ fontWeight: 600, color: "#0f172a" }}>{truncateText(row.messageId, 20)}</span>
                           <CopyButton value={row.messageId} />
                         </div>
                       </td>
-                      <td style={tableCellStyle} title={row.messageContent}>
+                      <td title={row.messageContent}>
                         <div style={{ fontWeight: 600, color: "#334155" }}>{truncateText(row.messageContent, 64)}</div>
                         <div style={{ marginTop: "4px", color: "#64748b", fontSize: "0.84rem" }}>{row.channelLabel}</div>
                       </td>
-                      <td style={tableCellStyle}>{formatPhone(row.to)}</td>
-                      <td style={tableCellStyle}>{formatDateTime(row.dateTime)}</td>
-                      <td style={tableCellStyle}>
+                      <td>{formatPhone(row.to)}</td>
+                      <td>{formatDateTime(row.dateTime)}</td>
+                      <td>
                         <StatusPill status={row.status} />
                         {row.status === "failed" && row.remarks ? (
                           <div style={{ marginTop: "6px", color: "#991b1b", fontSize: "0.82rem" }}>
@@ -1077,14 +796,8 @@ function ConversationReportPage({
   const hotLeads = conversations.filter((conversation) => conversation.score >= 80).length;
 
   return (
-    <section className="finance-shell" style={{ display: "grid", gap: "18px" }}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: "14px"
-        }}
-      >
+    <section className="an-shell">
+      <div className="an-summary-grid">
         <OperationalCard label="API conversations" value={formatNumber(conversations.length)} />
         <OperationalCard label="Human handled" value={formatNumber(humanHandled)} />
         <OperationalCard label="AI live" value={formatNumber(conversations.length - humanHandled)} />
@@ -1100,25 +813,25 @@ function ConversationReportPage({
         ) : conversations.length === 0 ? (
           <EmptyState label="No API conversations found for this range." />
         ) : (
-          <div style={{ overflowX: "auto", marginTop: "18px" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "980px" }}>
+          <div className="an-table-wrap">
+            <table>
               <thead>
-                <tr style={{ textAlign: "left", fontSize: "0.82rem", color: "#64748b", textTransform: "uppercase" }}>
-                  <th style={tableHeaderStyle}>Contact</th>
-                  <th style={tableHeaderStyle}>Phone</th>
-                  <th style={tableHeaderStyle}>Connected number</th>
-                  <th style={tableHeaderStyle}>Lead type</th>
-                  <th style={tableHeaderStyle}>Score</th>
-                  <th style={tableHeaderStyle}>Mode</th>
-                  <th style={tableHeaderStyle}>Last message</th>
-                  <th style={tableHeaderStyle}>Last active</th>
-                  <th style={tableHeaderStyle}>Action</th>
+                <tr>
+                  <th>Contact</th>
+                  <th>Phone</th>
+                  <th>Connected number</th>
+                  <th>Lead type</th>
+                  <th>Score</th>
+                  <th>Mode</th>
+                  <th>Last message</th>
+                  <th>Last active</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {conversations.map((conversation) => (
-                  <tr key={conversation.id} style={{ borderTop: "1px solid #edf2f7" }}>
-                    <td style={tableCellStyle}>
+                  <tr key={conversation.id}>
+                    <td>
                       <div style={{ fontWeight: 700, color: "#0f172a" }}>
                         {conversation.contact_name?.trim() || "Unknown contact"}
                       </div>
@@ -1126,9 +839,9 @@ function ConversationReportPage({
                         {conversation.assigned_agent_name?.trim() || "Unassigned"}
                       </div>
                     </td>
-                    <td style={tableCellStyle}>{formatPhone(conversation.contact_phone || conversation.phone_number)}</td>
-                    <td style={tableCellStyle}>{formatPhone(conversation.channel_linked_number)}</td>
-                    <td style={tableCellStyle}>
+                    <td>{formatPhone(conversation.contact_phone || conversation.phone_number)}</td>
+                    <td>{formatPhone(conversation.channel_linked_number)}</td>
+                    <td>
                       <span
                         style={{
                           display: "inline-flex",
@@ -1143,15 +856,15 @@ function ConversationReportPage({
                         {conversation.lead_kind}
                       </span>
                     </td>
-                    <td style={tableCellStyle}>
+                    <td>
                       <span style={{ color: getLeadScoreTone(conversation), fontWeight: 700 }}>{conversation.score}/100</span>
                     </td>
-                    <td style={tableCellStyle}>{getModeLabel(conversation)}</td>
-                    <td style={tableCellStyle} title={conversation.last_message ?? undefined}>
+                    <td>{getModeLabel(conversation)}</td>
+                    <td title={conversation.last_message ?? undefined}>
                       {truncateText(conversation.last_message, 48)}
                     </td>
-                    <td style={tableCellStyle}>{formatDateTime(conversation.last_message_at)}</td>
-                    <td style={tableCellStyle}>
+                    <td>{formatDateTime(conversation.last_message_at)}</td>
+                    <td>
                       <button
                         type="button"
                         onClick={() => navigate(`/dashboard/inbox/${conversation.id}`)}
@@ -1180,12 +893,12 @@ function ConversationReportPage({
 
 function CampaignRow({ campaign }: { campaign: Campaign }) {
   return (
-    <tr style={{ borderTop: "1px solid #edf2f7" }}>
-      <td style={tableCellStyle}>
+    <tr>
+      <td>
         <div style={{ fontWeight: 700, color: "#0f172a" }}>{campaign.name}</div>
         <div style={{ marginTop: "4px", color: "#64748b", fontSize: "0.84rem" }}>{campaign.template_id ?? "No template"}</div>
       </td>
-      <td style={tableCellStyle}>
+      <td>
         <span
           style={{
             display: "inline-flex",
@@ -1200,13 +913,13 @@ function CampaignRow({ campaign }: { campaign: Campaign }) {
           {campaign.status}
         </span>
       </td>
-      <td style={tableCellStyle}>{formatNumber(campaign.total_count)}</td>
-      <td style={tableCellStyle}>{formatNumber(campaign.sent_count)}</td>
-      <td style={{ ...tableCellStyle, color: "#2563eb" }}>{formatNumber(campaign.delivered_count)}</td>
-      <td style={{ ...tableCellStyle, color: "#16a34a" }}>{formatNumber(campaign.read_count)}</td>
-      <td style={{ ...tableCellStyle, color: "#dc2626" }}>{formatNumber(campaign.failed_count)}</td>
-      <td style={{ ...tableCellStyle, color: "#c2410c" }}>{formatNumber(campaign.skipped_count)}</td>
-      <td style={tableCellStyle}>{formatDateTime(campaign.updated_at)}</td>
+      <td>{formatNumber(campaign.total_count)}</td>
+      <td>{formatNumber(campaign.sent_count)}</td>
+      <td style={{ color: "#2563eb" }}>{formatNumber(campaign.delivered_count)}</td>
+      <td style={{ color: "#16a34a" }}>{formatNumber(campaign.read_count)}</td>
+      <td style={{ color: "#dc2626" }}>{formatNumber(campaign.failed_count)}</td>
+      <td style={{ color: "#c2410c" }}>{formatNumber(campaign.skipped_count)}</td>
+      <td>{formatDateTime(campaign.updated_at)}</td>
     </tr>
   );
 }
@@ -1247,65 +960,32 @@ function ReportsPage({
   }, [campaignsQuery.data]);
 
   return (
-    <section className="finance-shell" style={{ display: "grid", gap: "18px" }}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "14px"
-        }}
-      >
+    <section className="an-shell">
+      <div className="an-summary-grid">
         <OperationalCard label="Open alerts" value={formatNumber(alerts.length)} />
         <OperationalCard label="Campaigns" value={formatNumber(campaignsQuery.data?.length ?? 0)} />
         <OperationalCard label="AI messages" value={formatNumber(usage?.messages ?? 0)} />
         <OperationalCard label="Top failures" value={formatNumber(summary?.topFailureReasons.length ?? 0)} />
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr)",
-          gap: "18px"
-        }}
-      >
+      <div className="an-detail-grid">
         <TableShell title="Delivery alerts" subtitle="Operational issues detected by the delivery service.">
           {alertsQuery.isLoading ? (
             <LoadingState label="Loading delivery alerts..." />
           ) : alerts.length === 0 ? (
             <EmptyState label="No open delivery alerts right now." />
           ) : (
-            <div style={{ display: "grid", gap: "12px", marginTop: "18px" }}>
+            <div style={{ display: "grid", gap: "0.65rem", marginTop: "1rem" }}>
               {alerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  style={{
-                    borderRadius: "18px",
-                    border: `1px solid ${
-                      alert.severity === "critical" ? "#fecaca" : alert.severity === "warning" ? "#fed7aa" : "#cbd5e1"
-                    }`,
-                    background:
-                      alert.severity === "critical" ? "#fff7f7" : alert.severity === "warning" ? "#fffaf0" : "#f8fafc",
-                    padding: "16px"
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
-                    <strong style={{ color: "#0f172a" }}>{alert.summary}</strong>
-                    <span
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: "999px",
-                        background: "#ffffff",
-                        border: "1px solid #d7dee8",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
-                        color: "#334155"
-                      }}
-                    >
+                <div key={alert.id} className="an-failure-reason">
+                  <div className="an-failure-reason-head">
+                    <span className="an-failure-reason-msg">{alert.summary}</span>
+                    <span className={`an-severity-pill sev-${alert.severity}`}>
                       {getAlertSeverityLabel(alert)}
                     </span>
                   </div>
-                  <div style={{ marginTop: "8px", color: "#64748b", fontSize: "0.9rem" }}>
-                    {alert.alert_type} - {formatDateTime(alert.triggered_at)}
+                  <div className="an-failure-reason-code">
+                    {alert.alert_type} — {formatDateTime(alert.triggered_at)}
                   </div>
                 </div>
               ))}
@@ -1319,7 +999,7 @@ function ReportsPage({
           ) : !usage ? (
             <EmptyState label="No usage summary available yet." />
           ) : (
-            <div style={{ display: "grid", gap: "14px", marginTop: "18px" }}>
+            <div style={{ display: "grid", gap: "0.5rem", marginTop: "1rem" }}>
               <UsageMetric label="Messages" value={formatNumber(usage.messages)} />
               <UsageMetric label="Prompt tokens" value={formatNumber(usage.prompt_tokens)} />
               <UsageMetric label="Completion tokens" value={formatNumber(usage.completion_tokens)} />
@@ -1336,19 +1016,19 @@ function ReportsPage({
         ) : campaigns.length === 0 ? (
           <EmptyState label="No campaigns have been created yet." />
         ) : (
-          <div style={{ overflowX: "auto", marginTop: "18px" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "860px" }}>
+          <div className="an-table-wrap">
+            <table>
               <thead>
-                <tr style={{ textAlign: "left", fontSize: "0.82rem", color: "#64748b", textTransform: "uppercase" }}>
-                  <th style={tableHeaderStyle}>Campaign</th>
-                  <th style={tableHeaderStyle}>Status</th>
-                  <th style={tableHeaderStyle}>Audience</th>
-                  <th style={tableHeaderStyle}>Sent</th>
-                  <th style={tableHeaderStyle}>Delivered</th>
-                  <th style={tableHeaderStyle}>Read</th>
-                  <th style={tableHeaderStyle}>Failed</th>
-                  <th style={tableHeaderStyle}>Skipped</th>
-                  <th style={tableHeaderStyle}>Updated</th>
+                <tr>
+                  <th>Campaign</th>
+                  <th>Status</th>
+                  <th>Audience</th>
+                  <th>Sent</th>
+                  <th>Delivered</th>
+                  <th>Read</th>
+                  <th>Failed</th>
+                  <th>Skipped</th>
+                  <th>Updated</th>
                 </tr>
               </thead>
               <tbody>
@@ -1408,42 +1088,6 @@ function AnalyticsModule() {
     setSearchParams(next, { replace: true });
   };
 
-  const headerRight = summary ? (
-    <div
-      style={{
-        display: "flex",
-        gap: "12px",
-        flexWrap: "wrap",
-        alignItems: "center"
-      }}
-    >
-      <span
-        style={{
-          padding: "8px 12px",
-          borderRadius: "999px",
-          background: "#f8fafc",
-          border: "1px solid #d7dee8",
-          color: "#475569",
-          fontWeight: 600
-        }}
-      >
-        Recipients: {formatNumber(summary.cards.recipients.count)}
-      </span>
-      <span
-        style={{
-          padding: "8px 12px",
-          borderRadius: "999px",
-          background: "#fff7f7",
-          border: "1px solid #fecaca",
-          color: "#dc2626",
-          fontWeight: 700
-        }}
-      >
-        Failed: {formatNumber(summary.cards.failed.count)}
-      </span>
-    </div>
-  ) : null;
-
   const showStatusFilter = location.pathname.includes("/dashboard/analytics/notification-messages");
 
   const routes = useRoutes([
@@ -1470,23 +1114,70 @@ function AnalyticsModule() {
   ]);
 
   return (
-    <section className="finance-shell" style={{ display: "grid", gap: "18px" }}>
-      <article
-        className="finance-panel"
-        style={{
-          padding: "24px",
-          borderRadius: "24px",
-          background:
-            "linear-gradient(135deg, rgba(247,250,255,1) 0%, rgba(255,255,255,1) 52%, rgba(240,253,244,1) 100%)",
-          border: "1px solid #e2e8f0",
-          boxShadow: "0 24px 60px -45px rgba(15, 23, 42, 0.45)"
-        }}
-      >
-        <SectionHeader
-          title="Analytics"
-          subtitle="Delivery summary, failure handling, notification tracking, and conversation reporting."
-          right={headerRight}
-        />
+    <section className="an-shell">
+      {/* Overview stats card */}
+      <div className="an-overview-card">
+        <div className="an-overview-head">
+          <span className="an-overview-title">Overview</span>
+          {summary ? (
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <span className="an-overview-badge is-slate">
+                Recipients: {formatNumber(summary.cards.recipients.count)}
+              </span>
+              <span className="an-overview-badge is-red">
+                Failed: {formatNumber(summary.cards.failed.count)}
+              </span>
+            </div>
+          ) : null}
+        </div>
+        <div className="an-overview-stats">
+          {summary ? (
+            <>
+              <div className="an-stat-cell">
+                <p className="an-stat-label">Sent</p>
+                <p className="an-stat-value">{formatNumber(summary.cards.sent.count)}</p>
+                <p className="an-stat-sub">{formatPercent(summary.cards.sent.percentage)}</p>
+              </div>
+              <div className="an-stat-cell">
+                <p className="an-stat-label">Delivered</p>
+                <p className="an-stat-value is-blue">{formatNumber(summary.cards.delivered.count)}</p>
+                <p className="an-stat-sub">{formatPercent(summary.cards.delivered.percentage)}</p>
+              </div>
+              <div className="an-stat-cell">
+                <p className="an-stat-label">Engaged</p>
+                <p className="an-stat-value is-green">{formatNumber(summary.cards.engaged.count)}</p>
+                <p className="an-stat-sub">{formatPercent(summary.cards.engaged.percentage)}</p>
+              </div>
+              <div className="an-stat-cell">
+                <p className="an-stat-label">Failed</p>
+                <p className="an-stat-value is-red">{formatNumber(summary.cards.failed.count)}</p>
+                <p className="an-stat-sub">{formatPercent(summary.cards.failed.percentage)}</p>
+              </div>
+              <div className="an-stat-cell">
+                <p className="an-stat-label">Freq. Limited</p>
+                <p className="an-stat-value is-amber">{formatNumber(summary.cards.frequencyLimit.count)}</p>
+                <p className="an-stat-sub">{formatPercent(summary.cards.frequencyLimit.percentage)}</p>
+              </div>
+              <div className="an-stat-cell">
+                <p className="an-stat-label">Not in WA</p>
+                <p className="an-stat-value is-amber">{formatNumber(summary.cards.notInWhatsApp.count)}</p>
+                <p className="an-stat-sub">{formatPercent(summary.cards.notInWhatsApp.percentage)}</p>
+              </div>
+              <div className="an-stat-cell">
+                <p className="an-stat-label">Recipients</p>
+                <p className="an-stat-value">{formatNumber(summary.cards.recipients.count)}</p>
+              </div>
+            </>
+          ) : summaryQuery.isLoading ? (
+            <div className="an-stat-cell"><p className="an-stat-label">Loading…</p></div>
+          ) : (
+            <div className="an-stat-cell"><p className="an-stat-label">No data</p></div>
+          )}
+        </div>
+      </div>
+
+      {/* Filter panel */}
+      <div className="an-filter-panel">
         <AnalyticsFilters
           days={days}
           onDaysChange={(value) => updateFilter({ days: value })}
@@ -1496,7 +1187,7 @@ function AnalyticsModule() {
           status={showStatusFilter ? status : undefined}
           onStatusChange={showStatusFilter ? (value) => updateFilter({ status: value }) : undefined}
         />
-      </article>
+      </div>
 
       {summaryQuery.isError ? (
         <TableShell title="Analytics" subtitle="Something went wrong while loading delivery analytics.">

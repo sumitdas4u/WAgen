@@ -8,6 +8,7 @@ import {
   listLeadsWithSummary,
   listConversationMessages,
   listConversations,
+  markConversationRead,
   summarizeLeadConversations,
   setConversationAIPaused,
   setManualTakeover,
@@ -114,6 +115,25 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
       const messages = await listConversationMessages(params.conversationId);
       return { messages };
+    }
+  );
+
+  fastify.post(
+    "/api/conversations/:conversationId/read",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [params.conversationId, request.authUser.userId]
+      );
+
+      if ((exists.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+
+      const unreadCount = await markConversationRead(request.authUser.userId, params.conversationId);
+      return { ok: true, unreadCount };
     }
   );
 

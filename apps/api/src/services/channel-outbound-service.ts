@@ -71,7 +71,7 @@ export async function sendConversationFlowMessage(input: {
       text: summaryText
     });
     if (!delivered) {
-      throw new Error("Web visitor is offline.");
+      throw new Error("Web visitor is offline. History is still available, but replies can only be sent while the visitor is connected.");
     }
   }
 

@@ -14,6 +14,7 @@ import {
   setConversationPaused,
   setManualTakeover,
   createOutboundConversation,
+  markConversationRead,
   type Conversation,
   type ConversationNote,
   type ConversationMessage,
@@ -28,6 +29,10 @@ export async function fetchInboxConversations(token: string): Promise<Conversati
 export async function fetchInboxMessages(token: string, conversationId: string): Promise<ConversationMessage[]> {
   const response = await fetchConversationMessages(token, conversationId);
   return response.messages;
+}
+
+export function markInboxConversationRead(token: string, conversationId: string) {
+  return markConversationRead(token, conversationId);
 }
 
 export async function fetchInboxNotes(token: string, conversationId: string): Promise<ConversationNote[]> {

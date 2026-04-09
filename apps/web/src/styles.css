@@ -950,6 +950,18 @@
   background: #eef8f1;
 }
 
+.inbox-thread-item.unread {
+  border-color: #8bc79b;
+  background: linear-gradient(180deg, #f8fff9 0%, #f2fbf4 100%);
+  box-shadow: inset 0 0 0 1px rgba(54, 127, 71, 0.08);
+}
+
+.inbox-thread-item.unread .clone-thread-title strong,
+.inbox-thread-item.unread p {
+  color: #173524;
+  font-weight: 700;
+}
+
 .inbox-thread-body {
   min-width: 0;
   display: grid;
@@ -1003,6 +1015,19 @@
   border-color: #b9d2f3;
   background: #e9f2ff;
   color: #1f4d87;
+}
+
+.inbox-unread-badge {
+  min-width: 1.45rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #188b4a, #0f7540);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.24rem 0.42rem;
+  text-align: center;
+  box-shadow: 0 6px 14px rgba(15, 117, 64, 0.18);
 }
 
 .inbox-thread-owner {
@@ -7791,6 +7816,16 @@ textarea {
   overflow: auto;
 }
 
+.dashboard-route-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dashboard-route-viewport > * {
+  min-height: 100%;
+}
+
 .dashboard-shell.dashboard-clone-shell .clone-chat-wrap {
   overflow: hidden;
 }
@@ -9140,6 +9175,10 @@ select:focus {
 
 .dashboard-flat-main {
   background: #ffffff !important;
+}
+
+.dashboard-flat-main .dashboard-route-viewport {
+  background: #f7fbf8 !important;
 }
 
 .dashboard-flat-header {

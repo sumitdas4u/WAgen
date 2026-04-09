@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contacts – WAgen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      background: #f3f5f8;
+      color: #122033;
+      min-height: 100vh;
+      padding: 1.25rem;
+    }
+
+    /* ── Page wrapper ── */
+    .contacts-page {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    /* ══════════════════════════════════════
+       PAGE HEADER
+    ══════════════════════════════════════ */
+    .ct-page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.5rem 0.25rem 0;
+    }
+    .ct-page-title {
+      font-family: "Space Grotesk", "Manrope", sans-serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: #122033;
+    }
+    .ct-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .ct-import-btn {
+      appearance: none;
+      height: 2.4rem;
+      padding: 0 1rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 10px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: #122033;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: background 120ms ease;
+    }
+    .ct-import-btn:hover { background: #f5f8ff; }
+    .ct-new-btn {
+      appearance: none;
+      height: 2.4rem;
+      padding: 0 1rem;
+      border: 0;
+      border-radius: 10px;
+      background: #25d366;
+      color: #fff;
+      font: inherit;
+      font-size: 0.84rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: background 120ms ease, transform 120ms ease;
+      white-space: nowrap;
+    }
+    .ct-new-btn:hover { background: #1db954; transform: translateY(-1px); }
+
+    /* ══════════════════════════════════════
+       OVERVIEW STATS CARD
+    ══════════════════════════════════════ */
+    .ct-overview-card {
+      border: 1px solid #e2eaf4;
+      border-radius: 14px;
+      background: #fff;
+      overflow: hidden;
+    }
+    .ct-overview-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #edf2f7;
+    }
+    .ct-overview-title {
+      font-family: "Space Grotesk", "Manrope", sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #122033;
+    }
+    .ct-overview-stats {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+    .ct-stat-cell {
+      padding: 0.85rem 1rem;
+      border-right: 1px solid #edf2f7;
+    }
+    .ct-stat-cell:last-child { border-right: none; }
+    .ct-stat-label {
+      font-size: 0.64rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #5f6f86;
+      margin-bottom: 0.5rem;
+    }
+    .ct-stat-value {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #122033;
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+    }
+    .ct-stat-sub {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #5f6f86;
+    }
+    .ct-stat-value.is-green { color: #16a34a; }
+    .ct-stat-value.is-red   { color: #be123c; }
+
+    /* ══════════════════════════════════════
+       TABS (Contacts / Segments)
+    ══════════════════════════════════════ */
+    .ct-tabs-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border-bottom: 2px solid #edf2f7;
+    }
+    .ct-tab {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #5f6f86;
+      padding: 0.6rem 1rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 120ms ease, border-color 120ms ease;
+    }
+    .ct-tab:hover { color: #122033; }
+    .ct-tab.is-active {
+      color: #2563eb;
+      border-bottom-color: #2563eb;
+    }
+
+    /* ══════════════════════════════════════
+       MAIN CONTENT CARD (table container)
+    ══════════════════════════════════════ */
+    .ct-table-card {
+      border: 1px solid #e2eaf4;
+      border-radius: 14px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ── */
+    .ct-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid #edf2f7;
+      flex-wrap: wrap;
+    }
+    .ct-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .ct-toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    /* Search */
+    .ct-search-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .ct-search-icon {
+      position: absolute;
+      left: 0.6rem;
+      font-size: 0.85rem;
+      color: #5f6f86;
+      pointer-events: none;
+    }
+    .ct-search-input {
+      height: 2.2rem;
+      padding: 0 0.75rem 0 2rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.82rem;
+      color: #122033;
+      outline: none;
+      width: 220px;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    .ct-search-input:focus {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.2);
+    }
+    .ct-search-input::placeholder { color: #94a3b8; }
+
+    /* Filter select dropdowns */
+    .ct-filter-select {
+      height: 2.2rem;
+      padding: 0 0.6rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.8rem;
+      color: #122033;
+      cursor: pointer;
+      outline: none;
+      appearance: auto;
+    }
+
+    /* Icon button */
+    .ct-icon-btn {
+      appearance: none;
+      width: 2.2rem;
+      height: 2.2rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 1rem;
+      display: grid;
+      place-items: center;
+      color: #5f6f86;
+      transition: background 120ms ease;
+    }
+    .ct-icon-btn:hover { background: #f0f4ff; }
+
+    /* Toolbar button (text) */
+    .ct-toolbar-btn {
+      appearance: none;
+      height: 2.2rem;
+      padding: 0 0.75rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #122033;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+      transition: background 120ms ease;
+    }
+    .ct-toolbar-btn:hover { background: #f5f8ff; }
+
+    /* Selected count badge */
+    .ct-selected-badge {
+      height: 2.2rem;
+      padding: 0 0.75rem;
+      border-radius: 8px;
+      background: #f0f4ff;
+      border: 1px solid #c7d6f7;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #2563eb;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    /* ── Table ── */
+    .ct-table-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    thead tr {
+      border-bottom: 1px solid #edf2f7;
+    }
+    th {
+      padding: 0.65rem 1rem;
+      text-align: left;
+      font-size: 0.64rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #5f6f86;
+      white-space: nowrap;
+      background: #fafbfd;
+    }
+    th:first-child { width: 2.5rem; }
+    tbody tr {
+      border-bottom: 1px solid #f1f5f9;
+      transition: background 80ms ease;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafbfd; }
+    tbody tr.is-selected { background: #f0f4ff; }
+    td {
+      padding: 0.75rem 1rem;
+      vertical-align: middle;
+    }
+
+    /* Checkbox */
+    .ct-checkbox {
+      width: 1rem;
+      height: 1rem;
+      accent-color: #2563eb;
+      cursor: pointer;
+    }
+
+    /* Name cell */
+    .ct-name-cell { display: flex; align-items: center; gap: 0.65rem; }
+    .ct-avatar {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #dbeafe, #c7d6f7);
+      color: #2563eb;
+      font-size: 0.72rem;
+      font-weight: 800;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .ct-avatar.av-green  { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #166534; }
+    .ct-avatar.av-purple { background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #7c3aed; }
+    .ct-avatar.av-amber  { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e; }
+    .ct-avatar.av-rose   { background: linear-gradient(135deg, #ffe4e6, #fecdd3); color: #be123c; }
+    .ct-name-info {}
+    .ct-name-main {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #122033;
+      white-space: nowrap;
+    }
+    .ct-name-phone {
+      font-size: 0.74rem;
+      color: #5f6f86;
+      margin-top: 0.1rem;
+      font-family: monospace;
+    }
+
+    /* Email cell */
+    .ct-email {
+      font-size: 0.82rem;
+      color: #334155;
+    }
+    .ct-cell-empty {
+      font-size: 0.82rem;
+      color: #cbd5e1;
+    }
+
+    /* Tags */
+    .ct-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+    .ct-tag {
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      background: #f1f5f9;
+      border: 1px solid #e2eaf4;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #475569;
+    }
+    .ct-tag.tag-blue {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+
+    /* Type pill */
+    .ct-type-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 1.5rem;
+      padding: 0 0.55rem;
+      border-radius: 999px;
+      font-size: 0.66rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .ct-type-pill.type-lead      { color: #1d4ed8; background: #dbeafe; border: 1px solid #bfdbfe; }
+    .ct-type-pill.type-feedback  { color: #166534; background: #dcfce7; border: 1px solid #bbf7d0; }
+    .ct-type-pill.type-complaint { color: #be123c; background: #ffe4e6; border: 1px solid #fecdd3; }
+    .ct-type-pill.type-other     { color: #7c3aed; background: #ede9fe; border: 1px solid #ddd6fe; }
+
+    /* Source pill */
+    .ct-source {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #5f6f86;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+    }
+    .ct-source-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      flex-shrink: 0;
+    }
+    .ct-source-dot.dot-web    { background: #3b82f6; }
+    .ct-source-dot.dot-qr     { background: #22c55e; }
+    .ct-source-dot.dot-import { background: #f59e0b; }
+    .ct-source-dot.dot-api    { background: #8b5cf6; }
+    .ct-source-dot.dot-manual { background: #94a3b8; }
+
+    /* Opt-in status indicator */
+    .ct-optin {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .ct-optin-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .ct-optin.is-opted-in  { color: #166534; }
+    .ct-optin.is-opted-in  .ct-optin-dot { background: #22c55e; }
+    .ct-optin.is-opted-out { color: #be123c; }
+    .ct-optin.is-opted-out .ct-optin-dot { background: #f43f5e; }
+    .ct-optin.is-unknown   { color: #94a3b8; }
+    .ct-optin.is-unknown   .ct-optin-dot { background: #cbd5e1; }
+
+    /* Created cell */
+    .ct-created-cell { white-space: nowrap; }
+    .ct-created-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #122033;
+    }
+    .ct-created-date {
+      font-size: 0.72rem;
+      color: #5f6f86;
+      margin-top: 0.1rem;
+    }
+
+    /* Action cell */
+    .ct-action-cell {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      position: relative;
+    }
+    .ct-action-btn {
+      appearance: none;
+      height: 2rem;
+      padding: 0 0.75rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #122033;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .ct-action-btn:hover { background: #f5f8ff; }
+    .ct-more-btn {
+      appearance: none;
+      width: 2rem;
+      height: 2rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #5f6f86;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: background 120ms ease;
+    }
+    .ct-more-btn:hover { background: #f5f8ff; }
+
+    /* ── Dropdown menu ── */
+    .dd-wrap { position: relative; }
+    .dd-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 4px);
+      z-index: 60;
+      min-width: 190px;
+      background: #fff;
+      border: 1px solid #e2eaf4;
+      border-radius: 10px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.13);
+      padding: 0.3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.05rem;
+    }
+    .dd-item {
+      appearance: none;
+      width: 100%;
+      padding: 0.6rem 0.85rem;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      font: inherit;
+      font-size: 0.83rem;
+      font-weight: 500;
+      color: #334155;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      transition: background 100ms ease;
+    }
+    .dd-item:hover { background: #f1f5f9; }
+    .dd-item-danger { color: #be123c; }
+    .dd-item-danger:hover { background: #fee2e2; }
+    .dd-divider {
+      height: 1px;
+      background: #f1f5f9;
+      margin: 0.2rem 0.5rem;
+    }
+
+    /* ── Pagination ── */
+    .ct-pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 1rem;
+      border-top: 1px solid #edf2f7;
+      font-size: 0.82rem;
+      color: #5f6f86;
+    }
+    .ct-rows-per-page {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+    }
+    .ct-rows-select {
+      height: 2rem;
+      padding: 0 1.6rem 0 0.5rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.8rem;
+      color: #122033;
+      cursor: pointer;
+      outline: none;
+      appearance: auto;
+    }
+    .ct-page-info { font-size: 0.8rem; }
+    .ct-page-info strong { color: #2563eb; font-weight: 700; }
+    .ct-page-nav { display: flex; gap: 0.4rem; }
+    .ct-nav-btn {
+      appearance: none;
+      height: 2rem;
+      padding: 0 0.8rem;
+      border: 1px solid #e2eaf4;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #122033;
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    .ct-nav-btn:hover:not(:disabled) { background: #f5f8ff; }
+    .ct-nav-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Empty state ── */
+    .ct-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 4rem 2rem;
+      text-align: center;
+    }
+    .ct-empty-icon {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 12px;
+      background: #f1f5f9;
+      display: grid;
+      place-items: center;
+      font-size: 1.4rem;
+      color: #94a3b8;
+    }
+    .ct-empty-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #122033;
+    }
+    .ct-empty-text {
+      font-size: 0.82rem;
+      color: #5f6f86;
+      max-width: 300px;
+      line-height: 1.55;
+    }
+
+    /* ── Segment list (second tab) ── */
+    .seg-table-wrap { overflow-x: auto; }
+    .seg-row-filter {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .seg-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      background: #f1f5f9;
+      border: 1px solid #e2eaf4;
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: #334155;
+    }
+    .seg-filter-chip .chip-key {
+      color: #64748b;
+      font-weight: 500;
+    }
+    .seg-filter-chip .chip-op {
+      padding: 0.05rem 0.35rem;
+      border-radius: 4px;
+      background: #e0f2fe;
+      color: #0369a1;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .seg-filter-chip .chip-val {
+      background: #f0fdf4;
+      color: #166534;
+      padding: 0.05rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .ct-view-count {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #2563eb;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .ct-view-count:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="contacts-page">
+
+    <!-- ── Page header ── -->
+    <div class="ct-page-header">
+      <h2 class="ct-page-title">Contacts</h2>
+      <div class="ct-header-actions">
+        <button type="button" class="ct-import-btn">
+          &#8613; Import
+        </button>
+        <button type="button" class="ct-new-btn">
+          + New Contact
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Overview stats ── -->
+    <div class="ct-overview-card">
+      <div class="ct-overview-head">
+        <span class="ct-overview-title">Overview</span>
+      </div>
+      <div class="ct-overview-stats">
+        <div class="ct-stat-cell">
+          <div class="ct-stat-label">Total Contacts</div>
+          <div class="ct-stat-value">2,418</div>
+        </div>
+        <div class="ct-stat-cell">
+          <div class="ct-stat-label">Leads</div>
+          <div class="ct-stat-value">1,302 <span class="ct-stat-sub">54%</span></div>
+        </div>
+        <div class="ct-stat-cell">
+          <div class="ct-stat-label">Added this week</div>
+          <div class="ct-stat-value is-green">+143</div>
+        </div>
+        <div class="ct-stat-cell">
+          <div class="ct-stat-label">Opted In</div>
+          <div class="ct-stat-value is-green">1,891 <span class="ct-stat-sub">78%</span></div>
+        </div>
+        <div class="ct-stat-cell">
+          <div class="ct-stat-label">Opted Out</div>
+          <div class="ct-stat-value is-red">247 <span class="ct-stat-sub">10%</span></div>
+        </div>
+        <div class="ct-stat-cell">
+          <div class="ct-stat-label">Segments</div>
+          <div class="ct-stat-value">12</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Tabs ── -->
+    <div class="ct-tabs-row">
+      <button type="button" class="ct-tab is-active">Contacts</button>
+      <button type="button" class="ct-tab">Segments</button>
+    </div>
+
+    <!-- ══════════════════════════════════
+         CONTACTS TAB
+    ══════════════════════════════════ -->
+    <div class="ct-table-card">
+
+      <!-- Toolbar -->
+      <div class="ct-toolbar">
+        <div class="ct-toolbar-left">
+          <div class="ct-search-wrap">
+            <span class="ct-search-icon">&#128269;</span>
+            <input
+              type="text"
+              class="ct-search-input"
+              placeholder="Search contacts..."
+            />
+          </div>
+          <select class="ct-filter-select">
+            <option>All types</option>
+            <option>Lead</option>
+            <option>Feedback</option>
+            <option>Complaint</option>
+            <option>Other</option>
+          </select>
+          <select class="ct-filter-select">
+            <option>All sources</option>
+            <option>Manual</option>
+            <option>Import</option>
+            <option>Website</option>
+            <option>WhatsApp QR</option>
+            <option>WhatsApp API</option>
+          </select>
+        </div>
+        <div class="ct-toolbar-right">
+          <span class="ct-selected-badge">2 selected</span>
+          <button type="button" class="ct-toolbar-btn">&#10005; Clear</button>
+          <button type="button" class="ct-toolbar-btn">&#8681; Export</button>
+          <button type="button" class="ct-toolbar-btn">&#9783; Filter</button>
+          <button type="button" class="ct-icon-btn" title="Refresh">&#8635;</button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="ct-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" class="ct-checkbox" /></th>
+              <th>Name &amp; Phone</th>
+              <th>Email</th>
+              <th>Tags</th>
+              <th>Type</th>
+              <th>Source</th>
+              <th>Opt-In</th>
+              <th>Added</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <!-- Row 1 (selected) -->
+            <tr class="is-selected">
+              <td><input type="checkbox" class="ct-checkbox" checked /></td>
+              <td>
+                <div class="ct-name-cell">
+                  <div class="ct-avatar av-green">SR</div>
+                  <div class="ct-name-info">
+                    <div class="ct-name-main">Sumit Roy</div>
+                    <div class="ct-name-phone">+91 98765 43210</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="ct-email">sumit.roy@email.com</span></td>
+              <td>
+                <div class="ct-tags">
+                  <span class="ct-tag tag-blue">premium</span>
+                  <span class="ct-tag">delhi</span>
+                </div>
+              </td>
+              <td><span class="ct-type-pill type-lead">Lead</span></td>
+              <td>
+                <div class="ct-source">
+                  <span class="ct-source-dot dot-qr"></span>WhatsApp QR
+                </div>
+              </td>
+              <td>
+                <div class="ct-optin is-opted-in">
+                  <span class="ct-optin-dot"></span>Opted in
+                </div>
+              </td>
+              <td class="ct-created-cell">
+                <div class="ct-created-name">Sumit Das</div>
+                <div class="ct-created-date">08 Apr 2026, 14:22</div>
+              </td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-action-btn">&#128172; Message</button>
+                  <div class="dd-wrap">
+                    <button type="button" class="ct-more-btn">&#8942;</button>
+                    <!-- Dropdown (shown for demo) -->
+                    <div class="dd-menu">
+                      <button class="dd-item">&#9998;&#65038; Edit contact</button>
+                      <button class="dd-item">&#128203; Copy phone</button>
+                      <button class="dd-item">&#128279; View history</button>
+                      <div class="dd-divider"></div>
+                      <button class="dd-item dd-item-danger">&#128465; Delete</button>
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Row 2 (selected) -->
+            <tr class="is-selected">
+              <td><input type="checkbox" class="ct-checkbox" checked /></td>
+              <td>
+                <div class="ct-name-cell">
+                  <div class="ct-avatar av-purple">PK</div>
+                  <div class="ct-name-info">
+                    <div class="ct-name-main">Priya Kapoor</div>
+                    <div class="ct-name-phone">+91 87654 32109</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="ct-email">priya.k@company.in</span></td>
+              <td>
+                <div class="ct-tags">
+                  <span class="ct-tag">mumbai</span>
+                </div>
+              </td>
+              <td><span class="ct-type-pill type-feedback">Feedback</span></td>
+              <td>
+                <div class="ct-source">
+                  <span class="ct-source-dot dot-web"></span>Website
+                </div>
+              </td>
+              <td>
+                <div class="ct-optin is-opted-in">
+                  <span class="ct-optin-dot"></span>Opted in
+                </div>
+              </td>
+              <td class="ct-created-cell">
+                <div class="ct-created-name">Sumit Das</div>
+                <div class="ct-created-date">07 Apr 2026, 09:15</div>
+              </td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-action-btn">&#128172; Message</button>
+                  <button type="button" class="ct-more-btn">&#8942;</button>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Row 3 -->
+            <tr>
+              <td><input type="checkbox" class="ct-checkbox" /></td>
+              <td>
+                <div class="ct-name-cell">
+                  <div class="ct-avatar av-amber">RV</div>
+                  <div class="ct-name-info">
+                    <div class="ct-name-main">Rahul Verma</div>
+                    <div class="ct-name-phone">+91 77889 90011</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="ct-cell-empty">—</span></td>
+              <td>
+                <div class="ct-tags">
+                  <span class="ct-tag tag-blue">vip</span>
+                  <span class="ct-tag">pune</span>
+                  <span class="ct-tag">retail</span>
+                </div>
+              </td>
+              <td><span class="ct-type-pill type-lead">Lead</span></td>
+              <td>
+                <div class="ct-source">
+                  <span class="ct-source-dot dot-import"></span>Import
+                </div>
+              </td>
+              <td>
+                <div class="ct-optin is-opted-out">
+                  <span class="ct-optin-dot"></span>Opted out
+                </div>
+              </td>
+              <td class="ct-created-cell">
+                <div class="ct-created-name">Sumit Das</div>
+                <div class="ct-created-date">05 Apr 2026, 16:40</div>
+              </td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-action-btn">&#128172; Message</button>
+                  <button type="button" class="ct-more-btn">&#8942;</button>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Row 4 -->
+            <tr>
+              <td><input type="checkbox" class="ct-checkbox" /></td>
+              <td>
+                <div class="ct-name-cell">
+                  <div class="ct-avatar">AN</div>
+                  <div class="ct-name-info">
+                    <div class="ct-name-main">Anjali Nair</div>
+                    <div class="ct-name-phone">+91 90011 22334</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="ct-email">anjali.nair@gmail.com</span></td>
+              <td>
+                <div class="ct-tags">
+                  <span class="ct-tag">bangalore</span>
+                </div>
+              </td>
+              <td><span class="ct-type-pill type-complaint">Complaint</span></td>
+              <td>
+                <div class="ct-source">
+                  <span class="ct-source-dot dot-api"></span>WhatsApp API
+                </div>
+              </td>
+              <td>
+                <div class="ct-optin is-unknown">
+                  <span class="ct-optin-dot"></span>Unknown
+                </div>
+              </td>
+              <td class="ct-created-cell">
+                <div class="ct-created-name">Sumit Das</div>
+                <div class="ct-created-date">03 Apr 2026, 11:05</div>
+              </td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-action-btn">&#128172; Message</button>
+                  <button type="button" class="ct-more-btn">&#8942;</button>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Row 5 -->
+            <tr>
+              <td><input type="checkbox" class="ct-checkbox" /></td>
+              <td>
+                <div class="ct-name-cell">
+                  <div class="ct-avatar av-rose">MS</div>
+                  <div class="ct-name-info">
+                    <div class="ct-name-main">Mohit Sharma</div>
+                    <div class="ct-name-phone">+91 81234 56789</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="ct-email">mohit@biz.co</span></td>
+              <td>
+                <div class="ct-tags">
+                  <span class="ct-tag">hyderabad</span>
+                  <span class="ct-tag tag-blue">enterprise</span>
+                </div>
+              </td>
+              <td><span class="ct-type-pill type-other">Other</span></td>
+              <td>
+                <div class="ct-source">
+                  <span class="ct-source-dot dot-manual"></span>Manual
+                </div>
+              </td>
+              <td>
+                <div class="ct-optin is-opted-in">
+                  <span class="ct-optin-dot"></span>Opted in
+                </div>
+              </td>
+              <td class="ct-created-cell">
+                <div class="ct-created-name">Sumit Das</div>
+                <div class="ct-created-date">01 Apr 2026, 08:30</div>
+              </td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-action-btn">&#128172; Message</button>
+                  <button type="button" class="ct-more-btn">&#8942;</button>
+                </div>
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="ct-pagination">
+        <div class="ct-rows-per-page">
+          Rows per page
+          <select class="ct-rows-select">
+            <option>20</option>
+            <option>50</option>
+            <option>100</option>
+          </select>
+        </div>
+        <span class="ct-page-info">
+          <strong>1–20</strong> of 2,418
+        </span>
+        <div class="ct-page-nav">
+          <button class="ct-nav-btn" disabled>&#8592; Prev</button>
+          <button class="ct-nav-btn">Next &#8594;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         SEGMENTS TAB (hidden by default,
+         shown here for reference)
+    ══════════════════════════════════ -->
+    <div class="ct-table-card" style="margin-top:0.5rem;">
+      <div class="ct-toolbar">
+        <span style="font-family:'Space Grotesk','Manrope',sans-serif;font-size:0.95rem;font-weight:700;letter-spacing:-0.01em;color:#122033;">Segments</span>
+        <div class="ct-toolbar-right">
+          <div class="ct-search-wrap">
+            <span class="ct-search-icon">&#128269;</span>
+            <input type="text" class="ct-search-input" placeholder="Search segments..." style="width:180px;" />
+          </div>
+          <button type="button" class="ct-new-btn" style="height:2.2rem;font-size:0.8rem;">+ New Segment</button>
+        </div>
+      </div>
+
+      <div class="seg-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" class="ct-checkbox" /></th>
+              <th>Segment Name</th>
+              <th>Filters</th>
+              <th>Total Contacts</th>
+              <th>Created By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr>
+              <td><input type="checkbox" class="ct-checkbox" /></td>
+              <td>
+                <div class="ct-name-main">Premium Leads</div>
+                <div class="ct-created-date">08 Apr 2026, 17:26</div>
+              </td>
+              <td>
+                <div class="seg-row-filter">
+                  <span class="seg-filter-chip">
+                    <span class="chip-key">Tags</span>
+                    <span class="chip-op">Contains</span>
+                    <span class="chip-val">premium</span>
+                  </span>
+                </div>
+              </td>
+              <td><a href="#" class="ct-view-count">View count</a></td>
+              <td><span style="color:#94a3b8;font-size:0.82rem;">—</span></td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-more-btn">&#8942;</button>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td><input type="checkbox" class="ct-checkbox" /></td>
+              <td>
+                <div class="ct-name-main">Recent Signups</div>
+                <div class="ct-created-date">05 Apr 2026, 09:40</div>
+              </td>
+              <td>
+                <div class="seg-row-filter">
+                  <span class="seg-filter-chip">
+                    <span class="chip-key">Created At</span>
+                    <span class="chip-op">Is after</span>
+                    <span class="chip-val">2026-04-01</span>
+                  </span>
+                </div>
+              </td>
+              <td><a href="#" class="ct-view-count">View count</a></td>
+              <td><span style="color:#94a3b8;font-size:0.82rem;">—</span></td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-more-btn">&#8942;</button>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td><input type="checkbox" class="ct-checkbox" /></td>
+              <td>
+                <div class="ct-name-main">Mumbai Contacts</div>
+                <div class="ct-created-date">03 Apr 2026, 14:10</div>
+              </td>
+              <td>
+                <div class="seg-row-filter">
+                  <span class="seg-filter-chip">
+                    <span class="chip-key">Tags</span>
+                    <span class="chip-op">Contains</span>
+                    <span class="chip-val">mumbai</span>
+                  </span>
+                </div>
+              </td>
+              <td><a href="#" class="ct-view-count">View count</a></td>
+              <td><span style="color:#94a3b8;font-size:0.82rem;">—</span></td>
+              <td>
+                <div class="ct-action-cell">
+                  <button type="button" class="ct-more-btn">&#8942;</button>
+                </div>
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <div class="ct-pagination">
+        <div class="ct-rows-per-page">
+          Rows per page
+          <select class="ct-rows-select"><option>20</option></select>
+        </div>
+        <span class="ct-page-info"><strong>1–3</strong> of 12</span>
+        <div class="ct-page-nav">
+          <button class="ct-nav-btn" disabled>&#8592; Prev</button>
+          <button class="ct-nav-btn">Next &#8594;</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -39,6 +39,8 @@ export interface Conversation {
   ai_paused: boolean;
   manual_takeover: boolean;
   last_ai_reply_at: string | null;
+  unread_count?: number;
+  visitor_online?: boolean;
 }
 
 export interface ContactFieldValue {
