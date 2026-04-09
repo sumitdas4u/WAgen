@@ -372,6 +372,16 @@ export async function updateSequence(
   return getSequenceDetail(userId, sequenceId);
 }
 
+export async function deleteSequence(userId: string, sequenceId: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM sequences
+     WHERE user_id = $1
+       AND id = $2`,
+    [userId, sequenceId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 async function validatePublishableSequence(userId: string, sequenceId: string): Promise<void> {
   const detail = await getSequenceDetail(userId, sequenceId);
   if (!detail) {
@@ -433,20 +443,45 @@ export async function resumeSequence(userId: string, sequenceId: string): Promis
   return getSequenceDetail(userId, sequenceId);
 }
 
-export async function listSequenceEnrollments(userId: string, sequenceId: string): Promise<SequenceEnrollment[]> {
-  const result = await pool.query<SequenceEnrollment>(
-    `SELECT se.*
+export async function listSequenceEnrollments(
+  userId: string,
+  sequenceId: string,
+  status?: SequenceEnrollmentStatus
+): Promise<(SequenceEnrollment & { contact_phone: string; contact_name: string | null })[]> {
+  const result = await pool.query<SequenceEnrollment & { contact_phone: string; contact_name: string | null }>(
+    `SELECT se.*,
+            c.phone_number AS contact_phone,
+            c.display_name AS contact_name
      FROM sequence_enrollments se
      JOIN sequences s ON s.id = se.sequence_id
+     JOIN contacts c ON c.id = se.contact_id
      WHERE se.sequence_id = $1
        AND s.user_id = $2
+       ${status ? "AND se.status = $3" : ""}
      ORDER BY se.entered_at DESC`,
-    [sequenceId, userId]
+    status ? [sequenceId, userId, status] : [sequenceId, userId]
   );
   return result.rows;
 }
 
-export async function createSequenceEnrollment(sequenceId: string, contactId: string): Promise<SequenceEnrollment> {
+export async function createSequenceEnrollment(
+  sequenceId: string,
+  contactId: string,
+  firstStepDelay?: { value: number; unit: SequenceDelayUnit }
+): Promise<SequenceEnrollment> {
+  // Apply the first step's configured delay so "Send after X, Relative to: From enrollment"
+  // is honoured. When no delay info is provided the step runs immediately (NOW()).
+  const nextRunAt =
+    firstStepDelay && firstStepDelay.value > 0
+      ? (() => {
+          const d = new Date();
+          if (firstStepDelay.unit === "minutes") d.setMinutes(d.getMinutes() + firstStepDelay.value);
+          else if (firstStepDelay.unit === "hours") d.setHours(d.getHours() + firstStepDelay.value);
+          else d.setDate(d.getDate() + firstStepDelay.value);
+          return d.toISOString();
+        })()
+      : new Date().toISOString();
+
   const result = await pool.query<SequenceEnrollment>(
     `INSERT INTO sequence_enrollments (
        sequence_id,
@@ -455,9 +490,9 @@ export async function createSequenceEnrollment(sequenceId: string, contactId: st
        current_step,
        next_run_at
      )
-     VALUES ($1, $2, 'active', 0, NOW())
+     VALUES ($1, $2, 'active', 0, $3)
      RETURNING *`,
-    [sequenceId, contactId]
+    [sequenceId, contactId, nextRunAt]
   );
   return result.rows[0]!;
 }
@@ -475,6 +510,11 @@ export async function updateSequenceEnrollment(
     retryStartedAt: string | null;
   }>
 ): Promise<void> {
+  // retryStartedAt uses an explicit-clear pattern: when the key is present and
+  // the value is null we want the column set to NULL (not left unchanged by COALESCE).
+  const clearRetryStartedAt =
+    Object.prototype.hasOwnProperty.call(patch, "retryStartedAt") && patch.retryStartedAt === null;
+
   await pool.query(
     `UPDATE sequence_enrollments
      SET status = COALESCE($2, status),
@@ -484,7 +524,7 @@ export async function updateSequenceEnrollment(
          last_message_id = COALESCE($6, last_message_id),
          last_delivery_status = COALESCE($7, last_delivery_status),
          retry_count = COALESCE($8, retry_count),
-         retry_started_at = COALESCE($9, retry_started_at),
+         retry_started_at = CASE WHEN $9 THEN NULL ELSE COALESCE($10, retry_started_at) END,
          updated_at = NOW()
      WHERE id = $1`,
     [
@@ -496,7 +536,8 @@ export async function updateSequenceEnrollment(
       patch.lastMessageId ?? null,
       patch.lastDeliveryStatus ?? null,
       patch.retryCount ?? null,
-      patch.retryStartedAt ?? null
+      clearRetryStartedAt,
+      clearRetryStartedAt ? null : (patch.retryStartedAt ?? null)
     ]
   );
 }

@@ -4,6 +4,7 @@ import { processSequenceEvent } from "../services/sequence-event-service.js";
 import { listEnrollmentLogs } from "../services/sequence-log-service.js";
 import {
   createSequence,
+  deleteSequence,
   getSequenceDetail,
   listSequenceEnrollments,
   listSequences,
@@ -12,6 +13,10 @@ import {
   resumeSequence,
   updateSequence
 } from "../services/sequence-service.js";
+
+const EnrollmentQuerySchema = z.object({
+  status: z.enum(["active", "completed", "failed", "stopped"]).optional()
+});
 
 const StepSchema = z.object({
   id: z.string().uuid().optional(),
@@ -98,6 +103,15 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
+  fastify.delete("/api/sequences/:sequenceId", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+    const { sequenceId } = request.params as { sequenceId: string };
+    const deleted = await deleteSequence(request.authUser.userId, sequenceId);
+    if (!deleted) {
+      return reply.status(404).send({ error: "Sequence not found" });
+    }
+    return { ok: true };
+  });
+
   fastify.post("/api/sequences/:sequenceId/publish", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     try {
@@ -133,9 +147,13 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.get("/api/sequences/:sequenceId/enrollments", { preHandler: [fastify.requireAuth] }, async (request) => {
+  fastify.get("/api/sequences/:sequenceId/enrollments", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
-    const enrollments = await listSequenceEnrollments(request.authUser.userId, sequenceId);
+    const parsed = EnrollmentQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid query" });
+    }
+    const enrollments = await listSequenceEnrollments(request.authUser.userId, sequenceId, parsed.data.status);
     return { enrollments };
   });
 
