@@ -159,6 +159,7 @@ export function ApiChannelPage() {
   const metaStatus: MetaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, connection: null } as MetaBusinessStatus);
   const metaConfig = metaConfigQuery.data ?? null;
   const connectionId = metaStatus.connection?.id;
+  const isConnected = Boolean(metaStatus.connection);
 
   const metaHealthRecord = getNestedRecord(metaStatus.connection?.metadata?.metaHealth);
   const businessVerificationStatus = readMetaString(metaHealthRecord, "businessVerificationStatus");
@@ -388,7 +389,7 @@ export function ApiChannelPage() {
           <p>Connect Meta Embedded Signup for stable production messaging at scale, then configure business profile.</p>
         </header>
 
-        {sharedBillingSupported ? (
+        {!isConnected && sharedBillingSupported ? (
           <div className="api-setup-alert">
             <strong>Shared Meta Billing Enabled</strong>
             <p>
@@ -408,139 +409,137 @@ export function ApiChannelPage() {
           </div>
         )}
 
-        <div className="api-setup-alert">
-          <strong>Facebook Business Verification — {formatMetaStatusLabel(businessVerificationStatus, "Pending")}</strong>
-          <p>
-            {businessVerificationPending
-              ? "Please complete Meta business verification to unlock higher messaging limits and stable deliverability."
-              : "Business verification is in a healthy state. Keep profile and compliance details updated in Meta."}
-          </p>
-        </div>
-
-        <div className="clone-channel-meta">
-          <div><h3>Status</h3><p>{metaStatus.connection?.status ?? "disconnected"}</p></div>
-          <div><h3>Linked Number</h3><p>{metaStatus.connection?.linkedNumber ? formatPhone(metaStatus.connection.linkedNumber) : (metaStatus.connection?.displayPhoneNumber ?? "Not linked")}</p></div>
-          <div><h3>WABA ID</h3><p>{metaStatus.connection?.wabaId ?? "Not connected"}</p></div>
-        </div>
-        <div className="clone-channel-meta">
-          <div><h3>Billing Mode</h3><p>{formatMetaStatusLabel(metaStatus.connection?.billingMode, sharedBillingSupported ? "Partner" : "None")}</p></div>
-          <div><h3>Billing Status</h3><p>{billingStatusLabel}</p></div>
-          <div><h3>Billing Currency</h3><p>{metaStatus.connection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}</p></div>
-        </div>
-        {metaStatus.connection?.billingError ? (
+        {!isConnected ? (
           <div className="api-setup-alert">
-            <strong>Billing attachment needs attention</strong>
-            <p>{metaStatus.connection.billingError}</p>
+            <strong>WhatsApp API is not connected</strong>
+            <p>
+              Connect your Meta WhatsApp Business number to start sending messages, syncing your profile, and managing your API channel from this page.
+            </p>
           </div>
-        ) : null}
-        <div className="clone-channel-meta">
-          <div><h3>Quality Rating</h3><p>{formatMetaStatusLabel(qualityRating)}</p></div>
-          <div><h3>Message Limit</h3><p>{formatMetaStatusLabel(messagingLimitTier)}</p></div>
-          <div><h3>Code Verification</h3><p>{formatMetaStatusLabel(codeVerificationStatus)}</p></div>
-        </div>
-        <div className="clone-channel-meta">
-          <div><h3>Name Status</h3><p>{formatMetaStatusLabel(nameStatus)}</p></div>
-          <div><h3>Account Review</h3><p>{formatMetaStatusLabel(wabaReviewStatus)}</p></div>
-          <div><h3>Last Meta Sync</h3><p>{lastMetaSyncLabel ?? "Not synced"}</p></div>
-        </div>
-
-        <div className="api-setup-alert">
-          <strong>Profile Approval</strong>
-          <p>
-            Business name status is {formatMetaStatusLabel(nameStatus, "Pending")}. Upload your logo and apply profile details here to sync them directly to Meta.
-          </p>
-        </div>
-
-        <div className="clone-channel-meta">
-          <div><h3>Display Name</h3><p>{verifiedName ?? "Not available"}</p></div>
-          <div><h3>Name Approval</h3><p>{formatMetaStatusLabel(nameStatus, "Pending")}</p></div>
-          <div><h3>Official Business</h3><p>{nameStatus && /approved|available|verified/i.test(nameStatus) ? "Eligible / healthy" : "Manage in Meta"}</p></div>
-        </div>
-
-        <div className="api-setup-alert">
-          <strong>Display name and blue tick</strong>
-          <p>
-            This page now manages the synced business profile fields directly with Meta. Display name review and Official Business Account approval still depend on Meta review rules and may need action inside Meta if they are rejected.
-          </p>
-        </div>
-
-        <form className="api-profile-form" onSubmit={(e) => {
-          e.preventDefault();
-          setError(null);
-          setInfo(null);
-          saveProfileMutation.mutate();
-        }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (!file) {
-                return;
-              }
-              setError(null);
-              setInfo(null);
-              uploadLogoMutation.mutate(file);
-              event.currentTarget.value = "";
-            }}
-          />
-          <label>
-            WhatsApp Display Picture
-            <div className="clone-hero-actions" style={{ alignItems: "center" }}>
-              <input value={profileDraft.displayPictureUrl} readOnly placeholder="Upload logo to generate Meta profile image handle" />
-              <button
-                type="button"
-                className="ghost-btn"
-                disabled={!connectionId || uploadLogoMutation.isPending}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {uploadLogoMutation.isPending ? "Uploading..." : "Upload logo"}
-              </button>
+        ) : (
+          <>
+            <div className="clone-channel-meta">
+              <div><h3>Connected Number</h3><p>{metaStatus.connection?.linkedNumber ? formatPhone(metaStatus.connection.linkedNumber) : (metaStatus.connection?.displayPhoneNumber ?? "Not linked")}</p></div>
+              <div><h3>Display Name</h3><p>{verifiedName ?? "Not available"}</p></div>
+              <div><h3>Name Approval</h3><p>{formatMetaStatusLabel(nameStatus, "Pending")}</p></div>
             </div>
-            {profileDraft.displayPictureUrl ? (
-              <div style={{ marginTop: 12 }}>
-                <img
-                  src={profileDraft.displayPictureUrl}
-                  alt="WhatsApp business logo preview"
-                  style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 12, border: "1px solid rgba(15, 23, 42, 0.12)" }}
-                />
+
+            <div className="api-setup-alert">
+              <strong>Facebook Business Verification — {formatMetaStatusLabel(businessVerificationStatus, "Pending")}</strong>
+              <p>
+                {businessVerificationPending
+                  ? "Please complete Meta business verification to unlock higher messaging limits and stable deliverability."
+                  : "Business verification is in a healthy state. Keep profile and compliance details updated in Meta."}
+              </p>
+            </div>
+
+            <div className="clone-channel-meta">
+              <div><h3>Status</h3><p>{metaStatus.connection?.status ?? "connected"}</p></div>
+              <div><h3>Message Limit</h3><p>{formatMetaStatusLabel(messagingLimitTier)}</p></div>
+              <div><h3>Last Meta Sync</h3><p>{lastMetaSyncLabel ?? "Not synced"}</p></div>
+            </div>
+
+            {(metaStatus.connection?.billingError || sharedBillingSupported) ? (
+              <div className="api-setup-alert">
+                <strong>Billing</strong>
+                <p>
+                  {metaStatus.connection?.billingError
+                    ? metaStatus.connection.billingError
+                    : `Mode: ${formatMetaStatusLabel(metaStatus.connection?.billingMode, sharedBillingSupported ? "Partner" : "None")} | Status: ${billingStatusLabel} | Currency: ${metaStatus.connection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}`}
+                </p>
               </div>
             ) : null}
-          </label>
-          <label>Address<textarea rows={2} maxLength={256} value={profileDraft.address} onChange={(e) => setProfileDraft((c) => ({ ...c, address: e.target.value }))} placeholder="Enter address" /></label>
-          <label>Category
-            <select value={profileDraft.vertical} onChange={(e) => setProfileDraft((c) => ({ ...c, vertical: e.target.value }))}>
-              {PROFILE_VERTICAL_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </label>
-          <label>Description<textarea rows={3} maxLength={256} value={profileDraft.businessDescription} onChange={(e) => setProfileDraft((c) => ({ ...c, businessDescription: e.target.value }))} placeholder="Message not available now, leave a message" /></label>
-          <label>Email<input type="email" maxLength={128} value={profileDraft.email} onChange={(e) => setProfileDraft((c) => ({ ...c, email: e.target.value }))} placeholder="Enter email" /></label>
-          <label>Website URL<input value={profileDraft.websiteUrl} onChange={(e) => setProfileDraft((c) => ({ ...c, websiteUrl: e.target.value }))} placeholder="https://your-website.com" /></label>
-          <label>About<input maxLength={139} value={profileDraft.about} onChange={(e) => setProfileDraft((c) => ({ ...c, about: e.target.value }))} placeholder="Official WhatsApp Business Account" /></label>
-          <div className="clone-hero-actions">
-            <button type="submit" className="primary-btn" disabled={!connectionId || saveProfileMutation.isPending || uploadLogoMutation.isPending}>
-              {saveProfileMutation.isPending ? "Applying..." : "Apply"}
-            </button>
-            <button type="button" className="ghost-btn" disabled={!connectionId} onClick={() => resetProfileDraft()}>
-              Cancel
-            </button>
-          </div>
-        </form>
+
+            <div className="api-setup-alert">
+              <strong>Profile</strong>
+              <p>
+                Update your business logo and profile details here. Display name review and Official Business Account approval still follow Meta&apos;s own review process.
+              </p>
+            </div>
+
+            <form className="api-profile-form" onSubmit={(e) => {
+              e.preventDefault();
+              setError(null);
+              setInfo(null);
+              saveProfileMutation.mutate();
+            }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) {
+                    return;
+                  }
+                  setError(null);
+                  setInfo(null);
+                  uploadLogoMutation.mutate(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+              <label>
+                WhatsApp Display Picture
+                <div className="clone-hero-actions" style={{ alignItems: "center" }}>
+                  <input value={profileDraft.displayPictureUrl} readOnly placeholder="Upload logo to generate Meta profile image handle" />
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    disabled={!connectionId || uploadLogoMutation.isPending}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploadLogoMutation.isPending ? "Uploading..." : "Upload logo"}
+                  </button>
+                </div>
+                {profileDraft.displayPictureUrl ? (
+                  <div style={{ marginTop: 12 }}>
+                    <img
+                      src={profileDraft.displayPictureUrl}
+                      alt="WhatsApp business logo preview"
+                      style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 12, border: "1px solid rgba(15, 23, 42, 0.12)" }}
+                    />
+                  </div>
+                ) : null}
+              </label>
+              <label>Category
+                <select value={profileDraft.vertical} onChange={(e) => setProfileDraft((c) => ({ ...c, vertical: e.target.value }))}>
+                  {PROFILE_VERTICAL_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </label>
+              <label>Description<textarea rows={3} maxLength={256} value={profileDraft.businessDescription} onChange={(e) => setProfileDraft((c) => ({ ...c, businessDescription: e.target.value }))} placeholder="Tell customers what your business does" /></label>
+              <label>Address<textarea rows={2} maxLength={256} value={profileDraft.address} onChange={(e) => setProfileDraft((c) => ({ ...c, address: e.target.value }))} placeholder="Enter address" /></label>
+              <label>Email<input type="email" maxLength={128} value={profileDraft.email} onChange={(e) => setProfileDraft((c) => ({ ...c, email: e.target.value }))} placeholder="Enter email" /></label>
+              <label>Website URL<input value={profileDraft.websiteUrl} onChange={(e) => setProfileDraft((c) => ({ ...c, websiteUrl: e.target.value }))} placeholder="https://your-website.com" /></label>
+              <label>About<input maxLength={139} value={profileDraft.about} onChange={(e) => setProfileDraft((c) => ({ ...c, about: e.target.value }))} placeholder="Official WhatsApp Business Account" /></label>
+              <div className="clone-hero-actions">
+                <button type="submit" className="primary-btn" disabled={!connectionId || saveProfileMutation.isPending || uploadLogoMutation.isPending}>
+                  {saveProfileMutation.isPending ? "Applying..." : "Save Profile"}
+                </button>
+                <button type="button" className="ghost-btn" disabled={!connectionId} onClick={() => resetProfileDraft()}>
+                  Reset
+                </button>
+              </div>
+            </form>
+          </>
+        )}
 
         <div className="clone-hero-actions">
           <button type="button" className="primary-btn" disabled={currentBusy} onClick={() => void openBusinessApiSetup()}>
-            {metaStatus.connection ? "Reconnect API" : "Connect API"}
+            {isConnected ? "Reconnect API" : "Connect WhatsApp API"}
           </button>
-          <button type="button" className="ghost-btn" disabled={currentBusy || !metaStatus.connection} onClick={() => void refreshMetaStatus()}>
+          <button type="button" className="ghost-btn" disabled={currentBusy || !isConnected} onClick={() => void refreshMetaStatus()}>
             Refresh status
           </button>
-          <button type="button" className="ghost-btn" disabled={currentBusy || !metaStatus.connection} onClick={() => { setError(null); setInfo(null); disconnectMutation.mutate(); }}>
+          <button type="button" className="ghost-btn" disabled={currentBusy || !isConnected} onClick={() => { setError(null); setInfo(null); disconnectMutation.mutate(); }}>
             Disconnect
           </button>
         </div>
-        <p className="tiny-note">Official API channel is recommended for long-term growth and higher reliability.</p>
+        <p className="tiny-note">
+          {isConnected
+            ? "Your API channel is connected. Use this page to manage the Meta profile and channel health."
+            : "Connect first. After that, this page will show only the information needed to manage your WhatsApp API channel."}
+        </p>
         {profileQuery.isFetching && connectionId ? <p className="tiny-note">Refreshing business profile from Meta...</p> : null}
       </article>
 
