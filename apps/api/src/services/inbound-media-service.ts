@@ -149,16 +149,16 @@ export async function extractInboundMediaText(
       : null;
 
     try {
-      const extracted = await withTimeout(
-        openAIService.extractTextFromImage(media, mimeType),
+      const description = await withTimeout(
+        openAIService.analyzeImage(media, mimeType),
         env.INBOUND_MEDIA_TIMEOUT_MS,
-        "Image OCR timed out"
+        "Image analysis timed out"
       );
-      const cleaned = normalizeExtractedText(extracted);
-      const text = cleaned ? `[Extracted image text]: ${limitText(cleaned)}` : "[Image received with no readable text]";
+      const cleaned = normalizeExtractedText(description);
+      const text = cleaned ? `[Image received]: ${limitText(cleaned)}` : "[Image received with no description available]";
       return { text, mediaUrl };
     } catch {
-      return { text: "[Image received; text extraction unavailable]", mediaUrl };
+      return { text: "[Image received; analysis unavailable]", mediaUrl };
     }
   }
 

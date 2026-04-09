@@ -17,12 +17,39 @@ const CONTACT_TEMPLATE_HEADERS = [
   "Source URL"
 ] as const;
 
+const DEFAULT_CONTACT_EXPORT_FIELDS = [
+  "display_name",
+  "phone_number",
+  "email",
+  "contact_type",
+  "tags",
+  "source_type",
+  "source_id",
+  "source_url",
+  "created_at",
+  "updated_at"
+] as const;
+
+const CONTACT_EXPORT_FIELD_LABELS: Record<string, string> = {
+  display_name: "Name",
+  phone_number: "Phone",
+  email: "Email",
+  contact_type: "Type",
+  tags: "Tags",
+  source_type: "Contact Created Source",
+  source_id: "Source ID",
+  source_url: "Source URL",
+  created_at: "Created Date",
+  updated_at: "Last Updated"
+};
+
 type DbExecutor = Pick<Pool, "query"> | PoolClient;
 
 export interface ContactsListFilters {
   q?: string;
   type?: ConversationKind;
   source?: ContactSourceType;
+  tag?: string;
   limit?: number;
 }
 
@@ -316,6 +343,17 @@ function formatWorkbookDate(value: string | null | undefined): string {
     return "";
   }
   return new Date(timestamp).toISOString().replace("T", " ").slice(0, 19);
+}
+
+function normalizeContactExportFields(columns?: string[]): string[] {
+  const normalized = Array.from(
+    new Set(
+      (columns ?? [])
+        .map((column) => column.trim())
+        .filter(Boolean)
+    )
+  );
+  return normalized.length > 0 ? normalized : [...DEFAULT_CONTACT_EXPORT_FIELDS];
 }
 
 function arraysEqual(left: string[], right: string[]): boolean {
@@ -660,6 +698,7 @@ export async function listContacts(userId: string, filters: ContactsListFilters 
   const values: Array<string | number> = [userId];
   const query = filters.q?.trim() ?? "";
   const normalizedDigits = query.replace(/\D/g, "");
+  const tagQuery = filters.tag?.trim() ?? "";
 
   if (query) {
     values.push(`%${query}%`);
@@ -686,6 +725,10 @@ export async function listContacts(userId: string, filters: ContactsListFilters 
   if (filters.source) {
     values.push(filters.source);
     where.push(`c.source_type = $${values.length}`);
+  }
+  if (tagQuery) {
+    values.push(`%${tagQuery}%`);
+    where.push(`EXISTS (SELECT 1 FROM unnest(c.tags) AS tag WHERE tag ILIKE $${values.length})`);
   }
 
   const limit = Math.max(1, Math.min(1000, filters.limit ?? 250));
@@ -1240,33 +1283,80 @@ export async function generateContactsExportWorkbook(input: {
   userId: string;
   ids?: string[];
   filters?: ContactsListFilters;
+  columns?: string[];
 }): Promise<{ filename: string; content: Buffer }> {
   const rows =
     input.ids && input.ids.length > 0
       ? await getContactsByIds(pool, input.userId, input.ids)
       : await listContacts(input.userId, { ...(input.filters ?? {}), limit: 1000 });
-
-  const exportRows = rows.map((contact) => ({
-    Name: contact.display_name || "",
-    Phone: contact.phone_number ? `+${contact.phone_number}` : "",
-    Email: contact.email || "",
-    Type: contact.contact_type,
-    Tags: contact.tags.join(", "),
-    "Contact Created Source": contact.source_type,
-    "Source ID": contact.source_id || "",
-    "Source URL": contact.source_url || "",
-    "Created Date": formatWorkbookDate(contact.created_at),
-    "Last Updated": formatWorkbookDate(contact.updated_at)
+  const fieldValuesMap = await loadFieldValues(pool, rows.map((contact) => contact.id));
+  const contacts = rows.map((contact) => ({
+    ...contact,
+    custom_field_values: fieldValuesMap.get(contact.id) ?? []
   }));
 
-  const content = buildWorkbook(
-    [
-      ...CONTACT_TEMPLATE_HEADERS,
-      "Created Date",
-      "Last Updated"
-    ],
-    exportRows
+  const exportFields = normalizeContactExportFields(input.columns);
+  const customFieldNames = exportFields
+    .filter((field) => field.startsWith("custom:"))
+    .map((field) => field.slice("custom:".length).trim())
+    .filter(Boolean);
+
+  const customFieldLabels =
+    customFieldNames.length > 0
+      ? await pool.query<{ name: string; label: string }>(
+          `SELECT name, label
+           FROM contact_fields
+           WHERE user_id = $1
+             AND name = ANY($2::text[])`,
+          [input.userId, customFieldNames]
+        ).then((result) => new Map(result.rows.map((row) => [row.name, row.label])))
+      : new Map<string, string>();
+
+  const headers = exportFields.map((field) =>
+    field.startsWith("custom:")
+      ? customFieldLabels.get(field.slice("custom:".length).trim()) ?? field.slice("custom:".length).trim()
+      : CONTACT_EXPORT_FIELD_LABELS[field] ?? field
   );
+
+  const exportRows = contacts.map((contact) =>
+    Object.fromEntries(
+      exportFields.map((field, index) => {
+        if (field.startsWith("custom:")) {
+          const fieldName = field.slice("custom:".length).trim().toLowerCase();
+          const value =
+            contact.custom_field_values.find((item) => item.field_name.toLowerCase() === fieldName)?.value ?? "";
+          return [headers[index], value];
+        }
+
+        switch (field) {
+          case "display_name":
+            return [headers[index], contact.display_name || ""];
+          case "phone_number":
+            return [headers[index], contact.phone_number ? `+${contact.phone_number}` : ""];
+          case "email":
+            return [headers[index], contact.email || ""];
+          case "contact_type":
+            return [headers[index], contact.contact_type];
+          case "tags":
+            return [headers[index], contact.tags.join(", ")];
+          case "source_type":
+            return [headers[index], contact.source_type];
+          case "source_id":
+            return [headers[index], contact.source_id || ""];
+          case "source_url":
+            return [headers[index], contact.source_url || ""];
+          case "created_at":
+            return [headers[index], formatWorkbookDate(contact.created_at)];
+          case "updated_at":
+            return [headers[index], formatWorkbookDate(contact.updated_at)];
+          default:
+            return [headers[index], ""];
+        }
+      })
+    )
+  );
+
+  const content = buildWorkbook(headers, exportRows);
   const stamp = new Date().toISOString().slice(0, 10);
 
   return {

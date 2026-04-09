@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type {
   ContactField,
@@ -131,6 +131,19 @@ const STANDARD_COLUMN_DEFS: Array<{ id: string; label: string }> = [
 ];
 
 const DEFAULT_VISIBLE_COLUMNS = ["phone", "type", "tags", "created_at"];
+
+function getExportFieldKeyFromColumnId(columnId: string): string {
+  switch (columnId) {
+    case "phone":
+      return "phone_number";
+    case "type":
+      return "contact_type";
+    case "source":
+      return "source_type";
+    default:
+      return columnId;
+  }
+}
 
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 
@@ -867,16 +880,18 @@ function ContactsTab({
   const search = searchParams.get("q") ?? "";
   const typeFilter = (searchParams.get("type") as ContactTypeFilter | null) ?? "all";
   const sourceFilter = (searchParams.get("source") as ContactSourceFilter | null) ?? "all";
+  const tagFilter = searchParams.get("tag") ?? "";
 
   const contactsQuery = useContactsQuery(token, {
     q: search || undefined,
     type: typeFilter === "all" ? undefined : typeFilter,
     source: sourceFilter === "all" ? undefined : sourceFilter,
+    tag: tagFilter || undefined,
     limit: 1000
   });
 
   const contacts = contactsQuery.data ?? [];
-  const activeFilterCount = [search.trim(), typeFilter !== "all", sourceFilter !== "all"].filter(Boolean).length;
+  const activeFilterCount = [search.trim(), typeFilter !== "all", sourceFilter !== "all", tagFilter.trim()].filter(Boolean).length;
   const selectedCount = selectedIds.length;
   const allVisibleSelected = contacts.length > 0 && selectedCount === contacts.length;
   const someVisibleSelected = selectedCount > 0 && selectedCount < contacts.length;
@@ -885,7 +900,7 @@ function ContactsTab({
   const totalPages = Math.max(1, Math.ceil(contacts.length / pageSize));
   const pagedContacts = contacts.slice(page * pageSize, (page + 1) * pageSize);
 
-  useEffect(() => { setPage(0); }, [contacts.length, search, typeFilter, sourceFilter]);
+  useEffect(() => { setPage(0); }, [contacts.length, search, typeFilter, sourceFilter, tagFilter]);
 
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = someVisibleSelected;
@@ -1027,8 +1042,17 @@ function ContactsTab({
     try {
       const payload =
         mode === "selected"
-          ? { ids: selectedIds }
-          : { filters: { q: search || undefined, type: typeFilter === "all" ? undefined : typeFilter, source: sourceFilter === "all" ? undefined : sourceFilter, limit: 1000 } };
+          ? { ids: selectedIds, columns: exportColumns }
+          : {
+              filters: {
+                q: search || undefined,
+                type: typeFilter === "all" ? undefined : typeFilter,
+                source: sourceFilter === "all" ? undefined : sourceFilter,
+                tag: tagFilter || undefined,
+                limit: 1000
+              },
+              columns: exportColumns
+            };
       const { blob, filename } = await exportContactsWorkbook(token, payload);
       downloadBlob(blob, filename);
     } catch (exportError) {
@@ -1041,6 +1065,25 @@ function ContactsTab({
     ...STANDARD_COLUMN_DEFS,
     ...customFields.filter((f) => f.is_active).map((f) => ({ id: `custom:${f.name}`, label: f.label }))
   ], [customFields]);
+
+  const exportColumns = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          "display_name",
+          "phone_number",
+          ...visibleColumns.map((columnId) => getExportFieldKeyFromColumnId(columnId))
+        ])
+      ),
+    [visibleColumns]
+  );
+
+  const availableTags = useMemo(
+    () =>
+      Array.from(new Set(contacts.flatMap((contact) => contact.tags)))
+        .sort((left, right) => left.localeCompare(right)),
+    [contacts]
+  );
 
   const toggleColumn = (id: string) => {
     setVisibleColumns((prev) => {
@@ -1108,6 +1151,23 @@ function ContactsTab({
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+
+          <div className="ct-tag-filter-wrap">
+            <span className="ct-tag-filter-icon">#</span>
+            <input
+              type="search"
+              list="contacts-tag-options"
+              className="ct-tag-filter-input"
+              placeholder="Search tags…"
+              value={tagFilter}
+              onChange={(e) => updateSearchParam("tag", e.target.value)}
+            />
+            <datalist id="contacts-tag-options">
+              {availableTags.map((tag) => (
+                <option key={tag} value={tag} />
+              ))}
+            </datalist>
+          </div>
 
           {activeFilterCount > 0 && (
             <button type="button" className="ct-toolbar-btn" onClick={clearFilters}>
@@ -1622,8 +1682,8 @@ function SegmentsTab({ token, customFields }: { token: string; customFields: Con
                 const isLoading = isExpanded && segmentContactsQuery.isFetching;
 
                 return (
-                  <>
-                    <tr key={seg.id}>
+                  <Fragment key={seg.id}>
+                    <tr>
                       {/* Name */}
                       <td>
                         <div className="ct-name-cell">
@@ -1776,7 +1836,7 @@ function SegmentsTab({ token, customFields }: { token: string; customFields: Con
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -1839,11 +1899,6 @@ export function Component() {
 
   return (
     <div className="ct-page">
-      {/* ── Page header ── */}
-      <div className="ct-page-header">
-        <h1 className="ct-page-title">Contacts</h1>
-      </div>
-
       {/* ── Overview stats ── */}
       <div className="ct-overview-card">
         <div className="ct-overview-head">
