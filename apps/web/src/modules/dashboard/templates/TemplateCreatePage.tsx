@@ -1204,6 +1204,14 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             Fill all required fields and fix the highlighted inputs before submitting this template.
           </div>
         )}
+        {createMutation.isPending && (
+          <div style={{ padding: "12px", borderRadius: "8px", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", fontSize: "13px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, animation: "tpl-spin 1s linear infinite" }} aria-hidden="true">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+            </svg>
+            Please wait — we are verifying and submitting your template to Meta…
+          </div>
+        )}
 
         {/* Action buttons */}
         <div style={{ display: "flex", gap: "10px", paddingTop: "8px" }}>

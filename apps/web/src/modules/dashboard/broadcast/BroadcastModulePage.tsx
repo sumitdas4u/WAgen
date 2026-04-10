@@ -34,6 +34,7 @@ import { useInboxPublishedFlowsQuery } from "../inbox/queries";
 import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import { useTemplatesQuery } from "../templates/queries";
 import "./broadcast.css";
+import "../contacts/contacts.css";
 
 type ModuleMode = "list" | "new" | "detail" | "retarget";
 type WizardStep = 1 | 2 | 3 | 4;
@@ -320,6 +321,39 @@ function downloadBroadcastsCsv(broadcasts: Campaign[]): void {
   downloadBlob(
     new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8;" }),
     `broadcasts-export-${new Date().toISOString().slice(0, 10)}.csv`
+  );
+}
+
+const AVATAR_VARIANTS = ["av-blue", "av-green", "av-purple", "av-amber", "av-rose"] as const;
+
+function getAvatarClass(seed: string): string {
+  let hash = 0;
+  for (const ch of seed) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0;
+  return AVATAR_VARIANTS[Math.abs(hash) % AVATAR_VARIANTS.length];
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("") || "?";
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="14" height="14">
+      <path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="14" height="14">
+      <path d="M4 5h12M8 5V3h4v2M6 5l1 11h6l1-11" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 
@@ -1559,6 +1593,104 @@ function RetargetAudienceStep({
   );
 }
 
+function BroadcastSegmentFilterRow({
+  filter,
+  index,
+  customFields,
+  onChange,
+  onRemove
+}: {
+  filter: SegmentFilter;
+  index: number;
+  customFields: ContactField[];
+  onChange: (index: number, updated: SegmentFilter) => void;
+  onRemove: (index: number) => void;
+}) {
+  const allFieldOptions = [
+    ...SEGMENT_FIELD_OPTIONS,
+    ...customFields.filter((f) => f.is_active).map((f) => ({
+      value: `custom:${f.name}`,
+      label: f.label,
+      isDate: f.field_type === "DATE"
+    }))
+  ];
+
+  const selectedFieldOption = allFieldOptions.find((o) => o.value === filter.field);
+  const isDateField = selectedFieldOption?.isDate ?? false;
+
+  const availableOps = SEGMENT_OP_OPTIONS.filter((op) => {
+    if (op.onlyDate && !isDateField) return false;
+    return true;
+  });
+
+  const selectedOp = SEGMENT_OP_OPTIONS.find((o) => o.value === filter.op);
+  const showValue = !selectedOp?.noValue;
+
+  const handleFieldChange = (field: string) => {
+    const newIsDate = allFieldOptions.find((o) => o.value === field)?.isDate ?? false;
+    const currentOpIsDateOnly = SEGMENT_OP_OPTIONS.find((o) => o.value === filter.op)?.onlyDate ?? false;
+    const newOp = currentOpIsDateOnly && !newIsDate ? "is" : filter.op;
+    onChange(index, { ...filter, field, op: newOp as SegmentFilterOp });
+  };
+
+  return (
+    <div className="seg-filter-row">
+      {index > 0 && <span className="seg-filter-connector">AND</span>}
+      <select
+        value={filter.field}
+        onChange={(e) => handleFieldChange(e.target.value)}
+        className="seg-filter-field"
+      >
+        <optgroup label="Standard Fields">
+          {SEGMENT_FIELD_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </optgroup>
+        {customFields.filter((f) => f.is_active).length > 0 && (
+          <optgroup label="Custom Fields">
+            {customFields.filter((f) => f.is_active).map((f) => (
+              <option key={f.id} value={`custom:${f.name}`}>{f.label}</option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+
+      <select
+        value={filter.op}
+        onChange={(e) => onChange(index, { ...filter, op: e.target.value as SegmentFilterOp })}
+        className="seg-filter-op"
+      >
+        {availableOps.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+
+      {showValue && (
+        isDateField ? (
+          <input
+            type="date"
+            value={filter.value}
+            onChange={(e) => onChange(index, { ...filter, value: e.target.value })}
+            className="seg-filter-value"
+          />
+        ) : (
+          <input
+            type="text"
+            value={filter.value}
+            onChange={(e) => onChange(index, { ...filter, value: e.target.value })}
+            placeholder="Value"
+            className="seg-filter-value"
+          />
+        )
+      )}
+
+      <button type="button" className="seg-filter-remove" onClick={() => onRemove(index)} title="Remove condition">
+        <TrashIcon />
+      </button>
+    </div>
+  );
+}
+
 function BroadcastCreateSegmentModal({
   token,
   customFields,
@@ -1571,24 +1703,25 @@ function BroadcastCreateSegmentModal({
   onCreated: (segment: { id: string; name: string }) => void;
 }) {
   const [name, setName] = useState("");
-  const [filters, setFilters] = useState<SegmentFilter[]>([]);
+  const [filters, setFilters] = useState<SegmentFilter[]>(
+    [{ field: "created_at", op: "after", value: "" }]
+  );
   const [previewContacts, setPreviewContacts] = useState<ContactRecord[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const addFilter = () => {
-    setFilters((current) => [...current, { field: "marketing_optin", op: "is", value: "true" }]);
-    setPreviewContacts(null);
+    setFilters((prev) => [...prev, { field: "display_name", op: "contains", value: "" }]);
   };
 
   const updateFilter = (index: number, updated: SegmentFilter) => {
-    setFilters((current) => current.map((item, i) => (i === index ? updated : item)));
+    setFilters((prev) => prev.map((f, i) => (i === index ? updated : f)));
     setPreviewContacts(null);
   };
 
   const removeFilter = (index: number) => {
-    setFilters((current) => current.filter((_, i) => i !== index));
+    setFilters((prev) => prev.filter((_, i) => i !== index));
     setPreviewContacts(null);
   };
 
@@ -1619,159 +1752,88 @@ function BroadcastCreateSegmentModal({
     }
   };
 
-  const FIELD_LABELS: Record<string, string> = {
-    display_name: "Name", phone_number: "Phone", email: "Email",
-    tags: "Tags", contact_type: "Type", created_at: "Created At",
-    order_date: "Order Date", marketing_optin: "Marketing Optin"
-  };
-  const OP_LABELS: Record<string, string> = {
-    is: "Is", is_not: "Is not", contains: "Contains", not_contains: "Does not contain",
-    before: "Before", after: "Is after", is_empty: "Is empty", is_not_empty: "Is not empty"
-  };
-
   return (
-    <div className="csm-backdrop" onClick={onClose}>
-      <div className="csm-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="csm-header">
-          <span className="csm-title">Create Segment</span>
-          <button type="button" className="csm-close" onClick={onClose}>&#10005;</button>
+    <div className="ct-modal-backdrop" onClick={onClose}>
+      <div className="ct-modal ct-modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="ct-modal-head">
+          <h3 className="ct-modal-title">Create Segment</h3>
+          <button type="button" className="ct-modal-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        {/* Segment name */}
-        <div className="csm-name-row">
-          <input
-            className="csm-name-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Segment name"
-            autoFocus
-          />
-        </div>
+        <div className="ct-modal-body">
+          <div className="seg-modal-name-row">
+            <label className="ct-form-label ct-form-single">
+              Segment Name
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. New leads this month"
+                autoFocus
+              />
+            </label>
+          </div>
 
-        {/* Filter button */}
-        <div className="csm-filter-bar">
-          <button type="button" className="csm-filter-btn" onClick={addFilter}>
-            <span className="csm-filter-icon">&#9965;</span> Filter
-          </button>
-        </div>
-
-        {/* Filter rows */}
-        {filters.length > 0 ? (
-          <div className="csm-filter-list">
-            {filters.map((filter, index) => {
-              const allFieldOptions = [
-                ...SEGMENT_FIELD_OPTIONS,
-                ...customFields.filter((f) => f.is_active).map((f) => ({
-                  value: `custom:${f.name}`,
-                  label: f.label,
-                  isDate: f.field_type === "DATE"
-                }))
-              ];
-              const selectedFieldOption = allFieldOptions.find((o) => o.value === filter.field);
-              const isDateField = selectedFieldOption?.isDate ?? false;
-              const availableOps = SEGMENT_OP_OPTIONS.filter((o) => !o.onlyDate || isDateField);
-              const selectedOp = SEGMENT_OP_OPTIONS.find((o) => o.value === filter.op);
-
-              return (
-                <div key={index} className="csm-filter-row">
-                  <div className="csm-filter-pill">
-                    <span className="csm-filter-field-icon">
-                      {filter.field === "tags" ? "🏷" : filter.field.includes("date") || filter.field === "created_at" || filter.field === "order_date" ? "📅" : "👁"}
-                    </span>
-                    <span className="csm-filter-field-name">
-                      {FIELD_LABELS[filter.field] ?? filter.field}
-                    </span>
-                    <button type="button" className="csm-filter-remove" onClick={() => removeFilter(index)}>&#10005;</button>
-                  </div>
-                  <div className="csm-filter-controls">
-                    <select
-                      className="csm-filter-select"
-                      value={filter.op}
-                      onChange={(e) => updateFilter(index, { ...filter, op: e.target.value as SegmentFilterOp })}
-                    >
-                      {availableOps.map((o) => (
-                        <option key={o.value} value={o.value}>{OP_LABELS[o.value] ?? o.label}</option>
-                      ))}
-                    </select>
-                    {!selectedOp?.noValue && (
-                      isDateField ? (
-                        <input
-                          type="date"
-                          className="csm-filter-select"
-                          value={filter.value}
-                          onChange={(e) => updateFilter(index, { ...filter, value: e.target.value })}
-                        />
-                      ) : (
-                        <select
-                          className="csm-filter-select"
-                          value={filter.value}
-                          onChange={(e) => updateFilter(index, { ...filter, value: e.target.value })}
-                        >
-                          <option value="">Select value</option>
-                          <option value="true">Yes</option>
-                          <option value="false">No</option>
-                        </select>
-                      )
-                    )}
-                  </div>
-                  <select
-                    className="csm-filter-select csm-filter-field-select"
-                    value={filter.field}
-                    onChange={(e) => updateFilter(index, { ...filter, field: e.target.value })}
-                  >
-                    <optgroup label="Standard Fields">
-                      {SEGMENT_FIELD_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </optgroup>
-                    {customFields.filter((f) => f.is_active).length > 0 ? (
-                      <optgroup label="Custom Fields">
-                        {customFields.filter((f) => f.is_active).map((f) => (
-                          <option key={f.id} value={`custom:${f.name}`}>{f.label}</option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                  </select>
-                </div>
-              );
-            })}
-            <div className="csm-filter-actions">
-              <button type="button" className="csm-cancel-btn" onClick={() => { setFilters([]); setPreviewContacts(null); }}>Cancel</button>
-              <button type="button" className="csm-apply-btn" onClick={() => void handlePreview()} disabled={previewLoading}>
-                {previewLoading ? "Loading…" : "Apply"}
+          <div className="seg-filters-section">
+            <div className="seg-filters-head">
+              <strong>Filter Conditions</strong>
+              <button type="button" className="seg-add-filter-btn" onClick={addFilter}>
+                <PlusIcon /> Add Condition
               </button>
             </div>
-          </div>
-        ) : null}
 
-        {/* Body — preview or placeholder */}
-        <div className="csm-body">
-          {previewContacts ? (
-            <div className="csm-preview">
-              <div className="csm-preview-count">{previewContacts.length} contact{previewContacts.length !== 1 ? "s" : ""} match</div>
-              {previewContacts.slice(0, 6).map((c) => (
-                <div key={c.id} className="csm-preview-row">
-                  <span className="csm-avatar">{(c.display_name || "U")[0].toUpperCase()}</span>
-                  <span>{c.display_name || "Unknown"}</span>
-                  <span className="csm-preview-phone">{c.phone_number}</span>
+            {filters.length === 0 ? (
+              <p className="seg-no-filters">No conditions — segment will include all contacts.</p>
+            ) : (
+              <div className="seg-filter-list">
+                {filters.map((filter, i) => (
+                  <BroadcastSegmentFilterRow
+                    key={i}
+                    filter={filter}
+                    index={i}
+                    customFields={customFields}
+                    onChange={updateFilter}
+                    onRemove={removeFilter}
+                  />
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="seg-preview-btn"
+              onClick={() => void handlePreview()}
+              disabled={previewLoading}
+            >
+              {previewLoading ? "Loading preview…" : "Preview Matching Contacts"}
+            </button>
+
+            {previewContacts !== null && (
+              <div className="seg-preview-result">
+                <div className="seg-preview-result-head">
+                  {previewContacts.length} contact{previewContacts.length !== 1 ? "s" : ""} match
                 </div>
-              ))}
-              {previewContacts.length > 6 ? <div className="csm-preview-more">+{previewContacts.length - 6} more</div> : null}
-            </div>
-          ) : (
-            <div className="csm-placeholder">
-              Add filters to contacts to create a segment. Broadcast will be triggered to selected segments.
-            </div>
-          )}
+                {previewContacts.slice(0, 5).map((c) => (
+                  <div key={c.id} className="seg-preview-contact">
+                    <div className={`ct-avatar ${getAvatarClass(c.display_name || c.phone_number)}`} style={{ width: "1.6rem", height: "1.6rem", fontSize: "0.68rem" }}>
+                      {getInitials(c.display_name || "?")}
+                    </div>
+                    <span>{c.display_name || "Unknown"}</span>
+                    <span className="seg-preview-phone">{c.phone_number}</span>
+                  </div>
+                ))}
+                {previewContacts.length > 5 && (
+                  <p className="seg-preview-more">+{previewContacts.length - 5} more</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {error ? <div className="csm-error">{error}</div> : null}
+        {error && <p className="ct-modal-error">{error}</p>}
 
-        {/* Footer */}
-        <div className="csm-footer">
-          <button type="button" className="csm-cancel-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="csm-create-btn" disabled={saving || !name.trim()} onClick={() => void handleCreate()}>
+        <div className="ct-modal-footer">
+          <button type="button" className="ct-modal-cancel" onClick={onClose}>Cancel</button>
+          <button type="button" className="ct-modal-submit is-blue" disabled={saving} onClick={() => void handleCreate()}>
             {saving ? "Creating…" : "Create Segment"}
           </button>
         </div>
