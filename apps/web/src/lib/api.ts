@@ -2645,6 +2645,8 @@ export interface SequenceEnrollment {
   id: string;
   sequence_id: string;
   contact_id: string;
+  contact_phone: string;
+  contact_name: string | null;
   status: SequenceEnrollmentStatus;
   current_step: number;
   entered_at: string;
@@ -2668,6 +2670,15 @@ export interface SequenceLog {
   error_message: string | null;
   meta_json: Record<string, unknown>;
   created_at: string;
+}
+
+export interface SequenceStepFunnelRow {
+  step_id: string;
+  step_order: number;
+  delay_value: number;
+  delay_unit: SequenceDelayUnit;
+  message_template_id: string;
+  reached: number;
 }
 
 export interface SequenceWriteStepInput {
@@ -2728,6 +2739,13 @@ export function updateSequenceDraft(token: string, sequenceId: string, payload: 
   });
 }
 
+export function deleteSequence(token: string, sequenceId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/sequences/${sequenceId}`, {
+    method: "DELETE",
+    token
+  });
+}
+
 export function publishSequence(token: string, sequenceId: string) {
   return apiRequest<{ sequence: SequenceDetail }>(`/api/sequences/${sequenceId}/publish`, {
     method: "POST",
@@ -2749,8 +2767,23 @@ export function resumeSequence(token: string, sequenceId: string) {
   });
 }
 
-export function fetchSequenceEnrollments(token: string, sequenceId: string) {
-  return apiRequest<{ enrollments: SequenceEnrollment[] }>(`/api/sequences/${sequenceId}/enrollments`, { token });
+export function fetchSequenceEnrollments(
+  token: string,
+  sequenceId: string,
+  status?: SequenceEnrollmentStatus
+) {
+  const query = status ? `?status=${status}` : "";
+  return apiRequest<{ enrollments: SequenceEnrollment[] }>(
+    `/api/sequences/${sequenceId}/enrollments${query}`,
+    { token }
+  );
+}
+
+export function fetchSequenceStepFunnel(token: string, sequenceId: string) {
+  return apiRequest<{ funnel: SequenceStepFunnelRow[] }>(
+    `/api/sequences/${sequenceId}/step-funnel`,
+    { token }
+  );
 }
 
 export function fetchSequenceLogs(token: string, enrollmentId: string) {
