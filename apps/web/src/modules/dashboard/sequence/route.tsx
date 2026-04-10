@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useId, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRoutes } from "react-router-dom";
 import type {
   ContactField,
+  ContactRecord,
   MessageTemplate,
   SequenceCondition,
   SequenceDetail,
@@ -11,7 +12,7 @@ import type {
   SequenceWriteInput,
   SequenceWriteStepInput
 } from "../../../lib/api";
-import { fetchTemplates, listContactFields } from "../../../lib/api";
+import { fetchContacts, fetchTemplates, listContactFields } from "../../../lib/api";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
@@ -27,6 +28,7 @@ import {
   useSequencesQuery,
   useUpdateSequenceMutation
 } from "./queries";
+import { SequenceReportPage } from "./SequenceReportPage";
 import "./sequence.css";
 
 /* ─────────────────────────────────────────────
@@ -218,6 +220,62 @@ function toDraft(detail: SequenceDetail): SequenceWriteInput {
       value: c.value
     }))
   };
+}
+
+function normalizeSuggestionValues(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  ).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+}
+
+function getConditionValueSuggestions(contacts: ContactRecord[], fieldKey: string, rawFieldName?: string) {
+  switch (fieldKey) {
+    case "tags":
+      return normalizeSuggestionValues(contacts.flatMap((contact) => contact.tags));
+    case "name":
+      return normalizeSuggestionValues(contacts.map((contact) => contact.display_name));
+    case "phone":
+      return normalizeSuggestionValues(contacts.map((contact) => contact.phone_number ? `+${contact.phone_number}` : null));
+    case "email":
+      return normalizeSuggestionValues(contacts.map((contact) => contact.email));
+    case "contact_type":
+      return normalizeSuggestionValues(contacts.map((contact) => contact.contact_type));
+    case "source_type":
+      return normalizeSuggestionValues(contacts.map((contact) => contact.source_type));
+    case "created_at":
+    case "updated_at":
+      return normalizeSuggestionValues(
+        contacts.map((contact) => {
+          const value = fieldKey === "created_at" ? contact.created_at : contact.updated_at;
+          const timestamp = Date.parse(value);
+          return Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : null;
+        })
+      );
+    case "custom_field": {
+      const fieldName = rawFieldName?.trim().toLowerCase();
+      if (!fieldName) return [];
+      return normalizeSuggestionValues(
+        contacts.flatMap((contact) =>
+          contact.custom_field_values
+            .filter((value) => value.field_name.trim().toLowerCase() === fieldName)
+            .map((value) => value.value)
+        )
+      );
+    }
+    default:
+      if (!fieldKey.startsWith("custom:")) return [];
+      return normalizeSuggestionValues(
+        contacts.flatMap((contact) =>
+          contact.custom_field_values
+            .filter((value) => value.field_name === fieldKey.slice("custom:".length))
+            .map((value) => value.value)
+        )
+      );
+  }
 }
 
 /* ─────────────────────────────────────────────
@@ -595,6 +653,11 @@ function BuilderPage({ token }: { token: string }) {
     queryFn:  () => listContactFields(token).then((r) => r.fields.filter((f) => f.is_active)),
     enabled:  Boolean(token)
   }).data ?? [];
+  const contacts = useQuery({
+    queryKey: [...dashboardQueryKeys.contactsRoot, "sequence-condition-suggestions"],
+    queryFn: () => fetchContacts(token, { limit: 1000 }).then((r) => r.contacts),
+    enabled: Boolean(token)
+  }).data ?? [];
 
   const [draft, setDraft]           = useState<SequenceWriteInput | null>(null);
   const [wizardStep, setWizardStep] = useState(0);
@@ -661,6 +724,12 @@ function BuilderPage({ token }: { token: string }) {
           </div>
         </div>
         <div className="seq-builder-right">
+          {(detail.status === "published" || detail.metrics.enrolled > 0) && (
+            <button type="button" className="seq-btn seq-btn-ghost seq-btn-sm"
+              onClick={() => navigate(`/dashboard/sequence/${sequenceId}/report`)}>
+              View Report →
+            </button>
+          )}
           <button type="button" className="seq-btn seq-btn-ghost seq-btn-sm"
             onClick={() => setDraft(toDraft(detail))}>
             Reset
@@ -755,6 +824,7 @@ function BuilderPage({ token }: { token: string }) {
               setDraft={setDraft}
               setConditions={setConditions}
               fieldOptions={conditionFieldOptions}
+              contacts={contacts}
             />
           )}
 
@@ -811,12 +881,14 @@ function TriggerEditor({
   draft,
   setDraft,
   setConditions,
-  fieldOptions
+  fieldOptions,
+  contacts
 }: {
   draft: SequenceWriteInput;
   setDraft: Dispatch<SetStateAction<SequenceWriteInput | null>>;
   setConditions: (type: SequenceCondition["condition_type"], next: SequenceWriteConditionInput[]) => void;
   fieldOptions: ConditionFieldOption[];
+  contacts: ContactRecord[];
 }) {
   const start   = (draft.conditions ?? []).filter((c) => c.conditionType === "start");
   const success = (draft.conditions ?? []).filter((c) => c.conditionType === "stop_success");
@@ -864,6 +936,7 @@ function TriggerEditor({
             previewPrefix="Start"
             conditions={start}
             fieldOptions={fieldOptions}
+            contacts={contacts}
             onChange={(next) => setConditions("start", next.map((c) => ({ ...c, conditionType: "start" })))}
           />
         </div>
@@ -877,6 +950,7 @@ function TriggerEditor({
               previewPrefix="Stop"
               conditions={success}
               fieldOptions={fieldOptions}
+              contacts={contacts}
               onChange={(next) => setConditions("stop_success", next.map((c) => ({ ...c, conditionType: "stop_success" })))}
             />
             <div style={{ borderTop: "1px solid var(--seq-line)", paddingTop: "0.9rem" }}>
@@ -886,6 +960,7 @@ function TriggerEditor({
                 previewPrefix="Stop"
                 conditions={failure}
                 fieldOptions={fieldOptions}
+                contacts={contacts}
                 onChange={(next) => setConditions("stop_failure", next.map((c) => ({ ...c, conditionType: "stop_failure" })))}
               />
             </div>
@@ -897,11 +972,12 @@ function TriggerEditor({
 }
 
 function ConditionGroupCard({
-  title, emptyText, previewPrefix, conditions, fieldOptions, onChange
+  title, emptyText, previewPrefix, conditions, fieldOptions, contacts, onChange
 }: {
   title: string; emptyText: string; previewPrefix: string;
   conditions: SequenceWriteConditionInput[];
   fieldOptions: ConditionFieldOption[];
+  contacts: ContactRecord[];
   onChange: (next: SequenceWriteConditionInput[]) => void;
 }) {
   const defaultField = fieldOptions[0];
@@ -929,6 +1005,7 @@ function ConditionGroupCard({
               condition={condition}
               previewPrefix={previewPrefix}
               fieldOptions={fieldOptions}
+              contacts={contacts}
               onChange={(next) => onChange(conditions.map((c, i) => i === idx ? next : c))}
               onRemove={() => onChange(conditions.filter((_, i) => i !== idx))}
             />
@@ -940,17 +1017,29 @@ function ConditionGroupCard({
 }
 
 function ConditionRow({
-  condition, previewPrefix, fieldOptions, onChange, onRemove
+  condition, previewPrefix, fieldOptions, contacts, onChange, onRemove
 }: {
   condition: SequenceWriteConditionInput;
   previewPrefix: string;
   fieldOptions: ConditionFieldOption[];
+  contacts: ContactRecord[];
   onChange: (next: SequenceWriteConditionInput) => void;
   onRemove: () => void;
 }) {
+  const suggestionListId = useId();
   const fieldKey   = getConditionFieldKey(condition, fieldOptions);
   const operators  = getOperatorsForField(fieldKey, fieldOptions);
   const fieldMeta  = fieldKey === "custom_field" ? null : getConditionFieldMeta(condition.field, fieldOptions);
+  const valueSuggestions = useMemo(
+    () => getConditionValueSuggestions(contacts, fieldKey, condition.field),
+    [condition.field, contacts, fieldKey]
+  );
+  const valuePlaceholder =
+    fieldMeta?.type === "tag"
+      ? "Search or type a tag"
+      : valueSuggestions.length > 0
+        ? "Search or type to match"
+        : "Value";
 
   useEffect(() => {
     if (!operators.includes(condition.operator)) onChange({ ...condition, operator: operators[0] });
@@ -989,9 +1078,20 @@ function ConditionRow({
           placeholder="Custom field name" />
       )}
 
-      <input className="seq-input" value={condition.value}
+      <input
+        className="seq-input"
+        value={condition.value}
+        list={valueSuggestions.length > 0 ? suggestionListId : undefined}
         onChange={(e) => onChange({ ...condition, value: e.target.value })}
-        placeholder={fieldMeta?.type === "tag" ? "e.g. VIP" : "Value"} />
+        placeholder={valuePlaceholder}
+      />
+      {valueSuggestions.length > 0 && (
+        <datalist id={suggestionListId}>
+          {valueSuggestions.map((value) => (
+            <option key={value} value={value} />
+          ))}
+        </datalist>
+      )}
 
       <button type="button" className="seq-btn seq-btn-danger seq-btn-sm" onClick={onRemove}>Remove</button>
 
@@ -1395,7 +1495,11 @@ function ActivityPanel({
                         <StatusPill status={enr.status} />
                         <span className="seq-activity-time">{formatDateTime(enr.entered_at)}</span>
                       </div>
-                      <p className="seq-activity-step">Step {enr.current_step + 1}</p>
+                      <p className="seq-activity-step">
+                        {enr.status === "completed"
+                          ? `Step ${enr.current_step} ✓`
+                          : `Step ${enr.current_step + 1}`}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -1430,27 +1534,6 @@ function ActivityPanel({
         <p className="seq-empty-row">No enrollment activity yet.</p>
       )}
 
-      {/* Logs */}
-      {logs.length > 0 && (
-        <div style={{ marginTop: "1rem" }}>
-          <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 800, color: "var(--seq-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            Latest logs
-          </p>
-          <div className="seq-activity-list">
-            {logs.slice(0, 4).map((log) => (
-              <div key={log.id} className="seq-activity-item">
-                <div className="seq-activity-row">
-                  <StatusPill status={log.status} />
-                  <span className="seq-activity-time">{formatDateTime(log.created_at)}</span>
-                </div>
-                {log.error_message && (
-                  <p style={{ margin: "0.3rem 0 0", fontSize: "0.78rem", color: "#be123c" }}>{log.error_message}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1461,9 +1544,10 @@ function ActivityPanel({
 export function Component() {
   const { token } = useDashboardShell();
   return useRoutes([
-    { index: true,          element: <SequenceListPage token={token} /> },
-    { path: "new",          element: <SequenceCreatePage token={token} /> },
-    { path: ":sequenceId",  element: <BuilderPage token={token} /> }
+    { index: true,                element: <SequenceListPage token={token} /> },
+    { path: "new",                element: <SequenceCreatePage token={token} /> },
+    { path: ":sequenceId",        element: <BuilderPage token={token} /> },
+    { path: ":sequenceId/report", element: <SequenceReportPage token={token} /> }
   ]);
 }
 
