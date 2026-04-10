@@ -95,23 +95,28 @@ async function processEnrollment(enrollmentId: string): Promise<void> {
   const { enrollment, sequence, steps, conditions, contact } = context;
   if (sequence.status !== "published") return;
 
-  const stopConditions =
-    enrollment.last_delivery_status === "failed"
-      ? conditions.filter((condition) => condition.condition_type === "stop_failure")
-      : conditions.filter((condition) => condition.condition_type === "stop_success");
+  // Only evaluate stop conditions after at least one step has been executed.
+  // On first run last_executed_at is null, so skipping avoids stopping contacts
+  // before they have received any message.
+  if (enrollment.last_executed_at) {
+    const stopConditions =
+      enrollment.last_delivery_status === "failed"
+        ? conditions.filter((condition) => condition.condition_type === "stop_failure")
+        : conditions.filter((condition) => condition.condition_type === "stop_success");
 
-  if (stopConditions.length > 0 && evaluateSequenceConditions(stopConditions, contact)) {
-    await updateSequenceEnrollment(enrollment.id, {
-      status: "stopped",
-      lastExecutedAt: new Date().toISOString()
-    });
-    await appendSequenceLog({
-      enrollmentId: enrollment.id,
-      sequenceId: sequence.id,
-      status: "stopped",
-      meta: { reason: "stop_condition_matched" }
-    });
-    return;
+    if (stopConditions.length > 0 && evaluateSequenceConditions(stopConditions, contact)) {
+      await updateSequenceEnrollment(enrollment.id, {
+        status: "stopped",
+        lastExecutedAt: new Date().toISOString()
+      });
+      await appendSequenceLog({
+        enrollmentId: enrollment.id,
+        sequenceId: sequence.id,
+        status: "stopped",
+        meta: { reason: "stop_condition_matched" }
+      });
+      return;
+    }
   }
 
   const now = new Date();

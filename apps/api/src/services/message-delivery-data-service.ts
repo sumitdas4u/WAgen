@@ -1469,3 +1469,45 @@ export async function getCampaignDeliveryAnalytics(
     }))
   };
 }
+
+// Status progression order — never go backwards (e.g. don't overwrite "read" with "delivered").
+const SEQUENCE_STATUS_RANK: Record<string, number> = {
+  sent: 1,
+  delivered: 2,
+  read: 3,
+  failed: 4
+};
+
+function shouldApplySequenceStatus(current: string | null, incoming: string): boolean {
+  if (!current) return true;
+  return (SEQUENCE_STATUS_RANK[incoming] ?? 0) > (SEQUENCE_STATUS_RANK[current] ?? 0);
+}
+
+export async function applySequenceDeliveryStatusUpdate(input: {
+  wamid: string;
+  status: "sent" | "delivered" | "read" | "failed";
+}): Promise<void> {
+  const result = await pool.query<{
+    id: string;
+    current_status: string | null;
+  }>(
+    `SELECT id, last_delivery_status AS current_status
+     FROM sequence_enrollments
+     WHERE last_message_id = $1
+     LIMIT 1`,
+    [input.wamid]
+  );
+
+  const row = result.rows[0];
+  if (!row || !shouldApplySequenceStatus(row.current_status, input.status)) {
+    return;
+  }
+
+  await pool.query(
+    `UPDATE sequence_enrollments
+     SET last_delivery_status = $2,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [row.id, input.status]
+  );
+}

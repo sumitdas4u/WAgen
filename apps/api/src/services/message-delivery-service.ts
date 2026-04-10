@@ -17,6 +17,7 @@ import {
   applyDeliveryAttemptWebhookStatusUpdate,
   applyCampaignDeliveryStatusUpdate,
   applyConversationDeliveryStatusUpdate,
+  applySequenceDeliveryStatusUpdate,
   claimWebhookStatusEvent,
   classifyDeliveryFailure,
   markDeliveryAttemptFailure,
@@ -516,6 +517,7 @@ export async function processMetaDeliveryStatuses(payload: unknown): Promise<voi
             errorMessage: error.message,
             eventTimestamp
           });
+          await applySequenceDeliveryStatusUpdate({ wamid, status });
           await markWebhookStatusEventProcessed(claimed.eventId);
         } catch (error) {
           console.error("[DeliveryWebhook] status processing failed", error);

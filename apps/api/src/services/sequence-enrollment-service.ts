@@ -1,8 +1,11 @@
 import { pool } from "../db/pool.js";
 import { appendSequenceLog } from "./sequence-log-service.js";
-import { createSequenceEnrollment, type Sequence } from "./sequence-service.js";
+import { createSequenceEnrollment, type Sequence, type SequenceStep } from "./sequence-service.js";
 
-export async function maybeCreateSequenceEnrollment(sequence: Sequence, contactId: string): Promise<boolean> {
+export async function maybeCreateSequenceEnrollment(
+  sequence: Sequence & { steps?: SequenceStep[] },
+  contactId: string
+): Promise<boolean> {
   if (sequence.allow_once) {
     const existing = await pool.query<{ id: string }>(
       `SELECT id
@@ -17,7 +20,12 @@ export async function maybeCreateSequenceEnrollment(sequence: Sequence, contactI
     }
   }
 
-  const enrollment = await createSequenceEnrollment(sequence.id, contactId);
+  const firstStep = sequence.steps?.[0];
+  const enrollment = await createSequenceEnrollment(
+    sequence.id,
+    contactId,
+    firstStep ? { value: firstStep.delay_value, unit: firstStep.delay_unit } : undefined
+  );
   await appendSequenceLog({
     enrollmentId: enrollment.id,
     sequenceId: sequence.id,
