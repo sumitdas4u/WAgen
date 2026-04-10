@@ -47,65 +47,76 @@ export async function googleCalendarRoutes(app: FastifyInstance): Promise<void> 
     })
   );
 
-  app.get("/api/google/calendar/connect/callback", async (request, reply) => {
-    const parsed = CallbackQuerySchema.safeParse(request.query ?? {});
-    if (!parsed.success) {
-      return reply
-        .type("text/html; charset=utf-8")
-        .send(
-          renderGoogleCalendarOauthPopupPage({
-            status: "error",
-            message: "Google Calendar callback payload is invalid."
-          })
-        );
-    }
+  app.get(
+    "/api/google/calendar/connect/callback",
+    {
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute"
+        }
+      }
+    },
+    async (request, reply) => {
+      const parsed = CallbackQuerySchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        return reply
+          .type("text/html; charset=utf-8")
+          .send(
+            renderGoogleCalendarOauthPopupPage({
+              status: "error",
+              message: "Google Calendar callback payload is invalid."
+            })
+          );
+      }
 
-    if (parsed.data.error) {
-      return reply
-        .type("text/html; charset=utf-8")
-        .send(
-          renderGoogleCalendarOauthPopupPage({
-            status: "error",
-            message: parsed.data.error_description || parsed.data.error
-          })
-        );
-    }
+      if (parsed.data.error) {
+        return reply
+          .type("text/html; charset=utf-8")
+          .send(
+            renderGoogleCalendarOauthPopupPage({
+              status: "error",
+              message: parsed.data.error_description || parsed.data.error
+            })
+          );
+      }
 
-    if (!parsed.data.code || !parsed.data.state) {
-      return reply
-        .type("text/html; charset=utf-8")
-        .send(
-          renderGoogleCalendarOauthPopupPage({
-            status: "error",
-            message: "Missing Google authorization code or state."
-          })
-        );
-    }
+      if (!parsed.data.code || !parsed.data.state) {
+        return reply
+          .type("text/html; charset=utf-8")
+          .send(
+            renderGoogleCalendarOauthPopupPage({
+              status: "error",
+              message: "Missing Google authorization code or state."
+            })
+          );
+      }
 
-    try {
-      const connection = await completeGoogleCalendarOAuthCallback({
-        code: parsed.data.code,
-        state: parsed.data.state
-      });
-      return reply
-        .type("text/html; charset=utf-8")
-        .send(
-          renderGoogleCalendarOauthPopupPage({
-            status: "success",
-            message: `Connected as ${connection.googleEmail}.`
-          })
-        );
-    } catch (error) {
-      return reply
-        .type("text/html; charset=utf-8")
-        .send(
-          renderGoogleCalendarOauthPopupPage({
-            status: "error",
-            message: (error as Error).message
-          })
-        );
+      try {
+        const connection = await completeGoogleCalendarOAuthCallback({
+          code: parsed.data.code,
+          state: parsed.data.state
+        });
+        return reply
+          .type("text/html; charset=utf-8")
+          .send(
+            renderGoogleCalendarOauthPopupPage({
+              status: "success",
+              message: `Connected as ${connection.googleEmail}.`
+            })
+          );
+      } catch (error) {
+        return reply
+          .type("text/html; charset=utf-8")
+          .send(
+            renderGoogleCalendarOauthPopupPage({
+              status: "error",
+              message: (error as Error).message
+            })
+          );
+      }
     }
-  });
+  );
 
   app.post(
     "/api/google/calendar/disconnect",
