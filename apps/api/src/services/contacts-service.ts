@@ -735,8 +735,29 @@ export async function listContacts(userId: string, filters: ContactsListFilters 
   values.push(limit);
 
   const result = await pool.query<Contact>(
-    `SELECT c.*
+    `SELECT
+        c.id,
+        c.user_id,
+        c.display_name,
+        c.phone_number,
+        c.email,
+        c.contact_type,
+        c.tags,
+        c.source_type,
+        c.source_id,
+        c.source_url,
+        COALESCE(c.linked_conversation_id, conv.id) AS linked_conversation_id,
+        c.created_at,
+        c.updated_at
      FROM contacts c
+     LEFT JOIN LATERAL (
+       SELECT conversation.id
+       FROM conversations conversation
+       WHERE conversation.user_id = c.user_id
+         AND conversation.phone_number = c.phone_number
+       ORDER BY conversation.last_message_at DESC NULLS LAST, conversation.created_at DESC
+       LIMIT 1
+     ) conv ON TRUE
      WHERE ${where.join(" AND ")}
      ORDER BY c.updated_at DESC, c.created_at DESC
      LIMIT $${values.length}`,
@@ -1386,7 +1407,11 @@ export async function getContactByConversationId(userId: string, conversationId:
     );
     if (!byPhone.rows[0]) return null;
     const fieldMap = await loadFieldValues(pool, [byPhone.rows[0].id]);
-    return { ...byPhone.rows[0], custom_field_values: fieldMap.get(byPhone.rows[0].id) ?? [] };
+    return {
+      ...byPhone.rows[0],
+      linked_conversation_id: byPhone.rows[0].linked_conversation_id ?? conversationId,
+      custom_field_values: fieldMap.get(byPhone.rows[0].id) ?? []
+    };
   }
   const contact = result.rows[0];
   const fieldMap = await loadFieldValues(pool, [contact.id]);

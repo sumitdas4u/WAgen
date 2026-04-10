@@ -377,23 +377,25 @@ function decodeTemplateHandleSegment(value: string): string | null {
 function inspectTemplateHeaderHandle(handle: string): {
   isUrl: boolean;
   mimeType: string | null;
+  looksLikeMetaSampleHandle: boolean;
 } {
   const trimmed = handle.trim();
   if (!trimmed) {
-    return { isUrl: false, mimeType: null };
+    return { isUrl: false, mimeType: null, looksLikeMetaSampleHandle: false };
   }
   if (/^https?:\/\//i.test(trimmed)) {
-    return { isUrl: true, mimeType: null };
+    return { isUrl: true, mimeType: null, looksLikeMetaSampleHandle: false };
   }
 
   const segments = trimmed.split(":");
   if (segments.length < 3) {
-    return { isUrl: false, mimeType: null };
+    return { isUrl: false, mimeType: null, looksLikeMetaSampleHandle: false };
   }
 
   return {
     isUrl: false,
-    mimeType: decodeTemplateHandleSegment(segments[2] ?? "")
+    mimeType: decodeTemplateHandleSegment(segments[2] ?? ""),
+    looksLikeMetaSampleHandle: true
   };
 }
 
@@ -469,6 +471,12 @@ function normalizeCreateTemplateComponents(components: TemplateComponent[]): Tem
         if (handleInfo.isUrl) {
           errors.push(
             `Header ${format.toLowerCase()} templates must use the Meta sample handle returned by Upload Sample Media. Public URLs are not accepted here.`
+          );
+          continue;
+        }
+        if (!handleInfo.looksLikeMetaSampleHandle) {
+          errors.push(
+            `Header ${format.toLowerCase()} templates must use the Meta sample handle returned by Upload Sample Media. If you duplicated another template, upload a fresh sample file before submitting.`
           );
           continue;
         }
@@ -661,6 +669,11 @@ function normalizeCreateTemplateComponents(components: TemplateComponent[]): Tem
 
 function improveTemplateCreateErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "Failed to create template.");
+  const cleanedMessage = message
+    .replace(/Please read the Graph API documentation at https?:\/\/\S+/gi, "")
+    .replace(/\[status=[^\]]+\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   const buttonFieldMatch = message.match(/components\[(\d+)\]\['buttons'\]\[(\d+)\]\['([^']+)'\]/i);
   if (buttonFieldMatch) {
     const buttonIndex = Number(buttonFieldMatch[2]) + 1;
@@ -685,20 +698,23 @@ function improveTemplateCreateErrorMessage(error: unknown): string {
       return "Meta rejected the sample example data for this template. Fill every variable example and re-upload media samples from WAgen before submitting.";
     }
   }
+  if (/unsupported post request/i.test(cleanedMessage) || /object with id/i.test(cleanedMessage)) {
+    return "Meta could not use the sample media attached to this template. Upload the header sample again in WAgen before submitting. If you duplicated another template, do not reuse the old media reference.";
+  }
   if (/\bsubcode=2388273\b/i.test(message)) {
-    return `${message} Meta rejected the media sample reference. Upload the sample file in WAgen and use the returned Meta header handle; public URLs are not accepted for template media headers.`;
+    return "Meta rejected the media sample reference for this header. Upload the sample file again in WAgen and use the new handle before submitting.";
   }
   if (/\bsubcode=2388084\b/i.test(message)) {
-    return `${message} Meta rejected the uploaded media sample for this header type. Use JPG or PNG for image headers, MP4 for video headers, and PDF for document headers.`;
+    return "Meta rejected the uploaded media sample for this header type. Use JPG or PNG for image headers, MP4 for video headers, and PDF for document headers.";
   }
   if (/\bcode=192\b/i.test(message) && /phone number/i.test(message)) {
     return "Meta rejected the phone button number. Use a full international number with country code, for example +919804735837.";
   }
   if (!/\bcode=131009\b/i.test(message) && !/\bcode=100\b/i.test(message)) {
-    return message;
+    return cleanedMessage || "Failed to create template.";
   }
 
-  return `${message} Meta rejected this template structure. Common causes are using a media ID instead of a template sample handle, missing header/body example values for variables, or missing example values for a dynamic URL or coupon-code button.`;
+  return "Meta rejected this template structure. Check that every variable has a sample value, dynamic URL buttons include a sample value, coupon-code buttons include a sample code, and media headers use a fresh uploaded sample handle.";
 }
 
 export function resolveTemplatePayload(

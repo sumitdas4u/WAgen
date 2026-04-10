@@ -21,13 +21,17 @@ function extractPrefillState(t: MessageTemplate) {
   const body = t.components.find((c) => c.type === "BODY");
   const footer = t.components.find((c) => c.type === "FOOTER");
   const buttonsComp = t.components.find((c) => c.type === "BUTTONS");
+  const originalHeaderHandle =
+    (header?.example as { header_handle?: string[] } | undefined)?.header_handle?.[0] ?? "";
+  const requiresFreshMediaUpload = isMediaHeaderFormat(header?.format ?? "");
   return {
     name: t.name + "_copy",
     category: t.category,
     language: t.language,
     headerFormat: header?.format ?? "NONE",
     headerText: header?.text ?? "",
-    headerHandle: (header?.example as { header_handle?: string[] } | undefined)?.header_handle?.[0] ?? "",
+    headerHandle: requiresFreshMediaUpload ? "" : originalHeaderHandle,
+    requiresFreshMediaUpload,
     bodyText: body?.text ?? "",
     footerText: footer?.text ?? "",
     buttons: (buttonsComp?.buttons ?? []).map((b) => ({
@@ -66,6 +70,19 @@ const BUTTON_TYPES = [
   { type: "COPY_CODE", label: "📋 Coupon code", note: "1 button maximum", section: "Call to action buttons" }
 ] as const;
 
+const MEDIA_HEADER_FORMATS = ["IMAGE", "VIDEO", "DOCUMENT"] as const;
+type MediaHeaderFormat = (typeof MEDIA_HEADER_FORMATS)[number];
+const MEDIA_HEADER_SAMPLE_MIME_TYPES: Record<MediaHeaderFormat, readonly string[]> = {
+  IMAGE: ["image/jpeg", "image/png"],
+  VIDEO: ["video/mp4"],
+  DOCUMENT: ["application/pdf"]
+};
+const MEDIA_HEADER_SAMPLE_HELP: Record<MediaHeaderFormat, string> = {
+  IMAGE: "JPG or PNG",
+  VIDEO: "MP4",
+  DOCUMENT: "PDF"
+};
+
 const HEADER_FORMAT_OPTIONS = [
   { value: "NONE", label: "None", supported: true },
   { value: "TEXT", label: "Text", supported: true },
@@ -80,8 +97,81 @@ function detectVariables(text: string): string[] {
   return [...new Set(matches.map((m) => `{{${(m[1] ?? "").trim()}}}`))];
 }
 
+function isMediaHeaderFormat(value: string): value is MediaHeaderFormat {
+  return MEDIA_HEADER_FORMATS.includes(value as MediaHeaderFormat);
+}
+
 function stripEmojiText(value: string): string {
   return value.replace(EMOJI_GLOBAL_PATTERN, "");
+}
+
+function decodeTemplateHandleSegment(value: string): string | null {
+  if (!/^[A-Za-z0-9+/=]+$/.test(value)) {
+    return null;
+  }
+  try {
+    const decoded = atob(value).trim();
+    return decoded && /^[\x20-\x7E]+$/.test(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function inspectTemplateHeaderHandle(handle: string): {
+  isUrl: boolean;
+  looksLikeSampleHandle: boolean;
+  mimeType: string | null;
+} {
+  const trimmed = handle.trim();
+  if (!trimmed) {
+    return { isUrl: false, looksLikeSampleHandle: false, mimeType: null };
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return { isUrl: true, looksLikeSampleHandle: false, mimeType: null };
+  }
+
+  const segments = trimmed.split(":");
+  if (segments.length < 3) {
+    return { isUrl: false, looksLikeSampleHandle: false, mimeType: null };
+  }
+
+  return {
+    isUrl: false,
+    looksLikeSampleHandle: true,
+    mimeType: decodeTemplateHandleSegment(segments[2] ?? "")
+  };
+}
+
+function cleanTemplateCreateErrorMessage(message: string): string {
+  const cleaned = message
+    .replace(/Please read the Graph API documentation at https?:\/\/\S+/gi, "")
+    .replace(/\[status=[^\]]+\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || "Failed to submit this template.";
+}
+
+function formatTemplateCreateError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error ?? "Failed to submit this template.");
+  const message = cleanTemplateCreateErrorMessage(rawMessage);
+
+  if (/unsupported post request/i.test(message) || /object with id/i.test(message)) {
+    return "Meta could not use the sample media attached to this template. Upload the header sample again in WAgen before submitting. If you duplicated another template, do not reuse the old media reference.";
+  }
+  if (/\bsubcode=2388273\b/i.test(rawMessage)) {
+    return "Meta rejected the media sample reference for this header. Upload the sample file again in WAgen and use the new handle before submitting.";
+  }
+  if (/\bsubcode=2388084\b/i.test(rawMessage)) {
+    return "Meta rejected the uploaded media sample for this header type. Use JPG or PNG for images, MP4 for videos, and PDF for documents.";
+  }
+  if (/\bcode=192\b/i.test(rawMessage) && /phone number/i.test(message)) {
+    return "Meta rejected the phone button number. Use a full international number with country code, for example +919804735837.";
+  }
+  if (/\bcode=131009\b/i.test(rawMessage) || /\bcode=100\b/i.test(rawMessage)) {
+    return "Meta rejected this template structure. Check that every variable has a sample value, dynamic URL buttons include a sample value, coupon-code buttons include a sample code, and media headers use a fresh uploaded sample handle.";
+  }
+
+  return message;
 }
 
 function collectDraftVariables(input: {
@@ -155,6 +245,7 @@ function validateTemplateDraft(input: {
   category: TemplateCategory;
   headerFormat: string;
   headerHandle: string;
+  requiresFreshMediaUpload: boolean;
   headerText: string;
   bodyText: string;
   footerText: string;
@@ -178,7 +269,17 @@ function validateTemplateDraft(input: {
     };
   }
 
-  if (["IMAGE", "VIDEO", "DOCUMENT"].includes(input.headerFormat) && !input.headerHandle.trim()) {
+  if (isMediaHeaderFormat(input.headerFormat) && input.requiresFreshMediaUpload) {
+    return {
+      formError: "This copied template needs a fresh sample media upload before it can be submitted.",
+      headerError: "Upload a fresh sample file for this copied media header.",
+      footerError: null,
+      bodyError: null,
+      buttonErrors
+    };
+  }
+
+  if (isMediaHeaderFormat(input.headerFormat) && !input.headerHandle.trim()) {
     return {
       formError: "Upload a sample media file for the header before submitting this template.",
       headerError: "Please upload the sample media for this header.",
@@ -187,14 +288,38 @@ function validateTemplateDraft(input: {
       buttonErrors
     };
   }
-  if (["IMAGE", "VIDEO", "DOCUMENT"].includes(input.headerFormat) && /^https?:\/\//i.test(input.headerHandle.trim())) {
-    return {
-      formError: "Media headers must use the Meta sample handle from Upload Sample Media. Public URLs are not accepted here.",
-      headerError: "Public URLs are not accepted. Upload the media here to generate a Meta sample handle.",
-      footerError: null,
-      bodyError: null,
-      buttonErrors
-    };
+  if (isMediaHeaderFormat(input.headerFormat)) {
+    const handleInfo = inspectTemplateHeaderHandle(input.headerHandle);
+    if (handleInfo.isUrl) {
+      return {
+        formError: "Media headers must use the Meta sample handle from Upload Sample Media. Public URLs are not accepted here.",
+        headerError: "Public URLs are not accepted. Upload the media here to generate a Meta sample handle.",
+        footerError: null,
+        bodyError: null,
+        buttonErrors
+      };
+    }
+    if (!handleInfo.looksLikeSampleHandle) {
+      return {
+        formError: "This header media reference is not a valid Meta template sample handle. Upload the sample again in WAgen before submitting.",
+        headerError: "Upload the sample here to generate a fresh Meta header handle.",
+        footerError: null,
+        bodyError: null,
+        buttonErrors
+      };
+    }
+    if (
+      handleInfo.mimeType &&
+      !MEDIA_HEADER_SAMPLE_MIME_TYPES[input.headerFormat].includes(handleInfo.mimeType)
+    ) {
+      return {
+        formError: `This ${input.headerFormat.toLowerCase()} header sample is not valid. Upload a ${MEDIA_HEADER_SAMPLE_HELP[input.headerFormat]} file and try again.`,
+        headerError: `Upload a ${MEDIA_HEADER_SAMPLE_HELP[input.headerFormat]} file for this header.`,
+        footerError: null,
+        bodyError: null,
+        buttonErrors
+      };
+    }
   }
   if (input.headerFormat === "TEXT" && !input.headerText.trim()) {
     return {
@@ -430,6 +555,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const [headerFormat, setHeaderFormat] = useState(init?.headerFormat ?? "NONE");
   const [headerText, setHeaderText] = useState(init?.headerText ?? "");
   const [headerHandle, setHeaderHandle] = useState(init?.headerHandle ?? "");
+  const [requiresFreshMediaUpload, setRequiresFreshMediaUpload] = useState(init?.requiresFreshMediaUpload ?? false);
   const [headerImageUrl, setHeaderImageUrl] = useState<string | null>(null);
   const [bodyText, setBodyText] = useState(init?.bodyText ?? "");
   const [footerText, setFooterText] = useState(init?.footerText ?? "");
@@ -439,6 +565,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const [showAI, setShowAI] = useState(false);
   const [nameError, setNameError] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [headerFooterSanitizeNotice, setHeaderFooterSanitizeNotice] = useState<string | null>(null);
 
   const createMutation = useCreateTemplateMutation(token);
@@ -453,6 +580,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     category,
     headerFormat,
     headerHandle,
+    requiresFreshMediaUpload,
     headerText,
     bodyText,
     footerText,
@@ -470,10 +598,16 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
 
   useEffect(() => {
     if (!createMutation.isError) {
+      if (submitError) {
+        setSubmitError(null);
+      }
       return;
     }
     createMutation.reset();
-  }, [name, category, language, headerFormat, headerText, headerHandle, bodyText, footerText, JSON.stringify(buttons), JSON.stringify(variableMapping)]);
+    if (submitError) {
+      setSubmitError(null);
+    }
+  }, [name, category, language, headerFormat, headerText, headerHandle, bodyText, footerText, JSON.stringify(buttons), JSON.stringify(variableMapping), requiresFreshMediaUpload]);
 
   const previewComponents = buildComponents(
     name, headerFormat, headerText, headerHandle,
@@ -489,6 +623,9 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     const body = gen.components.find((c) => c.type === "BODY");
     const footer = gen.components.find((c) => c.type === "FOOTER");
     const buttonsComp = gen.components.find((c) => c.type === "BUTTONS");
+    setHeaderHandle("");
+    setHeaderImageUrl(null);
+    setRequiresFreshMediaUpload(false);
 
     if (header) {
       setHeaderFormat(header.format ?? "TEXT");
@@ -540,7 +677,10 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   }
 
   async function handleSubmit() {
-    if (!connectionId) return;
+    if (!connectionId) {
+      setFormError("Connect a Meta WhatsApp number before submitting this template.");
+      return;
+    }
     if (draftValidation.formError) {
       setFormError(draftValidation.formError);
       return;
@@ -551,6 +691,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     );
     try {
       setFormError(null);
+      setSubmitError(null);
       const template = await createMutation.mutateAsync({
         connectionId,
         name: name.trim(),
@@ -559,8 +700,8 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
         components
       });
       onCreated(template);
-    } catch {
-      // error displayed via mutation state
+    } catch (error) {
+      setSubmitError(formatTemplateCreateError(error));
     }
   }
 
@@ -682,7 +823,13 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                   value={option.value}
                   checked={headerFormat === option.value}
                   disabled={!option.supported}
-                  onChange={() => { setHeaderFormat(option.value); setHeaderText(""); setHeaderHandle(""); setHeaderImageUrl(null); }}
+                  onChange={() => {
+                    setHeaderFormat(option.value);
+                    setHeaderText("");
+                    setHeaderHandle("");
+                    setHeaderImageUrl(null);
+                    setRequiresFreshMediaUpload(false);
+                  }}
                   style={{ accentColor: "#25d366" }}
                 />
                 {option.label}
@@ -726,12 +873,18 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
           )}
           {["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat) && (
             <div style={{ marginTop: "12px" }}>
+              {requiresFreshMediaUpload && (
+                <div style={{ marginBottom: "10px", padding: "10px 12px", borderRadius: "8px", background: "#fff7ed", color: "#9a3412", border: "1px solid #fdba74", fontSize: "12px" }}>
+                  This copied template needs a fresh sample upload. Meta does not let new templates reuse the old media sample reference.
+                </div>
+              )}
               <MediaUploader
                 token={token}
                 connectionId={connectionId}
                 mediaType={headerFormat as "IMAGE" | "VIDEO" | "DOCUMENT"}
                 onUploaded={(url, localPreviewUrl) => {
                   setHeaderHandle(url);
+                  setRequiresFreshMediaUpload(false);
                   if (headerFormat === "IMAGE") setHeaderImageUrl(localPreviewUrl ?? url);
                 }}
               />
@@ -1041,12 +1194,12 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
         </div>
 
         {/* Error */}
-        {(formError || createMutation.isError) && (
+        {(formError || submitError || createMutation.isError) && (
           <div style={{ padding: "12px", borderRadius: "8px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: "13px" }}>
-            {formError ?? (createMutation.error as Error).message}
+            {formError ?? submitError ?? formatTemplateCreateError(createMutation.error)}
           </div>
         )}
-        {!formError && !createMutation.isError && !isValid && (
+        {!formError && !submitError && !createMutation.isError && !isValid && (
           <div style={{ padding: "12px", borderRadius: "8px", background: "#fff7ed", color: "#9a3412", border: "1px solid #fdba74", fontSize: "13px" }}>
             Fill all required fields and fix the highlighted inputs before submitting this template.
           </div>
