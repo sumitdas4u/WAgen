@@ -58,7 +58,8 @@ export const dashboardQueryKeys = {
   sequenceRoot: dashboardSequenceRoot,
   sequences: [...dashboardSequenceRoot, "list"] as const,
   sequenceDetail: (sequenceId: string) => [...dashboardSequenceRoot, "detail", sequenceId] as const,
-  sequenceEnrollments: (sequenceId: string) => [...dashboardSequenceRoot, "enrollments", sequenceId] as const,
+  sequenceEnrollments: (sequenceId: string, status?: string) =>
+    [...dashboardSequenceRoot, "enrollments", sequenceId, status ?? "all"] as const,
   sequenceLogs: (enrollmentId: string) => [...dashboardSequenceRoot, "logs", enrollmentId] as const,
   webhooksRoot: dashboardWebhooksRoot,
   webhookIntegrations: [...dashboardWebhooksRoot, "integrations"] as const,
