@@ -216,6 +216,15 @@ describe("dashboard router", () => {
     });
   });
 
+  it("renders the sequence report route on /dashboard/sequence/:id/report", async () => {
+    const { router } = renderRoute("/dashboard/sequence/abc123/report");
+
+    expect(await screen.findByText("Sequence module")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/dashboard/sequence/abc123/report");
+    });
+  });
+
   it("normalizes legacy bootstrap payloads that omit dashboard summaries", async () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { agentSummary: _agentSummary, channelSummary: _channelSummary, ...legacyBootstrap } = createBootstrap();
