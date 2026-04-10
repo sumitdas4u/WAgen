@@ -6,6 +6,7 @@ import {
   createSequence,
   deleteSequence,
   getSequenceDetail,
+  getSequenceStepFunnel,
   listSequenceEnrollments,
   listSequences,
   pauseSequence,
@@ -174,5 +175,11 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
       contactId: parsed.data.contactId
     });
     return { ok: true, ...result };
+  });
+
+  fastify.get("/api/sequences/:sequenceId/step-funnel", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+    const { sequenceId } = request.params as { sequenceId: string };
+    const rows = await getSequenceStepFunnel(request.authUser.userId, sequenceId);
+    return { funnel: rows };
   });
 }

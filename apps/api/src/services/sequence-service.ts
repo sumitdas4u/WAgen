@@ -639,3 +639,34 @@ export async function getSequenceEnrollmentForExecution(enrollmentId: string): P
     }
   };
 }
+
+export interface SequenceStepFunnelRow {
+  step_id: string;
+  step_order: number;
+  delay_value: number;
+  delay_unit: SequenceDelayUnit;
+  message_template_id: string;
+  reached: number;
+}
+
+export async function getSequenceStepFunnel(
+  userId: string,
+  sequenceId: string
+): Promise<SequenceStepFunnelRow[]> {
+  const result = await pool.query<SequenceStepFunnelRow>(
+    `SELECT ss.id         AS step_id,
+            ss.step_order,
+            ss.delay_value,
+            ss.delay_unit,
+            ss.message_template_id,
+            COUNT(DISTINCT sl.enrollment_id) AS reached
+     FROM sequence_steps ss
+     JOIN sequences s ON s.id = ss.sequence_id AND s.user_id = $2
+     LEFT JOIN sequence_logs sl ON sl.step_id = ss.id
+     WHERE ss.sequence_id = $1
+     GROUP BY ss.id, ss.step_order, ss.delay_value, ss.delay_unit, ss.message_template_id
+     ORDER BY ss.step_order ASC`,
+    [sequenceId, userId]
+  );
+  return result.rows;
+}
