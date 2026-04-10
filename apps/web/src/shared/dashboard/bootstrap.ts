@@ -35,6 +35,7 @@ const DEFAULT_DASHBOARD_BOOTSTRAP: DashboardBootstrapResponse = {
       enabled: false
     },
     whatsapp: {
+      enabled: true,
       status: "disconnected",
       phoneNumber: null,
       hasQr: false,
@@ -42,6 +43,7 @@ const DEFAULT_DASHBOARD_BOOTSTRAP: DashboardBootstrapResponse = {
     },
     metaApi: {
       connected: false,
+      enabled: false,
       connection: null
     },
     anyConnected: false

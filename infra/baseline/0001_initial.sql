@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   session_auth_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
   status TEXT NOT NULL DEFAULT 'disconnected',
   phone_number TEXT,
   last_connected_at TIMESTAMPTZ,
@@ -186,6 +187,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_business_connections (
   token_expires_at TIMESTAMPTZ,
   subscription_status TEXT NOT NULL DEFAULT 'unknown',
   status TEXT NOT NULL DEFAULT 'connected',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
   metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

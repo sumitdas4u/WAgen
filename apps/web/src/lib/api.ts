@@ -1048,8 +1048,16 @@ export function disconnectWhatsApp(token: string) {
   });
 }
 
+export function setWhatsAppChannelEnabled(token: string, enabled: boolean) {
+  return apiRequest<{ ok: boolean }>("/api/whatsapp/channel", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ enabled })
+  });
+}
+
 export function fetchWhatsAppStatus(token: string) {
-  return apiRequest<{ status: string; phoneNumber: string | null; hasQr: boolean; qr: string | null }>(
+  return apiRequest<{ enabled: boolean; status: string; phoneNumber: string | null; hasQr: boolean; qr: string | null }>(
     "/api/whatsapp/status",
     { token }
   );
@@ -1081,6 +1089,7 @@ export interface MetaBusinessConnection {
   displayPhoneNumber: string | null;
   linkedNumber: string | null;
   tokenExpiresAt: string | null;
+  enabled: boolean;
   subscriptionStatus: string;
   status: string;
   billingMode: string;
@@ -1098,6 +1107,7 @@ export interface MetaBusinessConnection {
 
 export interface MetaBusinessStatus {
   connected: boolean;
+  enabled: boolean;
   connection: MetaBusinessConnection | null;
 }
 
@@ -1149,6 +1159,17 @@ export function disconnectMetaBusiness(token: string, payload?: { connectionId?:
     method: "POST",
     token,
     body: JSON.stringify(payload ?? {})
+  });
+}
+
+export function setMetaBusinessChannelEnabled(
+  token: string,
+  payload: { enabled: boolean; connectionId?: string }
+) {
+  return apiRequest<{ ok: boolean; connection: MetaBusinessConnection | null }>("/api/meta/business/channel", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
   });
 }
 

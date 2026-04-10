@@ -15,6 +15,10 @@ const TestSuiteSchema = z.object({
   delayMs: z.number().int().min(250).max(10_000).optional()
 });
 
+const ChannelStatusSchema = z.object({
+  enabled: z.boolean()
+});
+
 export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
     "/api/whatsapp/connect",
@@ -46,6 +50,23 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
     { preHandler: [fastify.requireAuth] },
     async (request) => {
       await whatsappSessionManager.disconnectUser(request.authUser.userId);
+      return { ok: true };
+    }
+  );
+
+  fastify.post(
+    "/api/whatsapp/channel",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = ChannelStatusSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid channel status payload" });
+      }
+
+      await whatsappSessionManager.setChannelEnabled(
+        request.authUser.userId,
+        parsed.data.enabled
+      );
       return { ok: true };
     }
   );

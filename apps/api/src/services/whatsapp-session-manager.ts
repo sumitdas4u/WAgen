@@ -16,6 +16,7 @@ import {
   getOrCreateWhatsAppSession,
   getWhatsAppStatus,
   resetWhatsAppAuthState,
+  setWhatsAppChannelEnabled,
   updateWhatsAppStatus
 } from "./whatsapp-session-store.js";
 import {
@@ -48,6 +49,7 @@ const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DE
 interface SessionRuntime {
   socket: WASocket;
   qr: string | null;
+  enabled: boolean;
   status: "connected" | "connecting" | "disconnected";
   connectionId: number;
 }
@@ -448,7 +450,7 @@ class WhatsAppSessionManager {
     try {
       this.clearReconnectTimer(userId);
       this.reconnectAttempts.delete(userId);
-      await getOrCreateWhatsAppSession(userId);
+      const session = await getOrCreateWhatsAppSession(userId);
       await updateWhatsAppStatus(userId, "connecting");
       realtimeHub.broadcast(userId, "whatsapp.status", { status: "connecting" });
 
@@ -468,6 +470,7 @@ class WhatsAppSessionManager {
       this.sessions.set(userId, {
         socket,
         qr: null,
+        enabled: session.enabled,
         status: "connecting",
         connectionId
       });
@@ -585,7 +588,7 @@ class WhatsAppSessionManager {
           return;
         }
 
-        const shouldAutoReply = type === "notify";
+        const shouldAutoReply = type === "notify" && runtime.enabled;
         if (type !== "notify" && type !== "append") {
           return;
         }
@@ -608,6 +611,7 @@ class WhatsAppSessionManager {
   }
 
   async getStatus(userId: string): Promise<{
+    enabled: boolean;
     status: string;
     phoneNumber: string | null;
     hasQr: boolean;
@@ -621,6 +625,7 @@ class WhatsAppSessionManager {
     if (shouldRestoreRuntime) {
       void this.connectUser(userId);
       return {
+        enabled: dbStatus.enabled,
         status: "connecting",
         phoneNumber: dbStatus.phoneNumber,
         hasQr: false,
@@ -629,11 +634,22 @@ class WhatsAppSessionManager {
     }
 
     return {
+      enabled: runtime?.enabled ?? dbStatus.enabled,
       status: runtime?.status ?? dbStatus.status,
       phoneNumber: dbStatus.phoneNumber,
       hasQr: Boolean(runtime?.qr),
       qr: runtime?.qr ?? null
     };
+  }
+
+  async setChannelEnabled(userId: string, enabled: boolean): Promise<void> {
+    await getOrCreateWhatsAppSession(userId);
+    await setWhatsAppChannelEnabled(userId, enabled);
+
+    const runtime = this.sessions.get(userId);
+    if (runtime) {
+      runtime.enabled = enabled;
+    }
   }
 
   async disconnectUser(userId: string): Promise<void> {

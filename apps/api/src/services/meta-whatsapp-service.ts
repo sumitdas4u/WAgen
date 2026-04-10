@@ -25,6 +25,7 @@ interface MetaConnectionRow {
   linked_number: string | null;
   access_token_encrypted: string;
   token_expires_at: string | null;
+  enabled: boolean;
   subscription_status: string;
   status: string;
   billing_mode: string;
@@ -49,6 +50,7 @@ export interface MetaConnection {
   displayPhoneNumber: string | null;
   linkedNumber: string | null;
   tokenExpiresAt: string | null;
+  enabled: boolean;
   subscriptionStatus: string;
   status: string;
   billingMode: string;
@@ -212,6 +214,7 @@ function mapConnection(row: MetaConnectionRow): MetaConnection {
     displayPhoneNumber: row.display_phone_number,
     linkedNumber: row.linked_number,
     tokenExpiresAt: row.token_expires_at,
+    enabled: row.enabled,
     subscriptionStatus: row.subscription_status,
     status: row.status,
     billingMode: row.billing_mode,
@@ -1047,6 +1050,7 @@ async function upsertConnection(args: {
                linked_number,
                access_token_encrypted,
                token_expires_at::text,
+               enabled,
                subscription_status,
                status,
                billing_mode,
@@ -1130,6 +1134,7 @@ async function getConnectionRowByPhoneNumberId(
             linked_number,
             access_token_encrypted,
             token_expires_at::text,
+            enabled,
             subscription_status,
             status,
             billing_mode,
@@ -1169,6 +1174,7 @@ async function getLatestConnectionRowByUserId(userId: string): Promise<MetaConne
             linked_number,
             access_token_encrypted,
             token_expires_at::text,
+            enabled,
             subscription_status,
             status,
             billing_mode,
@@ -1206,6 +1212,7 @@ async function getProfileTargetConnectionRow(userId: string, connectionId?: stri
               linked_number,
               access_token_encrypted,
               token_expires_at::text,
+              enabled,
               subscription_status,
               status,
               billing_mode,
@@ -1265,6 +1272,7 @@ async function getConnectionRowByUserAndLinkedNumber(
             linked_number,
             access_token_encrypted,
             token_expires_at::text,
+            enabled,
             subscription_status,
             status,
             billing_mode,
@@ -1423,6 +1431,7 @@ async function persistMetaStatusSnapshot(
                linked_number,
                access_token_encrypted,
                token_expires_at::text,
+               enabled,
                subscription_status,
                status,
                billing_mode,
@@ -1499,6 +1508,7 @@ async function refreshConnectionStatusFromMeta(
                    linked_number,
                    access_token_encrypted,
                    token_expires_at::text,
+                   enabled,
                    subscription_status,
                    status,
                    billing_mode,
@@ -1538,6 +1548,7 @@ async function refreshConnectionStatusFromMeta(
                    linked_number,
                    access_token_encrypted,
                    token_expires_at::text,
+                   enabled,
                    subscription_status,
                    status,
                    billing_mode,
@@ -1587,6 +1598,7 @@ export async function getMetaBusinessStatus(
   options?: { forceRefresh?: boolean }
 ): Promise<{
   connected: boolean;
+  enabled: boolean;
   connection: MetaConnection | null;
 }> {
   let row = await getLatestConnectionRowByUserId(userId);
@@ -1603,6 +1615,7 @@ export async function getMetaBusinessStatus(
   }
   return {
     connected: row?.status === "connected",
+    enabled: row?.enabled ?? false,
     connection: row ? mapConnection(row) : null
   };
 }
@@ -1895,6 +1908,7 @@ async function listDisconnectTargetConnections(userId: string, connectionId?: st
             linked_number,
             access_token_encrypted,
             token_expires_at::text,
+            enabled,
             subscription_status,
             status,
             billing_mode,
@@ -1931,6 +1945,7 @@ async function listConnectionsByWabaIds(userId: string, wabaIds: string[]): Prom
             linked_number,
             access_token_encrypted,
             token_expires_at::text,
+            enabled,
             subscription_status,
             status,
             billing_mode,
@@ -2113,6 +2128,49 @@ export async function disconnectMetaBusinessConnection(
   }
 
   return true;
+}
+
+export async function setMetaBusinessChannelEnabled(
+  userId: string,
+  enabled: boolean,
+  connectionId?: string
+): Promise<MetaConnection | null> {
+  const target = await getProfileTargetConnectionRow(userId, connectionId);
+  if (!target) {
+    return null;
+  }
+
+  const result = await pool.query<MetaConnectionRow>(
+    `UPDATE whatsapp_business_connections
+     SET enabled = $2
+     WHERE id = $1
+     RETURNING id,
+               user_id,
+               meta_business_id,
+               waba_id,
+               phone_number_id,
+               display_phone_number,
+               linked_number,
+               access_token_encrypted,
+               token_expires_at::text,
+               enabled,
+               subscription_status,
+               status,
+               billing_mode,
+               billing_status,
+               billing_owner_business_id,
+               billing_attached_at::text,
+               billing_error,
+               billing_credit_line_id,
+               billing_allocation_config_id,
+               billing_currency,
+               metadata_json,
+               created_at::text,
+               updated_at::text`,
+    [target.id, enabled]
+  );
+
+  return result.rows[0] ? mapConnection(result.rows[0]) : null;
 }
 
 export async function sendMetaTextMessage(input: {
@@ -2706,7 +2764,7 @@ async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
     messageText: task.text,
     flowMessageText: task.flowText ?? task.text,
     senderName: task.senderName ?? undefined,
-    shouldAutoReply: true,
+    shouldAutoReply: connectionRow.enabled,
     sendReply: async ({ text }) => {
       await sendAutoReplyViaMetaApi({
         phoneNumberId: connectionRow.phone_number_id,

@@ -8,6 +8,7 @@ import {
   getMetaBusinessConfig,
   getMetaBusinessStatus,
   handleMetaWebhookPayload,
+  setMetaBusinessChannelEnabled,
   sendMetaTextMessage,
   updateMetaBusinessProfile,
   uploadMetaBusinessProfileLogo,
@@ -34,6 +35,11 @@ const SendTextSchema = z.object({
 
 const DisconnectSchema = z.object({
   connectionId: z.string().uuid().optional()
+});
+
+const ChannelStatusSchema = z.object({
+  connectionId: z.string().uuid().optional(),
+  enabled: z.boolean()
 });
 
 const BusinessProfileQuerySchema = z.object({
@@ -144,6 +150,29 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
         parsed.data.connectionId
       );
       return { ok: disconnected };
+    }
+  );
+
+  fastify.post(
+    "/api/meta/business/channel",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = ChannelStatusSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid channel status payload" });
+      }
+
+      const connection = await setMetaBusinessChannelEnabled(
+        request.authUser.userId,
+        parsed.data.enabled,
+        parsed.data.connectionId
+      );
+
+      if (!connection) {
+        return reply.status(404).send({ error: "No connected WhatsApp Business API number found." });
+      }
+
+      return { ok: true, connection };
     }
   );
 

@@ -3,13 +3,20 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
-import { activateQrChannel, deactivateQrChannel } from "../api";
+import { activateQrChannel, deactivateQrChannel, setQrChannelEnabled } from "../api";
 
 function formatPhone(value: string | null | undefined): string {
   if (!value) return "Unknown";
   const digits = value.replace(/\D/g, "");
   if (!digits || digits.length < 8 || digits.length > 15) return value;
   return `+${digits}`;
+}
+
+function formatQrConnectionStatus(status: string, hasQr: boolean): string {
+  if (status === "connected") return "Connected";
+  if (status === "connecting" && hasQr) return "Waiting for scan";
+  if (status === "connecting") return "Connecting";
+  return "Disconnected";
 }
 
 export function QrChannelPage() {
@@ -20,9 +27,12 @@ export function QrChannelPage() {
   const [error, setError] = useState<string | null>(null);
 
   const qrStatus = bootstrap?.channelSummary?.whatsapp?.status ?? "not_connected";
+  const qrChannelEnabled = bootstrap?.channelSummary?.whatsapp?.enabled ?? true;
   const qrConnected = qrStatus === "connected";
   const qrPhoneNumber = bootstrap?.channelSummary?.whatsapp?.phoneNumber ?? null;
   const qrHasQr = Boolean(bootstrap?.channelSummary?.whatsapp?.hasQr);
+  const qrConnectionLabel = formatQrConnectionStatus(qrStatus, qrHasQr);
+  const canDisconnect = qrConnected || qrStatus === "connecting" || qrHasQr || Boolean(qrPhoneNumber);
 
   const updateShellState = async () => {
     await Promise.all([
@@ -33,12 +43,10 @@ export function QrChannelPage() {
 
   const toggleMutation = useMutation({
     mutationFn: async () => {
-      if (qrConnected) {
-        await deactivateQrChannel(token);
-        return "QR channel deactivated.";
-      }
-      await activateQrChannel(token);
-      return "QR channel activated. Open QR setup to scan and complete connection.";
+      await setQrChannelEnabled(token, !qrChannelEnabled);
+      return qrChannelEnabled
+        ? "QR channel paused. The WhatsApp connection stays alive, but automated replies are temporarily off."
+        : "QR channel resumed. The WhatsApp connection is still alive and automated replies are back on.";
     },
     onSuccess: async (message) => {
       await updateShellState();
@@ -46,6 +54,50 @@ export function QrChannelPage() {
     },
     onError: (err) => setError((err as Error).message)
   });
+
+  const reconnectMutation = useMutation({
+    mutationFn: async () => {
+      await activateQrChannel(token, { resetAuth: true });
+      return "Current QR connection disconnected. A fresh QR session is starting now. Open QR setup to scan again.";
+    },
+    onSuccess: async (message) => {
+      await updateShellState();
+      setInfo(message);
+    },
+    onError: (err) => setError((err as Error).message)
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      await deactivateQrChannel(token);
+      return "QR channel disconnected.";
+    },
+    onSuccess: async (message) => {
+      await updateShellState();
+      setInfo(message);
+    },
+    onError: (err) => setError((err as Error).message)
+  });
+
+  const handleReconnect = () => {
+    if (!window.confirm("Reconnect QR channel? This will disconnect the current QR session and generate a fresh QR code.")) {
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    reconnectMutation.mutate();
+  };
+
+  const handleDisconnect = () => {
+    if (!window.confirm("Disconnect QR channel? This will remove the current QR session until you connect again.")) {
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    disconnectMutation.mutate();
+  };
+
+  const controlsBusy = toggleMutation.isPending || reconnectMutation.isPending || disconnectMutation.isPending;
 
   return (
     <section className="finance-shell">
@@ -61,14 +113,14 @@ export function QrChannelPage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <h3>WhatsApp QR Channel</h3>
-              <p>Connect WhatsApp quickly for starter usage. Best for testing and small-scale automation.</p>
+              <p>Connect WhatsApp quickly for starter usage. Use the toggle to pause or resume replies without breaking the QR session.</p>
             </div>
             <button
               type="button"
-              className={qrConnected ? "go-live-switch on" : "go-live-switch"}
-              disabled={toggleMutation.isPending}
+              className={qrChannelEnabled ? "go-live-switch on" : "go-live-switch"}
+              disabled={controlsBusy}
               onClick={() => { setError(null); setInfo(null); toggleMutation.mutate(); }}
-              title={qrConnected ? "Deactivate QR channel" : "Activate QR channel"}
+              title={qrChannelEnabled ? "Pause QR channel replies" : "Resume QR channel replies"}
             >
               <span />
             </button>
@@ -77,8 +129,12 @@ export function QrChannelPage() {
 
         <div className="clone-channel-meta">
           <div>
-            <h3>Status</h3>
-            <p>{qrStatus}</p>
+            <h3>Channel</h3>
+            <p>{qrChannelEnabled ? "Active" : "Inactive"}</p>
+          </div>
+          <div>
+            <h3>Connection</h3>
+            <p>{qrConnectionLabel}</p>
           </div>
           <div>
             <h3>Linked Number</h3>
@@ -97,13 +153,21 @@ export function QrChannelPage() {
           <button
             type="button"
             className="ghost-btn"
-            disabled={toggleMutation.isPending}
-            onClick={() => { setError(null); setInfo(null); toggleMutation.mutate(); }}
+            disabled={controlsBusy}
+            onClick={handleReconnect}
           >
             Reconnect
           </button>
+          <button
+            type="button"
+            className="ghost-btn"
+            disabled={controlsBusy || !canDisconnect}
+            onClick={handleDisconnect}
+          >
+            Disconnect
+          </button>
         </div>
-        <p className="tiny-note">QR mode is ideal for testing and early-stage businesses. For long-term growth, use Official API mode.</p>
+        <p className="tiny-note">QR mode is ideal for testing and early-stage businesses. Toggle only pauses replies. Reconnect or Disconnect will reset the actual QR connection.</p>
       </article>
     </section>
   );

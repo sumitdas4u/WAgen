@@ -286,7 +286,7 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
             customerIdentifier: `web:${visitorId}`,
             messageText: inboundText,
             senderName: rememberedProfile?.name,
-            shouldAutoReply: true,
+            shouldAutoReply: Boolean(workspace.ai_active),
             sendReply: async ({ text }) => {
               sendEvent(socket, {
                 event: "message",

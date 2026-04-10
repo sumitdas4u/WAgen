@@ -8,6 +8,7 @@ export interface WhatsAppSessionRecord {
   id: string;
   user_id: string;
   session_auth_json: Record<string, unknown>;
+  enabled: boolean;
   status: string;
   phone_number: string | null;
 }
@@ -49,7 +50,7 @@ function mapSessionRecord(row: WhatsAppSessionRecord): WhatsAppSessionRecord {
 
 export async function getOrCreateWhatsAppSession(userId: string): Promise<WhatsAppSessionRecord> {
   const existing = await pool.query<WhatsAppSessionRecord>(
-    `SELECT id, user_id, session_auth_json, status, phone_number
+    `SELECT id, user_id, session_auth_json, enabled, status, phone_number
      FROM whatsapp_sessions
      WHERE user_id = $1`,
     [userId]
@@ -62,7 +63,7 @@ export async function getOrCreateWhatsAppSession(userId: string): Promise<WhatsA
   const created = await pool.query<WhatsAppSessionRecord>(
     `INSERT INTO whatsapp_sessions (user_id)
      VALUES ($1)
-     RETURNING id, user_id, session_auth_json, status, phone_number`,
+     RETURNING id, user_id, session_auth_json, enabled, status, phone_number`,
     [userId]
   );
 
@@ -105,6 +106,15 @@ export async function updateWhatsAppStatus(
   );
 }
 
+export async function setWhatsAppChannelEnabled(userId: string, enabled: boolean): Promise<void> {
+  await pool.query(
+    `UPDATE whatsapp_sessions
+     SET enabled = $1
+     WHERE user_id = $2`,
+    [enabled, userId]
+  );
+}
+
 export async function disconnectSessionsByPhoneNumber(
   activeUserId: string,
   phoneNumber: string
@@ -124,20 +134,23 @@ export async function disconnectSessionsByPhoneNumber(
 }
 
 export async function getWhatsAppStatus(userId: string): Promise<{
+  enabled: boolean;
   status: string;
   phoneNumber: string | null;
 }> {
   const result = await pool.query<{
+    enabled: boolean;
     status: string;
     phone_number: string | null;
   }>(
-    `SELECT status, phone_number
+    `SELECT enabled, status, phone_number
      FROM whatsapp_sessions
      WHERE user_id = $1`,
     [userId]
   );
 
   return {
+    enabled: result.rows[0]?.enabled ?? true,
     status: result.rows[0]?.status ?? "disconnected",
     phoneNumber: result.rows[0]?.phone_number ?? null
   };

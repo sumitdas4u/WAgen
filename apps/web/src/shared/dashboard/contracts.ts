@@ -14,6 +14,7 @@ export interface DashboardChannelSummary {
     enabled: boolean;
   };
   whatsapp: {
+    enabled: boolean;
     status: string;
     phoneNumber: string | null;
     hasQr: boolean;
