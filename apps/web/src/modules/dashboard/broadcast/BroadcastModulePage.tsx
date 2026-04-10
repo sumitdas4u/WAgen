@@ -5,6 +5,7 @@ import {
   createContactSegment,
   cancelCampaignRun,
   createCampaignDraft,
+  deleteContactSegment,
   downloadContactsTemplate,
   fetchBroadcastReport,
   fetchBroadcastRetargetPreview,
@@ -1070,6 +1071,14 @@ function BroadcastWizardPage({
   const [uploadStep, setUploadStep] = useState<"download" | "upload" | "preview">("download");
   const [showCreateSegmentModal, setShowCreateSegmentModal] = useState(false);
 
+  const deleteSegmentMutation = useMutation({
+    mutationFn: (id: string) => deleteContactSegment(token, id),
+    onSuccess: (_, id) => {
+      void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactSegments });
+      setSelectedSegmentIds((prev) => prev.filter((segId) => segId !== id));
+    }
+  });
+
   const approvedTemplates = useMemo(
     () => (templatesQuery.data ?? []).filter((template) => template.status === "APPROVED"),
     [templatesQuery.data]
@@ -1296,6 +1305,7 @@ function BroadcastWizardPage({
 
         {step === 2 && mode === "new" ? (
           <AudienceSelectionStep
+            token={token}
             name={name}
             onNameChange={setName}
             customFields={fields}
@@ -1322,6 +1332,11 @@ function BroadcastWizardPage({
             onDefaultCountryCodeChange={setDefaultCountryCode}
             uploadStep={uploadStep}
             onOpenCreateSegment={() => setShowCreateSegmentModal(true)}
+            onDeleteSegment={(id, name) => {
+              if (window.confirm(`Delete segment "${name}"? This cannot be undone.`)) {
+                deleteSegmentMutation.mutate(id);
+              }
+            }}
             onDownloadTemplate={handleDownloadAudienceTemplate}
             downloadingTemplate={downloadingTemplate}
             selectedTemplate={selectedTemplate}
@@ -1843,6 +1858,7 @@ function BroadcastCreateSegmentModal({
 }
 
 function AudienceSelectionStep({
+  token,
   name,
   onNameChange,
   segments,
@@ -1850,6 +1866,7 @@ function AudienceSelectionStep({
   onToggleSegment,
   onToggleAll,
   onOpenCreateSegment,
+  onDeleteSegment,
   onContinue,
   canContinue,
   onUpload,
@@ -1872,6 +1889,7 @@ function AudienceSelectionStep({
   placeholders,
   previewComponents
 }: {
+  token: string;
   name: string;
   onNameChange: (value: string) => void;
   customFields: Array<{ id: string; label: string; name: string; is_active: boolean }>;
@@ -1894,6 +1912,7 @@ function AudienceSelectionStep({
   onDefaultCountryCodeChange: (value: string) => void;
   uploadStep: "download" | "upload" | "preview";
   onOpenCreateSegment: () => void;
+  onDeleteSegment: (id: string, name: string) => void;
   onDownloadTemplate: () => Promise<void>;
   downloadingTemplate: boolean;
   selectedTemplate: MessageTemplate | null;
@@ -1907,6 +1926,19 @@ function AudienceSelectionStep({
   const [search, setSearch] = useState("");
   const [hoveredFilterId, setHoveredFilterId] = useState<string | null>(null);
   const [openSegmentMenuId, setOpenSegmentMenuId] = useState<string | null>(null);
+  const [segmentCounts, setSegmentCounts] = useState<Record<string, number>>({});
+  const [loadingCountIds, setLoadingCountIds] = useState<Set<string>>(new Set());
+
+  const handleViewCount = async (segmentId: string) => {
+    if (segmentCounts[segmentId] !== undefined || loadingCountIds.has(segmentId)) return;
+    setLoadingCountIds((prev) => new Set(prev).add(segmentId));
+    try {
+      const result = await fetchSegmentContacts(token, segmentId);
+      setSegmentCounts((prev) => ({ ...prev, [segmentId]: result.contacts.length }));
+    } finally {
+      setLoadingCountIds((prev) => { const next = new Set(prev); next.delete(segmentId); return next; });
+    }
+  };
 
   const FIELD_LABELS: Record<string, string> = {
     display_name: "Name", phone_number: "Phone", email: "Email",
@@ -2309,10 +2341,21 @@ function AudienceSelectionStep({
                         </div>
                       ) : null}
                     </td>
-                    <td>
-                      <button type="button" className="aud-view-count" onClick={(e) => e.stopPropagation()}>
-                        View count
-                      </button>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {segmentCounts[segment.id] !== undefined ? (
+                        <span className="aud-view-count aud-view-count-done">
+                          {segmentCounts[segment.id].toLocaleString()} contacts
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="aud-view-count"
+                          disabled={loadingCountIds.has(segment.id)}
+                          onClick={() => void handleViewCount(segment.id)}
+                        >
+                          {loadingCountIds.has(segment.id) ? "Loading…" : "View count"}
+                        </button>
+                      )}
                     </td>
                     <td><span className="aud-created-by">—</span></td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -2344,7 +2387,7 @@ function AudienceSelectionStep({
                             <button
                               type="button"
                               className="dd-item dd-item-danger"
-                              onClick={() => { setOpenSegmentMenuId(null); }}
+                              onClick={() => { setOpenSegmentMenuId(null); onDeleteSegment(segment.id, segment.name); }}
                             >
                               &#128465; Delete Segment
                             </button>

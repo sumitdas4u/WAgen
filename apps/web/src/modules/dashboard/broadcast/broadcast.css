@@ -1437,8 +1437,13 @@
   padding: 0;
 }
 
-.aud-view-count:hover {
-  text-decoration: underline;
+.aud-view-count:hover { text-decoration: underline; }
+.aud-view-count:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.aud-view-count-done {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #16a34a;
 }
 
 .aud-created-by {
