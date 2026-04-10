@@ -1495,6 +1495,7 @@ export interface DashboardOverviewResponse {
     chunks: number;
   };
   whatsapp: {
+    enabled: boolean;
     status: string;
     phoneNumber: string | null;
     hasQr: boolean;

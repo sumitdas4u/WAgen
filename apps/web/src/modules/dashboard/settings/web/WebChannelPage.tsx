@@ -102,7 +102,11 @@ export function WebChannelPage() {
         queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsRoot }),
         refetchBootstrap()
       ]);
-      setInfo(websiteEnabled ? "Website channel deactivated." : "Website channel activated.");
+      setInfo(
+        websiteEnabled
+          ? "Website channel paused. The widget stays installed, but automated replies are temporarily off."
+          : "Website channel resumed. The widget stays installed and automated replies are back on."
+      );
     },
     onError: (err) => setError((err as Error).message)
   });
@@ -123,14 +127,14 @@ export function WebChannelPage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <h3>Web Channel Setup</h3>
-              <p>Customize your website chatbot appearance and get the integration code.</p>
+              <p>Customize your website chatbot appearance and pause or resume widget replies without removing the installation.</p>
             </div>
             <button
               type="button"
               className={websiteEnabled ? "go-live-switch on" : "go-live-switch"}
               disabled={toggleMutation.isPending}
               onClick={() => { setError(null); setInfo(null); toggleMutation.mutate(); }}
-              title={websiteEnabled ? "Deactivate website channel" : "Activate website channel"}
+              title={websiteEnabled ? "Pause website channel replies" : "Resume website channel replies"}
             >
               <span />
             </button>

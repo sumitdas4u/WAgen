@@ -7,6 +7,7 @@ import {
   completeMetaSignup,
   deactivateMetaChannel,
   fetchSettingsMetaStatus,
+  setApiChannelEnabled,
 } from "../api";
 import { useSettingsMetaConfigQuery, useSettingsMetaStatusQuery } from "../queries";
 
@@ -126,9 +127,11 @@ export function ApiChannelPage() {
 
   const metaConfigQuery = useSettingsMetaConfigQuery(token);
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
-  const metaStatus: MetaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, connection: null } as MetaBusinessStatus);
+  const metaStatus: MetaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, enabled: false, connection: null } as MetaBusinessStatus);
   const metaConfig = metaConfigQuery.data ?? null;
+  const hasConnection = Boolean(metaStatus.connection);
   const isConnected = Boolean(metaStatus.connected && metaStatus.connection);
+  const channelEnabled = metaStatus.connection?.enabled ?? metaStatus.enabled;
 
   const metaHealthRecord = getNestedRecord(metaStatus.connection?.metadata?.metaHealth);
   const businessVerificationStatus = readMetaString(metaHealthRecord, "businessVerificationStatus");
@@ -159,15 +162,38 @@ export function ApiChannelPage() {
         queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus }),
         updateShellState()
       ]);
-      setInfo("Official WhatsApp API channel deactivated.");
+      setInfo("Official WhatsApp API channel disconnected.");
     },
     onError: (err) => setError((err as Error).message)
   });
 
-  const currentBusy = busy || setupLoading || disconnectMutation.isPending;
+  const toggleMutation = useMutation({
+    mutationFn: async () => {
+      await setApiChannelEnabled(token, !channelEnabled, metaStatus.connection?.id);
+      return channelEnabled
+        ? "Official WhatsApp API channel paused. The Meta connection stays linked, but automated replies are temporarily off."
+        : "Official WhatsApp API channel resumed. The Meta connection stays linked and automated replies are back on.";
+    },
+    onSuccess: async (message) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus }),
+        updateShellState()
+      ]);
+      setInfo(message);
+    },
+    onError: (err) => setError((err as Error).message)
+  });
 
-  const openBusinessApiSetup = async () => {
-    setBusy(true); setSetupLoading(true); setSetupLoadingText("Opening Facebook login..."); setError(null); setInfo(null);
+  const currentBusy = busy || setupLoading || disconnectMutation.isPending || toggleMutation.isPending;
+
+  const openBusinessApiSetup = async (options?: { skipInitialLoading?: boolean }) => {
+    if (!options?.skipInitialLoading) {
+      setBusy(true);
+      setSetupLoading(true);
+      setSetupLoadingText("Opening Facebook login...");
+      setError(null);
+      setInfo(null);
+    }
     try {
       const config: MetaBusinessConfig | null =
         metaConfig ?? (await queryClient.fetchQuery({
@@ -229,6 +255,42 @@ export function ApiChannelPage() {
     }
   };
 
+  const handleConnectOrReconnect = async () => {
+    if (hasConnection) {
+      if (!window.confirm("Reconnect Official WhatsApp API? This will disconnect the current API connection before starting a fresh connection flow.")) {
+        return;
+      }
+      setBusy(true);
+      setSetupLoading(true);
+      setSetupLoadingText("Disconnecting current API connection...");
+      setError(null);
+      setInfo(null);
+      try {
+        await deactivateMetaChannel(token, metaStatus.connection?.id);
+        await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus });
+        await updateShellState();
+        await openBusinessApiSetup({ skipInitialLoading: true });
+      } catch (err) {
+        setError((err as Error).message);
+        setBusy(false);
+        setSetupLoading(false);
+        setSetupLoadingText(null);
+      }
+      return;
+    }
+
+    await openBusinessApiSetup();
+  };
+
+  const handleDisconnect = () => {
+    if (!window.confirm("Disconnect Official WhatsApp API? This will remove the current API connection until you connect again.")) {
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    disconnectMutation.mutate();
+  };
+
   return (
     <section className="finance-shell">
       {(info || error) && (
@@ -240,8 +302,21 @@ export function ApiChannelPage() {
 
       <article className="channel-setup-panel">
         <header>
-          <h3>Official WhatsApp API Channel</h3>
-          <p>Connect Meta Embedded Signup for stable production messaging at scale, then configure business profile.</p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <h3>Official WhatsApp API Channel</h3>
+              <p>Connect Meta Embedded Signup for stable production messaging at scale, then pause or resume replies without disconnecting the API number.</p>
+            </div>
+            <button
+              type="button"
+              className={channelEnabled ? "go-live-switch on" : "go-live-switch"}
+              disabled={currentBusy || !hasConnection}
+              onClick={() => { setError(null); setInfo(null); toggleMutation.mutate(); }}
+              title={channelEnabled ? "Pause API channel replies" : "Resume API channel replies"}
+            >
+              <span />
+            </button>
+          </div>
         </header>
 
         {!isConnected && sharedBillingSupported ? (
@@ -289,7 +364,8 @@ export function ApiChannelPage() {
             </div>
 
             <div className="clone-channel-meta">
-              <div><h3>Status</h3><p>{metaStatus.connection?.status ?? "connected"}</p></div>
+              <div><h3>Channel</h3><p>{channelEnabled ? "Active" : "Inactive"}</p></div>
+              <div><h3>Connection</h3><p>{metaStatus.connection?.status ?? "connected"}</p></div>
               <div><h3>Message Limit</h3><p>{formatMetaStatusLabel(messagingLimitTier)}</p></div>
               <div><h3>Last Meta Sync</h3><p>{lastMetaSyncLabel ?? "Not synced"}</p></div>
             </div>
@@ -308,19 +384,19 @@ export function ApiChannelPage() {
         )}
 
         <div className="clone-hero-actions">
-          <button type="button" className="primary-btn" disabled={currentBusy} onClick={() => void openBusinessApiSetup()}>
-            {isConnected ? "Reconnect API" : "Connect WhatsApp API"}
+          <button type="button" className="primary-btn" disabled={currentBusy} onClick={() => void handleConnectOrReconnect()}>
+            {hasConnection ? "Reconnect API" : "Connect WhatsApp API"}
           </button>
-          <button type="button" className="ghost-btn" disabled={currentBusy || !isConnected} onClick={() => void refreshMetaStatus()}>
+          <button type="button" className="ghost-btn" disabled={currentBusy || !hasConnection} onClick={() => void refreshMetaStatus()}>
             Refresh status
           </button>
-          <button type="button" className="ghost-btn" disabled={currentBusy || !isConnected} onClick={() => { setError(null); setInfo(null); disconnectMutation.mutate(); }}>
+          <button type="button" className="ghost-btn" disabled={currentBusy || !hasConnection} onClick={handleDisconnect}>
             Disconnect
           </button>
         </div>
         <p className="tiny-note">
-          {isConnected
-            ? "Your API channel is connected. This page now shows only the key channel details."
+          {hasConnection
+            ? "Toggle only pauses replies. Reconnect or Disconnect will reset the actual API connection."
             : "Connect first. After that, this page will show only the information needed to manage your WhatsApp API channel."}
         </p>
       </article>

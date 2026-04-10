@@ -284,7 +284,7 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
 
   const metaConfigQuery = useSettingsMetaConfigQuery(token);
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
-  const metaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, connection: null } as MetaBusinessStatus);
+  const metaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, enabled: false, connection: null } as MetaBusinessStatus);
   const metaBusinessConfig = metaConfigQuery.data ?? null;
 
   useEffect(() => {

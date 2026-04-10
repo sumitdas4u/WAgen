@@ -95,6 +95,7 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
         enabled: true
       },
       whatsapp: {
+        enabled: true,
         status: "disconnected",
         phoneNumber: null,
         hasQr: false,
@@ -102,6 +103,7 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
       },
       metaApi: {
         connected: false,
+        enabled: false,
         connection: null
       },
       anyConnected: true
@@ -325,6 +327,7 @@ describe("dashboard router", () => {
           enabled: false
         },
         whatsapp: {
+          enabled: true,
           status: "disconnected",
           phoneNumber: null,
           hasQr: false,
@@ -332,6 +335,7 @@ describe("dashboard router", () => {
         },
         metaApi: {
           connected: false,
+          enabled: false,
           connection: null
         },
         anyConnected: false

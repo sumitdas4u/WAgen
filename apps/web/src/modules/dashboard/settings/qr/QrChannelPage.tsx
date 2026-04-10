@@ -45,8 +45,8 @@ export function QrChannelPage() {
     mutationFn: async () => {
       await setQrChannelEnabled(token, !qrChannelEnabled);
       return qrChannelEnabled
-        ? "QR channel paused. The WhatsApp connection stays alive, but automated replies are temporarily off."
-        : "QR channel resumed. The WhatsApp connection is still alive and automated replies are back on.";
+        ? "QR channel paused. Any active QR session stays alive, but automated replies are temporarily off."
+        : "QR channel resumed. Any active QR session stays alive and automated replies are back on.";
     },
     onSuccess: async (message) => {
       await updateShellState();
