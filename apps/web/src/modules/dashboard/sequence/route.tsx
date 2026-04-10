@@ -24,7 +24,6 @@ import {
   useResumeSequenceMutation,
   useSequenceDetailQuery,
   useSequenceEnrollmentsQuery,
-  useSequenceLogsQuery,
   useSequencesQuery,
   useUpdateSequenceMutation
 } from "./queries";
@@ -662,8 +661,6 @@ function BuilderPage({ token }: { token: string }) {
   const [draft, setDraft]           = useState<SequenceWriteInput | null>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [bannerOpen, setBannerOpen] = useState(true);
-  const selectedEnrollment          = enrollments[0] ?? null;
-  const logs                        = useSequenceLogsQuery(token, selectedEnrollment?.id ?? "").data ?? [];
 
   useEffect(() => {
     if (detail) setDraft((cur) => cur ?? toDraft(detail));
@@ -865,7 +862,7 @@ function BuilderPage({ token }: { token: string }) {
           <ReviewPanel draft={draft} />
 
           {/* ── Activity panel — full width, below review ── */}
-          <ActivityPanel detail={detail} enrollments={enrollments} logs={logs} />
+          <ActivityPanel detail={detail} enrollments={enrollments} />
 
         </div>
       </div>
@@ -1447,23 +1444,22 @@ function ReviewPanel({ draft }: { draft: SequenceWriteInput }) {
    ACTIVITY PANEL  (full-width, below footer)
 ───────────────────────────────────────────── */
 function ActivityPanel({
-  detail, enrollments, logs
+  detail, enrollments
 }: {
   detail: SequenceDetail;
   enrollments: Array<{ id: string; status: string; entered_at: string; current_step: number }>;
-  logs: Array<{ id: string; status: string; created_at: string; error_message: string | null }>;
 }) {
   return (
     <div className="seq-card">
       <div className="seq-section-head" style={{ marginBottom: "1rem" }}>
         <div className="seq-section-heading">
           <h3 className="seq-section-title">Activity</h3>
-          <p className="seq-section-desc">Enrollment metrics and recent logs.</p>
+          <p className="seq-section-desc">Enrollment metrics.</p>
         </div>
       </div>
 
       {/* Metrics — horizontal row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.75rem", marginBottom: enrollments.length > 0 || logs.length > 0 ? "1.25rem" : 0 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.75rem", marginBottom: enrollments.length > 0 ? "1.25rem" : 0 }}>
         {([
           ["Enrolled",  detail.metrics.enrolled,  "tone-blue"],
           ["Active",    detail.metrics.active,    "tone-teal"],
@@ -1477,60 +1473,31 @@ function ActivityPanel({
         ))}
       </div>
 
-      {/* Recent enrollments + logs side by side */}
-      {(enrollments.length > 0 || logs.length > 0) && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.25rem" }}>
-          {/* Enrollments */}
-          <div>
-            <p style={{ margin: "0 0 0.65rem", fontSize: "0.76rem", fontWeight: 800, color: "var(--seq-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-              Recent enrollments
-            </p>
-            {enrollments.length === 0
-              ? <p className="seq-empty-row">No enrollments yet.</p>
-              : (
-                <div className="seq-activity-list">
-                  {enrollments.slice(0, 5).map((enr) => (
-                    <div key={enr.id} className="seq-activity-item">
-                      <div className="seq-activity-row">
-                        <StatusPill status={enr.status} />
-                        <span className="seq-activity-time">{formatDateTime(enr.entered_at)}</span>
-                      </div>
-                      <p className="seq-activity-step">
-                        {enr.status === "completed"
-                          ? `Step ${enr.current_step} ✓`
-                          : `Step ${enr.current_step + 1}`}
-                      </p>
-                    </div>
-                  ))}
+      {/* Recent enrollments */}
+      {enrollments.length > 0 && (
+        <div>
+          <p style={{ margin: "0 0 0.65rem", fontSize: "0.76rem", fontWeight: 800, color: "var(--seq-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            Recent enrollments
+          </p>
+          <div className="seq-activity-list">
+            {enrollments.slice(0, 5).map((enr) => (
+              <div key={enr.id} className="seq-activity-item">
+                <div className="seq-activity-row">
+                  <StatusPill status={enr.status} />
+                  <span className="seq-activity-time">{formatDateTime(enr.entered_at)}</span>
                 </div>
-              )}
-          </div>
-
-          {/* Logs */}
-          {logs.length > 0 && (
-            <div>
-              <p style={{ margin: "0 0 0.65rem", fontSize: "0.76rem", fontWeight: 800, color: "var(--seq-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                Latest logs
-              </p>
-              <div className="seq-activity-list">
-                {logs.slice(0, 5).map((log) => (
-                  <div key={log.id} className="seq-activity-item">
-                    <div className="seq-activity-row">
-                      <StatusPill status={log.status} />
-                      <span className="seq-activity-time">{formatDateTime(log.created_at)}</span>
-                    </div>
-                    {log.error_message && (
-                      <p style={{ margin: "0.3rem 0 0", fontSize: "0.78rem", color: "#be123c" }}>{log.error_message}</p>
-                    )}
-                  </div>
-                ))}
+                <p className="seq-activity-step">
+                  {enr.status === "completed"
+                    ? `Step ${enr.current_step} ✓`
+                    : `Step ${enr.current_step + 1}`}
+                </p>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
 
-      {enrollments.length === 0 && logs.length === 0 && (
+      {enrollments.length === 0 && (
         <p className="seq-empty-row">No enrollment activity yet.</p>
       )}
 
