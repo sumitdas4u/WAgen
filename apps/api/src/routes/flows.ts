@@ -13,6 +13,7 @@ import { pool } from "../db/pool.js";
 import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
 import * as net from "net";
+import * as dns from "dns";
 
 function isBlockedHostname(hostname: string): boolean {
   const lowerHost = hostname.toLowerCase();
@@ -258,6 +259,52 @@ export async function flowRoutes(app: FastifyInstance) {
         return reply
           .status(400)
           .send({ error: "Requests to internal or disallowed hosts are not permitted." });
+      }
+
+      // Additional SSRF hardening: validate resolved IPs are not private/loopback
+      function isPrivateOrLoopbackIp(ip: string): boolean {
+        const ipVersion = net.isIP(ip);
+        if (ipVersion === 4) {
+          if (ip === "127.0.0.1") return true;
+          if (ip === "0.0.0.0") return true;
+          // 10.0.0.0/8
+          if (ip.startsWith("10.")) return true;
+          // 172.16.0.0/12
+          const octets = ip.split(".");
+          const first = Number(octets[0]);
+          const second = Number(octets[1]);
+          if (first === 172 && second >= 16 && second <= 31) return true;
+          // 192.168.0.0/16
+          if (ip.startsWith("192.168.")) return true;
+          // link-local 169.254.0.0/16
+          if (ip.startsWith("169.254.")) return true;
+          // common cloud metadata IP
+          if (ip === "169.254.169.254") return true;
+          return false;
+        }
+        if (ipVersion === 6) {
+          const normalized = ip.toLowerCase();
+          if (normalized === "::1") return true;
+          if (normalized.startsWith("fe80:")) return true; // link-local
+          if (normalized.startsWith("fc00:") || normalized.startsWith("fd00:")) return true; // unique local
+          return false;
+        }
+        return false;
+      }
+
+      try {
+        const lookupResult = await dns.promises.lookup(parsedUrl.hostname, { all: true });
+        const addresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
+        for (const entry of addresses) {
+          if (isPrivateOrLoopbackIp(entry.address)) {
+            return reply
+              .status(400)
+              .send({ error: "Requests to internal or disallowed hosts are not permitted." });
+          }
+        }
+      } catch {
+        // If hostname cannot be resolved, treat as invalid target
+        return reply.status(400).send({ error: "Unable to resolve target host." });
       }
 
       const safeMethod = ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(
