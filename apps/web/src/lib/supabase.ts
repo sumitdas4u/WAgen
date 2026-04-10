@@ -44,3 +44,8 @@ export async function uploadInboxMedia(file: File): Promise<{ url: string; mimeT
 export async function uploadBroadcastMedia(file: File): Promise<{ url: string; mimeType: string }> {
   return uploadPublicMedia(file, "broadcast");
 }
+
+/** Upload a sequence media file to Supabase, return public URL + mimeType. */
+export async function uploadSequenceMedia(file: File): Promise<{ url: string; mimeType: string }> {
+  return uploadPublicMedia(file, "sequence");
+}

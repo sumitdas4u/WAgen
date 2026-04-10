@@ -19,12 +19,21 @@ const EnrollmentQuerySchema = z.object({
   status: z.enum(["active", "completed", "failed", "stopped"]).optional()
 });
 
+const TemplateVariableBindingSchema = z.object({
+  source: z.enum(["contact", "static"]),
+  field: z.string().optional(),
+  value: z.string().optional(),
+  fallback: z.string().optional()
+});
+
 const StepSchema = z.object({
   id: z.string().uuid().optional(),
   stepOrder: z.number().int().min(0),
   delayValue: z.number().int().min(0),
   delayUnit: z.enum(["minutes", "hours", "days"]),
   messageTemplateId: z.string().uuid(),
+  templateVariables: z.record(z.string(), TemplateVariableBindingSchema).optional(),
+  mediaOverrides: z.record(z.string(), z.string()).optional(),
   customDelivery: z.record(z.string(), z.unknown()).optional()
 });
 

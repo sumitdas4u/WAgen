@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
 import {
+  fetchIngestionJobs,
   ingestManual,
   ingestKnowledgeFiles,
   ingestWebsite,
@@ -9,7 +10,8 @@ import {
   saveBusinessBasics,
   savePersonality,
   setAgentActive,
-  type BusinessBasicsPayload
+  type BusinessBasicsPayload,
+  type KnowledgeIngestJob
 } from "../lib/api";
 
 type JourneyStep = 1 | 2 | 3 | 4;
@@ -23,6 +25,8 @@ type ChatRow = {
 };
 
 const MAX_KNOWLEDGE_FILE_UPLOAD_BYTES = 20 * 1024 * 1024;
+const KNOWLEDGE_UPLOAD_POLL_INTERVAL_MS = 1500;
+const KNOWLEDGE_UPLOAD_TIMEOUT_MS = 5 * 60_000;
 const SUPPORTED_KNOWLEDGE_FILE_EXTENSIONS = new Set(["pdf", "txt", "doc", "docx", "xls", "xlsx"]);
 
 function isSupportedKnowledgeFile(file: File): boolean {
@@ -47,6 +51,14 @@ function readSavedString(value: unknown, fallback: string): string {
   }
   const cleaned = value.trim();
   return cleaned || fallback;
+}
+
+function formatKnowledgeUploadFailure(jobs: KnowledgeIngestJob[]): string {
+  const messages = jobs.map((job) => {
+    const sourceName = job.source_name?.trim() || "Uploaded file";
+    return job.error_message ? `${sourceName}: ${job.error_message}` : `${sourceName}: Upload failed.`;
+  });
+  return messages.join(" ");
 }
 
 export function OnboardingPage() {
@@ -139,6 +151,35 @@ export function OnboardingPage() {
     });
   };
 
+  const waitForKnowledgeUploadJobs = async (jobIds: string[]) => {
+    if (!token) {
+      return;
+    }
+    if (jobIds.length === 0) {
+      throw new Error("Could not start knowledge upload. Please try again.");
+    }
+
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < KNOWLEDGE_UPLOAD_TIMEOUT_MS) {
+      const response = await fetchIngestionJobs(token, jobIds);
+      const failedJobs = response.jobs.filter((job) => job.status === "failed");
+      if (failedJobs.length > 0) {
+        throw new Error(formatKnowledgeUploadFailure(failedJobs));
+      }
+
+      const allCompleted =
+        response.jobs.length === jobIds.length &&
+        response.jobs.every((job) => job.status === "completed" || Boolean(job.completed_at) || job.progress >= 100);
+      if (allCompleted) {
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, KNOWLEDGE_UPLOAD_POLL_INTERVAL_MS));
+    }
+
+    throw new Error("Knowledge upload is taking longer than expected. Please check the Knowledge Base page in Dashboard.");
+  };
+
   const ingestKnowledge = async () => {
     if (!token) {
       return;
@@ -155,7 +196,8 @@ export function OnboardingPage() {
     }
 
     if (knowledgeFiles.length > 0) {
-      await ingestKnowledgeFiles(token, knowledgeFiles);
+      const response = await ingestKnowledgeFiles(token, knowledgeFiles);
+      await waitForKnowledgeUploadJobs(response.jobs.map((job) => job.id));
     }
   };
 

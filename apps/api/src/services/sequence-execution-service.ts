@@ -16,6 +16,16 @@ const MAX_MESSAGES_PER_CONTACT_PER_DAY = 20;
 const MIN_LOOP_GUARD_MS = 10_000;
 const RETRY_DELAYS_MS = [0, 5 * 60_000, 30 * 60_000, 2 * 60 * 60_000];
 
+function normalizePlaceholderKey(raw: string): string {
+  const inner = raw.replace(/^\{\{\s*|\s*\}\}$/g, "").trim();
+  return `{{${inner}}}`;
+}
+
+function trimToNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed ? trimmed : null;
+}
+
 function addDelay(base: Date, value: number, unit: SequenceDelayUnit): Date {
   const next = new Date(base);
   if (unit === "minutes") next.setMinutes(next.getMinutes() + value);
@@ -86,6 +96,118 @@ async function passesSafetyChecks(userId: string, phoneNumber: string): Promise<
     return "Daily outbound message cap reached for this contact.";
   }
   return null;
+}
+
+function resolveSequenceContactFieldValue(
+  contact: {
+    display_name: string | null;
+    phone_number: string;
+    email: string | null;
+    contact_type: string;
+    tags: string[];
+    source_type: string;
+    source_id: string | null;
+    source_url: string | null;
+    created_at: string;
+    updated_at: string;
+    custom_fields: Record<string, string | null>;
+  },
+  field: string | undefined
+): string | null {
+  const normalized = field?.trim() ?? "";
+  if (!normalized) {
+    return null;
+  }
+
+  switch (normalized) {
+    case "display_name":
+      return trimToNull(contact.display_name);
+    case "phone_number":
+      return trimToNull(contact.phone_number);
+    case "email":
+      return trimToNull(contact.email);
+    case "contact_type":
+      return trimToNull(contact.contact_type);
+    case "tags":
+      return trimToNull(contact.tags.join(", "));
+    case "source_type":
+      return trimToNull(contact.source_type);
+    case "source_id":
+      return trimToNull(contact.source_id);
+    case "source_url":
+      return trimToNull(contact.source_url);
+    case "created_at":
+      return trimToNull(contact.created_at);
+    case "updated_at":
+      return trimToNull(contact.updated_at);
+    default:
+      break;
+  }
+
+  if (!normalized.startsWith("custom:")) {
+    return null;
+  }
+
+  const customFieldName = normalized.slice("custom:".length).trim();
+  if (!customFieldName) {
+    return null;
+  }
+
+  const directMatch = contact.custom_fields[customFieldName] ?? contact.custom_fields[customFieldName.toLowerCase()] ?? null;
+  if (directMatch != null) {
+    return trimToNull(directMatch);
+  }
+
+  const fallbackMatch = Object.entries(contact.custom_fields).find(
+    ([fieldName]) => fieldName.toLowerCase() === customFieldName.toLowerCase()
+  );
+  return trimToNull(fallbackMatch?.[1] ?? null);
+}
+
+function resolveSequenceStepVariables(
+  contact: {
+    display_name: string | null;
+    phone_number: string;
+    email: string | null;
+    contact_type: string;
+    tags: string[];
+    source_type: string;
+    source_id: string | null;
+    source_url: string | null;
+    created_at: string;
+    updated_at: string;
+    custom_fields: Record<string, string | null>;
+  },
+  step: {
+    template_variables_json?: Record<string, { source: "contact" | "static"; field?: string; value?: string; fallback?: string }>;
+    media_overrides_json?: Record<string, string>;
+  }
+): Record<string, string> {
+  const resolved: Record<string, string> = {};
+
+  for (const [rawKey, binding] of Object.entries(step.template_variables_json ?? {})) {
+    const key = normalizePlaceholderKey(rawKey);
+    if (!binding) {
+      continue;
+    }
+
+    let value: string | null = null;
+    if (binding.source === "static") {
+      value = trimToNull(binding.value);
+    } else if (binding.source === "contact") {
+      value = resolveSequenceContactFieldValue(contact, binding.field);
+    }
+
+    value = value ?? trimToNull(binding.fallback);
+    if (value) {
+      resolved[key] = value;
+    }
+  }
+
+  return {
+    ...resolved,
+    ...(step.media_overrides_json ?? {})
+  };
 }
 
 async function processEnrollment(enrollmentId: string): Promise<void> {
@@ -166,12 +288,11 @@ async function processEnrollment(enrollmentId: string): Promise<void> {
   }
 
   try {
+    const variableValues = resolveSequenceStepVariables(contact, step);
     const sent = await dispatchTemplateMessage(contact.user_id, {
       templateId: step.message_template_id,
       to: contact.phone_number,
-      variableValues: {
-        "{{1}}": contact.display_name ?? contact.phone_number
-      }
+      variableValues
     });
 
     const conversation = await getOrCreateConversation(contact.user_id, contact.phone_number, {

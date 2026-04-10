@@ -57,19 +57,103 @@ function renderButton(btn: { type: string; text: string }) {
 interface Props {
   components: TemplateComponent[];
   businessName?: string;
+  headerMediaType?: TemplateComponent["format"];
+  headerMediaUrl?: string;
   headerImageUrl?: string;
 }
 
-export function TemplatePreviewPanel({ components, businessName = "Your Business", headerImageUrl }: Props) {
+function getHeaderMediaPreview(
+  format: TemplateComponent["format"] | undefined,
+  url: string | null
+): React.ReactNode {
+  if (format === "IMAGE") {
+    return url ? (
+      <img
+        src={url}
+        alt="Header"
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+    ) : (
+      <span style={{ fontSize: "13px", color: "#666" }}>Image header</span>
+    );
+  }
+
+  if (format === "VIDEO") {
+    return url ? (
+      <video
+        src={url}
+        controls
+        muted
+        playsInline
+        style={{ width: "100%", height: "100%", objectFit: "cover", background: "#101828" }}
+      />
+    ) : (
+      <span style={{ fontSize: "13px", color: "#666" }}>Video header</span>
+    );
+  }
+
+  if (format === "DOCUMENT") {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "8px",
+          padding: "12px",
+          textAlign: "center"
+        }}
+      >
+        <span style={{ fontSize: "28px", lineHeight: 1 }}>📄</span>
+        <span style={{ fontSize: "13px", color: "#475467", fontWeight: 600 }}>Document header</span>
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "#128c7e", fontSize: "12px", wordBreak: "break-all" }}
+          >
+            Open uploaded file
+          </a>
+        ) : (
+          <span style={{ fontSize: "12px", color: "#666" }}>No document uploaded yet</span>
+        )}
+      </div>
+    );
+  }
+
+  if (format === "LOCATION") {
+    return <span style={{ fontSize: "13px", color: "#666" }}>Location header</span>;
+  }
+
+  return null;
+}
+
+export function TemplatePreviewPanel({
+  components,
+  businessName = "Your Business",
+  headerMediaType,
+  headerMediaUrl,
+  headerImageUrl
+}: Props) {
   const header = components.find((c) => c.type === "HEADER");
   const body = components.find((c) => c.type === "BODY");
   const footer = components.find((c) => c.type === "FOOTER");
   const buttonsComp = components.find((c) => c.type === "BUTTONS");
+  const example = header?.example as { header_handle?: string[]; header_url?: string[] } | undefined;
+  const exampleMediaUrl =
+    example?.header_url?.[0] ||
+    (example?.header_handle?.[0] && /^https?:\/\//i.test(example.header_handle[0]) ? example.header_handle[0] : "") ||
+    "";
 
-  // Resolve image URL: prefer explicit prop, then fall back to example handle
-  const resolvedImageUrl =
+  const resolvedHeaderFormat = headerMediaType ?? header?.format;
+  const resolvedMediaUrl =
+    headerMediaUrl ||
     headerImageUrl ||
-    (header?.example as { header_handle?: string[] } | undefined)?.header_handle?.[0] ||
+    exampleMediaUrl ||
     null;
 
   return (
@@ -165,22 +249,14 @@ export function TemplatePreviewPanel({ components, businessName = "Your Business
                 justifyContent: "center"
               }}
             >
-              {resolvedImageUrl ? (
-                <img
-                  src={resolvedImageUrl}
-                  alt="Header"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
-                <span style={{ fontSize: "13px", color: "#666" }}>🖼️ Image</span>
-              )}
+              {getHeaderMediaPreview(resolvedHeaderFormat, resolvedMediaUrl)}
             </div>
           )}
           {header && header.format === "VIDEO" && (
             <div
               style={{
                 background: "#ccc",
-                height: "120px",
+                height: "160px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -189,14 +265,14 @@ export function TemplatePreviewPanel({ components, businessName = "Your Business
                 gap: "6px"
               }}
             >
-              🎬 Video
+              {getHeaderMediaPreview(resolvedHeaderFormat, resolvedMediaUrl)}
             </div>
           )}
           {header && header.format === "DOCUMENT" && (
             <div
               style={{
                 background: "#ccc",
-                height: "80px",
+                minHeight: "96px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -205,7 +281,7 @@ export function TemplatePreviewPanel({ components, businessName = "Your Business
                 gap: "6px"
               }}
             >
-              📄 Document
+              {getHeaderMediaPreview(resolvedHeaderFormat, resolvedMediaUrl)}
             </div>
           )}
           {header && header.format === "LOCATION" && (
@@ -221,7 +297,7 @@ export function TemplatePreviewPanel({ components, businessName = "Your Business
                 gap: "6px"
               }}
             >
-              📍 Location
+              {getHeaderMediaPreview(resolvedHeaderFormat, resolvedMediaUrl)}
             </div>
           )}
 

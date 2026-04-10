@@ -350,7 +350,6 @@ function DashboardShellLayout() {
   const isAnalyticsSection = currentModuleId === "analytics";
   const visibleSettingsItems = SETTINGS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const showBillingActions = isModuleEnabled("billing");
-  const showTestAction = isModuleEnabled("studio-test");
 
   const renderSubSidebar = (title: string, items: Array<{ moduleId: string; label: string; icon: DashboardIconName; to: string }>) => (
     <section className="chatbot-studio-shell dashboard-flat-studio">
@@ -503,26 +502,16 @@ function DashboardShellLayout() {
 
             <div className="clone-main-actions">
               {showBillingActions ? (
-                <>
-                  <button
-                    type="button"
-                    className={bootstrap?.creditsSummary.low_credit ? "credits-chip credits-chip-low" : "credits-chip"}
-                    onClick={() => navigate("/dashboard/billing")}
-                    title="Open Billing"
-                  >
-                    Credits: {workspaceCreditsLabel}
-                  </button>
-                  <button className="ghost-btn" type="button" onClick={() => navigate("/dashboard/billing")}>
-                    Billing
-                  </button>
-                </>
-              ) : null}
-              <span className={`status-badge status-${connectionBadgeStatus}`}>{connectionBadgeLabel}</span>
-              {showTestAction ? (
-                <button className="ghost-btn" type="button" onClick={() => navigate("/dashboard/studio/test")}>
-                  Test chatbot
+                <button
+                  type="button"
+                  className={bootstrap?.creditsSummary.low_credit ? "credits-chip credits-chip-low" : "credits-chip"}
+                  onClick={() => navigate("/dashboard/billing")}
+                  title="Open Billing"
+                >
+                  Credits: {workspaceCreditsLabel}
                 </button>
               ) : null}
+              <span className={`status-badge status-${connectionBadgeStatus}`}>{connectionBadgeLabel}</span>
             </div>
           </header>
 

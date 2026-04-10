@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState, type Dispatch, type ReactNode, typ
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRoutes } from "react-router-dom";
 import type {
+  CampaignMediaOverrides,
   CampaignTemplateVariableBinding,
   CampaignTemplateVariables,
   ContactField,
@@ -15,9 +16,11 @@ import type {
   SequenceWriteStepInput
 } from "../../../lib/api";
 import { fetchContacts, fetchTemplates, listContactFields } from "../../../lib/api";
+import { uploadSequenceMedia } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
+import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import {
   buildSequencesQueryOptions,
   useCreateSequenceMutation,
@@ -66,7 +69,7 @@ const CHANNEL_OPTIONS: SelectOption[] = [
   { value: "email",    label: "Email",    disabled: true, hint: "Coming soon" }
 ];
 
-const SEQUENCE_VARIABLE_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
+const SEQUENCE_STANDARD_VARIABLE_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "display_name",  label: "Contact name" },
   { value: "phone_number",  label: "Phone number" },
   { value: "email",         label: "Email" },
@@ -86,6 +89,162 @@ function extractTemplatePlaceholders(template: MessageTemplate | null): string[]
         .sort((a, b) => a.localeCompare(b))
     )
   );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveSequenceContactFieldValue(contact: ContactRecord | null, field: string | undefined): string {
+  if (!contact || !field) {
+    return "";
+  }
+
+  switch (field) {
+    case "display_name":
+      return contact.display_name ?? "";
+    case "phone_number":
+      return contact.phone_number ?? "";
+    case "email":
+      return contact.email ?? "";
+    case "contact_type":
+      return contact.contact_type ?? "";
+    case "tags":
+      return contact.tags.join(", ");
+    case "source_type":
+      return contact.source_type ?? "";
+    case "source_id":
+      return contact.source_id ?? "";
+    case "source_url":
+      return contact.source_url ?? "";
+    case "created_at":
+      return contact.created_at ?? "";
+    case "updated_at":
+      return contact.updated_at ?? "";
+    default:
+      break;
+  }
+
+  if (!field.startsWith("custom:")) {
+    return "";
+  }
+
+  const customField = field.slice("custom:".length).trim().toLowerCase();
+  return (
+    contact.custom_field_values.find((item) => item.field_name.toLowerCase() === customField)?.value ?? ""
+  );
+}
+
+function resolveSequenceBindingPreviewValue(
+  placeholder: string,
+  bindings: CampaignTemplateVariables,
+  sampleContact: ContactRecord | null
+): string {
+  const binding = bindings[placeholder];
+  if (!binding) {
+    return placeholder;
+  }
+
+  if (binding.source === "static") {
+    return binding.value?.trim() || binding.fallback?.trim() || placeholder;
+  }
+
+  const contactValue = resolveSequenceContactFieldValue(sampleContact, binding.field);
+  return contactValue || binding.fallback?.trim() || placeholder;
+}
+
+function buildSequenceTemplatePreviewComponents(
+  template: MessageTemplate | null,
+  bindings: CampaignTemplateVariables,
+  sampleContact: ContactRecord | null
+) {
+  if (!template) {
+    return [];
+  }
+
+  return template.components.map((component) => {
+    if (!component.text) {
+      return component;
+    }
+    return {
+      ...component,
+      text: component.text.replace(/\{\{[^}]+\}\}/g, (match) =>
+        resolveSequenceBindingPreviewValue(match, bindings, sampleContact)
+      )
+    };
+  });
+}
+
+function syncTemplateBindings(
+  template: MessageTemplate | null,
+  existing: CampaignTemplateVariables | undefined
+): CampaignTemplateVariables {
+  const next: CampaignTemplateVariables = {};
+  for (const placeholder of extractTemplatePlaceholders(template)) {
+    next[placeholder] = existing?.[placeholder] ?? { source: "contact", field: "display_name", fallback: "" };
+  }
+  return next;
+}
+
+function getTemplateHeaderMediaType(template: MessageTemplate | null): "IMAGE" | "VIDEO" | "DOCUMENT" | null {
+  const header = template?.components.find((component) => component.type === "HEADER");
+  return header?.format === "IMAGE" || header?.format === "VIDEO" || header?.format === "DOCUMENT"
+    ? header.format
+    : null;
+}
+
+function extractStepTemplateVariables(step: SequenceDetail["steps"][number]): CampaignTemplateVariables {
+  if (step.template_variables_json) {
+    return step.template_variables_json;
+  }
+
+  const raw = isPlainObject(step.custom_delivery_json?.templateVariables)
+    ? step.custom_delivery_json.templateVariables
+    : null;
+  if (!raw || !isPlainObject(raw)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(raw)
+      .filter(([, value]) => isPlainObject(value))
+      .map(([key, value]) => {
+        const record = value as Record<string, unknown>;
+        return [
+          key,
+          {
+            source: record.source === "static" ? "static" : "contact",
+            ...(typeof record.field === "string" ? { field: record.field } : {}),
+            ...(typeof record.value === "string" ? { value: record.value } : {}),
+            ...(typeof record.fallback === "string" ? { fallback: record.fallback } : {})
+          } satisfies CampaignTemplateVariableBinding
+        ];
+      })
+  );
+}
+
+function extractStepMediaOverrides(step: SequenceDetail["steps"][number]): CampaignMediaOverrides {
+  if (step.media_overrides_json) {
+    return step.media_overrides_json;
+  }
+
+  const raw = isPlainObject(step.custom_delivery_json?.mediaOverrides)
+    ? step.custom_delivery_json.mediaOverrides
+    : null;
+  if (!raw || !isPlainObject(raw)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  );
+}
+
+function stripStepRuntimeConfig(customDelivery: Record<string, unknown> | undefined): Record<string, unknown> {
+  const next = { ...(customDelivery ?? {}) };
+  delete next.templateVariables;
+  delete next.mediaOverrides;
+  return next;
 }
 
 const CONDITION_FIELD_OPTIONS: ConditionFieldOption[] = [
@@ -214,6 +373,20 @@ function buildDefaultPayload(name: string, baseType = "contact", channel = "what
   };
 }
 
+function normalizeSequenceDraftTemplates(draft: SequenceWriteInput, templates: MessageTemplate[]): SequenceWriteInput {
+  return {
+    ...draft,
+    steps: (draft.steps ?? []).map((step) => {
+      const template = templates.find((item) => item.id === step.messageTemplateId) ?? null;
+      return {
+        ...step,
+        templateVariables: template ? syncTemplateBindings(template, step.templateVariables) : (step.templateVariables ?? {}),
+        mediaOverrides: step.mediaOverrides ?? {}
+      };
+    })
+  };
+}
+
 function toDraft(detail: SequenceDetail): SequenceWriteInput {
   return {
     name: detail.name,
@@ -234,7 +407,9 @@ function toDraft(detail: SequenceDetail): SequenceWriteInput {
       delayValue: s.delay_value,
       delayUnit: s.delay_unit,
       messageTemplateId: s.message_template_id,
-      customDelivery: s.custom_delivery_json
+      templateVariables: extractStepTemplateVariables(s),
+      mediaOverrides: extractStepMediaOverrides(s),
+      customDelivery: stripStepRuntimeConfig(s.custom_delivery_json)
     })),
     conditions: detail.conditions.map((c) => ({
       id: c.id,
@@ -698,7 +873,12 @@ function BuilderPage({ token }: { token: string }) {
     [contactFieldDefinitions]
   );
 
-  if (!detail || !draft) {
+  const normalizedDraft = useMemo(
+    () => (draft ? normalizeSequenceDraftTemplates(draft, templates) : null),
+    [draft, templates]
+  );
+
+  if (!detail || !draft || !normalizedDraft) {
     return <section className="seq-page"><div className="seq-card seq-loading">Loading sequence…</div></section>;
   }
 
@@ -707,8 +887,11 @@ function BuilderPage({ token }: { token: string }) {
       ? { ...cur, conditions: [...(cur.conditions ?? []).filter((c) => c.conditionType !== conditionType), ...next] }
       : cur);
 
-  const validationErrors = getSequenceValidationErrors(draft);
-  const saveDraft = async () => { await updateMutation.mutateAsync(draft); };
+  const validationErrors = getSequenceValidationErrors(normalizedDraft);
+  const saveDraft = async () => {
+    setDraft(normalizedDraft);
+    await updateMutation.mutateAsync(normalizedDraft);
+  };
   const handlePublish = async () => {
     if (validationErrors.length > 0) { setWizardStep(2); return; }
     await saveDraft();
@@ -888,7 +1071,13 @@ function BuilderPage({ token }: { token: string }) {
 
           {/* Step 2 — Steps */}
           {wizardStep === 2 && (
-            <StepsEditor draft={draft} setDraft={setDraft} templates={templates} />
+            <StepsEditor
+              draft={draft}
+              setDraft={setDraft}
+              templates={templates}
+              contactFieldDefinitions={contactFieldDefinitions}
+              contacts={contacts}
+            />
           )}
 
           {/* ── Footer: nav buttons only ── */}
@@ -1280,14 +1469,33 @@ function DeliveryEditor({
    STEPS EDITOR  (wizard step 2)
 ───────────────────────────────────────────── */
 function StepsEditor({
-  draft, setDraft, templates
+  draft,
+  setDraft,
+  templates,
+  contactFieldDefinitions,
+  contacts
 }: {
   draft: SequenceWriteInput;
   setDraft: Dispatch<SetStateAction<SequenceWriteInput | null>>;
   templates: MessageTemplate[];
+  contactFieldDefinitions: ContactField[];
+  contacts: ContactRecord[];
 }) {
   const steps = draft.steps ?? [];
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
+  const [uploadingMediaByStep, setUploadingMediaByStep] = useState<Record<number, boolean>>({});
+  const [mediaFeedbackByStep, setMediaFeedbackByStep] = useState<Record<number, { kind: "success" | "error"; message: string }>>({});
+  const sampleContact = contacts[0] ?? null;
+  const variableFieldOptions = useMemo(
+    () => [
+      ...SEQUENCE_STANDARD_VARIABLE_FIELD_OPTIONS,
+      ...contactFieldDefinitions.map((field) => ({
+        value: `custom:${field.name}`,
+        label: `${field.label} (custom)`
+      }))
+    ],
+    [contactFieldDefinitions]
+  );
 
   const updateStep = (idx: number, patch: Partial<SequenceWriteStepInput>) =>
     setDraft((cur) => cur ? {
@@ -1299,7 +1507,15 @@ function StepsEditor({
     ...cur,
     steps: [
       ...(cur.steps ?? []),
-      { stepOrder: (cur.steps ?? []).length, delayValue: 1, delayUnit: "hours", messageTemplateId: templates[0]?.id ?? "", customDelivery: { stepTitle: "" } }
+      {
+        stepOrder: (cur.steps ?? []).length,
+        delayValue: 1,
+        delayUnit: "hours",
+        messageTemplateId: templates[0]?.id ?? "",
+        templateVariables: syncTemplateBindings(templates[0] ?? null, {}),
+        mediaOverrides: {},
+        customDelivery: { stepTitle: "" }
+      }
     ]
   } : cur);
 
@@ -1326,6 +1542,44 @@ function StepsEditor({
       ...(cur.steps ?? []).slice(idx + 1)
     ].map((s, i) => ({ ...s, stepOrder: i }))
   } : cur);
+
+  async function handleMediaUpload(stepIndex: number, file: File) {
+    setUploadingMediaByStep((current) => ({ ...current, [stepIndex]: true }));
+    setMediaFeedbackByStep((current) => {
+      const next = { ...current };
+      delete next[stepIndex];
+      return next;
+    });
+
+    try {
+      const uploaded = await uploadSequenceMedia(file);
+      setDraft((current) => current ? {
+        ...current,
+        steps: (current.steps ?? []).map((step, index) =>
+          index === stepIndex
+            ? {
+                ...step,
+                mediaOverrides: {
+                  ...(step.mediaOverrides ?? {}),
+                  headerMediaUrl: uploaded.url
+                }
+              }
+            : step
+        )
+      } : current);
+      setMediaFeedbackByStep((current) => ({
+        ...current,
+        [stepIndex]: { kind: "success", message: "Media uploaded to Supabase and ready in preview." }
+      }));
+    } catch (error) {
+      setMediaFeedbackByStep((current) => ({
+        ...current,
+        [stepIndex]: { kind: "error", message: (error as Error).message }
+      }));
+    } finally {
+      setUploadingMediaByStep((current) => ({ ...current, [stepIndex]: false }));
+    }
+  }
 
   return (
     <div className="seq-card">
@@ -1356,7 +1610,15 @@ function StepsEditor({
         <div style={{ display: "grid", gap: "0" }}>
           {steps.map((step, idx) => {
             const isCollapsed  = Boolean(collapsed[idx]);
-            const templateName = templates.find((t) => t.id === step.messageTemplateId)?.name ?? "No template selected";
+            const template = templates.find((item) => item.id === step.messageTemplateId) ?? null;
+            const templateName = template?.name ?? "No template selected";
+            const placeholders = extractTemplatePlaceholders(template);
+            const bindings = syncTemplateBindings(template, step.templateVariables);
+            const headerMediaType = getTemplateHeaderMediaType(template);
+            const mediaOverrides = step.mediaOverrides ?? {};
+            const livePreviewComponents = buildSequenceTemplatePreviewComponents(template, bindings, sampleContact);
+            const previewName = sampleContact?.display_name ?? sampleContact?.phone_number ?? "No sample contact";
+            const feedback = mediaFeedbackByStep[idx];
 
             return (
               <div key={`${step.id ?? "draft"}-${idx}`}>
@@ -1432,71 +1694,179 @@ function StepsEditor({
                       {/* Template picker */}
                       <FieldLabel label="Send Message" required>
                         <select className="seq-select" value={step.messageTemplateId}
-                          onChange={(e) => updateStep(idx, { messageTemplateId: e.target.value, templateVariables: {} })}>
+                          onChange={(e) => {
+                            const nextTemplate = templates.find((item) => item.id === e.target.value) ?? null;
+                            updateStep(idx, {
+                              messageTemplateId: e.target.value,
+                              templateVariables: syncTemplateBindings(nextTemplate, {}),
+                              mediaOverrides: {}
+                            });
+                          }}>
                           <option value="">Pick a template…</option>
                           {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                         </select>
                       </FieldLabel>
 
                       {/* Variable mapping */}
-                      {(() => {
-                        const tpl = templates.find((t) => t.id === step.messageTemplateId) ?? null;
-                        const placeholders = extractTemplatePlaceholders(tpl);
-                        if (placeholders.length === 0) return null;
-                        const bindings: CampaignTemplateVariables = step.templateVariables ?? {};
-                        const setBinding = (ph: string, patch: Partial<CampaignTemplateVariableBinding>) => {
-                          const current = bindings[ph] ?? { source: "contact" as const, field: "display_name", fallback: "" };
-                          updateStep(idx, { templateVariables: { ...bindings, [ph]: { ...current, ...patch } } });
-                        };
-                        return (
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden", marginTop: "4px" }}>
-                            <div style={{ background: "#f8fafc", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", fontWeight: 600, color: "#475569", letterSpacing: "0.03em" }}>
-                              TEMPLATE VARIABLES
-                            </div>
-                            {placeholders.map((ph) => {
-                              const binding = bindings[ph] ?? { source: "contact" as const, field: "display_name", fallback: "" };
-                              return (
-                                <div key={ph} style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: "8px" }}>
-                                  <span style={{ display: "inline-flex", alignSelf: "flex-start", padding: "2px 8px", borderRadius: "5px", background: "#e0f2fe", color: "#0369a1", fontFamily: "monospace", fontSize: "12px", fontWeight: 700 }}>
-                                    {ph}
-                                  </span>
-                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-                                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Source</span>
-                                      <select className="seq-select" value={binding.source}
-                                        onChange={(e) => setBinding(ph, { source: e.target.value as "contact" | "static", field: "display_name", value: "" })}>
-                                        <option value="contact">Contact field</option>
-                                        <option value="static">Static value</option>
-                                      </select>
-                                    </div>
-                                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>{binding.source === "contact" ? "Field" : "Value"}</span>
-                                      {binding.source === "contact" ? (
-                                        <select className="seq-select" value={binding.field ?? "display_name"}
-                                          onChange={(e) => setBinding(ph, { field: e.target.value })}>
-                                          {SEQUENCE_VARIABLE_FIELD_OPTIONS.map((o) => (
-                                            <option key={o.value} value={o.value}>{o.label}</option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <input className="seq-input" value={binding.value ?? ""}
-                                          onChange={(e) => setBinding(ph, { value: e.target.value })}
-                                          placeholder="Static text" />
-                                      )}
-                                    </div>
+                      {placeholders.length > 0 ? (
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden", marginTop: "4px" }}>
+                          <div style={{ background: "#f8fafc", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", fontWeight: 600, color: "#475569", letterSpacing: "0.03em" }}>
+                            TEMPLATE VARIABLES
+                          </div>
+                          {placeholders.map((ph) => {
+                            const binding = bindings[ph] ?? { source: "contact" as const, field: "display_name", fallback: "" };
+                            const setBinding = (patch: Partial<CampaignTemplateVariableBinding>) => {
+                              const current = bindings[ph] ?? { source: "contact" as const, field: "display_name", fallback: "" };
+                              updateStep(idx, { templateVariables: { ...bindings, [ph]: { ...current, ...patch } } });
+                            };
+
+                            return (
+                              <div key={ph} style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: "8px" }}>
+                                <span style={{ display: "inline-flex", alignSelf: "flex-start", padding: "2px 8px", borderRadius: "5px", background: "#e0f2fe", color: "#0369a1", fontFamily: "monospace", fontSize: "12px", fontWeight: 700 }}>
+                                  {ph}
+                                </span>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Source</span>
+                                    <select
+                                      className="seq-select"
+                                      value={binding.source}
+                                      onChange={(e) => setBinding({
+                                        source: e.target.value as "contact" | "static",
+                                        field: variableFieldOptions[0]?.value ?? "display_name",
+                                        value: ""
+                                      })}
+                                    >
+                                      <option value="contact">Contact field</option>
+                                      <option value="static">Static value</option>
+                                    </select>
                                   </div>
                                   <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Fallback (when field is empty)</span>
-                                    <input className="seq-input" value={binding.fallback ?? ""}
-                                      onChange={(e) => setBinding(ph, { fallback: e.target.value })}
-                                      placeholder="e.g. there" />
+                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>{binding.source === "contact" ? "Field" : "Value"}</span>
+                                    {binding.source === "contact" ? (
+                                      <select
+                                        className="seq-select"
+                                        value={binding.field ?? variableFieldOptions[0]?.value ?? "display_name"}
+                                        onChange={(e) => setBinding({ field: e.target.value })}
+                                      >
+                                        {variableFieldOptions.map((option) => (
+                                          <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input
+                                        className="seq-input"
+                                        value={binding.value ?? ""}
+                                        onChange={(e) => setBinding({ value: e.target.value })}
+                                        placeholder="Static text"
+                                      />
+                                    )}
                                   </div>
                                 </div>
-                              );
-                            })}
+                                <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Fallback (when field is empty)</span>
+                                  <input
+                                    className="seq-input"
+                                    value={binding.fallback ?? ""}
+                                    onChange={(e) => setBinding({ fallback: e.target.value })}
+                                    placeholder="e.g. there"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+
+                      {headerMediaType ? (
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", marginTop: "12px", display: "grid", gap: "10px" }}>
+                          <div>
+                            <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>Template media</div>
+                            <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
+                              This header expects a {headerMediaType.toLowerCase()}. Upload to Supabase or paste a public URL.
+                            </div>
                           </div>
-                        );
-                      })()}
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+                            <label
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.4rem",
+                                height: "2.25rem",
+                                padding: "0 1rem",
+                                border: "1.5px solid #2563eb",
+                                borderRadius: "8px",
+                                background: "#fff",
+                                color: "#2563eb",
+                                fontSize: "0.82rem",
+                                fontWeight: 700,
+                                cursor: uploadingMediaByStep[idx] ? "not-allowed" : "pointer",
+                                opacity: uploadingMediaByStep[idx] ? 0.6 : 1
+                              }}
+                            >
+                              {uploadingMediaByStep[idx] ? "Uploading…" : `Upload ${headerMediaType.toLowerCase()}`}
+                              <input
+                                type="file"
+                                style={{ display: "none" }}
+                                disabled={uploadingMediaByStep[idx]}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    void handleMediaUpload(idx, file);
+                                  }
+                                  e.currentTarget.value = "";
+                                }}
+                              />
+                            </label>
+                            {mediaOverrides.headerMediaUrl ? (
+                              <span style={{ fontSize: "12px", color: "#16a34a", fontWeight: 600 }}>Media ready for preview</span>
+                            ) : null}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Media URL</span>
+                            <input
+                              className="seq-input"
+                              value={mediaOverrides.headerMediaUrl ?? ""}
+                              onChange={(e) => updateStep(idx, {
+                                mediaOverrides: {
+                                  ...mediaOverrides,
+                                  headerMediaUrl: e.target.value
+                                }
+                              })}
+                              placeholder="https://example.com/header-media"
+                            />
+                          </div>
+                          {feedback ? (
+                            <div style={{ fontSize: "12px", color: feedback.kind === "error" ? "#dc2626" : "#16a34a" }}>
+                              {feedback.message}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {template ? (
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: "10px", overflow: "hidden", marginTop: "12px", background: "#fff" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", flexWrap: "wrap" }}>
+                            <div>
+                              <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>Live template preview</div>
+                              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
+                                {sampleContact ? `Preview uses ${previewName} as the sample contact.` : "Preview uses your fallbacks because no sample contact is available yet."}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#0f172a", fontWeight: 600 }}>
+                              {template.displayPhoneNumber ?? template.name}
+                            </div>
+                          </div>
+                          <div style={{ padding: "12px" }}>
+                            <TemplatePreviewPanel
+                              components={livePreviewComponents.length ? livePreviewComponents : template.components}
+                              businessName={template.displayPhoneNumber ?? template.name}
+                              headerMediaType={headerMediaType ?? undefined}
+                              headerMediaUrl={mediaOverrides.headerMediaUrl}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
 
                       {/* Custom delivery */}
                       <label className="seq-checkbox-label">

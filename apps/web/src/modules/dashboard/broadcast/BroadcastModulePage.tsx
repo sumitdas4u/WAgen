@@ -1403,6 +1403,8 @@ function BroadcastWizardPage({
             availableFlows={publishedFlows}
             selectedTemplate={selectedTemplate}
             bindings={bindings}
+            headerMediaType={headerMediaType}
+            mediaOverrides={mediaOverrides}
             sampleContacts={selectedSegmentContactsQuery.data ?? []}
             onBack={() => setStep(3)}
             onSave={() => saveMutation.mutate(false)}
@@ -2614,7 +2616,8 @@ function VariableMappingStep({
                   <TemplatePreviewPanel
                     components={liveComponents.length ? liveComponents : selectedTemplate.components}
                     businessName={selectedTemplate.name}
-                    headerImageUrl={mediaOverrides.headerMediaUrl}
+                    headerMediaType={headerMediaType ?? undefined}
+                    headerMediaUrl={mediaOverrides.headerMediaUrl}
                   />
                 </div>
               </>
@@ -2747,6 +2750,8 @@ function ScheduleStep({
   availableFlows,
   selectedTemplate,
   bindings,
+  headerMediaType,
+  mediaOverrides,
   sampleContacts,
   onBack,
   onSave,
@@ -2776,6 +2781,8 @@ function ScheduleStep({
   availableFlows: Array<{ id: string; name: string }>;
   selectedTemplate: MessageTemplate | null;
   bindings: CampaignTemplateVariables;
+  headerMediaType: "IMAGE" | "VIDEO" | "DOCUMENT" | null;
+  mediaOverrides: CampaignMediaOverrides;
   sampleContacts: ContactRecord[];
   onBack: () => void;
   onSave: () => void;
@@ -3056,6 +3063,8 @@ function ScheduleStep({
                   <TemplatePreviewPanel
                     components={livePreviewComponents.length ? livePreviewComponents : selectedTemplate.components}
                     businessName={(selectedTemplate as { displayPhoneNumber?: string }).displayPhoneNumber ?? selectedTemplate.name}
+                    headerMediaType={headerMediaType ?? undefined}
+                    headerMediaUrl={mediaOverrides.headerMediaUrl}
                   />
                 </div>
               </div>

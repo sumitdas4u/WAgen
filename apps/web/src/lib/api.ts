@@ -2586,6 +2586,8 @@ export interface SequenceStep {
   delay_unit: SequenceDelayUnit;
   message_template_id: string;
   custom_delivery_json: Record<string, unknown>;
+  template_variables_json?: CampaignTemplateVariables;
+  media_overrides_json?: CampaignMediaOverrides;
   created_at: string;
   updated_at: string;
 }
@@ -2688,6 +2690,7 @@ export interface SequenceWriteStepInput {
   delayUnit: SequenceDelayUnit;
   messageTemplateId: string;
   templateVariables?: CampaignTemplateVariables;
+  mediaOverrides?: CampaignMediaOverrides;
   customDelivery?: Record<string, unknown>;
 }
 

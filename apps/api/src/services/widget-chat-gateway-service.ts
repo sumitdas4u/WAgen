@@ -3,7 +3,7 @@ import type { RawData, WebSocket } from "ws";
 import { pool } from "../db/pool.js";
 import { getOrCreateConversation, incrementConversationUnreadCount } from "./conversation-service.js";
 import { syncConversationContact } from "./contacts-service.js";
-import { processIncomingMessage } from "./message-router-service.js";
+import { processIncomingMessage, type ProcessIncomingMessageResult } from "./message-router-service.js";
 import { getUserById } from "./user-service.js";
 import {
   addWidgetConnection,
@@ -73,6 +73,33 @@ function sendEvent(socket: WebSocket, event: WidgetSocketEvent): void {
     return;
   }
   socket.send(JSON.stringify(event));
+}
+
+function getWidgetSystemMessage(reason: ProcessIncomingMessageResult["reason"]): string {
+  switch (reason) {
+    case "auto_reply_disabled":
+      return "Automated replies are turned off right now. Enable the agent to keep testing live answers.";
+    case "manual_takeover":
+      return "This conversation is in manual takeover mode, so the chatbot will not answer until AI is resumed.";
+    case "conversation_paused":
+      return "AI replies are paused for this conversation. Resume automation and try again.";
+    case "no_matching_flow":
+      return "No chatbot flow matched this message. Add a matching flow or a default AI step, then test again.";
+    case "flow_error":
+      return "The chatbot flow hit an error while processing this test. Review the flow setup and AI Review Center logs.";
+    case "external_bot_detected":
+      return "Automation was paused because another bot may already be replying on this channel.";
+    case "missing_channel_adapter":
+      return "The website widget channel is missing a reply adapter. Please verify the channel setup.";
+    case "missing_user":
+      return "The workspace for this widget test could not be found.";
+    case "sender_is_agent_number":
+      return "This sender is protected from bot loops, so the chatbot did not auto-reply.";
+    case "insufficient_credits":
+      return "The workspace is out of credits, so automated replies are currently paused.";
+    default:
+      return "The live widget did not send an automated reply for this message.";
+  }
 }
 
 async function persistWidgetLeadProfile(input: {
@@ -271,17 +298,12 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
             }
           });
 
-          if (
-            !result.autoReplySent &&
-            result.reason !== "auto_reply_disabled" &&
-            result.reason !== "flow_error" &&
-            result.reason !== "no_matching_flow"
-          ) {
+          if (!result.autoReplySent) {
             sendEvent(socket, {
               event: "message",
               data: {
                 sender: "system",
-                text: "Chat is currently in manual mode. A human agent will reply.",
+                text: getWidgetSystemMessage(result.reason),
                 reason: result.reason
               }
             });

@@ -8404,7 +8404,8 @@ select:focus {
 }
 
 .bot-row,
-.user-row {
+.user-row,
+.system-row {
   max-width: 78%;
   width: fit-content;
   display: grid;
@@ -8412,7 +8413,8 @@ select:focus {
 }
 
 .bot-row p,
-.user-row p {
+.user-row p,
+.system-row p {
   margin: 0;
   padding: 0.55rem 0.75rem;
   border-radius: 12px;
@@ -8433,9 +8435,22 @@ select:focus {
 }
 
 .bot-row small,
-.user-row small {
+.user-row small,
+.system-row small {
   font-size: 0.75rem;
   color: #6f809a;
+}
+
+.system-row {
+  max-width: min(100%, 560px);
+  justify-self: center;
+  text-align: center;
+}
+
+.system-row p {
+  color: #49627f;
+  background: #eef4fb;
+  border: 1px dashed #c8d7eb;
 }
 
 .typing {
@@ -8472,84 +8487,122 @@ select:focus {
   color: #6f8098;
 }
 
-.dashboard-test-chat {
-  width: min(520px, 100%);
-  margin: 0;
-}
-
-.test-chat-overlay-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 15, 32, 0.36);
-  display: flex;
-  justify-content: flex-end;
-  z-index: 140;
-}
-
-.test-chat-overlay-panel {
-  width: min(620px, 100vw);
-  height: 100vh;
-  border-left: 1px solid #d4deeb;
-  background: #f6faf8;
-  box-shadow: -26px 0 48px rgba(2, 17, 38, 0.2);
+.dashboard-test-page {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 0.75rem;
-  padding: 1rem;
-  animation: testChatOverlayIn 170ms ease-out;
+  gap: 1.35rem;
 }
 
-.test-chat-overlay-header {
+.dashboard-test-page-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.7rem;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-.test-chat-overlay-header h2 {
-  font-size: 1.45rem;
-  font-family: "Manrope", "Segoe UI", sans-serif;
+.dashboard-test-page-copy {
+  max-width: 680px;
 }
 
-.test-chat-overlay-header p {
-  margin-top: 0.18rem;
+.dashboard-test-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: #e8f7ef;
+  color: #0b8f56;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.dashboard-test-page h2 {
+  margin: 0.45rem 0 0;
+  font-size: clamp(2.1rem, 4vw, 3.35rem);
+  line-height: 1.02;
+}
+
+.dashboard-test-page-copy p {
+  margin: 0.65rem 0 0;
+  max-width: 60ch;
   color: #5d6f88;
+  font-size: 1rem;
 }
 
-.test-chat-overlay-header .ghost-btn {
-  border-radius: 8px;
-  padding: 0.44rem 0.74rem;
+.dashboard-test-page-meta {
+  max-width: 340px;
+  display: grid;
+  gap: 0.55rem;
+  justify-items: end;
 }
 
-.dashboard-test-chat-overlay {
-  width: 100%;
-  min-height: 0;
+.dashboard-test-page-meta p {
   margin: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  text-align: right;
+  color: #6a7c95;
+  font-size: 0.92rem;
 }
 
-.dashboard-test-chat-overlay .journey-chat-scroll {
-  min-height: 0;
-  max-height: none;
+.dashboard-test-stage {
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+  padding: 1.45rem;
+  border: 1px solid #d7e3ee;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(117, 219, 166, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(105, 171, 255, 0.12), transparent 30%),
+    #fcfdff;
+  box-shadow: 0 18px 38px rgba(19, 42, 79, 0.07);
 }
 
-@keyframes testChatOverlayIn {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
+.dashboard-test-chat-card {
+  width: min(760px, 100%);
+  margin: 0;
+}
+
+.dashboard-test-chat-scroll {
+  min-height: 420px;
+}
+
+.dashboard-test-input button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.dashboard-test-footnote {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 0.22rem;
+  text-align: center;
+}
+
+.dashboard-test-footnote p {
+  margin: 0;
+  color: #62748d;
+  font-size: 0.92rem;
 }
 
 @media (max-width: 980px) {
-  .test-chat-overlay-panel {
-    width: 100%;
-    padding: 0.85rem;
+  .dashboard-test-stage {
+    padding: 1rem;
+    border-radius: 22px;
   }
 
-  .test-chat-overlay-header {
-    flex-wrap: wrap;
+  .dashboard-test-page-meta {
+    max-width: none;
+    justify-items: start;
+  }
+
+  .dashboard-test-page-meta p {
+    text-align: left;
+  }
+
+  .dashboard-test-chat-scroll {
+    min-height: 340px;
   }
 }
 

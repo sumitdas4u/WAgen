@@ -13,6 +13,17 @@ export type SequenceBaseType = "contact";
 export type SequenceTimeMode = "any_time" | "window";
 export type SequenceDelayUnit = "minutes" | "hours" | "days";
 export type SequenceEnrollmentStatus = "active" | "completed" | "failed" | "stopped";
+export type CampaignTemplateVariableSource = "contact" | "static";
+
+export interface CampaignTemplateVariableBinding {
+  source: CampaignTemplateVariableSource;
+  field?: string;
+  value?: string;
+  fallback?: string;
+}
+
+export type CampaignTemplateVariables = Record<string, CampaignTemplateVariableBinding>;
+export type CampaignMediaOverrides = Record<string, string>;
 
 export interface SequenceStep {
   id: string;
@@ -22,6 +33,8 @@ export interface SequenceStep {
   delay_unit: SequenceDelayUnit;
   message_template_id: string;
   custom_delivery_json: Record<string, unknown>;
+  template_variables_json?: CampaignTemplateVariables;
+  media_overrides_json?: CampaignMediaOverrides;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +102,8 @@ export interface SequenceWriteStepInput {
   delayValue: number;
   delayUnit: SequenceDelayUnit;
   messageTemplateId: string;
+  templateVariables?: CampaignTemplateVariables;
+  mediaOverrides?: CampaignMediaOverrides;
   customDelivery?: Record<string, unknown>;
 }
 
@@ -115,6 +130,95 @@ export interface SequenceWriteInput {
   timeWindowEnd?: string | null;
   steps?: SequenceWriteStepInput[];
   conditions?: SequenceWriteConditionInput[];
+}
+
+const STEP_TEMPLATE_VARIABLES_KEY = "templateVariables";
+const STEP_MEDIA_OVERRIDES_KEY = "mediaOverrides";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeStepCustomDelivery(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? { ...value } : {};
+}
+
+function normalizeTemplateBinding(value: unknown): CampaignTemplateVariableBinding | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const source = value.source;
+  if (source !== "contact" && source !== "static") {
+    return null;
+  }
+
+  const binding: CampaignTemplateVariableBinding = { source };
+  if (typeof value.field === "string") {
+    binding.field = value.field;
+  }
+  if (typeof value.value === "string") {
+    binding.value = value.value;
+  }
+  if (typeof value.fallback === "string") {
+    binding.fallback = value.fallback;
+  }
+  return binding;
+}
+
+function extractStepTemplateVariables(customDelivery: Record<string, unknown> | null | undefined): CampaignTemplateVariables {
+  const source = isRecord(customDelivery?.[STEP_TEMPLATE_VARIABLES_KEY])
+    ? (customDelivery?.[STEP_TEMPLATE_VARIABLES_KEY] as Record<string, unknown>)
+    : null;
+  if (!source) {
+    return {};
+  }
+
+  const bindings: CampaignTemplateVariables = {};
+  for (const [placeholder, candidate] of Object.entries(source)) {
+    const normalized = normalizeTemplateBinding(candidate);
+    if (normalized) {
+      bindings[placeholder] = normalized;
+    }
+  }
+  return bindings;
+}
+
+function extractStepMediaOverrides(customDelivery: Record<string, unknown> | null | undefined): CampaignMediaOverrides {
+  const source = isRecord(customDelivery?.[STEP_MEDIA_OVERRIDES_KEY])
+    ? (customDelivery?.[STEP_MEDIA_OVERRIDES_KEY] as Record<string, unknown>)
+    : null;
+  if (!source) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(source).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  );
+}
+
+function stripStepRuntimeConfig(customDelivery: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  const next = normalizeStepCustomDelivery(customDelivery);
+  delete next[STEP_TEMPLATE_VARIABLES_KEY];
+  delete next[STEP_MEDIA_OVERRIDES_KEY];
+  return next;
+}
+
+function buildStepCustomDelivery(step: SequenceWriteStepInput): Record<string, unknown> {
+  const customDelivery = stripStepRuntimeConfig(step.customDelivery);
+  customDelivery[STEP_TEMPLATE_VARIABLES_KEY] = step.templateVariables ?? {};
+  customDelivery[STEP_MEDIA_OVERRIDES_KEY] = step.mediaOverrides ?? {};
+  return customDelivery;
+}
+
+function hydrateSequenceStep(step: SequenceStep): SequenceStep {
+  const customDelivery = normalizeStepCustomDelivery(step.custom_delivery_json);
+  return {
+    ...step,
+    custom_delivery_json: stripStepRuntimeConfig(customDelivery),
+    template_variables_json: extractStepTemplateVariables(customDelivery),
+    media_overrides_json: extractStepMediaOverrides(customDelivery)
+  };
 }
 
 function normalizeAllowedDays(days?: string[]): string[] {
@@ -166,7 +270,7 @@ async function replaceSequenceChildren(
             step.delayValue,
             step.delayUnit,
             step.messageTemplateId,
-            JSON.stringify(step.customDelivery ?? {})
+            JSON.stringify(buildStepCustomDelivery(step))
           ]
         );
       }
@@ -271,7 +375,7 @@ export async function getSequenceDetail(userId: string, sequenceId: string): Pro
 
   return {
     ...sequence,
-    steps: stepsResult.rows,
+    steps: stepsResult.rows.map(hydrateSequenceStep),
     conditions: conditionsResult.rows,
     metrics: {
       enrolled: Number(metricsResult.rows[0]?.enrolled ?? 0),
@@ -400,6 +504,8 @@ async function validatePublishableSequence(userId: string, sequenceId: string): 
       delayValue: step.delay_value,
       delayUnit: step.delay_unit,
       messageTemplateId: step.message_template_id,
+      templateVariables: step.template_variables_json,
+      mediaOverrides: step.media_overrides_json,
       customDelivery: step.custom_delivery_json
     }))
   );
@@ -631,7 +737,7 @@ export async function getSequenceEnrollmentForExecution(enrollmentId: string): P
   return {
     enrollment,
     sequence,
-    steps: stepsResult.rows,
+    steps: stepsResult.rows.map(hydrateSequenceStep),
     conditions: conditionsResult.rows,
     contact: {
       ...contact,
