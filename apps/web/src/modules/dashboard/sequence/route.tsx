@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useState, type Dispatch, type ReactNode, typ
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRoutes } from "react-router-dom";
 import type {
+  CampaignTemplateVariableBinding,
+  CampaignTemplateVariables,
   ContactField,
   ContactRecord,
   MessageTemplate,
@@ -19,6 +21,7 @@ import { useDashboardShell } from "../../../shared/dashboard/shell-context";
 import {
   buildSequencesQueryOptions,
   useCreateSequenceMutation,
+  useDeleteSequenceMutation,
   usePauseSequenceMutation,
   usePublishSequenceMutation,
   useResumeSequenceMutation,
@@ -62,6 +65,28 @@ const CHANNEL_OPTIONS: SelectOption[] = [
   { value: "web",      label: "Web Chat", disabled: true, hint: "Coming soon" },
   { value: "email",    label: "Email",    disabled: true, hint: "Coming soon" }
 ];
+
+const SEQUENCE_VARIABLE_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "display_name",  label: "Contact name" },
+  { value: "phone_number",  label: "Phone number" },
+  { value: "email",         label: "Email" },
+  { value: "contact_type",  label: "Contact type" },
+  { value: "tags",          label: "Tags" },
+  { value: "source_type",   label: "Source type" },
+  { value: "source_id",     label: "Source ID" },
+  { value: "source_url",    label: "Source URL" }
+];
+
+function extractTemplatePlaceholders(template: MessageTemplate | null): string[] {
+  if (!template) return [];
+  return Array.from(
+    new Set(
+      [...JSON.stringify(template.components).matchAll(/\{\{[^}]+\}\}/g)]
+        .map((m) => m[0])
+        .sort((a, b) => a.localeCompare(b))
+    )
+  );
+}
 
 const CONDITION_FIELD_OPTIONS: ConditionFieldOption[] = [
   { key: "tags",         label: "Tag",          type: "tag",   operators: ["contains", "eq", "neq"], source: "core" },
@@ -640,6 +665,7 @@ function BuilderPage({ token }: { token: string }) {
   const publishMutation             = usePublishSequenceMutation(token, sequenceId ?? "");
   const pauseMutation               = usePauseSequenceMutation(token, sequenceId ?? "");
   const resumeMutation              = useResumeSequenceMutation(token, sequenceId ?? "");
+  const deleteMutation              = useDeleteSequenceMutation(token);
 
   const templates = useQuery({
     queryKey: dashboardQueryKeys.templates,
@@ -661,6 +687,7 @@ function BuilderPage({ token }: { token: string }) {
   const [draft, setDraft]           = useState<SequenceWriteInput | null>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [bannerOpen, setBannerOpen] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (detail) setDraft((cur) => cur ?? toDraft(detail));
@@ -754,8 +781,37 @@ function BuilderPage({ token }: { token: string }) {
               Publish &amp; Close
             </button>
           )}
+          <button type="button" className="seq-btn seq-btn-danger seq-btn-sm"
+            onClick={() => setConfirmDelete(true)}>
+            Delete
+          </button>
         </div>
       </div>
+
+      {/* ── Delete confirmation modal ── */}
+      {confirmDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setConfirmDelete(false)}>
+          <div style={{ background: "#fff", borderRadius: "12px", padding: "28px 32px", maxWidth: "420px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 8px", fontSize: "17px", fontWeight: 700, color: "#0f172a" }}>Delete Sequence?</h3>
+            <p style={{ margin: "0 0 20px", fontSize: "14px", color: "#64748b", lineHeight: 1.55 }}>
+              This will <strong>cancel all queued &amp; scheduled messages</strong>, stop new enrollments, deactivate the sequence, and permanently delete it. This cannot be undone.
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button type="button" className="seq-btn seq-btn-ghost seq-btn-sm"
+                onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </button>
+              <button type="button" className="seq-btn seq-btn-danger seq-btn-sm"
+                disabled={deleteMutation.isPending}
+                onClick={() => void deleteMutation.mutateAsync(sequenceId ?? "").then(() => navigate("/dashboard/sequence"))}>
+                {deleteMutation.isPending ? "Deleting…" : "Yes, Delete Sequence"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Info banner ── */}
       <div className="seq-info-banner">
@@ -1376,11 +1432,71 @@ function StepsEditor({
                       {/* Template picker */}
                       <FieldLabel label="Send Message" required>
                         <select className="seq-select" value={step.messageTemplateId}
-                          onChange={(e) => updateStep(idx, { messageTemplateId: e.target.value })}>
+                          onChange={(e) => updateStep(idx, { messageTemplateId: e.target.value, templateVariables: {} })}>
                           <option value="">Pick a template…</option>
                           {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                         </select>
                       </FieldLabel>
+
+                      {/* Variable mapping */}
+                      {(() => {
+                        const tpl = templates.find((t) => t.id === step.messageTemplateId) ?? null;
+                        const placeholders = extractTemplatePlaceholders(tpl);
+                        if (placeholders.length === 0) return null;
+                        const bindings: CampaignTemplateVariables = step.templateVariables ?? {};
+                        const setBinding = (ph: string, patch: Partial<CampaignTemplateVariableBinding>) => {
+                          const current = bindings[ph] ?? { source: "contact" as const, field: "display_name", fallback: "" };
+                          updateStep(idx, { templateVariables: { ...bindings, [ph]: { ...current, ...patch } } });
+                        };
+                        return (
+                          <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden", marginTop: "4px" }}>
+                            <div style={{ background: "#f8fafc", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", fontWeight: 600, color: "#475569", letterSpacing: "0.03em" }}>
+                              TEMPLATE VARIABLES
+                            </div>
+                            {placeholders.map((ph) => {
+                              const binding = bindings[ph] ?? { source: "contact" as const, field: "display_name", fallback: "" };
+                              return (
+                                <div key={ph} style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: "8px" }}>
+                                  <span style={{ display: "inline-flex", alignSelf: "flex-start", padding: "2px 8px", borderRadius: "5px", background: "#e0f2fe", color: "#0369a1", fontFamily: "monospace", fontSize: "12px", fontWeight: 700 }}>
+                                    {ph}
+                                  </span>
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Source</span>
+                                      <select className="seq-select" value={binding.source}
+                                        onChange={(e) => setBinding(ph, { source: e.target.value as "contact" | "static", field: "display_name", value: "" })}>
+                                        <option value="contact">Contact field</option>
+                                        <option value="static">Static value</option>
+                                      </select>
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>{binding.source === "contact" ? "Field" : "Value"}</span>
+                                      {binding.source === "contact" ? (
+                                        <select className="seq-select" value={binding.field ?? "display_name"}
+                                          onChange={(e) => setBinding(ph, { field: e.target.value })}>
+                                          {SEQUENCE_VARIABLE_FIELD_OPTIONS.map((o) => (
+                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <input className="seq-input" value={binding.value ?? ""}
+                                          onChange={(e) => setBinding(ph, { value: e.target.value })}
+                                          placeholder="Static text" />
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Fallback (when field is empty)</span>
+                                    <input className="seq-input" value={binding.fallback ?? ""}
+                                      onChange={(e) => setBinding(ph, { fallback: e.target.value })}
+                                      placeholder="e.g. there" />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
 
                       {/* Custom delivery */}
                       <label className="seq-checkbox-label">

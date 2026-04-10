@@ -2687,6 +2687,7 @@ export interface SequenceWriteStepInput {
   delayValue: number;
   delayUnit: SequenceDelayUnit;
   messageTemplateId: string;
+  templateVariables?: CampaignTemplateVariables;
   customDelivery?: Record<string, unknown>;
 }
 
