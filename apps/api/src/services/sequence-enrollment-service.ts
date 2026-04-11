@@ -24,7 +24,13 @@ export async function maybeCreateSequenceEnrollment(
   const enrollment = await createSequenceEnrollment(
     sequence.id,
     contactId,
-    firstStep ? { value: firstStep.delay_value, unit: firstStep.delay_unit } : undefined
+    {
+      firstStepDelay: firstStep ? { value: firstStep.delay_value, unit: firstStep.delay_unit } : undefined,
+      allowedDays: sequence.allowed_days_json,
+      timeMode: sequence.time_mode,
+      timeWindowStart: sequence.time_window_start,
+      timeWindowEnd: sequence.time_window_end
+    }
   );
   await appendSequenceLog({
     enrollmentId: enrollment.id,

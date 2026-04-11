@@ -135,6 +135,71 @@ export interface SequenceWriteInput {
 const STEP_TEMPLATE_VARIABLES_KEY = "templateVariables";
 const STEP_MEDIA_OVERRIDES_KEY = "mediaOverrides";
 
+function addDelay(base: Date, value: number, unit: SequenceDelayUnit): Date {
+  const next = new Date(base);
+  if (unit === "minutes") next.setMinutes(next.getMinutes() + value);
+  else if (unit === "hours") next.setHours(next.getHours() + value);
+  else next.setDate(next.getDate() + value);
+  return next;
+}
+
+function weekdayKey(date: Date): string {
+  return ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][date.getDay()]!;
+}
+
+function isWithinWindow(date: Date, start: string | null, end: string | null): boolean {
+  if (!start || !end) return true;
+  const [startH, startM] = start.split(":").map(Number);
+  const [endH, endM] = end.split(":").map(Number);
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+  return currentMinutes >= startH * 60 + startM && currentMinutes <= endH * 60 + endM;
+}
+
+function nextWindowTime(now: Date, allowedDays: string[], start: string | null): Date {
+  const next = new Date(now);
+  for (let i = 0; i < 8; i += 1) {
+    const dayAllowed = allowedDays.length === 0 || allowedDays.includes(weekdayKey(next));
+    if (dayAllowed) {
+      if (start) {
+        const [h, m] = start.split(":").map(Number);
+        next.setHours(h, m, 0, 0);
+      }
+      if (next > now) return next;
+    }
+    next.setDate(next.getDate() + 1);
+    next.setHours(0, 0, 0, 0);
+  }
+  return new Date(now.getTime() + 60 * 60_000);
+}
+
+function resolveInitialSequenceRunAt(input: {
+  firstStepDelay?: { value: number; unit: SequenceDelayUnit };
+  allowedDays: string[];
+  timeMode: SequenceTimeMode;
+  timeWindowStart: string | null;
+  timeWindowEnd: string | null;
+}): string {
+  const baseTime =
+    input.firstStepDelay && input.firstStepDelay.value > 0
+      ? addDelay(new Date(), input.firstStepDelay.value, input.firstStepDelay.unit)
+      : new Date();
+
+  const dayAllowed = input.allowedDays.length === 0 || input.allowedDays.includes(weekdayKey(baseTime));
+  const inWindow =
+    input.timeMode !== "window" || isWithinWindow(baseTime, input.timeWindowStart, input.timeWindowEnd);
+
+  if (dayAllowed && inWindow) {
+    return baseTime.toISOString();
+  }
+
+  const nextAllowedTime = nextWindowTime(
+    baseTime,
+    input.allowedDays,
+    input.timeMode === "window" ? input.timeWindowStart : null
+  );
+  return nextAllowedTime.toISOString();
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -573,20 +638,23 @@ export async function listSequenceEnrollments(
 export async function createSequenceEnrollment(
   sequenceId: string,
   contactId: string,
-  firstStepDelay?: { value: number; unit: SequenceDelayUnit }
+  options?: {
+    firstStepDelay?: { value: number; unit: SequenceDelayUnit };
+    allowedDays?: string[];
+    timeMode?: SequenceTimeMode;
+    timeWindowStart?: string | null;
+    timeWindowEnd?: string | null;
+  }
 ): Promise<SequenceEnrollment> {
-  // Apply the first step's configured delay so "Send after X, Relative to: From enrollment"
-  // is honoured. When no delay info is provided the step runs immediately (NOW()).
-  const nextRunAt =
-    firstStepDelay && firstStepDelay.value > 0
-      ? (() => {
-          const d = new Date();
-          if (firstStepDelay.unit === "minutes") d.setMinutes(d.getMinutes() + firstStepDelay.value);
-          else if (firstStepDelay.unit === "hours") d.setHours(d.getHours() + firstStepDelay.value);
-          else d.setDate(d.getDate() + firstStepDelay.value);
-          return d.toISOString();
-        })()
-      : new Date().toISOString();
+  // Store the first real eligible send time at enrollment creation so queued jobs
+  // already respect allowed days and time windows before the worker sees them.
+  const nextRunAt = resolveInitialSequenceRunAt({
+    firstStepDelay: options?.firstStepDelay,
+    allowedDays: options?.allowedDays ?? [],
+    timeMode: options?.timeMode ?? "any_time",
+    timeWindowStart: options?.timeWindowStart ?? null,
+    timeWindowEnd: options?.timeWindowEnd ?? null
+  });
 
   const result = await pool.query<SequenceEnrollment>(
     `INSERT INTO sequence_enrollments (
