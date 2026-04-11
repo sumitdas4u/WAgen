@@ -5,6 +5,7 @@ import { runMigrations } from "./scripts/migrate.js";
 import { renewDueWorkspaceCredits } from "./services/workspace-billing-service.js";
 import { runAutoRechargeSweep } from "./services/workspace-billing-center-service.js";
 import { startCampaignWorker } from "./services/campaign-worker-service.js";
+import { closeQueueInfrastructure } from "./services/queue-service.js";
 import { startGenericWebhookWorker } from "./services/generic-webhook-worker-service.js";
 import { startSequenceWorker } from "./services/sequence-worker-service.js";
 
@@ -57,6 +58,7 @@ startGenericWebhookWorker();
 startSequenceWorker();
 
 const close = async () => {
+  await closeQueueInfrastructure();
   await app.close();
   process.exit(0);
 };
