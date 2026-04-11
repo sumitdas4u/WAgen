@@ -2106,14 +2106,30 @@ export async function disconnectMetaBusinessConnection(
 
     if (connectionId) {
       await client.query(
-        `DELETE FROM whatsapp_business_connections
+        `UPDATE whatsapp_business_connections
+         SET status = 'disconnected',
+             enabled = FALSE,
+             subscription_status = 'inactive',
+             updated_at = NOW(),
+             metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object(
+               'disconnectedAt', NOW(),
+               'disconnectedBy', 'user_reconnect'
+             )
          WHERE user_id = $1
            AND waba_id = ANY($2::text[])`,
         [userId, targetWabaIds]
       );
     } else {
       await client.query(
-        `DELETE FROM whatsapp_business_connections
+        `UPDATE whatsapp_business_connections
+         SET status = 'disconnected',
+             enabled = FALSE,
+             subscription_status = 'inactive',
+             updated_at = NOW(),
+             metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object(
+               'disconnectedAt', NOW(),
+               'disconnectedBy', 'user_disconnect'
+             )
          WHERE user_id = $1`,
         [userId]
       );
