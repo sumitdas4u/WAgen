@@ -1057,7 +1057,15 @@ export function setWhatsAppChannelEnabled(token: string, enabled: boolean) {
 }
 
 export function fetchWhatsAppStatus(token: string) {
-  return apiRequest<{ enabled: boolean; status: string; phoneNumber: string | null; hasQr: boolean; qr: string | null }>(
+  return apiRequest<{
+    enabled: boolean;
+    status: string;
+    phoneNumber: string | null;
+    hasQr: boolean;
+    qr: string | null;
+    needsRelink?: boolean;
+    statusMessage?: string | null;
+  }>(
     "/api/whatsapp/status",
     { token }
   );

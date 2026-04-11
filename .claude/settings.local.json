@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ssh wagen:*)"
+      "Bash(ssh wagen:*)",
+      "Bash(find . -not -path */node_modules/* -not -path */.git/* -not -path */dist/* -size +1M)"
     ]
   }
 }

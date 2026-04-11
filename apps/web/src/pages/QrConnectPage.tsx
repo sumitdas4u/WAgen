@@ -5,7 +5,7 @@ import { connectWhatsApp, fetchWhatsAppStatus } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { useRealtime } from "../lib/use-realtime";
 
-type ConnectionStatus = "not_connected" | "connecting" | "waiting_scan" | "connected";
+type ConnectionStatus = "not_connected" | "connecting" | "waiting_scan" | "connected" | "degraded";
 
 export function QrConnectPage() {
   const { token } = useAuth();
@@ -15,6 +15,7 @@ export function QrConnectPage() {
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!token) {
@@ -24,15 +25,24 @@ export function QrConnectPage() {
     if (response.status === "connected") {
       setStatus("connected");
       setQrText(null);
+      setStatusMessage(null);
+      return;
+    }
+    if (response.status === "degraded") {
+      setStatus("degraded");
+      setQrText(null);
+      setStatusMessage(response.statusMessage ?? "QR session needs re-link. Scan a fresh QR code.");
       return;
     }
     if (response.status === "connecting") {
       setStatus(response.qr ? "waiting_scan" : "connecting");
       setQrText(response.qr);
+      setStatusMessage(null);
       return;
     }
     setStatus("not_connected");
     setQrText(null);
+    setStatusMessage(null);
   }, [token]);
 
   useEffect(() => {
@@ -47,19 +57,27 @@ export function QrConnectPage() {
         if (payload.qr) {
           setStatus("waiting_scan");
           setQrText(payload.qr);
+          setStatusMessage(null);
         }
       }
 
       if (event.event === "whatsapp.status") {
-        const payload = event.data as { status?: string };
+        const payload = event.data as { status?: string; statusMessage?: string | null };
         if (payload.status === "connected") {
           setStatus("connected");
           setQrText(null);
+          setStatusMessage(null);
+        } else if (payload.status === "degraded") {
+          setStatus("degraded");
+          setQrText(null);
+          setStatusMessage(payload.statusMessage ?? "QR session needs re-link. Scan a fresh QR code.");
         } else if (payload.status === "connecting") {
           setStatus("connecting");
+          setStatusMessage(null);
         } else if (payload.status === "disconnected") {
           setStatus("not_connected");
           setQrText(null);
+          setStatusMessage(null);
         }
       }
     }, [])
@@ -88,6 +106,9 @@ export function QrConnectPage() {
     }
     if (status === "connecting") {
       return "Generating QR...";
+    }
+    if (status === "degraded") {
+      return "Needs re-link";
     }
     return "Not connected";
   }, [status]);
@@ -122,6 +143,7 @@ export function QrConnectPage() {
         </div>
 
         <p className={`status-pill status-${status}`}>{statusLabel}</p>
+        {statusMessage ? <p className="error-text">{statusMessage}</p> : null}
 
         <div className="journey-actions center">
           <button type="button" className="primary-btn" disabled={loading} onClick={() => void handleGenerateQr()}>

@@ -19,6 +19,8 @@ export interface DashboardChannelSummary {
     phoneNumber: string | null;
     hasQr: boolean;
     qr: string | null;
+    needsRelink?: boolean;
+    statusMessage?: string | null;
   };
   metaApi: MetaBusinessStatus;
   anyConnected: boolean;

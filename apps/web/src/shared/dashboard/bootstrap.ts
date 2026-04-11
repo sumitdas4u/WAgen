@@ -39,7 +39,9 @@ const DEFAULT_DASHBOARD_BOOTSTRAP: DashboardBootstrapResponse = {
       status: "disconnected",
       phoneNumber: null,
       hasQr: false,
-      qr: null
+      qr: null,
+      needsRelink: false,
+      statusMessage: null
     },
     metaApi: {
       connected: false,

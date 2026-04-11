@@ -311,6 +311,8 @@ function DashboardShellLayout() {
     ? "checking"
     : isAnyChannelConnected
       ? "connected"
+      : qrChannelStatus === "degraded"
+        ? "degraded"
       : qrChannelStatus === "waiting_scan" || qrChannelStatus === "connecting"
         ? qrChannelStatus
         : "not_connected";
@@ -318,6 +320,8 @@ function DashboardShellLayout() {
     ? "Checking..."
     : qrChannelConnected
       ? "QR connected"
+      : qrChannelStatus === "degraded"
+        ? "QR needs relink"
       : apiChannelConnected
         ? "API connected"
         : websiteChannelEnabled

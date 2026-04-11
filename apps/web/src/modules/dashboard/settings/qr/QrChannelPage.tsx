@@ -14,6 +14,7 @@ function formatPhone(value: string | null | undefined): string {
 
 function formatQrConnectionStatus(status: string, hasQr: boolean): string {
   if (status === "connected") return "Connected";
+  if (status === "degraded") return "Needs re-link";
   if (status === "connecting" && hasQr) return "Waiting for scan";
   if (status === "connecting") return "Connecting";
   return "Disconnected";
@@ -31,6 +32,8 @@ export function QrChannelPage() {
   const qrConnected = qrStatus === "connected";
   const qrPhoneNumber = bootstrap?.channelSummary?.whatsapp?.phoneNumber ?? null;
   const qrHasQr = Boolean(bootstrap?.channelSummary?.whatsapp?.hasQr);
+  const qrNeedsRelink = Boolean(bootstrap?.channelSummary?.whatsapp?.needsRelink);
+  const qrStatusMessage = bootstrap?.channelSummary?.whatsapp?.statusMessage ?? null;
   const qrConnectionLabel = formatQrConnectionStatus(qrStatus, qrHasQr);
   const canDisconnect = qrConnected || qrStatus === "connecting" || qrHasQr || Boolean(qrPhoneNumber);
 
@@ -107,6 +110,13 @@ export function QrChannelPage() {
           {error ? <p className="error-text">{error}</p> : null}
         </article>
       )}
+
+      {qrNeedsRelink && qrStatusMessage ? (
+        <article className="finance-panel">
+          <p className="error-text">{qrStatusMessage}</p>
+          <p className="tiny-note">Keep the main phone online, remove the stale linked device in WhatsApp, then reconnect and scan a fresh QR.</p>
+        </article>
+      ) : null}
 
       <article className="channel-setup-panel">
         <header>

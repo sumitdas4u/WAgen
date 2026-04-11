@@ -58,7 +58,15 @@ export function DashboardRealtimeProvider({
                   qr:
                     typeof payload.qr === "string" || payload.qr === null
                       ? (payload.qr as string | null)
-                      : normalizedCurrent.channelSummary.whatsapp.qr
+                      : normalizedCurrent.channelSummary.whatsapp.qr,
+                  needsRelink:
+                    typeof payload.needsRelink === "boolean"
+                      ? payload.needsRelink
+                      : normalizedCurrent.channelSummary.whatsapp.needsRelink,
+                  statusMessage:
+                    typeof payload.statusMessage === "string" || payload.statusMessage === null
+                      ? (payload.statusMessage as string | null)
+                      : normalizedCurrent.channelSummary.whatsapp.statusMessage
                 }
               }
             };

@@ -42,6 +42,21 @@ import {
   summarizeFlowMessage,
   type FlowMessagePayload
 } from "./outbound-message-types.js";
+import {
+  canRecoverDegradedQrSession,
+  createQrSessionHealthState,
+  describeQrSessionHealthSummary,
+  evaluateQrSessionHealth,
+  getQrSessionDegradedMessage,
+  isDirectChatJid,
+  markQrSessionRecovered,
+  recordQrInboundSkipReason,
+  recordQrSessionHealthEvent,
+  type QrChannelStatus,
+  type QrInboundSkipReason,
+  type QrSessionHealthEvaluation,
+  type QrSessionHealthState
+} from "./whatsapp-session-health.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
@@ -50,8 +65,16 @@ interface SessionRuntime {
   socket: WASocket;
   qr: string | null;
   enabled: boolean;
-  status: "connected" | "connecting" | "disconnected";
+  status: Exclude<QrChannelStatus, "degraded">;
   connectionId: number;
+}
+
+interface DegradedSessionState {
+  reason: NonNullable<QrSessionHealthEvaluation["reason"]>;
+  message: string;
+  degradedAt: number;
+  recoveryCooldownUntil: number | null;
+  phoneNumber: string | null;
 }
 
 interface QueuedInboundMessage {
@@ -235,10 +258,6 @@ function buildQrFlowMessageContent(payload: FlowMessagePayload): Record<string, 
   }
 }
 
-function isDirectChatJid(jid: string): boolean {
-  return jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid");
-}
-
 type InboundMessageIdentifiers = {
   senderPn?: string;
   senderLid?: string;
@@ -420,6 +439,90 @@ export async function simulateTyping(sock: WASocket, jid: string, messageLength:
   await wait(typingMs);
 }
 
+function getLogMethod(level: string): "info" | "warn" | "error" | "debug" {
+  if (level === "fatal" || level === "error") {
+    return "error";
+  }
+  if (level === "warn") {
+    return "warn";
+  }
+  if (level === "trace") {
+    return "debug";
+  }
+  return "info";
+}
+
+function createBaileysLogger(
+  userId: string,
+  onDecryptFailure: (remoteJid: string | null) => void,
+  onRegistrationAttempt: () => void,
+  bindings: Record<string, unknown> = {}
+): {
+  level: string;
+  child: (childBindings: Record<string, unknown>) => ReturnType<typeof createBaileysLogger>;
+  trace: (...args: unknown[]) => void;
+  debug: (...args: unknown[]) => void;
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+  fatal: (...args: unknown[]) => void;
+} {
+  const write = (level: string, ...args: unknown[]) => {
+    let payload: Record<string, unknown> = { ...bindings };
+    let message = "";
+
+    if (typeof args[0] === "string") {
+      message = args[0];
+      if (args[1] && typeof args[1] === "object" && !Array.isArray(args[1])) {
+        payload = { ...payload, ...(args[1] as Record<string, unknown>) };
+      }
+    } else if (args[0] && typeof args[0] === "object" && !Array.isArray(args[0])) {
+      payload = { ...payload, ...(args[0] as Record<string, unknown>) };
+      if (typeof args[1] === "string") {
+        message = args[1];
+      }
+    }
+
+    if (message.includes("not logged in, attempting registration")) {
+      onRegistrationAttempt();
+    }
+
+    if (message.includes("failed to decrypt message")) {
+      const remoteJid =
+        (payload.key as { remoteJid?: string } | undefined)?.remoteJid ??
+        (payload.msgAttrs as { from?: string } | undefined)?.from ??
+        null;
+      onDecryptFailure(typeof remoteJid === "string" ? remoteJid : null);
+    }
+
+    const logMethod = getLogMethod(level);
+    const consoleMethod = console[logMethod] as (...values: unknown[]) => void;
+    consoleMethod(
+      JSON.stringify({
+        level,
+        time: new Date().toISOString(),
+        userId,
+        ...payload,
+        ...(message ? { msg: message } : {})
+      })
+    );
+  };
+
+  return {
+    level: "info",
+    child: (childBindings) => createBaileysLogger(userId, onDecryptFailure, onRegistrationAttempt, {
+      ...bindings,
+      ...childBindings
+    }),
+    trace: (...args) => write("trace", ...args),
+    debug: (...args) => write("debug", ...args),
+    info: (...args) => write("info", ...args),
+    warn: (...args) => write("warn", ...args),
+    error: (...args) => write("error", ...args),
+    fatal: (...args) => write("fatal", ...args)
+  };
+}
+
 class WhatsAppSessionManager {
   private readonly sessions = new Map<string, SessionRuntime>();
   private readonly activeConnectAttempts = new Set<string>();
@@ -430,12 +533,167 @@ class WhatsAppSessionManager {
   private readonly recentOutboundMessagesByUser = new Map<string, Map<string, baileys.proto.IMessage>>();
   private readonly messageQueues = new Map<string, QueuedInboundMessage[]>();
   private readonly processingUsers = new Set<string>();
+  private readonly sessionHealthByUser = new Map<string, QrSessionHealthState>();
+  private readonly degradedSessions = new Map<string, DegradedSessionState>();
   private connectionSeq = 0;
+
+  private getSessionHealth(userId: string): QrSessionHealthState {
+    const existing = this.sessionHealthByUser.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const created = createQrSessionHealthState();
+    this.sessionHealthByUser.set(userId, created);
+    return created;
+  }
+
+  private updateSessionHealth(userId: string, nextState: QrSessionHealthState, context: string): QrSessionHealthEvaluation {
+    this.sessionHealthByUser.set(userId, nextState);
+    const evaluation = evaluateQrSessionHealth(nextState, Date.now());
+    console.info(
+      `[WA] health user=${userId} context=${context} ${describeQrSessionHealthSummary(evaluation.summary)} degraded=${evaluation.degraded}`
+    );
+
+    if (evaluation.degraded) {
+      void this.handleDegradedQrSession(userId, evaluation);
+    }
+    return evaluation;
+  }
+
+  private recordSessionHealthEvent(
+    userId: string,
+    event: Parameters<typeof recordQrSessionHealthEvent>[1],
+    context: string
+  ): QrSessionHealthEvaluation {
+    const nextState = recordQrSessionHealthEvent(this.getSessionHealth(userId), event, Date.now());
+    return this.updateSessionHealth(userId, nextState, context);
+  }
+
+  private recordInboundSkip(userId: string, reason: QrInboundSkipReason): QrSessionHealthEvaluation {
+    const nextState = recordQrInboundSkipReason(this.getSessionHealth(userId), reason);
+    return this.updateSessionHealth(userId, nextState, `skip:${reason}`);
+  }
+
+  private clearDegradedSession(userId: string): void {
+    this.degradedSessions.delete(userId);
+  }
+
+  private buildStatusPayload(
+    userId: string,
+    base: {
+      enabled: boolean;
+      status: QrChannelStatus;
+      phoneNumber: string | null;
+      hasQr: boolean;
+      qr: string | null;
+    }
+  ): {
+    enabled: boolean;
+    status: QrChannelStatus;
+    phoneNumber: string | null;
+    hasQr: boolean;
+    qr: string | null;
+    needsRelink: boolean;
+    statusMessage: string | null;
+  } {
+    const degraded = this.degradedSessions.get(userId);
+    if (!degraded) {
+      return {
+        ...base,
+        needsRelink: false,
+        statusMessage: null
+      };
+    }
+
+    return {
+      ...base,
+      status: "degraded",
+      phoneNumber: degraded.phoneNumber ?? base.phoneNumber,
+      hasQr: false,
+      qr: null,
+      needsRelink: true,
+      statusMessage: degraded.message
+    };
+  }
+
+  private async handleDegradedQrSession(userId: string, evaluation: QrSessionHealthEvaluation): Promise<void> {
+    if (!evaluation.reason) {
+      return;
+    }
+    if (this.degradedSessions.has(userId)) {
+      return;
+    }
+
+    const now = Date.now();
+    const state = this.getSessionHealth(userId);
+    if (!canRecoverDegradedQrSession(state, now)) {
+      return;
+    }
+
+    const dbStatus = await getWhatsAppStatus(userId);
+    const runtime = this.sessions.get(userId);
+    const phoneNumber =
+      extractPhoneFromJidCandidate(runtime?.socket.user?.id, 15) ??
+      dbStatus.phoneNumber ??
+      this.degradedSessions.get(userId)?.phoneNumber ??
+      null;
+    const message = getQrSessionDegradedMessage(evaluation.reason);
+
+    console.warn(
+      `[WA] session degraded user=${userId} reason=${evaluation.reason} ${describeQrSessionHealthSummary(
+        evaluation.summary
+      )}`
+    );
+
+    this.sessionHealthByUser.set(userId, markQrSessionRecovered(state, now));
+    this.degradedSessions.set(userId, {
+      reason: evaluation.reason,
+      message,
+      degradedAt: now,
+      recoveryCooldownUntil: now,
+      phoneNumber
+    });
+
+    this.clearReconnectTimer(userId);
+    this.reconnectAttempts.delete(userId);
+
+    if (runtime) {
+      try {
+        (runtime.socket as unknown as { ws?: { close?: () => void } }).ws?.close?.();
+      } catch {
+        // No-op.
+      }
+      this.sessions.delete(userId);
+    }
+
+    this.clearUserQueues(userId);
+    this.clearPhoneAliasMap(userId);
+    this.clearPhoneChatJidMap(userId);
+    this.clearRecentOutboundMessages(userId);
+    clearAuthStateCache(userId);
+    await resetWhatsAppAuthState(userId);
+    await updateWhatsAppStatus(userId, "disconnected");
+
+    realtimeHub.broadcast(
+      userId,
+      "whatsapp.status",
+      this.buildStatusPayload(userId, {
+        enabled: dbStatus.enabled,
+        status: "degraded",
+        phoneNumber,
+        hasQr: false,
+        qr: null
+      })
+    );
+  }
 
   async connectUser(userId: string, options?: { resetAuth?: boolean; force?: boolean }): Promise<void> {
     if (this.activeConnectAttempts.has(userId)) {
       return;
     }
+
+    this.clearDegradedSession(userId);
 
     if (options?.resetAuth) {
       await this.resetUserSession(userId);
@@ -450,9 +708,20 @@ class WhatsAppSessionManager {
     try {
       this.clearReconnectTimer(userId);
       this.reconnectAttempts.delete(userId);
+      this.sessionHealthByUser.set(userId, createQrSessionHealthState());
       const session = await getOrCreateWhatsAppSession(userId);
       await updateWhatsAppStatus(userId, "connecting");
-      realtimeHub.broadcast(userId, "whatsapp.status", { status: "connecting" });
+      realtimeHub.broadcast(
+        userId,
+        "whatsapp.status",
+        this.buildStatusPayload(userId, {
+          enabled: session.enabled,
+          status: "connecting",
+          phoneNumber: null,
+          hasQr: false,
+          qr: null
+        })
+      );
 
       clearAuthStateCache(userId);
       const { state, saveCreds } = await useDbAuthState(userId);
@@ -463,7 +732,18 @@ class WhatsAppSessionManager {
         auth: state,
         printQRInTerminal: false,
         browser: ["WAgen", "Chrome", "1.0.0"],
-        getMessage: async (key) => this.getRecentOutboundMessage(userId, key)
+        getMessage: async (key) => this.getRecentOutboundMessage(userId, key),
+        logger: createBaileysLogger(
+          userId,
+          (remoteJid) => {
+            if (remoteJid && isDirectChatJid(remoteJid)) {
+              this.recordSessionHealthEvent(userId, "decrypt_failure", "decrypt_failure");
+            }
+          },
+          () => {
+            this.recordSessionHealthEvent(userId, "registration_attempt", "registration_attempt");
+          }
+        ) as never
       }) as WASocket;
       const connectionId = ++this.connectionSeq;
 
@@ -503,6 +783,7 @@ class WhatsAppSessionManager {
           runtime.status = "connected";
           runtime.qr = null;
           this.reconnectAttempts.delete(userId);
+          this.recordSessionHealthEvent(userId, "connection_open", "connection_open");
           const phone = socket.user?.id?.split(":")[0] ?? null;
           await updateWhatsAppStatus(userId, "connected", phone ?? undefined);
 
@@ -526,14 +807,31 @@ class WhatsAppSessionManager {
                 this.sessions.delete(duplicateUserId);
               }
 
-              realtimeHub.broadcast(duplicateUserId, "whatsapp.status", { status: "disconnected" });
+              realtimeHub.broadcast(
+                duplicateUserId,
+                "whatsapp.status",
+                this.buildStatusPayload(duplicateUserId, {
+                  enabled: session.enabled,
+                  status: "disconnected",
+                  phoneNumber: null,
+                  hasQr: false,
+                  qr: null
+                })
+              );
             }
           }
 
-          realtimeHub.broadcast(userId, "whatsapp.status", {
-            status: "connected",
-            phoneNumber: phone
-          });
+          realtimeHub.broadcast(
+            userId,
+            "whatsapp.status",
+            this.buildStatusPayload(userId, {
+              enabled: runtime.enabled,
+              status: "connected",
+              phoneNumber: phone,
+              hasQr: false,
+              qr: null
+            })
+          );
         }
 
         if (update.connection === "close") {
@@ -547,8 +845,19 @@ class WhatsAppSessionManager {
           const shouldResetAuth = statusCode === (baileys.DisconnectReason as any).loggedOut || (looksLikeStaleAuth && !hadQr);
 
           runtime.status = "disconnected";
+          const healthEvaluation = this.recordSessionHealthEvent(userId, "connection_close", "connection_close");
           await updateWhatsAppStatus(userId, "disconnected");
-          realtimeHub.broadcast(userId, "whatsapp.status", { status: "disconnected" });
+          realtimeHub.broadcast(
+            userId,
+            "whatsapp.status",
+            this.buildStatusPayload(userId, {
+              enabled: runtime.enabled,
+              status: "disconnected",
+              phoneNumber: null,
+              hasQr: false,
+              qr: null
+            })
+          );
 
           if (shouldResetAuth) {
             await resetWhatsAppAuthState(userId);
@@ -561,7 +870,9 @@ class WhatsAppSessionManager {
           }
 
           const shouldReconnect =
-            env.AUTO_RECONNECT && (statusCode !== (baileys.DisconnectReason as any).loggedOut || shouldResetAuth);
+            !healthEvaluation.degraded &&
+            env.AUTO_RECONNECT &&
+            (statusCode !== (baileys.DisconnectReason as any).loggedOut || shouldResetAuth);
 
           this.sessions.delete(userId);
           this.clearUserQueues(userId);
@@ -612,34 +923,48 @@ class WhatsAppSessionManager {
 
   async getStatus(userId: string): Promise<{
     enabled: boolean;
-    status: string;
+    status: QrChannelStatus;
     phoneNumber: string | null;
     hasQr: boolean;
     qr: string | null;
+    needsRelink: boolean;
+    statusMessage: string | null;
   }> {
     const dbStatus = await getWhatsAppStatus(userId);
     const runtime = this.sessions.get(userId);
+    const degradedStatus = this.degradedSessions.get(userId);
+
+    if (degradedStatus) {
+      return this.buildStatusPayload(userId, {
+        enabled: runtime?.enabled ?? dbStatus.enabled,
+        status: "degraded",
+        phoneNumber: degradedStatus.phoneNumber ?? dbStatus.phoneNumber,
+        hasQr: false,
+        qr: null
+      });
+    }
+
     const shouldRestoreRuntime =
       !runtime && (dbStatus.status === "connected" || dbStatus.status === "connecting");
 
     if (shouldRestoreRuntime) {
       void this.connectUser(userId);
-      return {
+      return this.buildStatusPayload(userId, {
         enabled: dbStatus.enabled,
         status: "connecting",
         phoneNumber: dbStatus.phoneNumber,
         hasQr: false,
         qr: null
-      };
+      });
     }
 
-    return {
+    return this.buildStatusPayload(userId, {
       enabled: runtime?.enabled ?? dbStatus.enabled,
-      status: runtime?.status ?? dbStatus.status,
+      status: (runtime?.status ?? dbStatus.status) as QrChannelStatus,
       phoneNumber: dbStatus.phoneNumber,
       hasQr: Boolean(runtime?.qr),
       qr: runtime?.qr ?? null
-    };
+    });
   }
 
   async setChannelEnabled(userId: string, enabled: boolean): Promise<void> {
@@ -1037,6 +1362,8 @@ class WhatsAppSessionManager {
   private async resetUserSession(userId: string): Promise<void> {
     this.clearReconnectTimer(userId);
     this.reconnectAttempts.delete(userId);
+    this.clearDegradedSession(userId);
+    this.sessionHealthByUser.delete(userId);
 
     const runtime = this.sessions.get(userId);
     if (runtime) {
@@ -1055,7 +1382,17 @@ class WhatsAppSessionManager {
     clearAuthStateCache(userId);
     await resetWhatsAppAuthState(userId);
     await updateWhatsAppStatus(userId, "disconnected");
-    realtimeHub.broadcast(userId, "whatsapp.status", { status: "disconnected" });
+    realtimeHub.broadcast(
+      userId,
+      "whatsapp.status",
+      this.buildStatusPayload(userId, {
+        enabled: runtime?.enabled ?? true,
+        status: "disconnected",
+        phoneNumber: null,
+        hasQr: false,
+        qr: null
+      })
+    );
   }
 
   private clearReconnectTimer(userId: string): void {
@@ -1214,11 +1551,13 @@ class WhatsAppSessionManager {
     }
 
     if (message.key.fromMe) {
+      this.recordInboundSkip(userId, "from_me");
       console.info(`[WA] inbound skipped user=${userId} reason=from_me jid=${remoteJid}`);
       return;
     }
 
     if (!isDirectChatJid(remoteJid)) {
+      this.recordInboundSkip(userId, "non_direct_jid");
       console.info(`[WA] inbound skipped user=${userId} reason=non_direct_jid jid=${remoteJid}`);
       return;
     }
@@ -1242,12 +1581,14 @@ class WhatsAppSessionManager {
     }
 
     if (!text) {
+      this.recordInboundSkip(userId, "no_text");
       console.info(`[WA] inbound skipped user=${userId} reason=no_text jid=${remoteJid}`);
       return;
     }
 
     const phoneNumber = resolveInboundPhoneNumber(message, (candidate) => this.lookupPhoneAlias(userId, candidate));
     if (!phoneNumber) {
+      this.recordInboundSkip(userId, "missing_phone");
       console.info(`[WA] inbound skipped user=${userId} reason=missing_phone jid=${remoteJid}`);
       return;
     }
@@ -1276,11 +1617,13 @@ class WhatsAppSessionManager {
 
     const channelLinkedNumber = runtime ? extractPhoneFromJidCandidate(runtime.socket.user?.id, 15) : null;
     if (channelLinkedNumber && phoneNumber === channelLinkedNumber) {
+      this.recordInboundSkip(userId, "from_me");
       console.info(`[WA] inbound skipped user=${userId} reason=from_own_number phone=${phoneNumber}`);
       return;
     }
 
     const senderName = resolveInboundSenderName(message);
+    this.recordSessionHealthEvent(userId, "direct_inbound_success", "direct_inbound_success");
 
     this.enqueueInboundMessage({
       userId,
