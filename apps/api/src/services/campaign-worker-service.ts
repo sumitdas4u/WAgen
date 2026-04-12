@@ -46,6 +46,16 @@ function sharedJobCleanup(): Pick<JobsOptions, "removeOnComplete" | "removeOnFai
   };
 }
 
+function sharedRetryOptions(): Pick<JobsOptions, "attempts" | "backoff"> {
+  return {
+    attempts: 5,
+    backoff: {
+      type: "exponential",
+      delay: 3000
+    }
+  };
+}
+
 async function loadRunningCampaign(campaignId: string): Promise<Campaign | null> {
   const campaignResult = await pool.query<Campaign>(
     `SELECT * FROM campaigns WHERE id = $1 AND status = 'running' LIMIT 1`,
@@ -86,6 +96,7 @@ async function scheduleCampaignMessageJob(message: CampaignMessage, userId: stri
     },
     {
       jobId: campaignMessageJobId(message.id, message.retry_count),
+      ...sharedRetryOptions(),
       ...sharedJobCleanup()
     }
   );
@@ -105,6 +116,7 @@ export async function enqueueCampaign(campaignId: string, userId: string): Promi
     },
     {
       jobId: campaignDispatchJobId(campaignId),
+      ...sharedRetryOptions(),
       ...sharedJobCleanup()
     }
   );

@@ -5,7 +5,7 @@ APP_DIR="${APP_DIR:-$(pwd)}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 DEPLOY_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-infra/docker-compose.deploy.yml}"
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-infra/.deploy-images.env}"
-DEPLOY_SERVICES="${DEPLOY_SERVICES:-api web}"
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-api web worker}"
 RUN_DB_MIGRATE="${RUN_DB_MIGRATE:-1}"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://localhost:4000/api/health}"
 HEALTHCHECK_ATTEMPTS="${HEALTHCHECK_ATTEMPTS:-30}"
@@ -90,7 +90,7 @@ if [[ "$RUN_DB_MIGRATE" == "1" ]]; then
   docker compose -f "$DEPLOY_COMPOSE_FILE" --env-file "$DEPLOY_ENV_FILE" up -d postgres redis
 fi
 
-docker compose -f "$DEPLOY_COMPOSE_FILE" --env-file "$DEPLOY_ENV_FILE" pull api web
+docker compose -f "$DEPLOY_COMPOSE_FILE" --env-file "$DEPLOY_ENV_FILE" pull api web worker
 
 if [[ "$RUN_DB_MIGRATE" == "1" ]]; then
   docker compose -f "$DEPLOY_COMPOSE_FILE" --env-file "$DEPLOY_ENV_FILE" run --rm api node apps/api/dist/scripts/migrate.js

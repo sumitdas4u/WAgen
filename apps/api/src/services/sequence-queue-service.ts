@@ -63,6 +63,11 @@ export async function enqueueSequenceEnrollment(input: {
   const jobId = sequenceEnrollmentJobId(input.enrollmentId, input.nextRunAt, kind);
   const options: JobsOptions = {
     jobId,
+    attempts: 5,
+    backoff: {
+      type: "exponential",
+      delay: 3000
+    },
     delay: Number.isFinite(delayMs) ? delayMs : 0,
     removeOnComplete: 1000,
     removeOnFail: 5000

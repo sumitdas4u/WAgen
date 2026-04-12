@@ -32,6 +32,11 @@ export async function enqueueMetaDeliveryStatusEvents(payload: unknown): Promise
         { event },
         {
           jobId: deliveryWebhookJobId(event),
+          attempts: 5,
+          backoff: {
+            type: "exponential",
+            delay: 3000
+          },
           removeOnComplete: 5000,
           removeOnFail: 10000
         }

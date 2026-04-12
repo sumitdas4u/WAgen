@@ -335,7 +335,10 @@ export async function deliverCampaignMessage(input: {
   campaign: Campaign;
   message: CampaignMessage;
   senderName: string;
-}): Promise<void> {
+}): Promise<{
+  status: "sent" | "retrying" | "failed";
+  errorMessage?: string | null;
+}> {
   if (!input.campaign.template_id) {
     throw new Error("Campaign has no template selected.");
   }
@@ -409,6 +412,7 @@ export async function deliverCampaignMessage(input: {
       score: conversation.score,
       stage: conversation.stage
     });
+    return { status: "sent" };
   } catch (error) {
     const classification = classifyDeliveryFailure(error);
     const shouldRetry = classification.retryable && input.message.retry_count < MAX_RETRIES;
@@ -450,6 +454,11 @@ export async function deliverCampaignMessage(input: {
         }
       });
     }
+
+    return {
+      status: shouldRetry ? "retrying" : "failed",
+      errorMessage: classification.errorMessage
+    };
   }
 }
 

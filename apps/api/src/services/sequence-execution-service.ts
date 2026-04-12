@@ -356,15 +356,18 @@ export async function processSequenceEnrollmentAndScheduleNext(
 export async function executeSequenceOutboundMessage(input: {
   enrollmentId: string;
   stepIndex: number;
-}): Promise<void> {
+}): Promise<{
+  status: "sent" | "retrying" | "failed" | "noop";
+  errorMessage?: string | null;
+}> {
   const context = await getSequenceEnrollmentForExecution(input.enrollmentId);
   if (!context) {
-    return;
+    return { status: "noop" };
   }
 
   const { enrollment, sequence, steps, contact } = context;
   if (enrollment.current_step !== input.stepIndex) {
-    return;
+    return { status: "noop" };
   }
 
   const now = new Date();
@@ -374,7 +377,7 @@ export async function executeSequenceOutboundMessage(input: {
       status: "completed",
       lastExecutedAt: now.toISOString()
     });
-    return;
+    return { status: "noop" };
   }
 
   try {
@@ -416,6 +419,7 @@ export async function executeSequenceOutboundMessage(input: {
     } else {
       await clearSequenceEnrollmentQueueState(enrollment.id);
     }
+    return { status: "sent" };
   } catch (error) {
     const classification = classifyDeliveryFailure(error);
     const firstRetryStartedAt = enrollment.retry_started_at ? new Date(enrollment.retry_started_at) : now;
@@ -450,7 +454,10 @@ export async function executeSequenceOutboundMessage(input: {
         nextRunAt: nextRetryAt,
         kind: "retry"
       });
-      return;
+      return {
+        status: "retrying",
+        errorMessage: classification.errorMessage
+      };
     }
 
     await updateSequenceEnrollment(enrollment.id, {
@@ -466,5 +473,9 @@ export async function executeSequenceOutboundMessage(input: {
       errorMessage: classification.errorMessage
     });
     await clearSequenceEnrollmentQueueState(enrollment.id);
+    return {
+      status: "failed",
+      errorMessage: classification.errorMessage
+    };
   }
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Job, QueueEvents, Worker, type JobsOptions } from "bullmq";
+import { Job, QueueEvents, UnrecoverableError, Worker, type JobsOptions } from "bullmq";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import {
@@ -146,6 +146,10 @@ function jobOptions(scheduledAt?: string | null): JobsOptions {
     removeOnComplete: 5000,
     removeOnFail: 10000
   };
+}
+
+function hasRemainingAttempts(job: Job<OutboundJobPayload>, maxAttempts = 5): boolean {
+  return job.attemptsMade + 1 < maxAttempts;
 }
 
 function buildOutboundJobKey(channel: string, entityId: string): string {
@@ -340,9 +344,20 @@ async function withGroupingLock<T>(groupingKey: string | null | undefined, run: 
 }
 
 function classifyOutboundError(row: OutboundMessageRow | null, error: unknown): { retryable: boolean; errorMessage: string } {
+  if (error instanceof UnrecoverableError) {
+    return {
+      retryable: false,
+      errorMessage: error.message || "Unrecoverable outbound failure"
+    };
+  }
+
   const message = error instanceof Error ? error.message : String(error ?? "Unknown outbound failure");
   const normalized = message.toLowerCase();
-  if (row?.channel === "qr" && (
+  const isQrExecution = row?.channel === "qr" || (
+    row?.type === "generic_webhook" &&
+    String((row.payload_json as Record<string, unknown> | null)?.channelMode ?? "").toLowerCase() === "qr"
+  );
+  if (isQrExecution && (
     normalized.includes("whatsapp qr session is not connected") ||
     normalized.includes("connection closed") ||
     normalized.includes("logged out")
@@ -609,12 +624,15 @@ async function processCampaignSend(row: OutboundMessageRow): Promise<void> {
   if (!input) {
     throw new Error("Campaign message not found.");
   }
-  await deliverCampaignMessage({
+  const outcome = await deliverCampaignMessage({
     userId: input.userId,
     campaign: input.campaign,
     message: input.message,
     senderName: input.senderName
   });
+  if (outcome.status !== "sent") {
+    throw new UnrecoverableError(outcome.errorMessage ?? "Campaign delivery did not complete.");
+  }
   await updateOutboundMessageState({
     id: row.id,
     status: "completed",
@@ -626,10 +644,13 @@ async function processSequenceSend(row: OutboundMessageRow): Promise<void> {
   if (!row.sequence_enrollment_id || row.sequence_step_index == null) {
     throw new Error("Sequence outbound message is missing enrollment context.");
   }
-  await executeSequenceOutboundMessage({
+  const outcome = await executeSequenceOutboundMessage({
     enrollmentId: row.sequence_enrollment_id,
     stepIndex: row.sequence_step_index
   });
+  if (outcome.status === "retrying" || outcome.status === "failed") {
+    throw new UnrecoverableError(outcome.errorMessage ?? "Sequence delivery did not complete.");
+  }
   await updateOutboundMessageState({
     id: row.id,
     status: "completed",
@@ -912,17 +933,19 @@ export function startOutboundWorker(): void {
           await executeOutboundJob(job);
         } catch (error) {
           const classified = classifyOutboundError(row, error);
+          const shouldRetry = classified.retryable && hasRemainingAttempts(job);
           if (row) {
             await updateOutboundMessageState({
               id: row.id,
-              status: classified.retryable && job.attemptsMade + 1 < 5 ? "queued" : "failed",
+              status: shouldRetry ? "queued" : "failed",
               errorMessage: classified.errorMessage,
               attemptCount: job.attemptsMade + 1
             });
           }
-          if (classified.retryable && job.attemptsMade + 1 < 5) {
+          if (shouldRetry) {
             throw error;
           }
+          throw new UnrecoverableError(classified.errorMessage);
         }
       },
       {
@@ -983,17 +1006,19 @@ export function startQrOutboundWorker(): void {
           await executeOutboundJob(job);
         } catch (error) {
           const classified = classifyOutboundError(row, error);
+          const shouldRetry = classified.retryable && hasRemainingAttempts(job);
           if (row) {
             await updateOutboundMessageState({
               id: row.id,
-              status: classified.retryable && job.attemptsMade + 1 < 5 ? "queued" : "failed",
+              status: shouldRetry ? "queued" : "failed",
               errorMessage: classified.errorMessage,
               attemptCount: job.attemptsMade + 1
             });
           }
-          if (classified.retryable && job.attemptsMade + 1 < 5) {
+          if (shouldRetry) {
             throw error;
           }
+          throw new UnrecoverableError(classified.errorMessage);
         }
       },
       {
