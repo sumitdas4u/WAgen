@@ -32,11 +32,11 @@ let dispatchWorker: Worker<CampaignDispatchJob> | null = null;
 let sendWorker: Worker<CampaignMessageSendJob> | null = null;
 
 function campaignDispatchJobId(campaignId: string): string {
-  return `campaign:${campaignId}`;
+  return `campaign-${campaignId}`;
 }
 
 function campaignMessageJobId(messageId: string, retryCount: number): string {
-  return `campaign-message:${messageId}:attempt:${retryCount}`;
+  return `campaign-message-${messageId}-attempt-${retryCount}`;
 }
 
 function sharedJobCleanup(): Pick<JobsOptions, "removeOnComplete" | "removeOnFail"> {

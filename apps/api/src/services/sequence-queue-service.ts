@@ -18,8 +18,8 @@ function sequenceEnrollmentJobId(
 ): string {
   const runAtMs = Number.isFinite(Date.parse(nextRunAt)) ? Date.parse(nextRunAt) : nextRunAt;
   return kind === "retry"
-    ? `sequence-enrollment-retry:${enrollmentId}:${runAtMs}`
-    : `sequence-enrollment:${enrollmentId}:${runAtMs}`;
+    ? `sequence-enrollment-retry-${enrollmentId}-${runAtMs}`
+    : `sequence-enrollment-${enrollmentId}-${runAtMs}`;
 }
 
 export function getSequenceEnrollmentQueueName(

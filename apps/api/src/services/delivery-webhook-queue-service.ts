@@ -14,7 +14,9 @@ interface DeliveryWebhookJob {
 let worker: Worker<DeliveryWebhookJob> | null = null;
 
 function deliveryWebhookJobId(event: MetaDeliveryStatusEvent): string {
-  return `delivery-webhook:${event.wamid}:${event.status}:${event.eventTimestamp ?? "none"}:${event.errorCode ?? "none"}`;
+  const timestamp = (event.eventTimestamp ?? "none").replace(/[:.]/g, "-");
+  const errorCode = (event.errorCode ?? "none").replace(/:/g, "-");
+  return `delivery-webhook-${event.wamid}-${event.status}-${timestamp}-${errorCode}`;
 }
 
 export async function enqueueMetaDeliveryStatusEvents(payload: unknown): Promise<void> {

@@ -153,7 +153,7 @@ function hasRemainingAttempts(job: Job<OutboundJobPayload>, maxAttempts = 5): bo
 }
 
 function buildOutboundJobKey(channel: string, entityId: string): string {
-  return `outbound:${channel}:${entityId}`;
+  return `outbound-${channel}-${entityId}`;
 }
 
 function buildConversationJobPayload(type: "conversation_api" | "conversation_qr" | "conversation_web" | "template_api", messageId: string): OutboundJobPayload {
