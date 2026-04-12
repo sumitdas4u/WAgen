@@ -921,7 +921,7 @@ class WhatsAppSessionManager {
     }
   }
 
-  async getStatus(userId: string): Promise<{
+  async getStatus(userId: string, options?: { restoreRuntime?: boolean }): Promise<{
     enabled: boolean;
     status: QrChannelStatus;
     phoneNumber: string | null;
@@ -945,6 +945,7 @@ class WhatsAppSessionManager {
     }
 
     const shouldRestoreRuntime =
+      options?.restoreRuntime !== false &&
       !runtime && (dbStatus.status === "connected" || dbStatus.status === "connecting");
 
     if (shouldRestoreRuntime) {

@@ -6,7 +6,7 @@ import { renewDueWorkspaceCredits } from "./services/workspace-billing-service.j
 import { runAutoRechargeSweep } from "./services/workspace-billing-center-service.js";
 import { startCampaignWorker, stopCampaignWorker } from "./services/campaign-worker-service.js";
 import { startDeliveryWebhookWorker, stopDeliveryWebhookWorker } from "./services/delivery-webhook-queue-service.js";
-import { startOutboundWorker, stopOutboundWorker } from "./services/outbound-message-service.js";
+import { startOutboundWorker, startQrOutboundWorker, stopOutboundWorker } from "./services/outbound-message-service.js";
 import { closeQueueInfrastructure } from "./services/queue-service.js";
 import { startSequenceWorker, stopSequenceWorker } from "./services/sequence-worker-service.js";
 
@@ -60,6 +60,8 @@ if (env.API_WORKERS_ENABLED) {
   startOutboundWorker();
   startSequenceWorker();
 }
+
+startQrOutboundWorker();
 
 const close = async () => {
   await stopCampaignWorker();

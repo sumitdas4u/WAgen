@@ -12,6 +12,7 @@ import { realtimeHub } from "./realtime-hub.js";
 import {
   createQueueWorkerConnection,
   getOutboundExecutionQueue,
+  getOutboundQrExecutionQueue,
   getQueueRedisConnection
 } from "./queue-service.js";
 import { sendWidgetConversationMessage } from "./widget-chat-gateway-service.js";
@@ -124,8 +125,14 @@ interface CampaignExecutionRow {
 }
 
 let worker: Worker<OutboundJobPayload> | null = null;
+let qrWorker: Worker<OutboundJobPayload> | null = null;
 let queueEvents: QueueEvents | null = null;
+let qrQueueEvents: QueueEvents | null = null;
 let reconciliationTimer: ReturnType<typeof setInterval> | null = null;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function jobOptions(scheduledAt?: string | null): JobsOptions {
   const delayMs = scheduledAt ? Math.max(0, Date.parse(scheduledAt) - Date.now()) : 0;
@@ -295,7 +302,10 @@ async function updateOutboundMessageState(input: {
 }
 
 async function enqueueOutboundJob(payload: OutboundJobPayload, jobKey: string, scheduledAt?: string | null): Promise<void> {
-  const queue = getOutboundExecutionQueue();
+  const queue =
+    payload.type === "conversation_qr"
+      ? getOutboundQrExecutionQueue()
+      : getOutboundExecutionQueue();
   if (!queue) {
     throw new Error("Outbound execution queue is unavailable because REDIS_URL is not configured.");
   }
@@ -452,6 +462,26 @@ async function broadcastConversationUpdate(conversationId: string, summaryText: 
   });
 }
 
+async function ensureQrSessionReady(userId: string): Promise<void> {
+  const maxAttempts = 5;
+  const waitMs = 2_000;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const status = await whatsappSessionManager.getStatus(userId);
+    if (status.status === "connected") {
+      return;
+    }
+    if (status.status === "disconnected" || status.status === "degraded") {
+      throw new Error(status.statusMessage?.trim() || "WhatsApp QR session is not connected.");
+    }
+    if (attempt < maxAttempts - 1) {
+      await sleep(waitMs);
+    }
+  }
+
+  throw new Error("WhatsApp QR session connection timed out.");
+}
+
 async function processConversationApi(row: OutboundMessageRow): Promise<void> {
   const conversation = await getConversationById(row.conversation_id ?? "");
   if (!conversation || conversation.user_id !== row.user_id) {
@@ -490,6 +520,7 @@ async function processConversationQr(row: OutboundMessageRow): Promise<void> {
 
   const payload = validateFlowMessagePayload(row.payload_json as FlowMessagePayload);
   const summaryText = row.display_text?.trim() || summarizeFlowMessage(payload);
+  await ensureQrSessionReady(row.user_id);
   await whatsappSessionManager.sendFlowMessage({
     userId: row.user_id,
     phoneNumber: conversation.phone_number,
@@ -678,7 +709,8 @@ async function executeOutboundJob(job: Job<OutboundJobPayload>): Promise<void> {
 
 async function reconcileOutboundQueue(limit = 100): Promise<void> {
   const queue = getOutboundExecutionQueue();
-  if (!queue) {
+  const qrQueue = getOutboundQrExecutionQueue();
+  if (!queue || !qrQueue) {
     return;
   }
 
@@ -702,7 +734,8 @@ async function reconcileOutboundQueue(limit = 100): Promise<void> {
   );
 
   for (const row of result.rows) {
-    const existing = await queue.getJob(row.job_key);
+    const targetQueue = row.type === "conversation_qr" ? qrQueue : queue;
+    const existing = await targetQueue.getJob(row.job_key);
     if (existing) {
       continue;
     }
@@ -930,6 +963,77 @@ export function startOutboundWorker(): void {
   void reconcileOutboundQueue();
 }
 
+export function startQrOutboundWorker(): void {
+  if (!env.REDIS_URL) {
+    console.warn("[QrOutboundWorker] REDIS_URL is not configured; BullMQ QR outbound worker is disabled");
+    return;
+  }
+
+  if (!qrWorker) {
+    const connection = createQueueWorkerConnection();
+    if (!connection) {
+      throw new Error("Failed to create BullMQ connection for QR outbound worker.");
+    }
+
+    qrWorker = new Worker<OutboundJobPayload>(
+      "outbound-qr-execution",
+      async (job) => {
+        const row = await resolveOutboundRow(job.data);
+        try {
+          await executeOutboundJob(job);
+        } catch (error) {
+          const classified = classifyOutboundError(row, error);
+          if (row) {
+            await updateOutboundMessageState({
+              id: row.id,
+              status: classified.retryable && job.attemptsMade + 1 < 5 ? "queued" : "failed",
+              errorMessage: classified.errorMessage,
+              attemptCount: job.attemptsMade + 1
+            });
+          }
+          if (classified.retryable && job.attemptsMade + 1 < 5) {
+            throw error;
+          }
+        }
+      },
+      {
+        connection,
+        prefix: env.QUEUE_PREFIX?.trim() || undefined,
+        concurrency: Math.max(1, env.OUTBOUND_QUEUE_CONCURRENCY)
+      }
+    );
+
+    qrWorker.on("failed", (job, error) => {
+      console.error(`[QrOutboundWorker] job failed id=${job?.id ?? "unknown"}`, error);
+    });
+  }
+
+  if (!qrQueueEvents) {
+    const connection = createQueueWorkerConnection();
+    if (!connection) {
+      throw new Error("Failed to create BullMQ connection for QR outbound queue events.");
+    }
+    qrQueueEvents = new QueueEvents("outbound-qr-execution", {
+      connection,
+      prefix: env.QUEUE_PREFIX?.trim() || undefined
+    });
+    qrQueueEvents.on("completed", ({ jobId }) => {
+      console.info(`[QrOutboundWorker] completed job=${jobId}`);
+    });
+    qrQueueEvents.on("failed", ({ jobId, failedReason }) => {
+      console.error(`[QrOutboundWorker] failed job=${jobId} reason=${failedReason}`);
+    });
+  }
+
+  if (!reconciliationTimer) {
+    reconciliationTimer = setInterval(() => {
+      void reconcileOutboundQueue();
+    }, 60_000);
+  }
+
+  void reconcileOutboundQueue();
+}
+
 export async function stopOutboundWorker(): Promise<void> {
   if (reconciliationTimer) {
     clearInterval(reconciliationTimer);
@@ -942,9 +1046,21 @@ export async function stopOutboundWorker(): Promise<void> {
     await activeQueueEvents.close();
   }
 
+  if (qrQueueEvents) {
+    const activeQrQueueEvents = qrQueueEvents;
+    qrQueueEvents = null;
+    await activeQrQueueEvents.close();
+  }
+
   if (worker) {
     const activeWorker = worker;
     worker = null;
     await activeWorker.close();
+  }
+
+  if (qrWorker) {
+    const activeQrWorker = qrWorker;
+    qrWorker = null;
+    await activeQrWorker.close();
   }
 }

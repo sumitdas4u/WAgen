@@ -864,7 +864,7 @@ async function executePreparedGenericWebhookExecution(input: PreparedGenericWebh
     throw new Error("QR flow action is missing.");
   }
 
-  const qrStatus = await whatsappSessionManager.getStatus(input.userId);
+  const qrStatus = await whatsappSessionManager.getStatus(input.userId, { restoreRuntime: false });
   const linkedNumber = normalizePhoneNumber(qrStatus.phoneNumber);
   if (qrStatus.status !== "connected" || !linkedNumber) {
     throw new Error("WhatsApp QR session is not connected.");
