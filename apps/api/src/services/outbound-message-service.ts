@@ -152,8 +152,12 @@ function hasRemainingAttempts(job: Job<OutboundJobPayload>, maxAttempts = 5): bo
   return job.attemptsMade + 1 < maxAttempts;
 }
 
+function toBullMqSafeJobId(value: string): string {
+  return value.replace(/:/g, "-");
+}
+
 function buildOutboundJobKey(channel: string, entityId: string): string {
-  return `outbound-${channel}-${entityId}`;
+  return toBullMqSafeJobId(`outbound-${channel}-${entityId}`);
 }
 
 function buildConversationJobPayload(type: "conversation_api" | "conversation_qr" | "conversation_web" | "template_api", messageId: string): OutboundJobPayload {
@@ -315,7 +319,7 @@ async function enqueueOutboundJob(payload: OutboundJobPayload, jobKey: string, s
   }
 
   await queue.add("execute-outbound", payload, {
-    jobId: jobKey,
+    jobId: toBullMqSafeJobId(jobKey),
     ...jobOptions(scheduledAt)
   });
 }
@@ -756,7 +760,8 @@ async function reconcileOutboundQueue(limit = 100): Promise<void> {
 
   for (const row of result.rows) {
     const targetQueue = row.type === "conversation_qr" ? qrQueue : queue;
-    const existing = await targetQueue.getJob(row.job_key);
+    const normalizedJobKey = toBullMqSafeJobId(row.job_key);
+    const existing = await targetQueue.getJob(normalizedJobKey);
     if (existing) {
       continue;
     }
@@ -770,7 +775,7 @@ async function reconcileOutboundQueue(limit = 100): Promise<void> {
             ? { type: "generic_webhook", logId: row.generic_webhook_log_id }
             : buildConversationJobPayload(row.type as "conversation_api" | "conversation_qr" | "conversation_web" | "template_api", row.id);
 
-    await enqueueOutboundJob(payload, row.job_key, row.scheduled_at);
+    await enqueueOutboundJob(payload, normalizedJobKey, row.scheduled_at);
   }
 }
 
