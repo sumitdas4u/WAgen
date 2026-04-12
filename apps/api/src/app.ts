@@ -35,6 +35,7 @@ import { genericWebhookRoutes } from "./routes/generic-webhooks.js";
 import { sequenceRoutes } from "./routes/sequences.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerQueueDashboard } from "./services/queue-dashboard-service.js";
+import { registerQueueOperations } from "./services/queue-operations-service.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
 
 declare module "fastify" {
@@ -187,6 +188,7 @@ export async function buildApp() {
   await authRoutes(app);
   await adminRoutes(app);
   await registerQueueDashboard(app);
+  await registerQueueOperations(app);
   await onboardingRoutes(app);
   await knowledgeRoutes(app);
   await whatsappRoutes(app);

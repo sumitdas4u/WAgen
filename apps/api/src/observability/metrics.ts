@@ -11,23 +11,7 @@ export interface MetricsOptions {
 
 export function registerMetrics(app: FastifyInstance, options: MetricsOptions) {
   const vitalsEndpoint = options.vitalsEndpoint ?? "/api/observability/vitals";
-  if (!options.enabled) {
-    // Keep the endpoint available so browsers can report vitals without generating noisy 404s.
-    app.post(vitalsEndpoint, async () => ({ ok: true }));
-    return;
-  }
-
   const register = new client.Registry();
-
-  if (options.defaultLabels) {
-    register.setDefaultLabels(options.defaultLabels);
-  }
-
-  client.collectDefaultMetrics({
-    register,
-    prefix: options.prefix ?? ""
-  });
-
   const httpRequestDuration = new client.Histogram({
     name: `${options.prefix ?? ""}http_request_duration_seconds`,
     help: "HTTP request duration in seconds",
@@ -51,7 +35,28 @@ export function registerMetrics(app: FastifyInstance, options: MetricsOptions) {
     registers: [register]
   });
 
-  app.decorate("metrics", { register, httpRequestDuration, httpRequestsTotal, webVitals });
+  app.decorate("metrics", {
+    enabled: options.enabled,
+    register,
+    httpRequestDuration,
+    httpRequestsTotal,
+    webVitals
+  });
+
+  if (!options.enabled) {
+    // Keep the endpoint available so browsers can report vitals without generating noisy 404s.
+    app.post(vitalsEndpoint, async () => ({ ok: true }));
+    return;
+  }
+
+  if (options.defaultLabels) {
+    register.setDefaultLabels(options.defaultLabels);
+  }
+
+  client.collectDefaultMetrics({
+    register,
+    prefix: options.prefix ?? ""
+  });
 
   app.addHook("onRequest", async (request) => {
     (request as FastifyRequest & { _startHr?: bigint })._startHr = process.hrtime.bigint();
@@ -126,6 +131,7 @@ export function registerMetrics(app: FastifyInstance, options: MetricsOptions) {
 declare module "fastify" {
   interface FastifyInstance {
     metrics: {
+      enabled: boolean;
       register: client.Registry;
       httpRequestDuration: client.Histogram<"method" | "route" | "status_code">;
       httpRequestsTotal: client.Counter<"method" | "route" | "status_code">;
@@ -133,4 +139,3 @@ declare module "fastify" {
     };
   }
 }
-

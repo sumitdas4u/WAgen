@@ -10,7 +10,7 @@ export const managedQueueNames = [
   "delivery-webhook-process"
 ] as const;
 
-type ManagedQueueName = (typeof managedQueueNames)[number];
+export type ManagedQueueName = (typeof managedQueueNames)[number];
 
 let redisConnection: Redis | null = null;
 let managedQueues: Queue[] | null = null;
@@ -84,6 +84,10 @@ export function getCampaignMessageQueue(): Queue | null {
 
 export function getSequenceEnrollmentRunQueue(): Queue | null {
   return getManagedQueue("sequence-enrollment-run");
+}
+
+export function getSequenceEnrollmentRetryQueue(): Queue | null {
+  return getManagedQueue("sequence-enrollment-retry");
 }
 
 export function getDeliveryWebhookQueue(): Queue | null {

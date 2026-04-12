@@ -72,6 +72,10 @@ export interface SequenceEnrollment {
   last_delivery_status: string | null;
   retry_count: number;
   retry_started_at: string | null;
+  last_enqueued_at: string | null;
+  last_enqueued_for_run_at: string | null;
+  last_enqueued_queue: string | null;
+  last_enqueued_job_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -724,6 +728,37 @@ export async function updateSequenceEnrollment(
   );
 }
 
+export async function recordSequenceEnrollmentQueueState(input: {
+  enrollmentId: string;
+  nextRunAt: string;
+  queueName: string;
+  jobId: string;
+}): Promise<void> {
+  await pool.query(
+    `UPDATE sequence_enrollments
+     SET last_enqueued_at = NOW(),
+         last_enqueued_for_run_at = $2,
+         last_enqueued_queue = $3,
+         last_enqueued_job_id = $4,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [input.enrollmentId, input.nextRunAt, input.queueName, input.jobId]
+  );
+}
+
+export async function clearSequenceEnrollmentQueueState(enrollmentId: string): Promise<void> {
+  await pool.query(
+    `UPDATE sequence_enrollments
+     SET last_enqueued_at = NULL,
+         last_enqueued_for_run_at = NULL,
+         last_enqueued_queue = NULL,
+         last_enqueued_job_id = NULL,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [enrollmentId]
+  );
+}
+
 export async function listDueSequenceEnrollmentIds(limit = 50): Promise<string[]> {
   return withTransaction(async (client) => {
     const result = await client.query<{ id: string }>(
@@ -738,6 +773,19 @@ export async function listDueSequenceEnrollmentIds(limit = 50): Promise<string[]
     );
     return result.rows.map((row) => row.id);
   });
+}
+
+export async function listDueSequenceEnrollmentsForQueueAudit(limit = 250): Promise<SequenceEnrollment[]> {
+  const result = await pool.query<SequenceEnrollment>(
+    `SELECT *
+     FROM sequence_enrollments
+     WHERE status = 'active'
+       AND next_run_at <= NOW()
+     ORDER BY next_run_at ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
 }
 
 export async function getSequenceEnrollmentForExecution(enrollmentId: string): Promise<{

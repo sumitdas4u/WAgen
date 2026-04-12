@@ -5,13 +5,18 @@ import { realtimeHub } from "./realtime-hub.js";
 import { evaluateSequenceConditions } from "./sequence-condition-service.js";
 import { appendSequenceLog } from "./sequence-log-service.js";
 import {
+  clearSequenceEnrollmentQueueState,
   getSequenceEnrollment,
   getSequenceEnrollmentForExecution,
   listDueSequenceEnrollmentIds,
   updateSequenceEnrollment,
   type SequenceDelayUnit
 } from "./sequence-service.js";
-import { enqueueSequenceEnrollmentRun } from "./sequence-queue-service.js";
+import {
+  enqueueSequenceEnrollment,
+  resolveSequenceEnrollmentQueueKind,
+  type SequenceEnrollmentQueueKind
+} from "./sequence-queue-service.js";
 import { dispatchTemplateMessage } from "./template-service.js";
 
 const MAX_MESSAGES_PER_CONTACT_PER_DAY = 20;
@@ -213,11 +218,26 @@ function resolveSequenceStepVariables(
 }
 
 export async function processSequenceEnrollment(enrollmentId: string): Promise<void> {
+  await processSequenceEnrollmentInternal(enrollmentId);
+}
+
+interface SequenceProcessingOutcome {
+  shouldSchedule: boolean;
+  queueKind: SequenceEnrollmentQueueKind | null;
+}
+
+async function processSequenceEnrollmentInternal(
+  enrollmentId: string
+): Promise<SequenceProcessingOutcome> {
   const context = await getSequenceEnrollmentForExecution(enrollmentId);
-  if (!context) return;
+  if (!context) {
+    return { shouldSchedule: false, queueKind: null };
+  }
 
   const { enrollment, sequence, steps, conditions, contact } = context;
-  if (sequence.status !== "published") return;
+  if (sequence.status !== "published") {
+    return { shouldSchedule: false, queueKind: null };
+  }
 
   // Only evaluate stop conditions after at least one step has been executed.
   // On first run last_executed_at is null, so skipping avoids stopping contacts
@@ -239,7 +259,7 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
         status: "stopped",
         meta: { reason: "stop_condition_matched" }
       });
-      return;
+      return { shouldSchedule: false, queueKind: null };
     }
   }
 
@@ -250,7 +270,7 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
     await updateSequenceEnrollment(enrollment.id, {
       nextRunAt: nextWindowTime(now, sequence.allowed_days_json, sequence.time_window_start).toISOString()
     });
-    return;
+    return { shouldSchedule: true, queueKind: "run" };
   }
 
   const step = steps[enrollment.current_step];
@@ -259,7 +279,7 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
       status: "completed",
       lastExecutedAt: now.toISOString()
     });
-    return;
+    return { shouldSchedule: false, queueKind: null };
   }
 
   if (
@@ -271,7 +291,7 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
     await updateSequenceEnrollment(enrollment.id, {
       nextRunAt: new Date(Date.now() + 60_000).toISOString()
     });
-    return;
+    return { shouldSchedule: true, queueKind: "run" };
   }
 
   const safetyError = await passesSafetyChecks(contact.user_id, contact.phone_number);
@@ -286,7 +306,7 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
       status: "skipped",
       errorMessage: safetyError
     });
-    return;
+    return { shouldSchedule: true, queueKind: "run" };
   }
 
   try {
@@ -338,6 +358,10 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
       responseId: sent.messageId,
       meta: { templateName: sent.template.name, nextStep: nextStepIndex }
     });
+    return {
+      shouldSchedule: Boolean(nextStep),
+      queueKind: nextStep ? "run" : null
+    };
   } catch (error) {
     const classification = classifyDeliveryFailure(error);
     const firstRetryStartedAt = enrollment.retry_started_at ? new Date(enrollment.retry_started_at) : now;
@@ -366,7 +390,7 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
         errorMessage: classification.errorMessage,
         meta: { retryCount: enrollment.retry_count + 1 }
       });
-      return;
+      return { shouldSchedule: true, queueKind: "retry" };
     }
 
     await updateSequenceEnrollment(enrollment.id, {
@@ -381,6 +405,7 @@ export async function processSequenceEnrollment(enrollmentId: string): Promise<v
       status: "failed",
       errorMessage: classification.errorMessage
     });
+    return { shouldSchedule: false, queueKind: null };
   }
 }
 
@@ -392,16 +417,26 @@ export async function processDueSequenceEnrollments(batchSize = 20): Promise<num
   return ids.length;
 }
 
-export async function processSequenceEnrollmentAndScheduleNext(enrollmentId: string): Promise<void> {
-  await processSequenceEnrollment(enrollmentId);
-
-  const enrollment = await getSequenceEnrollment(enrollmentId);
-  if (!enrollment || enrollment.status !== "active" || !enrollment.next_run_at) {
-    return;
+export async function processSequenceEnrollmentAndScheduleNext(
+  enrollmentId: string
+): Promise<SequenceProcessingOutcome> {
+  const outcome = await processSequenceEnrollmentInternal(enrollmentId);
+  if (!outcome.shouldSchedule || !outcome.queueKind) {
+    await clearSequenceEnrollmentQueueState(enrollmentId);
+    return outcome;
   }
 
-  await enqueueSequenceEnrollmentRun({
-    enrollmentId: enrollment.id,
-    nextRunAt: enrollment.next_run_at
+  const refreshed = await getSequenceEnrollment(enrollmentId);
+  if (!refreshed || refreshed.status !== "active" || !refreshed.next_run_at) {
+    await clearSequenceEnrollmentQueueState(enrollmentId);
+    return { shouldSchedule: false, queueKind: null };
+  }
+
+  const queueKind = outcome.queueKind ?? resolveSequenceEnrollmentQueueKind(refreshed);
+  await enqueueSequenceEnrollment({
+    enrollmentId: refreshed.id,
+    nextRunAt: refreshed.next_run_at,
+    kind: queueKind
   });
+  return { shouldSchedule: true, queueKind };
 }
