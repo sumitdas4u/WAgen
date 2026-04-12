@@ -1,8 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { adminLogin } from "../lib/api";
-
-const ADMIN_TOKEN_KEY = "super_admin_token";
+import { setSuperAdminToken } from "../lib/super-admin-auth";
 
 export function SuperAdminLoginPage() {
   const navigate = useNavigate();
@@ -17,7 +16,7 @@ export function SuperAdminLoginPage() {
     setError(null);
     try {
       const response = await adminLogin({ email, password });
-      localStorage.setItem(ADMIN_TOKEN_KEY, response.token);
+      setSuperAdminToken(response.token);
       navigate("/super-admin", { replace: true });
     } catch (loginError) {
       setError((loginError as Error).message);

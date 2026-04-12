@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../config/env.js";
+import { enqueueMetaDeliveryStatusEvents } from "../services/delivery-webhook-queue-service.js";
 import {
   completeMetaEmbeddedSignup,
   disconnectMetaBusinessConnection,
@@ -14,7 +15,6 @@ import {
   uploadMetaBusinessProfileLogo,
   verifyMetaWebhookSignature
 } from "../services/meta-whatsapp-service.js";
-import { processMetaDeliveryStatuses } from "../services/message-delivery-service.js";
 import { applyTemplateWebhookUpdate } from "../services/template-service.js";
 import { readFile } from "node:fs/promises";
 
@@ -313,7 +313,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     await handleMetaWebhookPayload(payload);
-    await processMetaDeliveryStatuses(payload);
+    await enqueueMetaDeliveryStatusEvents(payload);
 
     // Handle template status update events
     const parsed = payload as { entry?: Array<{ changes?: Array<{ field?: string; value?: unknown }> }> };

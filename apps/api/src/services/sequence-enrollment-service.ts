@@ -1,5 +1,6 @@
 import { pool } from "../db/pool.js";
 import { appendSequenceLog } from "./sequence-log-service.js";
+import { enqueueSequenceEnrollmentRun } from "./sequence-queue-service.js";
 import { createSequenceEnrollment, type Sequence, type SequenceStep } from "./sequence-service.js";
 
 export async function maybeCreateSequenceEnrollment(
@@ -37,6 +38,10 @@ export async function maybeCreateSequenceEnrollment(
     sequenceId: sequence.id,
     status: "pending",
     meta: { reason: "enrolled" }
+  });
+  await enqueueSequenceEnrollmentRun({
+    enrollmentId: enrollment.id,
+    nextRunAt: enrollment.next_run_at
   });
   return true;
 }

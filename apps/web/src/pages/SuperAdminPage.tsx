@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  API_URL,
   adjustAdminWorkspaceCredits,
   fetchAdminUserUsage,
   fetchAdminPlans,
@@ -20,8 +21,7 @@ import {
   type WorkspacePlanSummary,
   type UsageAnalyticsResponse
 } from "../lib/api";
-
-const ADMIN_TOKEN_KEY = "super_admin_token";
+import { clearSuperAdminToken, getStoredSuperAdminToken } from "../lib/super-admin-auth";
 
 export function SuperAdminPage() {
   const navigate = useNavigate();
@@ -43,7 +43,7 @@ export function SuperAdminPage() {
   const [planCreditDrafts, setPlanCreditDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const stored = localStorage.getItem(ADMIN_TOKEN_KEY);
+    const stored = getStoredSuperAdminToken();
     if (!stored) {
       navigate("/super-admin/login", { replace: true });
       return;
@@ -82,7 +82,7 @@ export function SuperAdminPage() {
       );
     } catch (loadError) {
       setError((loadError as Error).message);
-      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      clearSuperAdminToken();
       navigate("/super-admin/login", { replace: true });
     } finally {
       setLoading(false);
@@ -230,11 +230,14 @@ export function SuperAdminPage() {
       <header className="dashboard-header">
         <h1>Super Admin</h1>
         <div className="header-actions">
+          <a className="ghost-btn" href={`${API_URL}/api/admin/queues`} target="_blank" rel="noreferrer">
+            Queue Dashboard
+          </a>
           <button className="ghost-btn" onClick={() => void load()} disabled={loading}>Refresh</button>
           <button
             className="ghost-btn"
             onClick={() => {
-              localStorage.removeItem(ADMIN_TOKEN_KEY);
+              clearSuperAdminToken();
               navigate("/super-admin/login", { replace: true });
             }}
           >

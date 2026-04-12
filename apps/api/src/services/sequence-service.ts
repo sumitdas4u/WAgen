@@ -635,6 +635,14 @@ export async function listSequenceEnrollments(
   return result.rows;
 }
 
+export async function getSequenceEnrollment(enrollmentId: string): Promise<SequenceEnrollment | null> {
+  const result = await pool.query<SequenceEnrollment>(
+    `SELECT * FROM sequence_enrollments WHERE id = $1 LIMIT 1`,
+    [enrollmentId]
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function createSequenceEnrollment(
   sequenceId: string,
   contactId: string,
@@ -753,11 +761,7 @@ export async function getSequenceEnrollmentForExecution(enrollmentId: string): P
     custom_fields: Record<string, string | null>;
   };
 } | null> {
-  const enrollmentResult = await pool.query<SequenceEnrollment>(
-    `SELECT * FROM sequence_enrollments WHERE id = $1 LIMIT 1`,
-    [enrollmentId]
-  );
-  const enrollment = enrollmentResult.rows[0];
+  const enrollment = await getSequenceEnrollment(enrollmentId);
   if (!enrollment) {
     return null;
   }

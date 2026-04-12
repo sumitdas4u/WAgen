@@ -29,6 +29,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      API_WORKERS_ENABLED: "false"
       APP_BASE_URL: ${APP_BASE_URL:-https://wagenai.com}
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/typo
       REDIS_URL: redis://redis:6379
@@ -58,6 +59,46 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
+    develop:
+      watch:
+        - action: rebuild
+          path: ../apps/api
+          ignore:
+            - node_modules/
+            - dist/
+            - .env
+        - action: rebuild
+          path: ../apps/api/package.json
+        - action: rebuild
+          path: ../package-lock.json
+        - action: rebuild
+          path: ../package.json
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "apps/api/dist/worker.js"]
+    env_file:
+      - ../apps/api/.env
+    environment:
+      NODE_ENV: production
+      API_WORKERS_ENABLED: "true"
+      APP_BASE_URL: ${APP_BASE_URL:-https://wagenai.com}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/typo
+      REDIS_URL: redis://redis:6379
+      METRICS_ENABLED: "false"
+      PG_POOL_MAX: 20
+      PG_POOL_IDLE_TIMEOUT_MS: 30000
+      PG_POOL_CONNECTION_TIMEOUT_MS: 5000
+      GOOGLE_SHEETS_OAUTH_REDIRECT_URI: ${GOOGLE_SHEETS_OAUTH_REDIRECT_URI:-https://wagenai.com/api/google/sheets/connect/callback}
+      GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: ${GOOGLE_CALENDAR_OAUTH_REDIRECT_URI:-https://wagenai.com/api/google/calendar/connect/callback}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
     develop:
       watch:
         - action: rebuild

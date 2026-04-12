@@ -29,6 +29,7 @@ import {
 } from "./message-delivery-data-service.js";
 import { sendMetaFlowMessageDirect } from "./meta-whatsapp-service.js";
 import type { FlowMessagePayload } from "./outbound-message-types.js";
+import { getQueueRedisConnection } from "./queue-service.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { dispatchTemplateMessage, getMessageTemplate } from "./template-service.js";
 
@@ -60,13 +61,39 @@ async function waitForRateLimit(input: {
   phoneNumberId?: string | null;
 }): Promise<void> {
   const key = buildRateLimitKey(input);
-  const minDelayMs = Math.ceil(1000 / Math.max(1, env.DELIVERY_RATE_LIMIT_PER_SECOND));
-  const now = Date.now();
-  const nextAllowedAt = rateLimitLocks.get(key) ?? 0;
-  const waitMs = Math.max(0, nextAllowedAt - now);
-  rateLimitLocks.set(key, Math.max(now, nextAllowedAt) + minDelayMs);
-  if (waitMs > 0) {
-    await sleep(waitMs);
+  const minDelayMs = Math.ceil(1000 / Math.max(1, env.DELIVERY_PER_CONNECTION_RATE_LIMIT));
+  const redis = getQueueRedisConnection();
+
+  if (!redis) {
+    const now = Date.now();
+    const nextAllowedAt = rateLimitLocks.get(key) ?? 0;
+    const waitMs = Math.max(0, nextAllowedAt - now);
+    rateLimitLocks.set(key, Math.max(now, nextAllowedAt) + minDelayMs);
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+    return;
+  }
+
+  const redisKey = `delivery-rate:${env.QUEUE_PREFIX}:${key}`;
+  while (true) {
+    await redis.watch(redisKey);
+    const now = Date.now();
+    const currentRaw = await redis.get(redisKey);
+    const currentNextAllowedAt = Number(currentRaw ?? 0);
+    const nextAllowedAt = Number.isFinite(currentNextAllowedAt) ? currentNextAllowedAt : 0;
+    const reservedStart = Math.max(now, nextAllowedAt);
+    const reservedUntil = reservedStart + minDelayMs;
+    const transaction = redis.multi();
+    transaction.set(redisKey, String(reservedUntil), "PX", Math.max(60_000, minDelayMs * 5));
+    const result = await transaction.exec();
+    if (result) {
+      const waitMs = Math.max(0, reservedStart - now);
+      if (waitMs > 0) {
+        await sleep(waitMs);
+      }
+      return;
+    }
   }
 }
 
@@ -453,7 +480,16 @@ function readWebhookError(raw: Record<string, unknown>): { code: string | null; 
   return { code, message };
 }
 
-export async function processMetaDeliveryStatuses(payload: unknown): Promise<void> {
+export interface MetaDeliveryStatusEvent {
+  wamid: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  errorCode: string | null;
+  errorMessage: string | null;
+  eventTimestamp: string | null;
+  payload: Record<string, unknown>;
+}
+
+export function extractMetaDeliveryStatusEvents(payload: unknown): MetaDeliveryStatusEvent[] {
   const parsed = payload as {
     entry?: Array<{
       changes?: Array<{
@@ -464,6 +500,7 @@ export async function processMetaDeliveryStatuses(payload: unknown): Promise<voi
     }>;
   };
 
+  const events: MetaDeliveryStatusEvent[] = [];
   for (const entry of parsed.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const statuses = change.value?.statuses;
@@ -482,47 +519,65 @@ export async function processMetaDeliveryStatuses(payload: unknown): Promise<voi
         }
 
         const error = readWebhookError(raw);
-        const eventTimestamp = statusTimestampToIso(raw.timestamp);
-        const claimed = await claimWebhookStatusEvent({
+        events.push({
           wamid,
           status,
           errorCode: error.code,
-          eventTimestamp,
+          errorMessage: error.message,
+          eventTimestamp: statusTimestampToIso(raw.timestamp),
           payload: raw
         });
-        if (!claimed.shouldProcess || !claimed.eventId) {
-          continue;
-        }
-
-        try {
-          await applyDeliveryAttemptWebhookStatusUpdate({
-            wamid,
-            status,
-            errorCode: error.code,
-            errorMessage: error.message,
-            eventTimestamp,
-            payload: raw
-          });
-          await applyConversationDeliveryStatusUpdate({
-            wamid,
-            status,
-            errorCode: error.code,
-            errorMessage: error.message,
-            eventTimestamp
-          });
-          await applyCampaignDeliveryStatusUpdate({
-            wamid,
-            status,
-            errorCode: error.code,
-            errorMessage: error.message,
-            eventTimestamp
-          });
-          await applySequenceDeliveryStatusUpdate({ wamid, status });
-          await markWebhookStatusEventProcessed(claimed.eventId);
-        } catch (error) {
-          console.error("[DeliveryWebhook] status processing failed", error);
-        }
       }
     }
+  }
+
+  return events;
+}
+
+export async function processMetaDeliveryStatusEvent(event: MetaDeliveryStatusEvent): Promise<void> {
+  const claimed = await claimWebhookStatusEvent({
+    wamid: event.wamid,
+    status: event.status,
+    errorCode: event.errorCode,
+    eventTimestamp: event.eventTimestamp,
+    payload: event.payload
+  });
+  if (!claimed.shouldProcess || !claimed.eventId) {
+    return;
+  }
+
+  try {
+    await applyDeliveryAttemptWebhookStatusUpdate({
+      wamid: event.wamid,
+      status: event.status,
+      errorCode: event.errorCode,
+      errorMessage: event.errorMessage,
+      eventTimestamp: event.eventTimestamp,
+      payload: event.payload
+    });
+    await applyConversationDeliveryStatusUpdate({
+      wamid: event.wamid,
+      status: event.status,
+      errorCode: event.errorCode,
+      errorMessage: event.errorMessage,
+      eventTimestamp: event.eventTimestamp
+    });
+    await applyCampaignDeliveryStatusUpdate({
+      wamid: event.wamid,
+      status: event.status,
+      errorCode: event.errorCode,
+      errorMessage: event.errorMessage,
+      eventTimestamp: event.eventTimestamp
+    });
+    await applySequenceDeliveryStatusUpdate({ wamid: event.wamid, status: event.status });
+    await markWebhookStatusEventProcessed(claimed.eventId);
+  } catch (error) {
+    console.error("[DeliveryWebhook] status processing failed", error);
+  }
+}
+
+export async function processMetaDeliveryStatuses(payload: unknown): Promise<void> {
+  for (const event of extractMetaDeliveryStatusEvents(payload)) {
+    await processMetaDeliveryStatusEvent(event);
   }
 }

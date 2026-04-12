@@ -5,11 +5,13 @@ import { realtimeHub } from "./realtime-hub.js";
 import { evaluateSequenceConditions } from "./sequence-condition-service.js";
 import { appendSequenceLog } from "./sequence-log-service.js";
 import {
+  getSequenceEnrollment,
   getSequenceEnrollmentForExecution,
   listDueSequenceEnrollmentIds,
   updateSequenceEnrollment,
   type SequenceDelayUnit
 } from "./sequence-service.js";
+import { enqueueSequenceEnrollmentRun } from "./sequence-queue-service.js";
 import { dispatchTemplateMessage } from "./template-service.js";
 
 const MAX_MESSAGES_PER_CONTACT_PER_DAY = 20;
@@ -210,7 +212,7 @@ function resolveSequenceStepVariables(
   };
 }
 
-async function processEnrollment(enrollmentId: string): Promise<void> {
+export async function processSequenceEnrollment(enrollmentId: string): Promise<void> {
   const context = await getSequenceEnrollmentForExecution(enrollmentId);
   if (!context) return;
 
@@ -385,7 +387,21 @@ async function processEnrollment(enrollmentId: string): Promise<void> {
 export async function processDueSequenceEnrollments(batchSize = 20): Promise<number> {
   const ids = await listDueSequenceEnrollmentIds(batchSize);
   for (const id of ids) {
-    await processEnrollment(id);
+    await processSequenceEnrollment(id);
   }
   return ids.length;
+}
+
+export async function processSequenceEnrollmentAndScheduleNext(enrollmentId: string): Promise<void> {
+  await processSequenceEnrollment(enrollmentId);
+
+  const enrollment = await getSequenceEnrollment(enrollmentId);
+  if (!enrollment || enrollment.status !== "active" || !enrollment.next_run_at) {
+    return;
+  }
+
+  await enqueueSequenceEnrollmentRun({
+    enrollmentId: enrollment.id,
+    nextRunAt: enrollment.next_run_at
+  });
 }

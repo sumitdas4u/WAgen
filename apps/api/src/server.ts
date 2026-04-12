@@ -4,10 +4,11 @@ import { env } from "./config/env.js";
 import { runMigrations } from "./scripts/migrate.js";
 import { renewDueWorkspaceCredits } from "./services/workspace-billing-service.js";
 import { runAutoRechargeSweep } from "./services/workspace-billing-center-service.js";
-import { startCampaignWorker } from "./services/campaign-worker-service.js";
+import { startCampaignWorker, stopCampaignWorker } from "./services/campaign-worker-service.js";
+import { startDeliveryWebhookWorker, stopDeliveryWebhookWorker } from "./services/delivery-webhook-queue-service.js";
 import { closeQueueInfrastructure } from "./services/queue-service.js";
 import { startGenericWebhookWorker } from "./services/generic-webhook-worker-service.js";
-import { startSequenceWorker } from "./services/sequence-worker-service.js";
+import { startSequenceWorker, stopSequenceWorker } from "./services/sequence-worker-service.js";
 
 await runMigrations({
   silent: env.NODE_ENV === "production"
@@ -53,11 +54,17 @@ if (env.AUTO_RECHARGE_CRON_ENABLED) {
   }, intervalMs);
 }
 
-startCampaignWorker();
-startGenericWebhookWorker();
-startSequenceWorker();
+if (env.API_WORKERS_ENABLED) {
+  startCampaignWorker();
+  startDeliveryWebhookWorker();
+  startGenericWebhookWorker();
+  startSequenceWorker();
+}
 
 const close = async () => {
+  await stopCampaignWorker();
+  await stopDeliveryWebhookWorker();
+  await stopSequenceWorker();
   await closeQueueInfrastructure();
   await app.close();
   process.exit(0);

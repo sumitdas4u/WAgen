@@ -50,6 +50,32 @@ interface AuthTokenPayload {
   role?: "super_admin";
 }
 
+function readCookieValue(cookieHeader: string | undefined, key: string): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const parts = cookieHeader.split(";").map((part) => part.trim());
+  for (const part of parts) {
+    if (!part.startsWith(`${key}=`)) {
+      continue;
+    }
+
+    const value = part.slice(key.length + 1).trim();
+    if (!value) {
+      return null;
+    }
+
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 export async function buildApp() {
   const app = Fastify({
     logger: true,
@@ -142,7 +168,10 @@ export async function buildApp() {
 
   app.decorate("requireSuperAdmin", async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const payload = await request.jwtVerify<AuthTokenPayload>();
+      const cookieToken = readCookieValue(request.headers.cookie, "super_admin_queue_token");
+      const payload = cookieToken
+        ? app.jwt.verify<AuthTokenPayload>(cookieToken)
+        : await request.jwtVerify<AuthTokenPayload>();
       if (payload.role !== "super_admin") {
         return reply.status(403).send({ error: "Forbidden" });
       }

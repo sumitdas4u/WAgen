@@ -172,7 +172,7 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
         if (!campaign) {
           return reply.status(404).send({ error: "Campaign not found or cannot be launched" });
         }
-        enqueueCampaign(campaign.id, request.authUser.userId);
+        await enqueueCampaign(campaign.id, request.authUser.userId);
         return { campaign };
       } catch (error) {
         return reply.status(400).send({ error: error instanceof Error ? error.message : "Launch failed" });
