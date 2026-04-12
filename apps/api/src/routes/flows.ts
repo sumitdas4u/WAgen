@@ -252,27 +252,6 @@ export async function flowRoutes(app: FastifyInstance) {
       }
 
       if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-        return reply.status(400).send({ error: "Only http and https URLs are allowed." });
-      }
-
-      if (parsedUrl.username || parsedUrl.password) {
-        return reply.status(400).send({ error: "URLs with embedded credentials are not allowed." });
-      }
-
-      if (isBlockedHostname(parsedUrl.hostname)) {
-        return reply.status(400).send({ error: "Target host is not allowed." });
-      }
-
-      try {
-        const resolved = await dns.promises.lookup(parsedUrl.hostname, { all: true });
-        if (!resolved.length || resolved.some((entry) => isBlockedIp(entry.address))) {
-          return reply.status(400).send({ error: "Target resolves to a non-public address." });
-        }
-      } catch {
-        return reply.status(400).send({ error: "Unable to resolve target hostname." });
-      }
-
-      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
         return reply.status(400).send({ error: "Only http and https protocols are allowed." });
       }
 
@@ -352,7 +331,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
       const startedAt = Date.now();
       try {
-        const response = await fetch(parsedUrl.toString(), {
+        const response = await fetch(url, {
           method: safeMethod,
           headers: reqHeaders,
           body: hasBody ? body?.trim() : undefined,
