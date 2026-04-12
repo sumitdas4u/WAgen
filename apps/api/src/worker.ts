@@ -3,7 +3,7 @@ import { env } from "./config/env.js";
 import { runMigrations } from "./scripts/migrate.js";
 import { startCampaignWorker, stopCampaignWorker } from "./services/campaign-worker-service.js";
 import { startDeliveryWebhookWorker, stopDeliveryWebhookWorker } from "./services/delivery-webhook-queue-service.js";
-import { startGenericWebhookWorker } from "./services/generic-webhook-worker-service.js";
+import { startOutboundWorker, stopOutboundWorker } from "./services/outbound-message-service.js";
 import { closeQueueInfrastructure } from "./services/queue-service.js";
 import { startSequenceWorker, stopSequenceWorker } from "./services/sequence-worker-service.js";
 
@@ -13,12 +13,13 @@ await runMigrations({
 
 startCampaignWorker();
 startDeliveryWebhookWorker();
-startGenericWebhookWorker();
+startOutboundWorker();
 startSequenceWorker();
 
 const shutdown = async () => {
   await stopCampaignWorker();
   await stopDeliveryWebhookWorker();
+  await stopOutboundWorker();
   await stopSequenceWorker();
   await closeQueueInfrastructure();
   process.exit(0);

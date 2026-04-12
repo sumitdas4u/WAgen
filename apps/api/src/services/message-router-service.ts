@@ -17,8 +17,7 @@ import {
   getConversationHistoryForPrompt,
   setConversationAIPaused,
   setConversationManualAndPaused,
-  trackInboundMessage,
-  trackOutboundMessage
+  trackInboundMessage
 } from "./conversation-service.js";
 import { detectExternalBotLoop } from "./external-bot-detector-service.js";
 import { sendConversationFlowMessage } from "./channel-outbound-service.js";
@@ -90,34 +89,6 @@ async function getLatestConversationState(
   return refreshed.rows[0] ?? fallback;
 }
 
-async function trackAndBroadcastOutbound(params: {
-  userId: string;
-  conversationId: string;
-  customerIdentifier: string;
-  text: string;
-  fallback: { score: number; stage: string };
-  usage?: {
-    promptTokens?: number | null;
-    completionTokens?: number | null;
-    totalTokens?: number | null;
-    aiModel?: string | null;
-    retrievalChunks?: number | null;
-    markAsAiReply?: boolean;
-  };
-}): Promise<{ score: number; stage: string }> {
-  await trackOutboundMessage(params.conversationId, params.text, params.usage);
-  const latest = await getLatestConversationState(params.conversationId, params.fallback);
-  realtimeHub.broadcast(params.userId, "conversation.updated", {
-    conversationId: params.conversationId,
-    phoneNumber: params.customerIdentifier,
-    direction: "outbound",
-    message: params.text,
-    score: latest.score,
-    stage: latest.stage
-  });
-  return latest;
-}
-
 export async function processIncomingMessage(
   input: ProcessIncomingMessageInput
 ): Promise<ProcessIncomingMessageResult> {
@@ -182,34 +153,15 @@ export async function processIncomingMessage(
     };
   }
 
-  if (!input.sendReply) {
-    return {
-      conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
-      autoReplySent: false,
-      reason: "missing_channel_adapter"
-    };
-  }
-
   let latestConversationState = {
     score: conversation.score,
     stage: conversation.stage
   };
   const sendTrackedFlowReply = async (payload: FlowMessagePayload) => {
-    const delivered = await sendConversationFlowMessage({
+    await sendConversationFlowMessage({
       userId: input.userId,
       conversationId: conversation.id,
       payload
-    });
-    latestConversationState = await getLatestConversationState(conversation.id, latestConversationState);
-    realtimeHub.broadcast(input.userId, "conversation.updated", {
-      conversationId: conversation.id,
-      phoneNumber: input.customerIdentifier,
-      direction: "outbound",
-      message: delivered.summaryText,
-      score: latestConversationState.score,
-      stage: latestConversationState.stage
     });
   };
 
@@ -221,14 +173,12 @@ export async function processIncomingMessage(
   });
   if (!creditDecision.allowed) {
     const pausedMessage = creditDecision.blockMessage ?? "Replies paused. Please upgrade your plan.";
-    await input.sendReply({ text: pausedMessage });
-    latestConversationState = await trackAndBroadcastOutbound({
+    await sendConversationFlowMessage({
       userId: input.userId,
       conversationId: conversation.id,
-      customerIdentifier: input.customerIdentifier,
-      text: pausedMessage,
-      fallback: latestConversationState
+      payload: { type: "text", text: pausedMessage }
     });
+    latestConversationState = await getLatestConversationState(conversation.id, latestConversationState);
     return {
       conversationId: conversation.id,
       stage: latestConversationState.stage,
@@ -399,13 +349,10 @@ export async function processIncomingMessage(
         : null
   });
 
-  await input.sendReply({ text: reply.text });
-  latestConversationState = await trackAndBroadcastOutbound({
+  await sendConversationFlowMessage({
     userId: input.userId,
     conversationId: conversation.id,
-    customerIdentifier: input.customerIdentifier,
-    text: reply.text,
-    fallback: latestConversationState,
+    payload: { type: "text", text: reply.text },
     usage: {
       promptTokens: reply.usage?.promptTokens,
       completionTokens: reply.usage?.completionTokens,
@@ -415,6 +362,7 @@ export async function processIncomingMessage(
       markAsAiReply: true
     }
   });
+  latestConversationState = await getLatestConversationState(conversation.id, latestConversationState);
 
   // If flow is in one-shot aiReply mode, advance to the next node after AI replied
   if (flowResult.result === "use_ai") {

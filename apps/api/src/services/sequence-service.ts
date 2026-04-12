@@ -12,7 +12,7 @@ export type SequenceChannel = "whatsapp";
 export type SequenceBaseType = "contact";
 export type SequenceTimeMode = "any_time" | "window";
 export type SequenceDelayUnit = "minutes" | "hours" | "days";
-export type SequenceEnrollmentStatus = "active" | "completed" | "failed" | "stopped";
+export type SequenceEnrollmentStatus = "active" | "sending" | "completed" | "failed" | "stopped";
 export type CampaignTemplateVariableSource = "contact" | "static";
 
 export interface CampaignTemplateVariableBinding {
@@ -385,7 +385,7 @@ export async function listSequences(userId: string): Promise<SequenceListItem[]>
          COUNT(*)::int AS enrolled_count,
          COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_count,
          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_count,
-         COUNT(*) FILTER (WHERE status = 'active')::int AS active_count
+         COUNT(*) FILTER (WHERE status IN ('active', 'sending'))::int AS active_count
        FROM sequence_enrollments
        GROUP BY sequence_id
      ) se ON se.sequence_id = s.id
@@ -432,7 +432,7 @@ export async function getSequenceDetail(userId: string, sequenceId: string): Pro
     }>(
       `SELECT
          COUNT(*)::text AS enrolled,
-         COUNT(*) FILTER (WHERE status = 'active')::text AS active,
+         COUNT(*) FILTER (WHERE status IN ('active', 'sending'))::text AS active,
          COUNT(*) FILTER (WHERE status = 'completed')::text AS completed,
          COUNT(*) FILTER (WHERE status = 'failed')::text AS failed,
          COUNT(*) FILTER (WHERE status = 'stopped')::text AS stopped

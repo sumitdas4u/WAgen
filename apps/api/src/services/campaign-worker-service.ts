@@ -8,7 +8,7 @@ import {
   type Campaign,
   type CampaignMessage
 } from "./campaign-service.js";
-import { deliverCampaignMessage } from "./message-delivery-service.js";
+import { queueCampaignOutboundMessage } from "./outbound-message-service.js";
 import {
   createQueueWorkerConnection,
   getCampaignDispatchQueue,
@@ -150,12 +150,10 @@ async function processCampaignSend(job: CampaignMessageSendJob): Promise<void> {
     return;
   }
 
-  const senderName = await lookupSenderName(job.userId);
-  await deliverCampaignMessage({
+  await queueCampaignOutboundMessage({
     userId: job.userId,
-    campaign,
-    message,
-    senderName
+    campaignMessageId: message.id,
+    groupingKey: `campaign:${message.phone_number.replace(/\D/g, "")}`
   });
 
   await markCampaignCompleted(job.campaignId);

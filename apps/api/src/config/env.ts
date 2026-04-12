@@ -25,6 +25,7 @@ const BaseEnvSchema = z.object({
   CAMPAIGN_DISPATCH_CONCURRENCY: z.coerce.number().int().positive().default(4),
   CAMPAIGN_SEND_CONCURRENCY: z.coerce.number().int().positive().default(20),
   SEQUENCE_RUN_CONCURRENCY: z.coerce.number().int().positive().default(10),
+  OUTBOUND_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(12),
   DELIVERY_WEBHOOK_CONCURRENCY: z.coerce.number().int().positive().default(20),
   DELIVERY_PER_CONNECTION_RATE_LIMIT: z.coerce.number().int().positive().default(8),
   QUEUE_STALLED_JOB_TIMEOUT_MS: z.coerce.number().int().positive().default(300000),

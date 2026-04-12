@@ -7,6 +7,7 @@ import { upsertWebhookContact } from "./contacts-service.js";
 import { startFlowForConversation } from "./flow-engine-service.js";
 import { getFlow } from "./flow-service.js";
 import { deliverConversationTemplateMessage } from "./message-delivery-service.js";
+import { queueGenericWebhookOutboundMessage } from "./outbound-message-service.js";
 import { getMessageTemplate } from "./template-service.js";
 import { whatsappSessionManager } from "./whatsapp-session-manager.js";
 
@@ -150,37 +151,6 @@ interface GenericWebhookLogRow {
   payload_json: JsonRecord;
   result_json: JsonRecord;
   created_at: string;
-}
-
-type GenericWebhookJobStatus = "queued" | "processing" | "completed" | "failed";
-
-interface GenericWebhookJobRow {
-  id: string;
-  user_id: string;
-  integration_id: string | null;
-  workflow_id: string | null;
-  log_id: string | null;
-  request_id: string;
-  channel_mode: GenericWebhookChannelMode;
-  recipient_name: string | null;
-  recipient_phone: string;
-  contact_name: string | null;
-  contact_phone: string;
-  contact_email: string | null;
-  contact_id: string | null;
-  template_id: string | null;
-  flow_id: string | null;
-  variable_values_json: Record<string, string>;
-  payload_json: JsonRecord;
-  workflow_json: JsonRecord;
-  result_json: JsonRecord;
-  scheduled_at: string;
-  status: GenericWebhookJobStatus;
-  attempt_count: number;
-  error_message: string | null;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
 }
 
 interface PreparedGenericWebhookExecution {
@@ -574,42 +544,6 @@ async function updateGenericWebhookLog(input: {
   );
 }
 
-async function queueGenericWebhookJob(input: PreparedGenericWebhookExecution & { logId: string }): Promise<void> {
-  await pool.query(
-    `INSERT INTO generic_webhook_jobs (
-       user_id, integration_id, workflow_id, log_id, request_id, channel_mode, recipient_name, recipient_phone, contact_name, contact_phone, contact_email, contact_id,
-       template_id, flow_id, variable_values_json, payload_json, workflow_json, result_json, scheduled_at, status
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19, 'queued')`,
-    [
-      input.userId,
-      input.integrationId,
-      input.workflowId,
-      input.logId,
-      input.requestId,
-      input.channelMode,
-      input.recipientName,
-      input.recipientPhone,
-      input.contactName,
-      input.contactPhone,
-      input.contactEmail,
-      input.contactId,
-      input.templateId,
-      input.flowId,
-      JSON.stringify(input.variableValues ?? {}),
-      JSON.stringify(input.payloadJson ?? {}),
-      JSON.stringify({
-        workflowName: input.workflowName,
-        integrationName: input.integrationName,
-        delayValue: input.delayValue,
-        delayUnit: input.delayUnit
-      }),
-      JSON.stringify({}),
-      input.scheduledAt
-    ]
-  );
-}
-
 async function updateIntegrationCapture(integrationId: string, payload: JsonRecord, flatPayload: Record<string, string>): Promise<void> {
   await pool.query(
     `UPDATE generic_webhook_integrations
@@ -970,115 +904,53 @@ async function executePreparedGenericWebhookExecution(input: PreparedGenericWebh
   };
 }
 
-function mapPreparedExecutionFromJob(row: GenericWebhookJobRow): PreparedGenericWebhookExecution {
-  const workflowMeta = row.workflow_json ?? {};
-  return {
-    userId: row.user_id,
-    requestId: row.request_id,
-    integrationId: row.integration_id ?? "",
-    integrationName: trimToNull(workflowMeta.integrationName) ?? "Webhook Integration",
-    workflowId: row.workflow_id ?? "",
-    workflowName: trimToNull(workflowMeta.workflowName) ?? "Webhook Workflow",
-    channelMode: row.channel_mode,
-    payloadJson: row.payload_json ?? {},
-    recipientName: row.recipient_name,
-    recipientPhone: row.recipient_phone,
-    contactName: row.contact_name,
-    contactPhone: row.contact_phone,
-    contactEmail: row.contact_email,
-    contactId: row.contact_id ?? "",
-    templateId: row.template_id,
-    flowId: row.flow_id,
-    variableValues: row.variable_values_json ?? {},
-    scheduledAt: row.scheduled_at,
-    delayValue: normalizeDelayValue(typeof workflowMeta.delayValue === "number" ? workflowMeta.delayValue : 0),
-    delayUnit: normalizeDelayUnit(trimToNull(workflowMeta.delayUnit))
-  };
-}
-
-async function completeGenericWebhookJob(jobId: string, resultJson: JsonRecord): Promise<void> {
-  await pool.query(
-    `UPDATE generic_webhook_jobs
-     SET status = 'completed',
-         completed_at = NOW(),
-         error_message = NULL,
-         result_json = $2::jsonb
-     WHERE id = $1`,
-    [jobId, JSON.stringify(resultJson)]
+export async function executeQueuedGenericWebhookLog(logId: string): Promise<void> {
+  const result = await pool.query<{
+    id: string;
+    user_id: string;
+    payload_json: JsonRecord;
+    variable_values_json: Record<string, string>;
+  }>(
+    `SELECT id, user_id, payload_json, variable_values_json
+     FROM outbound_messages
+     WHERE generic_webhook_log_id = $1
+     LIMIT 1`,
+    [logId]
   );
-}
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error("Queued generic webhook execution not found.");
+  }
 
-async function failGenericWebhookJob(jobId: string, errorMessage: string, resultJson: JsonRecord): Promise<void> {
-  await pool.query(
-    `UPDATE generic_webhook_jobs
-     SET status = 'failed',
-         error_message = $2,
-         result_json = $3::jsonb
-     WHERE id = $1`,
-    [jobId, errorMessage, JSON.stringify(resultJson)]
-  );
-}
+  const prepared = row.payload_json as unknown as PreparedGenericWebhookExecution;
 
-async function claimDueGenericWebhookJobs(limit: number): Promise<GenericWebhookJobRow[]> {
-  const result = await pool.query<GenericWebhookJobRow>(
-    `WITH due AS (
-       SELECT id
-       FROM generic_webhook_jobs
-       WHERE status = 'queued'
-         AND scheduled_at <= NOW()
-       ORDER BY scheduled_at ASC
-       LIMIT $1
-       FOR UPDATE SKIP LOCKED
-     )
-     UPDATE generic_webhook_jobs jobs
-     SET status = 'processing',
-         attempt_count = jobs.attempt_count + 1,
-         updated_at = NOW()
-     FROM due
-     WHERE jobs.id = due.id
-     RETURNING jobs.*`,
-    [limit]
-  );
-  return result.rows;
-}
-
-export async function processDueGenericWebhookJobs(limit = 25): Promise<void> {
-  const jobs = await claimDueGenericWebhookJobs(limit);
-  for (const job of jobs) {
-    const prepared = mapPreparedExecutionFromJob(job);
-    let queuedLogId: string | null = null;
-    try {
-      const executionResult = await executePreparedGenericWebhookExecution(prepared);
-      await completeGenericWebhookJob(job.id, executionResult.resultJson);
-      if (job.log_id) {
-        await updateGenericWebhookLog({
-          logId: job.log_id,
-          status: "completed",
-          contactId: prepared.contactId || null,
-          providerMessageId: executionResult.providerMessageId,
-          errorMessage: null,
-          resultJson: executionResult.resultJson
-        });
-      }
-    } catch (error) {
-      const errorMessage = (error as Error).message;
-      const resultJson = {
+  try {
+    const executionResult = await executePreparedGenericWebhookExecution({
+      ...prepared,
+      variableValues: row.variable_values_json ?? prepared.variableValues ?? {}
+    });
+    await updateGenericWebhookLog({
+      logId,
+      status: "completed",
+      contactId: prepared.contactId || null,
+      providerMessageId: executionResult.providerMessageId,
+      errorMessage: null,
+      resultJson: executionResult.resultJson
+    });
+  } catch (error) {
+    await updateGenericWebhookLog({
+      logId,
+      status: "failed",
+      contactId: prepared.contactId || null,
+      errorMessage: (error as Error).message,
+      resultJson: {
         workflowName: prepared.workflowName,
         integrationName: prepared.integrationName,
         channelMode: prepared.channelMode,
         flowId: prepared.flowId
-      };
-      await failGenericWebhookJob(job.id, errorMessage, resultJson);
-      if (job.log_id) {
-        await updateGenericWebhookLog({
-          logId: job.log_id,
-          status: "failed",
-          contactId: prepared.contactId || null,
-          errorMessage,
-          resultJson
-        });
       }
-    }
+    });
+    throw error;
   }
 }
 
@@ -1217,47 +1089,34 @@ export async function handleIncomingGenericWebhook(input: {
         delayUnit: workflow.delayUnit ?? null
       };
 
-      if (preparedExecution.scheduledAt) {
-        queuedLogId = await recordGenericWebhookLog({
-          userId: integration.userId,
-          integrationId: integration.id,
-          workflowId: workflow.id,
-          requestId: input.requestId,
-          status: "queued",
-          customerName: recipientName ?? contactName,
-          customerPhone: recipientPhone,
-          contactId: contact.id,
-          templateId: preparedExecution.templateId,
-          payloadJson: input.payload,
-          resultJson: {
-            workflowName: workflow.name,
-            integrationName: integration.name,
-            channelMode: workflow.channelMode,
-            contactId: contact.id,
-            delayValue: preparedExecution.delayValue,
-            delayUnit: preparedExecution.delayUnit,
-            scheduledAt: preparedExecution.scheduledAt
-          }
-        });
-        await queueGenericWebhookJob({ ...preparedExecution, logId: queuedLogId });
-        continue;
-      }
-
-      const executionResult = await executePreparedGenericWebhookExecution(preparedExecution);
-      completedWorkflows += 1;
-      await recordGenericWebhookLog({
+      queuedLogId = await recordGenericWebhookLog({
         userId: integration.userId,
         integrationId: integration.id,
         workflowId: workflow.id,
         requestId: input.requestId,
-        status: "completed",
+        status: "queued",
         customerName: recipientName ?? contactName,
         customerPhone: recipientPhone,
         contactId: contact.id,
         templateId: preparedExecution.templateId,
-        providerMessageId: executionResult.providerMessageId,
         payloadJson: input.payload,
-        resultJson: executionResult.resultJson
+        resultJson: {
+          workflowName: workflow.name,
+          integrationName: integration.name,
+          channelMode: workflow.channelMode,
+          contactId: contact.id,
+          delayValue: preparedExecution.delayValue,
+          delayUnit: preparedExecution.delayUnit,
+          scheduledAt: preparedExecution.scheduledAt
+        }
+      });
+      await queueGenericWebhookOutboundMessage({
+        userId: integration.userId,
+        logId: queuedLogId,
+        scheduledAt: preparedExecution.scheduledAt,
+        groupingKey: `webhook:${recipientPhone}`,
+        payloadJson: preparedExecution as unknown as Record<string, unknown>,
+        variableValues: preparedExecution.variableValues
       });
     } catch (error) {
       failedWorkflows += 1;

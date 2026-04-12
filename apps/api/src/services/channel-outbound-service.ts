@@ -1,5 +1,5 @@
 import { getConversationById, setConversationManualAndPaused, trackOutboundMessage } from "./conversation-service.js";
-import { sendTrackedApiConversationFlowMessage } from "./message-delivery-service.js";
+import { queueConversationOutboundMessage } from "./outbound-message-service.js";
 import {
   adaptPayloadForChannel,
   getPayloadMediaUrl,
@@ -27,8 +27,17 @@ export async function sendConversationFlowMessage(input: {
   payload: FlowMessagePayload;
   track?: boolean;
   mediaUrl?: string | null;
+  mediaMimeType?: string | null;
   displayText?: string;
   senderName?: string | null;
+  usage?: {
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    aiModel?: string | null;
+    retrievalChunks?: number | null;
+    markAsAiReply?: boolean;
+  };
 }): Promise<{
   conversationId: string;
   channelType: "web" | "qr" | "api";
@@ -48,43 +57,16 @@ export async function sendConversationFlowMessage(input: {
     throw new Error("Message text is required.");
   }
 
-  if (conversation.channel_type === "api") {
-    await sendTrackedApiConversationFlowMessage({
-      userId: input.userId,
-      conversation,
-      payload: deliveryPayload,
-      summaryText,
-      mediaUrl: input.mediaUrl ?? getPayloadMediaUrl(canonicalPayload) ?? null,
-      senderName: input.senderName ?? null,
-      track: input.track
-    });
-  } else if (conversation.channel_type === "qr") {
-    await whatsappSessionManager.sendFlowMessage({
-      userId: input.userId,
-      phoneNumber: conversation.phone_number,
-      payload: deliveryPayload
-    });
-  } else {
-    const delivered = await sendWidgetConversationMessage({
-      userId: input.userId,
-      customerIdentifier: conversation.phone_number,
-      text: summaryText
-    });
-    if (!delivered) {
-      throw new Error("Web visitor is offline. History is still available, but replies can only be sent while the visitor is connected.");
-    }
-  }
-
-  if (conversation.channel_type !== "api" && input.track !== false) {
-    await trackOutboundMessage(
-      conversation.id,
-      summaryText,
-      { senderName: input.senderName ?? null },
-      input.mediaUrl ?? getPayloadMediaUrl(canonicalPayload) ?? null,
-      canonicalPayload,
-      null
-    );
-  }
+  await queueConversationOutboundMessage({
+    userId: input.userId,
+    conversationId: conversation.id,
+    payload: deliveryPayload,
+    displayText: summaryText,
+    mediaUrl: input.mediaUrl ?? getPayloadMediaUrl(canonicalPayload) ?? null,
+    mediaMimeType: input.mediaMimeType ?? null,
+    senderName: input.senderName ?? null,
+    usage: input.usage
+  });
 
   return {
     conversationId: conversation.id,
@@ -140,6 +122,7 @@ export async function sendManualConversationMessage(input: {
     conversationId: input.conversationId,
     payload,
     mediaUrl: input.mediaUrl ?? null,
+    mediaMimeType: input.mediaMimeType ?? null,
     displayText,
     senderName: input.senderName ?? null
   });

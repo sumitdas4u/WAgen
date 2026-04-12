@@ -7,7 +7,8 @@ export const managedQueueNames = [
   "campaign-message-send",
   "sequence-enrollment-run",
   "sequence-enrollment-retry",
-  "delivery-webhook-process"
+  "delivery-webhook-process",
+  "outbound-execution"
 ] as const;
 
 export type ManagedQueueName = (typeof managedQueueNames)[number];
@@ -92,6 +93,10 @@ export function getSequenceEnrollmentRetryQueue(): Queue | null {
 
 export function getDeliveryWebhookQueue(): Queue | null {
   return getManagedQueue("delivery-webhook-process");
+}
+
+export function getOutboundExecutionQueue(): Queue | null {
+  return getManagedQueue("outbound-execution");
 }
 
 export async function closeQueueInfrastructure(): Promise<void> {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { openAIService } from "../services/openai-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
-import { deliverConversationTemplateMessage } from "../services/message-delivery-service.js";
+import { queueConversationTemplateMessage } from "../services/outbound-message-service.js";
 import {
   listLeadsWithSummary,
   listConversationMessages,
@@ -353,7 +353,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         );
         const senderName = userRow.rows[0]?.name?.trim() || request.authUser.email.split("@")[0] || "Agent";
 
-        const result = await deliverConversationTemplateMessage({
+        const result = await queueConversationTemplateMessage({
           userId: request.authUser.userId,
           conversationId: params.conversationId,
           templateId: parsed.data.templateId,
@@ -361,7 +361,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           senderName
         });
 
-        return { ok: true, messageId: result.messageId };
+        return { ok: true, queued: true, messageId: result.queuedMessageId };
       } catch (error) {
         const message = (error as Error).message;
         if (message.toLowerCase().includes("not found")) {

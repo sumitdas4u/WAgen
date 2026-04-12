@@ -121,6 +121,14 @@ export async function sendTrackedApiConversationFlowMessage(input: {
   mediaUrl?: string | null;
   senderName?: string | null;
   track?: boolean;
+  usage?: {
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    aiModel?: string | null;
+    retrievalChunks?: number | null;
+    markAsAiReply?: boolean;
+  };
 }): Promise<{ messageId: string | null }> {
   const attempt = await recordDeliveryAttemptStart({
     userId: input.userId,
@@ -165,7 +173,10 @@ export async function sendTrackedApiConversationFlowMessage(input: {
       await trackOutboundMessage(
         input.conversation.id,
         input.summaryText,
-        { senderName: input.senderName ?? null },
+        {
+          ...input.usage,
+          senderName: input.senderName ?? null
+        },
         input.mediaUrl ?? null,
         input.payload,
         sent.messageId ?? null

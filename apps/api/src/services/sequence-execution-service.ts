@@ -1,7 +1,6 @@
 import { pool } from "../db/pool.js";
-import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
 import { classifyDeliveryFailure } from "./message-delivery-data-service.js";
-import { realtimeHub } from "./realtime-hub.js";
+import { queueSequenceOutboundMessage } from "./outbound-message-service.js";
 import { evaluateSequenceConditions } from "./sequence-condition-service.js";
 import { appendSequenceLog } from "./sequence-log-service.js";
 import {
@@ -309,104 +308,17 @@ async function processSequenceEnrollmentInternal(
     return { shouldSchedule: true, queueKind: "run" };
   }
 
-  try {
-    const variableValues = resolveSequenceStepVariables(contact, step);
-    const sent = await dispatchTemplateMessage(contact.user_id, {
-      templateId: step.message_template_id,
-      to: contact.phone_number,
-      variableValues
-    });
-
-    const conversation = await getOrCreateConversation(contact.user_id, contact.phone_number, {
-      channelType: "api",
-      channelLinkedNumber: sent.connection.linkedNumber
-    });
-    await trackOutboundMessage(
-      conversation.id,
-      sent.summaryText,
-      { senderName: "Sequence Engine" },
-      sent.messagePayload.headerMediaUrl ?? null,
-      sent.messagePayload,
-      sent.messageId ?? null
-    );
-    realtimeHub.broadcast(contact.user_id, "conversation.updated", {
-      conversationId: conversation.id,
-      phoneNumber: contact.phone_number,
-      direction: "outbound",
-      message: sent.summaryText,
-      score: conversation.score,
-      stage: conversation.stage
-    });
-
-    const nextStepIndex = enrollment.current_step + 1;
-    const nextStep = steps[nextStepIndex];
-    await updateSequenceEnrollment(enrollment.id, {
-      currentStep: nextStepIndex,
-      lastExecutedAt: now.toISOString(),
-      lastMessageId: sent.messageId,
-      lastDeliveryStatus: "sent",
-      retryCount: 0,
-      retryStartedAt: null,
-      status: nextStep ? "active" : "completed",
-      nextRunAt: nextStep ? addDelay(now, nextStep.delay_value, nextStep.delay_unit).toISOString() : now.toISOString()
-    });
-    await appendSequenceLog({
-      enrollmentId: enrollment.id,
-      sequenceId: sequence.id,
-      stepId: step.id,
-      status: "sent",
-      responseId: sent.messageId,
-      meta: { templateName: sent.template.name, nextStep: nextStepIndex }
-    });
-    return {
-      shouldSchedule: Boolean(nextStep),
-      queueKind: nextStep ? "run" : null
-    };
-  } catch (error) {
-    const classification = classifyDeliveryFailure(error);
-    const firstRetryStartedAt = enrollment.retry_started_at ? new Date(enrollment.retry_started_at) : now;
-    const elapsedMs = now.getTime() - firstRetryStartedAt.getTime();
-    const retryWindowMs = sequence.retry_window_hours * 60 * 60_000;
-    const canRetry =
-      sequence.retry_enabled &&
-      classification.retryable &&
-      enrollment.retry_count < RETRY_DELAYS_MS.length &&
-      elapsedMs <= retryWindowMs;
-
-    if (canRetry) {
-      const nextRetryAt = new Date(Date.now() + RETRY_DELAYS_MS[enrollment.retry_count]);
-      await updateSequenceEnrollment(enrollment.id, {
-        nextRunAt: nextRetryAt.toISOString(),
-        lastExecutedAt: now.toISOString(),
-        retryCount: enrollment.retry_count + 1,
-        retryStartedAt: enrollment.retry_started_at ?? now.toISOString(),
-        lastDeliveryStatus: "failed"
-      });
-      await appendSequenceLog({
-        enrollmentId: enrollment.id,
-        sequenceId: sequence.id,
-        stepId: step.id,
-        status: "retrying",
-        errorMessage: classification.errorMessage,
-        meta: { retryCount: enrollment.retry_count + 1 }
-      });
-      return { shouldSchedule: true, queueKind: "retry" };
-    }
-
-    await updateSequenceEnrollment(enrollment.id, {
-      status: "failed",
-      lastExecutedAt: now.toISOString(),
-      lastDeliveryStatus: "failed"
-    });
-    await appendSequenceLog({
-      enrollmentId: enrollment.id,
-      sequenceId: sequence.id,
-      stepId: step.id,
-      status: "failed",
-      errorMessage: classification.errorMessage
-    });
-    return { shouldSchedule: false, queueKind: null };
-  }
+  await updateSequenceEnrollment(enrollment.id, {
+    status: "sending",
+    lastExecutedAt: now.toISOString()
+  });
+  await queueSequenceOutboundMessage({
+    userId: contact.user_id,
+    enrollmentId: enrollment.id,
+    stepIndex: enrollment.current_step,
+    groupingKey: `sequence:${contact.phone_number.replace(/\D/g, "")}`
+  });
+  return { shouldSchedule: false, queueKind: null };
 }
 
 export async function processDueSequenceEnrollments(batchSize = 20): Promise<number> {
@@ -439,4 +351,120 @@ export async function processSequenceEnrollmentAndScheduleNext(
     kind: queueKind
   });
   return { shouldSchedule: true, queueKind };
+}
+
+export async function executeSequenceOutboundMessage(input: {
+  enrollmentId: string;
+  stepIndex: number;
+}): Promise<void> {
+  const context = await getSequenceEnrollmentForExecution(input.enrollmentId);
+  if (!context) {
+    return;
+  }
+
+  const { enrollment, sequence, steps, contact } = context;
+  if (enrollment.current_step !== input.stepIndex) {
+    return;
+  }
+
+  const now = new Date();
+  const step = steps[enrollment.current_step];
+  if (!step) {
+    await updateSequenceEnrollment(enrollment.id, {
+      status: "completed",
+      lastExecutedAt: now.toISOString()
+    });
+    return;
+  }
+
+  try {
+    const variableValues = resolveSequenceStepVariables(contact, step);
+    const sent = await dispatchTemplateMessage(contact.user_id, {
+      templateId: step.message_template_id,
+      to: contact.phone_number,
+      variableValues
+    });
+
+    const nextStepIndex = enrollment.current_step + 1;
+    const nextStep = steps[nextStepIndex];
+    const nextRunAt = nextStep ? addDelay(now, nextStep.delay_value, nextStep.delay_unit).toISOString() : now.toISOString();
+    await updateSequenceEnrollment(enrollment.id, {
+      currentStep: nextStepIndex,
+      lastExecutedAt: now.toISOString(),
+      lastMessageId: sent.messageId,
+      lastDeliveryStatus: "sent",
+      retryCount: 0,
+      retryStartedAt: null,
+      status: nextStep ? "active" : "completed",
+      nextRunAt
+    });
+    await appendSequenceLog({
+      enrollmentId: enrollment.id,
+      sequenceId: sequence.id,
+      stepId: step.id,
+      status: "sent",
+      responseId: sent.messageId,
+      meta: { templateName: sent.template.name, nextStep: nextStepIndex }
+    });
+
+    if (nextStep) {
+      await enqueueSequenceEnrollment({
+        enrollmentId: enrollment.id,
+        nextRunAt,
+        kind: "run"
+      });
+    } else {
+      await clearSequenceEnrollmentQueueState(enrollment.id);
+    }
+  } catch (error) {
+    const classification = classifyDeliveryFailure(error);
+    const firstRetryStartedAt = enrollment.retry_started_at ? new Date(enrollment.retry_started_at) : now;
+    const elapsedMs = now.getTime() - firstRetryStartedAt.getTime();
+    const retryWindowMs = sequence.retry_window_hours * 60 * 60_000;
+    const canRetry =
+      sequence.retry_enabled &&
+      classification.retryable &&
+      enrollment.retry_count < RETRY_DELAYS_MS.length &&
+      elapsedMs <= retryWindowMs;
+
+    if (canRetry) {
+      const nextRetryAt = new Date(Date.now() + RETRY_DELAYS_MS[enrollment.retry_count]).toISOString();
+      await updateSequenceEnrollment(enrollment.id, {
+        status: "active",
+        nextRunAt: nextRetryAt,
+        lastExecutedAt: now.toISOString(),
+        retryCount: enrollment.retry_count + 1,
+        retryStartedAt: enrollment.retry_started_at ?? now.toISOString(),
+        lastDeliveryStatus: "failed"
+      });
+      await appendSequenceLog({
+        enrollmentId: enrollment.id,
+        sequenceId: sequence.id,
+        stepId: step.id,
+        status: "retrying",
+        errorMessage: classification.errorMessage,
+        meta: { retryCount: enrollment.retry_count + 1 }
+      });
+      await enqueueSequenceEnrollment({
+        enrollmentId: enrollment.id,
+        nextRunAt: nextRetryAt,
+        kind: "retry"
+      });
+      return;
+    }
+
+    await updateSequenceEnrollment(enrollment.id, {
+      status: "failed",
+      lastExecutedAt: now.toISOString(),
+      lastDeliveryStatus: "failed"
+    });
+    await appendSequenceLog({
+      enrollmentId: enrollment.id,
+      sequenceId: sequence.id,
+      stepId: step.id,
+      status: "failed",
+      errorMessage: classification.errorMessage
+    });
+    await clearSequenceEnrollmentQueueState(enrollment.id);
+  }
 }
