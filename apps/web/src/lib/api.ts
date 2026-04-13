@@ -1967,6 +1967,25 @@ export function fetchPublishedFlows(token: string) {
   return apiRequest<PublishedFlowSummary[]>("/api/flows/published", { token });
 }
 
+export function sendTestTemplate(
+  token: string,
+  payload: {
+    templateId: string;
+    to: string;
+    variableValues?: Record<string, string>;
+  }
+) {
+  return apiRequest<{ ok: boolean; messageId: string | null }>("/api/meta/templates/test-send", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      templateId: payload.templateId,
+      to: payload.to,
+      variableValues: payload.variableValues ?? {}
+    })
+  });
+}
+
 export function assignFlowToConversation(token: string, flowId: string, conversationId: string) {
   return apiRequest<{ sessionId: string; flowId: string; flowName: string }>(`/api/flows/${flowId}/assign`, {
     method: "POST",

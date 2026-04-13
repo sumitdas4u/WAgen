@@ -17,6 +17,7 @@ import {
   listContactSegments,
   previewSegmentContacts,
   previewBroadcastAudienceWorkbookImport,
+  sendTestTemplate,
   type Campaign,
   type ContactImportColumnMapping,
   type ContactImportPreview,
@@ -34,6 +35,7 @@ import { uploadBroadcastMedia as uploadBroadcastMediaToSupabase } from "../../..
 import { MetaConnectionSelector, isMetaConnectionActive } from "../../../shared/dashboard/meta-connection-selector";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
+import { useAgentsQuery } from "../agents/queries";
 import { useInboxPublishedFlowsQuery } from "../inbox/queries";
 import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import { useTemplatesQuery } from "../templates/queries";
@@ -194,6 +196,30 @@ function buildPreviewComponents(
       )
     };
   });
+}
+
+function resolveBroadcastVariableValues(
+  bindings: CampaignTemplateVariables,
+  sampleContact: ContactRecord | null,
+  mediaOverrides: CampaignMediaOverrides
+): Record<string, string> {
+  const resolved: Record<string, string> = {};
+
+  for (const placeholder of Object.keys(bindings)) {
+    const value = resolveBindingPreviewValue(placeholder, bindings, sampleContact).trim();
+    if (value) {
+      resolved[placeholder] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(mediaOverrides)) {
+    const trimmed = value.trim();
+    if (trimmed) {
+      resolved[key] = trimmed;
+    }
+  }
+
+  return resolved;
 }
 
 function formatCampaignStatus(status: Campaign["status"]): string {
@@ -1050,6 +1076,7 @@ function BroadcastWizardPage({
     queryFn: () => listContactFields(token).then((response) => response.fields)
   });
   const publishedFlowsQuery = useInboxPublishedFlowsQuery(token);
+  const agentsQuery = useAgentsQuery(token);
 
   const [step, setStep] = useState<WizardStep>(1);
   const [name, setName] = useState("");
@@ -1074,6 +1101,8 @@ function BroadcastWizardPage({
   const [policyEnabled, setPolicyEnabled] = useState(true);
   const [replyMode, setReplyMode] = useState<BroadcastReplyMode>("ai");
   const [replyFlowId, setReplyFlowId] = useState("");
+  const [replyAgentProfileId, setReplyAgentProfileId] = useState("");
+  const [overrideExistingAssignee, setOverrideExistingAssignee] = useState(true);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [marketingOptIn, setMarketingOptIn] = useState(true);
   const [phoneNumberFormat, setPhoneNumberFormat] = useState<"with_country_code" | "without_country_code">("with_country_code");
@@ -1097,7 +1126,11 @@ function BroadcastWizardPage({
   const placeholders = useMemo(() => extractTemplatePlaceholders(selectedTemplate), [selectedTemplate]);
   const fields = fieldsQuery.data ?? [];
   const segments = segmentsQuery.data ?? [];
-  const publishedFlows = publishedFlowsQuery.data ?? [];
+  const publishedFlows = useMemo(
+    () => (publishedFlowsQuery.data ?? []).filter((flow) => flow.channel === "api"),
+    [publishedFlowsQuery.data]
+  );
+  const agentProfiles = agentsQuery.data ?? [];
 
   const primarySegmentId = selectedSegmentIds[0] ?? "";
   const selectedSegmentContactsQuery = useQuery({
@@ -1176,6 +1209,25 @@ function BroadcastWizardPage({
     }
   }, [sendMode]);
 
+  useEffect(() => {
+    if (replyMode === "flow") {
+      setReplyAgentProfileId("");
+      return;
+    }
+    if (!agentProfiles.some((profile) => profile.id === replyAgentProfileId)) {
+      setReplyAgentProfileId(agentProfiles[0]?.id ?? "");
+    }
+  }, [agentProfiles, replyAgentProfileId, replyMode]);
+
+  useEffect(() => {
+    if (replyMode !== "flow") {
+      return;
+    }
+    if (!publishedFlows.some((flow) => flow.id === replyFlowId)) {
+      setReplyFlowId("");
+    }
+  }, [publishedFlows, replyFlowId, replyMode]);
+
   const saveMutation = useMutation({
     mutationFn: async (launchNow: boolean) => {
       if (!selectedConnectionId) {
@@ -1201,7 +1253,9 @@ function BroadcastWizardPage({
                 status: retargetStatus,
                 replyRouting: {
                   mode: replyMode,
-                  flowId: replyMode === "flow" ? replyFlowId || null : null
+                  flowId: replyMode === "flow" ? replyFlowId || null : null,
+                  agentProfileId: replyMode === "ai" ? replyAgentProfileId || null : null,
+                  overrideExistingAssignee
                 }
               }
             : {
@@ -1210,7 +1264,9 @@ function BroadcastWizardPage({
                 segmentIds: selectedSegmentIds,
                 replyRouting: {
                   mode: replyMode,
-                  flowId: replyMode === "flow" ? replyFlowId || null : null
+                  flowId: replyMode === "flow" ? replyFlowId || null : null,
+                  agentProfileId: replyMode === "ai" ? replyAgentProfileId || null : null,
+                  overrideExistingAssignee
                 }
               },
         mediaOverrides,
@@ -1242,6 +1298,48 @@ function BroadcastWizardPage({
     (mode === "retarget" ? Boolean(retargetPreviewQuery.data?.count) : Boolean(selectedTemplateId));
   const canContinueStep2 =
     mode === "retarget" ? Boolean(selectedTemplateId) : selectedSegmentIds.length > 0;
+
+  const testBroadcastMutation = useMutation({
+    mutationFn: async (phones: string[]) => {
+      if (!selectedTemplateId) {
+        throw new Error("Select a template before sending a test broadcast.");
+      }
+
+      const uniquePhones = Array.from(
+        new Set(
+          phones
+            .map((phone) => phone.trim())
+            .filter((phone) => phone.length > 2)
+        )
+      );
+
+      if (uniquePhones.length === 0) {
+        throw new Error("Enter at least one phone number for the test broadcast.");
+      }
+
+      const variableValues = resolveBroadcastVariableValues(bindings, sampleContact, mediaOverrides);
+
+      await Promise.all(
+        uniquePhones.map((phone) =>
+          sendTestTemplate(token, {
+            templateId: selectedTemplateId,
+            to: phone,
+            variableValues
+          })
+        )
+      );
+
+      return uniquePhones.length;
+    },
+    onSuccess: (count) => {
+      setError(null);
+      setMessage(`Test broadcast sent to ${count} number${count === 1 ? "" : "s"}.`);
+    },
+    onError: (mutationError) => {
+      setMessage(null);
+      setError((mutationError as Error).message);
+    }
+  });
 
   async function handleAudienceUpload(file: File) {
     setUploadingAudience(true);
@@ -1448,16 +1546,26 @@ function BroadcastWizardPage({
             onReplyModeChange={setReplyMode}
             replyFlowId={replyFlowId}
             onReplyFlowIdChange={setReplyFlowId}
+            replyAgentProfileId={replyAgentProfileId}
+            onReplyAgentProfileIdChange={setReplyAgentProfileId}
             availableFlows={publishedFlows}
+            availableAgents={agentProfiles.map((agent) => ({ id: agent.id, name: agent.name }))}
+            overrideExistingAssignee={overrideExistingAssignee}
+            onOverrideExistingAssigneeChange={setOverrideExistingAssignee}
             selectedTemplate={selectedTemplate}
             bindings={bindings}
             headerMediaType={headerMediaType}
             mediaOverrides={mediaOverrides}
-            sampleContacts={selectedSegmentContactsQuery.data ?? []}
+            sampleContacts={
+              mode === "retarget"
+                ? retargetPreviewQuery.data?.recipients ?? []
+                : selectedSegmentContactsQuery.data ?? []
+            }
             onBack={() => setStep(3)}
             onSave={() => saveMutation.mutate(false)}
             onLaunch={() => saveMutation.mutate(true)}
-            saving={saveMutation.isPending}
+            onSendTest={(phones) => testBroadcastMutation.mutate(phones)}
+            saving={saveMutation.isPending || testBroadcastMutation.isPending}
           />
         ) : null}
 
@@ -2816,7 +2924,12 @@ function ScheduleStep({
   onReplyModeChange,
   replyFlowId,
   onReplyFlowIdChange,
+  replyAgentProfileId,
+  onReplyAgentProfileIdChange,
   availableFlows,
+  availableAgents,
+  overrideExistingAssignee,
+  onOverrideExistingAssigneeChange,
   selectedTemplate,
   bindings,
   headerMediaType,
@@ -2825,6 +2938,7 @@ function ScheduleStep({
   onBack,
   onSave,
   onLaunch,
+  onSendTest,
   saving
 }: {
   name: string;
@@ -2847,7 +2961,12 @@ function ScheduleStep({
   onReplyModeChange: (value: BroadcastReplyMode) => void;
   replyFlowId: string;
   onReplyFlowIdChange: (value: string) => void;
+  replyAgentProfileId: string;
+  onReplyAgentProfileIdChange: (value: string) => void;
   availableFlows: Array<{ id: string; name: string }>;
+  availableAgents: Array<{ id: string; name: string }>;
+  overrideExistingAssignee: boolean;
+  onOverrideExistingAssigneeChange: (value: boolean) => void;
   selectedTemplate: MessageTemplate | null;
   bindings: CampaignTemplateVariables;
   headerMediaType: "IMAGE" | "VIDEO" | "DOCUMENT" | null;
@@ -2856,6 +2975,7 @@ function ScheduleStep({
   onBack: () => void;
   onSave: () => void;
   onLaunch: () => void;
+  onSendTest: (phones: string[]) => void;
   saving: boolean;
 }) {
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -3064,24 +3184,36 @@ function ScheduleStep({
                     value={replyMode}
                     onChange={(e) => onReplyModeChange(e.target.value as BroadcastReplyMode)}
                   >
-                    <option value="ai">Select Assignee</option>
-                    <option value="flow">Flow</option>
+                    <option value="ai">AI assignee</option>
+                    <option value="flow">API flow</option>
                   </select>
                   <select
                     className="sch-select"
-                    value={replyFlowId}
-                    onChange={(e) => onReplyFlowIdChange(e.target.value)}
-                    disabled={replyMode !== "flow"}
+                    value={replyMode === "flow" ? replyFlowId : replyAgentProfileId}
+                    onChange={(e) =>
+                      replyMode === "flow"
+                        ? onReplyFlowIdChange(e.target.value)
+                        : onReplyAgentProfileIdChange(e.target.value)
+                    }
                   >
-                    <option value="">--Select--</option>
-                    {availableFlows.map((flow) => (
-                      <option key={flow.id} value={flow.id}>{flow.name}</option>
-                    ))}
+                    {replyMode === "flow" ? <option value="">Select API flow</option> : <option value="">Select AI assignee</option>}
+                    {replyMode === "flow"
+                      ? availableFlows.map((flow) => (
+                          <option key={flow.id} value={flow.id}>{flow.name}</option>
+                        ))
+                      : availableAgents.map((agent) => (
+                          <option key={agent.id} value={agent.id}>{agent.name}</option>
+                        ))}
                   </select>
                 </div>
               </div>
               <label className="sch-checkbox-row">
-                <input type="checkbox" className="aud-checkbox" defaultChecked />
+                <input
+                  type="checkbox"
+                  className="aud-checkbox"
+                  checked={overrideExistingAssignee}
+                  onChange={(e) => onOverrideExistingAssigneeChange(e.target.checked)}
+                />
                 <span className="sch-checkbox-text">
                   Use the above configuration, though the conversation is currently assigned to some assignee.
                 </span>
@@ -3177,7 +3309,7 @@ function ScheduleStep({
           onClose={() => setShowTestModal(false)}
           onSend={(phones) => {
             setShowTestModal(false);
-            console.info("Test broadcast to:", phones);
+            onSendTest(phones);
           }}
         />
       ) : null}

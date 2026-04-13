@@ -123,6 +123,7 @@ export function ApiChannelPage() {
   const [setupLoadingText, setSetupLoadingText] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showInactiveChannels, setShowInactiveChannels] = useState(false);
 
   const metaConfigQuery = useSettingsMetaConfigQuery(token);
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
@@ -142,6 +143,22 @@ export function ApiChannelPage() {
     connections.find((connection) => connection.id === selectedConnectionId) ??
     metaStatus.connection ??
     null;
+  const activeConnections = connections.filter((connection) => isMetaConnectionActive(connection));
+  const inactiveConnections = connections.filter((connection) => !isMetaConnectionActive(connection));
+  const visibleConnections = showInactiveChannels ? connections : activeConnections;
+
+  useEffect(() => {
+    if (showInactiveChannels) {
+      return;
+    }
+    if (!selectedConnection || isMetaConnectionActive(selectedConnection)) {
+      return;
+    }
+    if (activeConnections.length > 0) {
+      setSelectedConnectionId(activeConnections[0].id);
+    }
+  }, [activeConnections, selectedConnection, showInactiveChannels]);
+
   const metaConfig = metaConfigQuery.data ?? null;
   const hasConnection = Boolean(selectedConnection);
   const isConnected = Boolean(isMetaConnectionActive(selectedConnection));
@@ -369,8 +386,9 @@ export function ApiChannelPage() {
 
         {connections.length > 0 ? (
           <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem" }}>
-            {connections.map((connection) => {
+            {visibleConnections.length > 0 ? visibleConnections.map((connection) => {
               const active = isMetaConnectionActive(connection);
+              const selected = selectedConnection?.id === connection.id;
               return (
                 <button
                   key={connection.id}
@@ -385,8 +403,12 @@ export function ApiChannelPage() {
                     textAlign: "left",
                     padding: "1rem 1.1rem",
                     borderRadius: "14px",
-                    border: selectedConnection?.id === connection.id ? "1.5px solid #2563eb" : "1px solid #dbe4ee",
-                    background: selectedConnection?.id === connection.id ? "#eff6ff" : "#fff"
+                    border: selected
+                      ? (active ? "1.5px solid #16a34a" : "1.5px solid #2563eb")
+                      : active ? "1px solid #bbf7d0" : "1px solid #dbe4ee",
+                    background: selected
+                      ? (active ? "#f0fdf4" : "#eff6ff")
+                      : active ? "#f7fee7" : "#fff"
                   }}
                 >
                   <div>
@@ -410,11 +432,44 @@ export function ApiChannelPage() {
                     <div style={{ fontWeight: 600, color: "#0f172a" }}>{formatMetaStatusLabel(readMetaString(getNestedRecord(connection.metadata?.metaHealth), "messagingLimitTier"), "Unknown")}</div>
                   </div>
                   <div style={{ justifySelf: "end", fontSize: "0.78rem", color: active ? "#15803d" : "#92400e" }}>
-                    {selectedConnection?.id === connection.id ? "Selected" : "Select"}
+                    {selected ? "Selected" : "Select"}
                   </div>
                 </button>
               );
-            })}
+            }) : (
+              <div
+                style={{
+                  border: "1px dashed #cbd5e1",
+                  borderRadius: "14px",
+                  padding: "0.9rem 1rem",
+                  background: "#f8fafc",
+                  color: "#475569",
+                  fontSize: "0.92rem"
+                }}
+              >
+                No active channels found.
+              </div>
+            )}
+            {inactiveConnections.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowInactiveChannels((current) => !current)}
+                style={{
+                  justifySelf: "start",
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  color: "#475569",
+                  fontSize: "0.84rem",
+                  textDecoration: "underline",
+                  cursor: "pointer"
+                }}
+              >
+                {showInactiveChannels
+                  ? "Hide inactive channels"
+                  : `Show inactive channels (${inactiveConnections.length})`}
+              </button>
+            ) : null}
           </div>
         ) : null}
 
