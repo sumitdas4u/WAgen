@@ -121,8 +121,6 @@ export function ApiChannelPage() {
   const [busy, setBusy] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupLoadingText, setSetupLoadingText] = useState<string | null>(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [deleting, setDeleting] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -243,9 +241,14 @@ export function ApiChannelPage() {
         const code = response.authResponse?.code?.trim();
         if (!code) throw new Error("Meta signup was cancelled or did not return an authorization code.");
         setSetupLoadingText("Connecting number and syncing Meta status...");
-        await completeMetaSignup(token, { code, redirectUri, ...captured });
-        await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus });
+        const result = await completeMetaSignup(token, { code, redirectUri, ...captured });
+        setSelectedConnectionId(result.connection.id);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaConnections })
+        ]);
         await updateShellState();
+        setSelectedConnectionId(result.connection.id);
         setInfo("Official WhatsApp Business API connected successfully.");
       } finally {
         window.removeEventListener("message", messageListener);
@@ -307,6 +310,10 @@ export function ApiChannelPage() {
     disconnectMutation.mutate();
   };
 
+  const handleAddNew = async () => {
+    await openBusinessApiSetup();
+  };
+
   return (
     <section className="finance-shell">
       {(info || error) && (
@@ -323,15 +330,20 @@ export function ApiChannelPage() {
               <h3>Official WhatsApp API Channel</h3>
               <p>Connect Meta Embedded Signup for stable production messaging at scale, then pause or resume replies without disconnecting the API number.</p>
             </div>
-            <button
-              type="button"
-              className={channelEnabled ? "go-live-switch on" : "go-live-switch"}
-              disabled={currentBusy || !hasConnection}
-              onClick={() => { setError(null); setInfo(null); toggleMutation.mutate(); }}
-              title={channelEnabled ? "Pause API channel replies" : "Resume API channel replies"}
-            >
-              <span />
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <button type="button" className="ghost-btn" disabled={currentBusy} onClick={() => void handleAddNew()}>
+                Add New
+              </button>
+              <button
+                type="button"
+                className={channelEnabled ? "go-live-switch on" : "go-live-switch"}
+                disabled={currentBusy || !hasConnection}
+                onClick={() => { setError(null); setInfo(null); toggleMutation.mutate(); }}
+                title={channelEnabled ? "Pause API channel replies" : "Resume API channel replies"}
+              >
+                <span />
+              </button>
+            </div>
           </div>
         </header>
 
@@ -463,37 +475,9 @@ export function ApiChannelPage() {
         </div>
         <p className="tiny-note">
           {hasConnection
-            ? "Toggle only pauses replies. Reconnect or Disconnect will reset the actual API connection."
+            ? "Use Add New to start onboarding another number. Toggle only pauses replies. Reconnect or Disconnect resets only the selected API connection."
             : "Connect first. After that, this page will show only the information needed to manage your WhatsApp API channel."}
         </p>
-      </article>
-
-      <article className="channel-setup-panel account-danger-panel">
-        <header>
-          <h3>Account Settings</h3>
-          <p>Delete your account permanently. This revokes connected WhatsApp tokens, removes webhook subscriptions, and deletes associated business data.</p>
-        </header>
-        <div className="web-widget-row">
-          <label>
-            Type <strong>DELETE</strong> to confirm
-            <input value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} placeholder="DELETE" />
-          </label>
-        </div>
-        <div className="clone-hero-actions">
-          <button
-            type="button"
-            className="account-danger-btn"
-            disabled={currentBusy || deleting || deleteConfirmText.trim() !== "DELETE"}
-            onClick={() => {
-              if (deleteConfirmText.trim() !== "DELETE") { setError('Type "DELETE" to confirm.'); return; }
-              if (!window.confirm("This will permanently delete your account. Continue?")) return;
-              setDeleting(true);
-            }}
-          >
-            {deleting ? "Deleting..." : "Delete Account"}
-          </button>
-        </div>
-        <p className="tiny-note">This action is irreversible.</p>
       </article>
     </section>
   );

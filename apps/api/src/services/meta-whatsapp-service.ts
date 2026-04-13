@@ -987,6 +987,7 @@ async function upsertConnection(args: {
   displayPhoneNumber: string | null;
   accessToken: string;
   expiresInSeconds: number | null;
+  enabled?: boolean;
   subscriptionStatus?: string;
   status?: string;
   billingMode?: string;
@@ -1015,6 +1016,7 @@ async function upsertConnection(args: {
        linked_number,
        access_token_encrypted,
        token_expires_at,
+       enabled,
        subscription_status,
        status,
        billing_mode,
@@ -1027,7 +1029,7 @@ async function upsertConnection(args: {
        billing_currency,
        metadata_json
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb)
      ON CONFLICT (phone_number_id)
      DO UPDATE SET
        meta_business_id = EXCLUDED.meta_business_id,
@@ -1036,6 +1038,7 @@ async function upsertConnection(args: {
        linked_number = EXCLUDED.linked_number,
        access_token_encrypted = EXCLUDED.access_token_encrypted,
        token_expires_at = EXCLUDED.token_expires_at,
+       enabled = EXCLUDED.enabled,
        subscription_status = EXCLUDED.subscription_status,
        status = EXCLUDED.status,
        billing_mode = EXCLUDED.billing_mode,
@@ -1080,6 +1083,7 @@ async function upsertConnection(args: {
       linkedNumber,
       encryptToken(args.accessToken),
       tokenExpiresAt,
+      args.enabled ?? true,
       args.subscriptionStatus ?? "pending",
       args.status ?? "pending",
       args.billingMode ?? "none",
@@ -1926,6 +1930,7 @@ export async function completeMetaEmbeddedSignup(
     displayPhoneNumber: discovered.displayPhoneNumber,
     accessToken: resolvedToken,
     expiresInSeconds: resolvedExpiry,
+    enabled: true,
     subscriptionStatus: isConnected ? "active" : "pending",
     status: isConnected ? "connected" : "pending",
     billingMode: "none",
