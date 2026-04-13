@@ -777,7 +777,7 @@ export async function listTemplates(
   options?: { connectionId?: string; status?: TemplateStatus }
 ): Promise<MessageTemplate[]> {
   const params: unknown[] = [userId];
-  let where = "WHERE mt.user_id = $1";
+  let where = "WHERE mt.user_id = $1 AND wbc.status != 'disconnected'";
 
   if (options?.connectionId) {
     params.push(options.connectionId);

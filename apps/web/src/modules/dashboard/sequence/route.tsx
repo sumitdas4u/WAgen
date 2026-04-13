@@ -909,20 +909,27 @@ function BuilderPage({ token }: { token: string }) {
     if (!draft) {
       return;
     }
-    if (draft.connectionId) {
+    if (draft.connectionId && apiConnections.some((connection) => connection.id === draft.connectionId)) {
       return;
     }
-    const fallbackConnectionId =
-      detail?.connection_id ??
-      bootstrap?.channelSummary.metaApi.connection?.id ??
-      apiConnections.find(isMetaConnectionActive)?.id ??
-      apiConnections[0]?.id ??
-      null;
-    if (!fallbackConnectionId) {
+    if (!draft.connectionId) {
       return;
     }
-    setDraft((current) => (current && !current.connectionId ? { ...current, connectionId: fallbackConnectionId } : current));
-  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection?.id, detail?.connection_id, draft]);
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            connectionId: "",
+            steps: (current.steps ?? []).map((step) => ({
+              ...step,
+              messageTemplateId: "",
+              templateVariables: {},
+              mediaOverrides: {}
+            }))
+          }
+        : current
+    );
+  }, [apiConnections, draft]);
 
   const conditionFieldOptions = useMemo(
     () => [...CONDITION_FIELD_OPTIONS, ...contactFieldDefinitions.map(mapContactFieldToConditionOption)],

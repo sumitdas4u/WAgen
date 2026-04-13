@@ -1112,13 +1112,16 @@ function BroadcastWizardPage({
   });
 
   useEffect(() => {
-    setSelectedConnectionId((current) => {
-      if (current && apiConnections.some((connection) => connection.id === current)) {
-        return current;
-      }
-      return bootstrap?.channelSummary.metaApi.connection?.id ?? apiConnections.find(isMetaConnectionActive)?.id ?? apiConnections[0]?.id ?? "";
-    });
-  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection?.id]);
+    const hasSelectedConnection = selectedConnectionId
+      ? apiConnections.some((connection) => connection.id === selectedConnectionId)
+      : false;
+    if (selectedConnectionId && !hasSelectedConnection) {
+      setSelectedConnectionId("");
+      setSelectedTemplateId("");
+      setBindings({});
+      setMediaOverrides({});
+    }
+  }, [apiConnections]);
 
   useEffect(() => {
     if (!selectedTemplateId) {

@@ -552,12 +552,14 @@ interface Props {
 export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefill }: Props) {
   const init = prefill ? extractPrefillState(prefill) : null;
   const availableConnections = metaStatus?.connections ?? [];
+  const hasConnection = (connectionId: string | null | undefined, connections: MetaBusinessConnection[]) =>
+    Boolean(connectionId && connections.some((connection) => connection.id === connectionId));
   const resolveDefaultConnectionId = (connections: MetaBusinessConnection[]) =>
-    prefill?.connectionId ??
-    metaStatus?.connection?.id ??
-    connections.find(isMetaConnectionActive)?.id ??
-    connections[0]?.id ??
-    "";
+    prefill
+      ? (hasConnection(prefill.connectionId, connections) ? prefill.connectionId : "")
+      : (
+    (hasConnection(metaStatus?.connection?.id, connections) ? metaStatus?.connection?.id : null) ??
+    "");
   const [name, setName] = useState(init?.name ?? "");
   const [category, setCategory] = useState<TemplateCategory>(init?.category ?? "MARKETING");
   const [language, setLanguage] = useState(init?.language ?? "en_US");
