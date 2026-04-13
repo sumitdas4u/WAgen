@@ -173,7 +173,6 @@ export function ApiChannelPage() {
   const businessVerificationLower = (businessVerificationStatus ?? "").toLowerCase();
   const businessVerificationPending = !/(verified|approved|complete)/.test(businessVerificationLower);
   const sharedBillingSupported = Boolean(metaConfig?.sharedBillingSupported);
-  const sharedBillingRequired = Boolean(metaConfig?.sharedBillingRequired);
   const billingStatusLabel = formatMetaStatusLabel(
     selectedConnection?.billingStatus,
     sharedBillingSupported ? "Pending" : "Not configured"
@@ -292,7 +291,7 @@ export function ApiChannelPage() {
   };
 
   const handleConnectOrReconnect = async () => {
-    if (hasConnection) {
+    if (isConnected) {
       if (!window.confirm("Reconnect Official WhatsApp API? This will disconnect the current API connection before starting a fresh connection flow.")) {
         return;
       }
@@ -363,16 +362,6 @@ export function ApiChannelPage() {
             </div>
           </div>
         </header>
-
-        {!isConnected && sharedBillingSupported ? (
-          <div className="api-setup-alert">
-            <strong>Shared Meta Billing Enabled</strong>
-            <p>
-              New numbers onboarded here will try to use WAgen&apos;s Meta billing in {metaConfig?.sharedBillingCurrency ?? "your configured currency"}.
-              {sharedBillingRequired ? " If billing attachment fails, the API channel can still connect and the billing issue will be shown separately." : ""}
-            </p>
-          </div>
-        ) : null}
 
         {setupLoading && (
           <div className="dashboard-connection-loading api-setup-loading-card" role="status" aria-live="polite">
@@ -519,19 +508,23 @@ export function ApiChannelPage() {
 
         <div className="clone-hero-actions">
           <button type="button" className="primary-btn" disabled={currentBusy} onClick={() => void handleConnectOrReconnect()}>
-            {hasConnection ? "Reconnect API" : "Connect WhatsApp API"}
+            {isConnected ? "Reconnect API" : "Connect now"}
           </button>
-          <button type="button" className="ghost-btn" disabled={currentBusy || !hasConnection} onClick={() => void refreshMetaStatus()}>
-            Refresh status
-          </button>
-          <button type="button" className="ghost-btn" disabled={currentBusy || !hasConnection} onClick={handleDisconnect}>
-            Disconnect
-          </button>
+          {isConnected ? (
+            <>
+              <button type="button" className="ghost-btn" disabled={currentBusy} onClick={() => void refreshMetaStatus()}>
+                Refresh status
+              </button>
+              <button type="button" className="ghost-btn" disabled={currentBusy} onClick={handleDisconnect}>
+                Disconnect
+              </button>
+            </>
+          ) : null}
         </div>
         <p className="tiny-note">
-          {hasConnection
+          {isConnected
             ? "Use Add New to start onboarding another number. Toggle only pauses replies. Reconnect or Disconnect resets only the selected API connection."
-            : "Connect first. After that, this page will show only the information needed to manage your WhatsApp API channel."}
+            : "This channel is currently disconnected. Connect now to start the Meta onboarding flow again."}
         </p>
       </article>
     </section>

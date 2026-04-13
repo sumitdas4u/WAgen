@@ -415,7 +415,7 @@ function DeleteConfirmModal({
         </div>
         <div className="tpl-modal-body">
           <p style={{ fontSize: "0.85rem", color: "#334155" }}>
-            <strong>{template.name}</strong> will be permanently deleted from Meta. This cannot be undone.
+            <strong>{template.name}</strong> will be permanently deleted from Meta first, then removed from your local database. This cannot be undone.
           </p>
         </div>
         <div className="tpl-modal-footer">
@@ -493,9 +493,11 @@ interface Props {
 export function TemplateListPage({ token, metaStatus }: Props) {
   const navigate = useNavigate();
   const availableConnections = metaStatus?.connections ?? [];
+  const activeConnections = availableConnections.filter(isMetaConnectionActive);
   const [selectedConnectionId, setSelectedConnectionId] = useState(
-    () => metaStatus?.connection?.id ?? availableConnections.find(isMetaConnectionActive)?.id ?? availableConnections[0]?.id ?? ""
+    () => metaStatus?.connection?.id ?? activeConnections[0]?.id ?? ""
   );
+  const [showInactiveTemplates, setShowInactiveTemplates] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [activeTab, setActiveTab] = useState<"mine" | "library">("mine");
@@ -510,12 +512,15 @@ export function TemplateListPage({ token, metaStatus }: Props) {
 
   useEffect(() => {
     setSelectedConnectionId((current) => {
-      if (current && availableConnections.some((connection) => connection.id === current)) {
+      const connectionPool = showInactiveTemplates ? availableConnections : activeConnections;
+      if (current && connectionPool.some((connection) => connection.id === current)) {
         return current;
       }
-      return metaStatus?.connection?.id ?? availableConnections.find(isMetaConnectionActive)?.id ?? availableConnections[0]?.id ?? "";
+      return showInactiveTemplates
+        ? (metaStatus?.connection?.id ?? activeConnections[0]?.id ?? availableConnections[0]?.id ?? "")
+        : (metaStatus?.connection?.id ?? activeConnections[0]?.id ?? "");
     });
-  }, [availableConnections, metaStatus?.connection?.id]);
+  }, [activeConnections, availableConnections, metaStatus?.connection?.id, showInactiveTemplates]);
 
   const selectedConnection = availableConnections.find((connection) => connection.id === selectedConnectionId) ?? null;
   const selectedConnectionActive = isMetaConnectionActive(selectedConnection);
@@ -525,12 +530,23 @@ export function TemplateListPage({ token, metaStatus }: Props) {
 
   const allTemplates = templatesQuery.data ?? [];
 
+  const activeConnectionIds = useMemo(
+    () => new Set(activeConnections.map((connection) => connection.id)),
+    [activeConnections]
+  );
+
   const filtered = useMemo(() => allTemplates.filter((t) => {
+    if (!showInactiveTemplates && !activeConnectionIds.has(t.connectionId)) return false;
     if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== "All" && t.status !== statusFilter) return false;
     if (typeFilter !== "All" && t.category !== typeFilter) return false;
     return true;
-  }), [allTemplates, search, statusFilter, typeFilter]);
+  }), [activeConnectionIds, allTemplates, search, showInactiveTemplates, statusFilter, typeFilter]);
+
+  const hiddenInactiveTemplateCount = useMemo(
+    () => allTemplates.filter((t) => !activeConnectionIds.has(t.connectionId)).length,
+    [activeConnectionIds, allTemplates]
+  );
 
   // Stats
   const stats = useMemo(() => ({
@@ -658,7 +674,11 @@ export function TemplateListPage({ token, metaStatus }: Props) {
                 ⚠️ No Meta WhatsApp Business connection found. Connect your account in <strong>Settings → API Channel</strong>.
               </div>
             )}
-            {selectedConnection && !selectedConnectionActive ? <div className="tpl-banner is-warning">This connection is inactive. Reconnect or resume it before sending or creating templates.</div> : null}
+            {showInactiveTemplates && selectedConnection && !selectedConnectionActive ? (
+              <div className="tpl-banner is-warning">
+                You are viewing templates from an inactive connection. You can still duplicate them to a new active channel, but you cannot use the old channel for sending or new submissions.
+              </div>
+            ) : null}
             {syncMutation.isError && (
               <div className="tpl-banner is-error">
                 Sync failed: {(syncMutation.error as Error).message}
@@ -689,6 +709,17 @@ export function TemplateListPage({ token, metaStatus }: Props) {
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
+                {hiddenInactiveTemplateCount > 0 ? (
+                  <button
+                    type="button"
+                    className={`tpl-toolbar-btn${showInactiveTemplates ? " is-active" : ""}`}
+                    onClick={() => setShowInactiveTemplates((current) => !current)}
+                  >
+                    {showInactiveTemplates
+                      ? `Hide inactive templates (${hiddenInactiveTemplateCount})`
+                      : `Show inactive templates (${hiddenInactiveTemplateCount})`}
+                  </button>
+                ) : null}
               </div>
 
               <div className="tpl-toolbar-right">
@@ -700,6 +731,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
                     label="Connection"
                     allowEmpty
                     emptyLabel="All API connections"
+                    activeOnly={!showInactiveTemplates}
                   />
                 </div>
                 <select className="tpl-filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TemplateStatus | "All")}>
@@ -722,6 +754,18 @@ export function TemplateListPage({ token, metaStatus }: Props) {
             {/* Content */}
             {templatesQuery.isLoading ? (
               <div className="tpl-loading">Loading templates…</div>
+            ) : filtered.length === 0 && allTemplates.length > 0 && !showInactiveTemplates && hiddenInactiveTemplateCount > 0 ? (
+              <div className="tpl-empty">
+                <div className="tpl-empty-title">Only inactive templates are available</div>
+                <p className="tpl-empty-text">Old templates from deleted or paused channels are hidden by default. Show inactive templates if you want to duplicate one for a new active channel.</p>
+                <button
+                  type="button"
+                  className="tpl-toolbar-btn"
+                  onClick={() => setShowInactiveTemplates(true)}
+                >
+                  Show inactive templates ({hiddenInactiveTemplateCount})
+                </button>
+              </div>
             ) : allTemplates.length === 0 ? (
               <div className="tpl-empty">
                 <div className="tpl-empty-icon">📋</div>

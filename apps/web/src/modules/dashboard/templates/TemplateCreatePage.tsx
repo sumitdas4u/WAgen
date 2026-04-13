@@ -240,6 +240,7 @@ type TemplateDraftValidation = {
   footerError: string | null;
   bodyError: string | null;
   headerError: string | null;
+  variableErrors: Record<string, string>;
   buttonErrors: DraftButtonValidation[];
 };
 
@@ -252,6 +253,7 @@ function validateTemplateDraft(input: {
   bodyText: string;
   footerText: string;
   buttons: DraftButton[];
+  variableMapping: Record<string, string>;
 }): TemplateDraftValidation {
   const buttonErrors: DraftButtonValidation[] = input.buttons.map(() => ({
     text: null,
@@ -259,6 +261,7 @@ function validateTemplateDraft(input: {
     phone: null,
     coupon: null
   }));
+  const variableErrors: Record<string, string> = {};
 
   if (input.category === "AUTHENTICATION") {
     return {
@@ -267,6 +270,7 @@ function validateTemplateDraft(input: {
       headerError: null,
       footerError: null,
       bodyError: null,
+      variableErrors,
       buttonErrors
     };
   }
@@ -277,6 +281,7 @@ function validateTemplateDraft(input: {
       headerError: "Upload a fresh sample file for this copied media header.",
       footerError: null,
       bodyError: null,
+      variableErrors,
       buttonErrors
     };
   }
@@ -287,6 +292,7 @@ function validateTemplateDraft(input: {
       headerError: "Please upload the sample media for this header.",
       footerError: null,
       bodyError: null,
+      variableErrors,
       buttonErrors
     };
   }
@@ -298,6 +304,7 @@ function validateTemplateDraft(input: {
         headerError: "Public URLs are not accepted. Upload the media here to generate a Meta sample handle.",
         footerError: null,
         bodyError: null,
+        variableErrors,
         buttonErrors
       };
     }
@@ -307,6 +314,7 @@ function validateTemplateDraft(input: {
         headerError: "Upload the sample here to generate a fresh Meta header handle.",
         footerError: null,
         bodyError: null,
+        variableErrors,
         buttonErrors
       };
     }
@@ -319,6 +327,7 @@ function validateTemplateDraft(input: {
         headerError: `Upload a ${MEDIA_HEADER_SAMPLE_HELP[input.headerFormat]} file for this header.`,
         footerError: null,
         bodyError: null,
+        variableErrors,
         buttonErrors
       };
     }
@@ -329,6 +338,7 @@ function validateTemplateDraft(input: {
       headerError: "Please fill the header text.",
       footerError: null,
       bodyError: null,
+      variableErrors,
       buttonErrors
     };
   }
@@ -338,6 +348,7 @@ function validateTemplateDraft(input: {
       headerError: "Header text cannot contain emojis.",
       footerError: null,
       bodyError: null,
+      variableErrors,
       buttonErrors
     };
   }
@@ -347,6 +358,7 @@ function validateTemplateDraft(input: {
       headerError: null,
       footerError: null,
       bodyError: "Please fill the message body.",
+      variableErrors,
       buttonErrors
     };
   }
@@ -359,6 +371,7 @@ function validateTemplateDraft(input: {
         headerError: null,
         footerError: "Footer text cannot contain variables.",
         bodyError: null,
+        variableErrors,
         buttonErrors
       };
     }
@@ -368,6 +381,7 @@ function validateTemplateDraft(input: {
         headerError: null,
         footerError: "Footer text cannot contain emojis.",
         bodyError: null,
+        variableErrors,
         buttonErrors
       };
     }
@@ -393,6 +407,7 @@ function validateTemplateDraft(input: {
       headerError: null,
       footerError: null,
       bodyError: "Use numbered variables like {{1}}, {{2}}, {{3}}.",
+      variableErrors,
       buttonErrors
     };
   }
@@ -413,9 +428,30 @@ function validateTemplateDraft(input: {
         headerError: null,
         footerError: null,
         bodyError: "Template variables must be sequential with no gaps.",
+        variableErrors,
         buttonErrors
       };
     }
+  }
+
+  const missingSamples = Array.from(new Set(placeholders)).filter(
+    (placeholder) => !input.variableMapping[placeholder]?.trim()
+  );
+  if (missingSamples.length > 0) {
+    for (const placeholder of missingSamples) {
+      variableErrors[placeholder] = "Please fill a sample value for Meta review.";
+    }
+    return {
+      formError:
+        missingSamples.length === 1
+          ? `${missingSamples[0]} needs a sample value before submitting.`
+          : "Every template variable needs a sample value before submitting.",
+      headerError: null,
+      footerError: null,
+      bodyError: null,
+      variableErrors,
+      buttonErrors
+    };
   }
 
   let buttonFormError: string | null = null;
@@ -461,6 +497,7 @@ function validateTemplateDraft(input: {
       headerError: null,
       footerError: null,
       bodyError: null,
+      variableErrors,
       buttonErrors
     };
   }
@@ -470,6 +507,7 @@ function validateTemplateDraft(input: {
     headerError: null,
     footerError: null,
     bodyError: null,
+    variableErrors,
     buttonErrors
   };
 }
@@ -606,7 +644,8 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     headerText,
     bodyText,
     footerText,
-    buttons
+    buttons,
+    variableMapping
   });
 
   useEffect(() => {
@@ -1011,8 +1050,17 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                     value={variableMapping[v] ?? ""}
                     onChange={(e) => setVariableMapping((m) => ({ ...m, [v]: e.target.value }))}
                     placeholder={`Example for ${v}`}
-                    style={{ flex: 1, borderRadius: "6px", border: "1.5px solid #e0e0e0", padding: "5px 10px", fontSize: "13px" }}
+                    style={{
+                      flex: 1,
+                      borderRadius: "6px",
+                      border: `1.5px solid ${draftValidation.variableErrors[v] ? "#dc2626" : "#e0e0e0"}`,
+                      padding: "5px 10px",
+                      fontSize: "13px"
+                    }}
                   />
+                  {draftValidation.variableErrors[v] && (
+                    <span style={{ color: "#dc2626", fontSize: "12px" }}>{draftValidation.variableErrors[v]}</span>
+                  )}
                 </div>
               ))}
             </div>

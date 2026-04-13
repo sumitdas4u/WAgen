@@ -232,11 +232,17 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
     { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
-      const deleted = await deleteTemplate(request.authUser.userId, id);
-      if (!deleted) {
-        return reply.status(404).send({ error: "Template not found" });
+      try {
+        const deleted = await deleteTemplate(request.authUser.userId, id);
+        if (!deleted) {
+          return reply.status(404).send({ error: "Template not found" });
+        }
+        return { ok: true };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to delete template.";
+        request.log.error({ err: error, templateId: id }, "delete template error");
+        return reply.status(400).send({ error: message });
       }
-      return { ok: true };
     }
   );
 

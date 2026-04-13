@@ -403,7 +403,11 @@ function buildTemplateExampleValue(
   placeholder: string,
   provided: string | null | undefined
 ): string {
-  return provided?.trim() || placeholder.replace(/^\{\{|\}\}$/g, "").trim();
+  const value = provided?.trim();
+  if (!value) {
+    throw new Error(`Missing sample value for ${placeholder}.`);
+  }
+  return value;
 }
 
 function normalizeCreateTemplateComponents(components: TemplateComponent[]): TemplateComponent[] {
@@ -968,12 +972,11 @@ export async function deleteTemplate(userId: string, localId: string): Promise<b
   }
 
   if (row.template_id) {
-    try {
-      const accessToken = decryptToken(row.access_token_encrypted);
-      await graphDelete(`/${row.template_id}`, accessToken, { hsm_id: row.template_id });
-    } catch (error) {
-      console.warn(`[Templates] Meta delete failed templateId=${row.template_id}: ${(error as Error).message}`);
-    }
+    const accessToken = decryptToken(row.access_token_encrypted);
+    await graphDelete<{ success?: boolean }>(`/${row.waba_id}/message_templates`, accessToken, {
+      hsm_id: row.template_id,
+      name: row.name
+    });
   }
 
   await pool.query(`DELETE FROM message_templates WHERE id = $1 AND user_id = $2`, [localId, userId]);
