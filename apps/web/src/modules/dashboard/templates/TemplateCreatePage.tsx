@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import type {
   GeneratedTemplate,
   MessageTemplate,
+  MetaBusinessConnection,
   TemplateCategory,
   TemplateComponent,
   TemplateComponentButton
 } from "../../../lib/api";
 import type { MetaBusinessStatus } from "../../../lib/api";
+import { MetaConnectionSelector, isMetaConnectionActive } from "../../../shared/dashboard/meta-connection-selector";
 import { AIGeneratorPanel } from "./AIGeneratorPanel";
 import { MediaUploader } from "./MediaUploader";
 import { TemplatePreviewPanel } from "./TemplatePreviewPanel";
@@ -549,6 +551,13 @@ interface Props {
 
 export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefill }: Props) {
   const init = prefill ? extractPrefillState(prefill) : null;
+  const availableConnections = metaStatus?.connections ?? [];
+  const resolveDefaultConnectionId = (connections: MetaBusinessConnection[]) =>
+    prefill?.connectionId ??
+    metaStatus?.connection?.id ??
+    connections.find(isMetaConnectionActive)?.id ??
+    connections[0]?.id ??
+    "";
   const [name, setName] = useState(init?.name ?? "");
   const [category, setCategory] = useState<TemplateCategory>(init?.category ?? "MARKETING");
   const [language, setLanguage] = useState(init?.language ?? "en_US");
@@ -567,9 +576,20 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const [formError, setFormError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [headerFooterSanitizeNotice, setHeaderFooterSanitizeNotice] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState(() => resolveDefaultConnectionId(availableConnections));
 
   const createMutation = useCreateTemplateMutation(token);
-  const connectionId = metaStatus?.connection?.id ?? "";
+  const connectionId = selectedConnectionId;
+  const selectedConnection = availableConnections.find((connection) => connection.id === selectedConnectionId) ?? null;
+
+  useEffect(() => {
+    setSelectedConnectionId((current) => {
+      if (current && availableConnections.some((connection) => connection.id === current)) {
+        return current;
+      }
+      return resolveDefaultConnectionId(availableConnections);
+    });
+  }, [availableConnections, metaStatus?.connection?.id, prefill?.connectionId]);
 
   const detectedVars = collectDraftVariables({
     headerText,
@@ -614,7 +634,8 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     bodyText, footerText, buttons, variableMapping
   );
 
-  const connectionName = metaStatus?.connection?.displayPhoneNumber ?? metaStatus?.connection?.linkedNumber ?? "Connected";
+  const connectionName = selectedConnection?.displayPhoneNumber ?? selectedConnection?.linkedNumber ?? "Connected";
+  const selectedConnectionActive = isMetaConnectionActive(selectedConnection);
 
   function applyGenerated(gen: GeneratedTemplate) {
     setName(gen.suggestedName);
@@ -681,6 +702,10 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
       setFormError("Connect a Meta WhatsApp number before submitting this template.");
       return;
     }
+    if (!selectedConnectionActive) {
+      setFormError("Select an active WhatsApp API connection before submitting this template.");
+      return;
+    }
     if (draftValidation.formError) {
       setFormError(draftValidation.formError);
       return;
@@ -738,6 +763,23 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             }}
           />
           {nameError && <div style={{ color: "#dc2626", fontSize: "12px", marginTop: "4px" }}>{nameError}</div>}
+        </div>
+
+        <div style={{ maxWidth: "420px" }}>
+          <MetaConnectionSelector
+            connections={availableConnections}
+            value={connectionId}
+            onChange={setSelectedConnectionId}
+            label="WhatsApp API connection"
+            required
+            allowEmpty
+            emptyLabel="Select a WhatsApp API connection"
+          />
+          {selectedConnection && !selectedConnectionActive ? (
+            <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>
+              This connection is not active. Reconnect or resume it before creating a template.
+            </div>
+          ) : null}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>

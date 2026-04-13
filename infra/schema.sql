@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS flows (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL DEFAULT 'Untitled Flow',
   channel VARCHAR(10) NOT NULL DEFAULT 'api',
+  connection_id UUID REFERENCES whatsapp_business_connections(id) ON DELETE SET NULL,
   nodes JSONB NOT NULL DEFAULT '[]',
   edges JSONB NOT NULL DEFAULT '[]',
   triggers JSONB NOT NULL DEFAULT '[]',
@@ -85,6 +86,7 @@ CREATE TABLE IF NOT EXISTS flows (
 
 CREATE INDEX IF NOT EXISTS idx_flows_user_id ON flows(user_id);
 CREATE INDEX IF NOT EXISTS idx_flows_published ON flows(user_id, published) WHERE published = TRUE;
+CREATE INDEX IF NOT EXISTS flows_user_connection_idx ON flows(user_id, connection_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS flow_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

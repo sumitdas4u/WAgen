@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { openAIService } from "../services/openai-service.js";
+import { requireMetaConnection } from "../services/meta-whatsapp-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
 import { queueConversationTemplateMessage } from "../services/outbound-message-service.js";
 import {
@@ -416,7 +417,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
   // ── Create or find an outbound conversation for a contact ────────────────
   const OutboundConversationSchema = z.object({
     contactId: z.string().uuid(),
-    channelType: z.enum(["qr", "api"])
+    channelType: z.enum(["qr", "api"]),
+    connectionId: z.string().uuid().optional()
   });
 
   fastify.post(
@@ -440,16 +442,13 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
       let channelLinkedNumber: string | null = null;
       if (channelType === "api") {
-        const connRow = await pool.query<{ linked_number: string | null; display_phone_number: string | null }>(
-          `SELECT linked_number, display_phone_number
-           FROM whatsapp_business_connections
-           WHERE user_id = $1 AND status = 'connected'
-           ORDER BY created_at DESC
-           LIMIT 1`,
-          [request.authUser.userId]
-        );
-        const conn = connRow.rows[0];
-        channelLinkedNumber = conn?.linked_number?.trim() || conn?.display_phone_number?.trim() || null;
+        if (!parsed.data.connectionId) {
+          return reply.status(400).send({ error: "connectionId is required for WhatsApp API conversations." });
+        }
+        const connection = await requireMetaConnection(request.authUser.userId, parsed.data.connectionId, {
+          requireActive: true
+        });
+        channelLinkedNumber = connection.linkedNumber?.trim() || connection.displayPhoneNumber?.trim() || null;
       }
 
       const conversation = await getOrCreateConversation(request.authUser.userId, phoneNumber, { channelType, channelLinkedNumber });

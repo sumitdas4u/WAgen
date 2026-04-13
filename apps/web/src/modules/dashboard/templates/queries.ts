@@ -12,16 +12,16 @@ import {
 } from "../../../lib/api";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 
-export function buildTemplatesQueryOptions(token: string) {
+export function buildTemplatesQueryOptions(token: string, options?: { connectionId?: string | null }) {
   return queryOptions({
-    queryKey: dashboardQueryKeys.templates,
-    queryFn: () => fetchTemplates(token).then((r) => r.templates),
+    queryKey: [...dashboardQueryKeys.templates, options?.connectionId ?? "all"],
+    queryFn: () => fetchTemplates(token, { connectionId: options?.connectionId ?? undefined }).then((r) => r.templates),
     staleTime: 30_000
   });
 }
 
-export function useTemplatesQuery(token: string) {
-  return useQuery(buildTemplatesQueryOptions(token));
+export function useTemplatesQuery(token: string, options?: { connectionId?: string | null }) {
+  return useQuery(buildTemplatesQueryOptions(token, options));
 }
 
 export function useCreateTemplateMutation(token: string) {

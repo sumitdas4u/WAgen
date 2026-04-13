@@ -103,6 +103,7 @@ interface CampaignExecutionRow {
   campaign_name: string;
   campaign_status: Campaign["status"];
   broadcast_type: Campaign["broadcast_type"];
+  connection_id: string | null;
   template_id: string | null;
   template_variables: Campaign["template_variables"];
   target_segment_id: string | null;
@@ -384,6 +385,7 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
        c.name AS campaign_name,
        c.status AS campaign_status,
        c.broadcast_type,
+       c.connection_id,
        c.template_id,
        c.template_variables,
        c.target_segment_id,
@@ -419,6 +421,7 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
     name: row.campaign_name,
     status: row.campaign_status,
     broadcast_type: row.broadcast_type,
+    connection_id: row.connection_id ?? null,
     template_id: row.template_id,
     template_variables: (row as unknown as Campaign).template_variables,
     target_segment_id: row.target_segment_id,

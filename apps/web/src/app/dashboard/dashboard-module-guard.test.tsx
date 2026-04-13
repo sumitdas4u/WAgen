@@ -51,7 +51,8 @@ function createBootstrap(): DashboardBootstrapResponse {
       metaApi: {
         connected: false,
         enabled: false,
-        connection: null
+        connection: null,
+        connections: []
       },
       anyConnected: true
     }

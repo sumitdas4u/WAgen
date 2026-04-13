@@ -346,6 +346,7 @@ export interface FlowDoc {
   id: string;
   name: string;
   channel: FlowChannel;
+  connectionId?: string | null;
   published: boolean;
   isDefaultReply: boolean;
   createdAt: string;
@@ -359,6 +360,7 @@ export interface FlowSummary {
   id: string;
   name: string;
   channel: FlowChannel;
+  connectionId?: string | null;
   published: boolean;
   isDefaultReply: boolean;
   createdAt: string;

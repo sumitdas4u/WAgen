@@ -1,4 +1,5 @@
 import { pool } from "../db/pool.js";
+import { requireMetaConnection } from "./meta-whatsapp-service.js";
 
 export interface FlowTrigger {
   id: string;
@@ -11,6 +12,7 @@ export interface FlowRow {
   user_id: string;
   name: string;
   channel: "web" | "qr" | "api";
+  connection_id: string | null;
   nodes: unknown[];
   edges: unknown[];
   triggers: FlowTrigger[];
@@ -26,6 +28,7 @@ export interface FlowSummaryRow {
   user_id: string;
   name: string;
   channel: "web" | "qr" | "api";
+  connection_id: string | null;
   published: boolean;
   is_default_reply: boolean;
   created_at: string;
@@ -41,6 +44,7 @@ export async function listFlowSummaries(userId: string): Promise<FlowSummaryRow[
             user_id,
             name,
             channel,
+            connection_id,
             published,
             is_default_reply,
             created_at,
@@ -58,7 +62,7 @@ export async function listFlowSummaries(userId: string): Promise<FlowSummaryRow[
 
 export async function getFlow(userId: string, flowId: string): Promise<FlowRow | null> {
   const res = await pool.query<FlowRow>(
-    `SELECT id, user_id, name, channel, nodes, edges, triggers, variables, published, is_default_reply, created_at, updated_at
+    `SELECT id, user_id, name, channel, connection_id, nodes, edges, triggers, variables, published, is_default_reply, created_at, updated_at
      FROM flows
      WHERE id = $1 AND user_id = $2
      LIMIT 1`,
@@ -69,16 +73,23 @@ export async function getFlow(userId: string, flowId: string): Promise<FlowRow |
 
 export async function createFlow(
   userId: string,
-  data: { name?: string; channel?: "web" | "qr" | "api"; nodes?: unknown[]; edges?: unknown[]; triggers?: FlowTrigger[] }
+  data: { name?: string; channel?: "web" | "qr" | "api"; connectionId?: string | null; nodes?: unknown[]; edges?: unknown[]; triggers?: FlowTrigger[] }
 ): Promise<FlowRow> {
+  if (data.channel === "api") {
+    if (!data.connectionId) {
+      throw new Error("Select a WhatsApp API connection for API flows.");
+    }
+    await requireMetaConnection(userId, data.connectionId, { allowDisconnected: true });
+  }
   const res = await pool.query<FlowRow>(
-    `INSERT INTO flows (user_id, name, channel, nodes, edges, triggers)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO flows (user_id, name, channel, connection_id, nodes, edges, triggers)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       userId,
       data.name ?? "Untitled Flow",
       data.channel ?? "api",
+      data.channel === "api" ? (data.connectionId ?? null) : null,
       JSON.stringify(data.nodes ?? []),
       JSON.stringify(data.edges ?? []),
       JSON.stringify(data.triggers ?? [])
@@ -90,7 +101,7 @@ export async function createFlow(
 export async function updateFlow(
   userId: string,
   flowId: string,
-  data: { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: FlowTrigger[]; is_default_reply?: boolean }
+  data: { name?: string; connectionId?: string | null; nodes?: unknown[]; edges?: unknown[]; triggers?: FlowTrigger[]; is_default_reply?: boolean }
 ): Promise<FlowRow | null> {
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -99,6 +110,10 @@ export async function updateFlow(
   if (data.name !== undefined) {
     fields.push(`name = $${i++}`);
     values.push(data.name);
+  }
+  if (data.connectionId !== undefined) {
+    fields.push(`connection_id = $${i++}`);
+    values.push(data.connectionId || null);
   }
   if (data.nodes !== undefined) {
     fields.push(`nodes = $${i++}`);
@@ -120,15 +135,25 @@ export async function updateFlow(
   if (!fields.length) return getFlow(userId, flowId);
 
   // If setting this flow as default reply, unset any other flow in the same channel first
-  if (data.is_default_reply === true) {
-    const current = await getFlow(userId, flowId);
-    if (current) {
-      await pool.query(
-        `UPDATE flows SET is_default_reply = FALSE
-         WHERE user_id = $1 AND channel = $2 AND id != $3 AND is_default_reply = TRUE`,
-        [userId, current.channel, flowId]
-      );
+  const current = await getFlow(userId, flowId);
+  if (!current) {
+    return null;
+  }
+  const nextChannel = current.channel;
+  const nextConnectionId = data.connectionId !== undefined ? (data.connectionId || null) : current.connection_id;
+  if (nextChannel === "api") {
+    if (!nextConnectionId) {
+      throw new Error("Select a WhatsApp API connection for API flows.");
     }
+    await requireMetaConnection(userId, nextConnectionId, { allowDisconnected: true });
+  }
+
+  if (data.is_default_reply === true) {
+    await pool.query(
+      `UPDATE flows SET is_default_reply = FALSE
+       WHERE user_id = $1 AND channel = $2 AND id != $3 AND is_default_reply = TRUE`,
+      [userId, current.channel, flowId]
+    );
   }
 
   values.push(flowId, userId);
@@ -154,6 +179,16 @@ export async function publishFlow(
   flowId: string,
   publish: boolean
 ): Promise<FlowRow | null> {
+  const current = await getFlow(userId, flowId);
+  if (!current) {
+    return null;
+  }
+  if (publish && current.channel === "api") {
+    if (!current.connection_id) {
+      throw new Error("Select a WhatsApp API connection before publishing this flow.");
+    }
+    await requireMetaConnection(userId, current.connection_id, { requireActive: true });
+  }
   const res = await pool.query<FlowRow>(
     `UPDATE flows SET published = $1
      WHERE id = $2 AND user_id = $3
@@ -168,7 +203,7 @@ export async function getPublishedFlowsForUser(
   channel?: "web" | "qr" | "api"
 ): Promise<FlowRow[]> {
   const res = await pool.query<FlowRow>(
-    `SELECT id, user_id, name, channel, nodes, edges, triggers, variables, published, is_default_reply, created_at, updated_at
+    `SELECT id, user_id, name, channel, connection_id, nodes, edges, triggers, variables, published, is_default_reply, created_at, updated_at
      FROM flows
      WHERE user_id = $1 AND published = TRUE${channel ? " AND channel = $2" : ""}
      ORDER BY created_at ASC, id ASC`,

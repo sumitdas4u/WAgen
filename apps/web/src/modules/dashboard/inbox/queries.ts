@@ -60,10 +60,10 @@ export function useInboxPublishedFlowsQuery(token: string) {
   return useQuery(buildInboxPublishedFlowsQueryOptions(token));
 }
 
-export function useInboxTemplatesQuery(token: string) {
+export function useInboxTemplatesQuery(token: string, connectionId?: string | null) {
   return useQuery({
-    queryKey: ["inbox", "approvedTemplates"],
-    queryFn: () => fetchInboxApprovedTemplates(token),
+    queryKey: ["inbox", "approvedTemplates", connectionId ?? "all"],
+    queryFn: () => fetchInboxApprovedTemplates(token, connectionId),
     staleTime: 60_000
   });
 }

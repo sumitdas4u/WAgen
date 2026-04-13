@@ -104,7 +104,8 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
       metaApi: {
         connected: false,
         enabled: false,
-        connection: null
+        connection: null,
+        connections: []
       },
       anyConnected: true
     },
@@ -336,7 +337,8 @@ describe("dashboard router", () => {
         metaApi: {
           connected: false,
           enabled: false,
-          connection: null
+          connection: null,
+          connections: []
         },
         anyConnected: false
       }

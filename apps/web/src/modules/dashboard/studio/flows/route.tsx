@@ -50,6 +50,7 @@ import type {
   FlowSummary,
   StudioFlowBlockSection
 } from "./flow-blocks/types";
+import { MetaConnectionSelector, isMetaConnectionActive } from "../../../../shared/dashboard/meta-connection-selector";
 import "reactflow/dist/style.css";
 import "./flows.css";
 
@@ -120,7 +121,7 @@ async function apiCreateFlow(
   token: string,
   name: string,
   channel: FlowChannel,
-  options?: { nodes?: FlowNode[]; edges?: FlowDoc["edges"]; triggers?: FlowDoc["triggers"] }
+  options?: { nodes?: FlowNode[]; edges?: FlowDoc["edges"]; triggers?: FlowDoc["triggers"]; connectionId?: string | null }
 ): Promise<FlowDoc> {
   const startId = uid();
   return apiFetch<FlowDoc>("/api/flows", token, {
@@ -128,6 +129,7 @@ async function apiCreateFlow(
     body: JSON.stringify({
       name,
       channel,
+      connectionId: options?.connectionId ?? null,
       nodes: options?.nodes ?? [
         {
           id: startId,
@@ -177,6 +179,7 @@ function summarizeFlow(flow: FlowDoc): FlowSummary {
     id: flow.id,
     name: flow.name,
     channel: flow.channel,
+    connectionId: flow.connectionId ?? null,
     published: flow.published,
     isDefaultReply: flow.isDefaultReply,
     createdAt: flow.createdAt,
@@ -861,12 +864,17 @@ function FlowEditor(props: FlowEditorInnerProps) {
 const CHANNELS: FlowChannel[] = ["web", "qr", "api"];
 
 function CreateFlowModal(props: {
-  onCreate: (name: string, channel: FlowChannel) => void | Promise<void>;
-  onCreateWithAi: (prompt: string, channel: FlowChannel) => Promise<void>;
+  onCreate: (name: string, channel: FlowChannel, connectionId?: string | null) => void | Promise<void>;
+  onCreateWithAi: (prompt: string, channel: FlowChannel, connectionId?: string | null) => Promise<void>;
   onClose: () => void;
 }) {
+  const { bootstrap } = useDashboardShell();
+  const apiConnections = bootstrap?.channelSummary.metaApi.connections ?? [];
   const [step, setStep] = useState<"channel" | "name">("channel");
   const [channel, setChannel] = useState<FlowChannel>("api");
+  const [connectionId, setConnectionId] = useState(
+    () => bootstrap?.channelSummary.metaApi.connection?.id ?? apiConnections.find(isMetaConnectionActive)?.id ?? apiConnections[0]?.id ?? ""
+  );
   const [mode, setMode] = useState<"manual" | "ai">("manual");
   const [name, setName] = useState("Untitled Flow");
   const [aiPrompt, setAiPrompt] = useState("");
@@ -875,8 +883,12 @@ function CreateFlowModal(props: {
 
   const handleCreate = () => {
     if (!name.trim()) return;
+    if (channel === "api" && (!connectionId || !isMetaConnectionActive(apiConnections.find((connection) => connection.id === connectionId)))) {
+      setError("Select an active WhatsApp API connection before creating this flow.");
+      return;
+    }
     setError(null);
-    props.onCreate(name.trim(), channel);
+    props.onCreate(name.trim(), channel, channel === "api" ? connectionId : null);
   };
 
   const handleGenerateWithAi = async () => {
@@ -884,7 +896,7 @@ function CreateFlowModal(props: {
     setBusy(true);
     setError(null);
     try {
-      await props.onCreateWithAi(aiPrompt.trim(), channel);
+      await props.onCreateWithAi(aiPrompt.trim(), channel, channel === "api" ? connectionId : null);
     } catch (err) {
       setError((err as Error).message || "Could not generate a draft flow.");
       setBusy(false);
@@ -953,6 +965,19 @@ function CreateFlowModal(props: {
                 </span>
                 <span style={{ fontSize: "0.8rem", color: "var(--text-2)" }}>{CHANNEL_META[channel].label}</span>
               </div>
+              {channel === "api" ? (
+                <div style={{ marginBottom: "0.9rem" }}>
+                  <MetaConnectionSelector
+                    connections={apiConnections}
+                    value={connectionId}
+                    onChange={setConnectionId}
+                    label="WhatsApp API connection"
+                    required
+                    allowEmpty
+                    emptyLabel="Select a connection"
+                  />
+                </div>
+              ) : null}
               <div className="fn-create-mode-toggle">
                 <button
                   type="button"
@@ -1264,18 +1289,19 @@ function FlowNewPage() {
   const { token } = useDashboardShell();
   const navigate = useNavigate();
 
-  const handleCreate = async (name: string, channel: FlowChannel) => {
+  const handleCreate = async (name: string, channel: FlowChannel, connectionId?: string | null) => {
     try {
-      const created = await apiCreateFlow(token, name, channel);
+      const created = await apiCreateFlow(token, name, channel, { connectionId });
       navigate(`/dashboard/studio/flows/${created.id}`, { replace: true });
     } catch (e) {
       console.error("Failed to create flow", e);
     }
   };
 
-  const handleCreateWithAi = async (prompt: string, channel: FlowChannel) => {
+  const handleCreateWithAi = async (prompt: string, channel: FlowChannel, connectionId?: string | null) => {
     const draft = await apiGenerateFlowDraft(token, prompt, channel);
     const created = await apiCreateFlow(token, draft.name, channel, {
+      connectionId,
       nodes: draft.nodes as unknown as FlowNode[],
       edges: draft.edges,
       triggers: draft.triggers

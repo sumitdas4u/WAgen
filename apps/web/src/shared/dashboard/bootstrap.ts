@@ -46,7 +46,8 @@ const DEFAULT_DASHBOARD_BOOTSTRAP: DashboardBootstrapResponse = {
     metaApi: {
       connected: false,
       enabled: false,
-      connection: null
+      connection: null,
+      connections: []
     },
     anyConnected: false
   }

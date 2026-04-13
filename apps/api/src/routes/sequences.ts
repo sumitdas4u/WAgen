@@ -47,6 +47,7 @@ const ConditionSchema = z.object({
 
 const SequenceWriteSchema = z.object({
   name: z.string().trim().min(1).max(200),
+  connectionId: z.string().uuid().optional().nullable(),
   baseType: z.enum(["contact"]).optional(),
   triggerType: z.enum(["create", "update", "both"]),
   channel: z.enum(["whatsapp"]).optional(),

@@ -1117,6 +1117,7 @@ export interface MetaBusinessStatus {
   connected: boolean;
   enabled: boolean;
   connection: MetaBusinessConnection | null;
+  connections: MetaBusinessConnection[];
 }
 
 export interface MetaBusinessProfile {
@@ -1152,6 +1153,16 @@ export function fetchMetaBusinessStatus(token: string, options?: { forceRefresh?
   const query = params.toString();
   const path = query ? `/api/meta/business/status?${query}` : "/api/meta/business/status";
   return apiRequest<MetaBusinessStatus>(path, { token });
+}
+
+export function fetchMetaBusinessConnections(token: string, options?: { forceRefresh?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.forceRefresh) {
+    params.set("forceRefresh", "true");
+  }
+  const query = params.toString();
+  const path = query ? `/api/meta/business/connections?${query}` : "/api/meta/business/connections";
+  return apiRequest<{ connections: MetaBusinessConnection[] }>(path, { token });
 }
 
 export function completeMetaBusinessSignup(token: string, payload: CompleteMetaSignupPayload) {
@@ -1609,12 +1620,13 @@ export function fetchConversations(token: string) {
 export function createOutboundConversation(
   token: string,
   contactId: string,
-  channelType: "qr" | "api"
+  channelType: "qr" | "api",
+  connectionId?: string | null
 ) {
   return apiRequest<{ conversationId: string }>("/api/conversations/outbound", {
     method: "POST",
     token,
-    body: JSON.stringify({ contactId, channelType })
+    body: JSON.stringify({ contactId, channelType, connectionId: connectionId ?? null })
   });
 }
 
@@ -2215,6 +2227,7 @@ export interface Campaign {
   name: string;
   status: CampaignStatus;
   broadcast_type: BroadcastType;
+  connection_id: string | null;
   template_id: string | null;
   template_variables: CampaignTemplateVariables;
   target_segment_id: string | null;
@@ -2426,6 +2439,7 @@ export function createCampaignDraft(
   payload: {
     name: string;
     broadcastType?: BroadcastType;
+    connectionId?: string | null;
     templateId?: string | null;
     templateVariables?: CampaignTemplateVariables;
     targetSegmentId?: string | null;
@@ -2449,6 +2463,7 @@ export function updateCampaignDraft(
   payload: Partial<{
     name: string;
     broadcastType: BroadcastType;
+    connectionId: string | null;
     templateId: string | null;
     templateVariables: CampaignTemplateVariables;
     targetSegmentId: string | null;
@@ -2638,6 +2653,7 @@ export interface Sequence {
   user_id: string;
   name: string;
   status: SequenceStatus;
+  connection_id: string | null;
   base_type: "contact";
   trigger_type: SequenceTriggerType;
   channel: "whatsapp";
@@ -2734,6 +2750,7 @@ export interface SequenceWriteConditionInput {
 
 export interface SequenceWriteInput {
   name: string;
+  connectionId?: string | null;
   baseType?: "contact";
   triggerType: SequenceTriggerType;
   channel?: "whatsapp";

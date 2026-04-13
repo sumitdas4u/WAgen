@@ -51,6 +51,7 @@ const TemplateVariablesSchema = z.record(z.string(), TemplateVariableBindingSche
 const CreateCampaignBodySchema = z.object({
   name: z.string().trim().min(1).max(200),
   broadcastType: z.enum(["standard", "retarget"] as [BroadcastType, ...BroadcastType[]]).optional(),
+  connectionId: z.string().uuid().optional().nullable(),
   templateId: z.string().uuid().optional().nullable(),
   templateVariables: TemplateVariablesSchema.optional(),
   targetSegmentId: z.string().uuid().optional().nullable(),
@@ -92,6 +93,7 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
       const campaign = await createCampaign(request.authUser.userId, {
         name: parsed.data.name,
         broadcastType: parsed.data.broadcastType ?? "standard",
+        connectionId: parsed.data.connectionId ?? null,
         templateId: parsed.data.templateId ?? null,
         templateVariables: parsed.data.templateVariables ?? {},
         targetSegmentId: parsed.data.targetSegmentId ?? null,
@@ -145,6 +147,7 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
       const campaign = await updateCampaign(request.authUser.userId, campaignId, {
         name: parsed.data.name,
         broadcastType: parsed.data.broadcastType,
+        connectionId: parsed.data.connectionId ?? undefined,
         templateId: parsed.data.templateId ?? undefined,
         templateVariables: parsed.data.templateVariables ?? undefined,
         targetSegmentId: parsed.data.targetSegmentId ?? undefined,

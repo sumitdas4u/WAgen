@@ -7,6 +7,7 @@ import {
   disconnectMetaBusinessConnection,
   getMetaBusinessProfile,
   getMetaBusinessConfig,
+  listMetaBusinessConnections,
   getMetaBusinessStatus,
   handleMetaWebhookPayload,
   setMetaBusinessChannelEnabled,
@@ -115,6 +116,21 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
       const forceRefreshRaw = (query.forceRefresh ?? "").toLowerCase();
       const forceRefresh = forceRefreshRaw === "true" || forceRefreshRaw === "1";
       return getMetaBusinessStatus(request.authUser.userId, { forceRefresh });
+    }
+  );
+
+  fastify.get(
+    "/api/meta/business/connections",
+    { preHandler: [fastify.requireAuth] },
+    async (request) => {
+      const query = request.query as Record<string, string | undefined>;
+      const forceRefreshRaw = (query.forceRefresh ?? "").toLowerCase();
+      const forceRefresh = forceRefreshRaw === "true" || forceRefreshRaw === "1";
+      const connections = await listMetaBusinessConnections(request.authUser.userId, {
+        forceRefresh,
+        includeDisconnected: true
+      });
+      return { connections };
     }
   );
 

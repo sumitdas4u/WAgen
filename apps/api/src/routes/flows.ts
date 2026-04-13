@@ -61,6 +61,7 @@ export async function flowRoutes(app: FastifyInstance) {
       id: flow.id,
       name: flow.name,
       channel: flow.channel,
+      connectionId: flow.connection_id,
       published: flow.published,
       isDefaultReply: flow.is_default_reply,
       createdAt: flow.created_at,
@@ -77,6 +78,7 @@ export async function flowRoutes(app: FastifyInstance) {
     id: flow.id,
     name: flow.name,
     channel: flow.channel,
+    connectionId: flow.connection_id,
     published: flow.published,
     isDefaultReply: flow.is_default_reply,
     createdAt: flow.created_at,
@@ -125,28 +127,36 @@ export async function flowRoutes(app: FastifyInstance) {
     }
   );
 
-  app.post<{ Body: { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[] } }>(
+  app.post<{ Body: { name?: string; channel?: "web" | "qr" | "api"; connectionId?: string | null; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[] } }>(
     "/api/flows",
     { preHandler: app.requireAuth },
     async (req, reply) => {
       const userId = req.authUser!.userId;
-      const flow = await createFlow(userId, req.body as Parameters<typeof createFlow>[1]);
-      return reply.status(201).send(serializeFlow(flow));
+      try {
+        const flow = await createFlow(userId, req.body as Parameters<typeof createFlow>[1]);
+        return reply.status(201).send(serializeFlow(flow));
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message || "Could not create flow." });
+      }
     }
   );
 
-  app.put<{ Params: { id: string }; Body: { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[]; isDefaultReply?: boolean } }>(
+  app.put<{ Params: { id: string }; Body: { name?: string; connectionId?: string | null; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[]; isDefaultReply?: boolean } }>(
     "/api/flows/:id",
     { preHandler: app.requireAuth },
     async (req, reply) => {
       const userId = req.authUser!.userId;
-      const { isDefaultReply, ...rest } = req.body as { name?: string; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[]; isDefaultReply?: boolean };
-      const flow = await updateFlow(userId, req.params.id, {
-        ...(rest as Parameters<typeof updateFlow>[2]),
-        ...(isDefaultReply !== undefined ? { is_default_reply: isDefaultReply } : {})
-      });
-      if (!flow) return reply.status(404).send({ error: "Flow not found" });
-      return reply.send(serializeFlow(flow));
+      try {
+        const { isDefaultReply, ...rest } = req.body as { name?: string; connectionId?: string | null; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[]; isDefaultReply?: boolean };
+        const flow = await updateFlow(userId, req.params.id, {
+          ...(rest as Parameters<typeof updateFlow>[2]),
+          ...(isDefaultReply !== undefined ? { is_default_reply: isDefaultReply } : {})
+        });
+        if (!flow) return reply.status(404).send({ error: "Flow not found" });
+        return reply.send(serializeFlow(flow));
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message || "Could not update flow." });
+      }
     }
   );
 
@@ -167,9 +177,13 @@ export async function flowRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const published = req.body?.published ?? true;
-      const flow = await publishFlow(userId, req.params.id, published);
-      if (!flow) return reply.status(404).send({ error: "Flow not found" });
-      return reply.send(serializeFlow(flow));
+      try {
+        const flow = await publishFlow(userId, req.params.id, published);
+        if (!flow) return reply.status(404).send({ error: "Flow not found" });
+        return reply.send(serializeFlow(flow));
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message || "Could not publish flow." });
+      }
     }
   );
 
@@ -179,7 +193,7 @@ export async function flowRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const flows = await getPublishedFlowsForUser(userId);
-      return reply.send(flows.map(f => ({ id: f.id, name: f.name, channel: f.channel })));
+      return reply.send(flows.map(f => ({ id: f.id, name: f.name, channel: f.channel, connectionId: f.connection_id })));
     }
   );
 

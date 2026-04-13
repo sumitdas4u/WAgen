@@ -78,8 +78,8 @@ export function assignInboxFlow(token: string, conversationId: string, flowId: s
   return assignFlowToConversation(token, flowId, conversationId);
 }
 
-export async function fetchInboxApprovedTemplates(token: string): Promise<MessageTemplate[]> {
-  const res = await fetchTemplates(token, { status: "APPROVED" });
+export async function fetchInboxApprovedTemplates(token: string, connectionId?: string | null): Promise<MessageTemplate[]> {
+  const res = await fetchTemplates(token, { status: "APPROVED", connectionId: connectionId ?? undefined });
   return res.templates;
 }
 
@@ -95,9 +95,10 @@ export function sendInboxConversationTemplate(
 export function startOutboundConversation(
   token: string,
   contactId: string,
-  channelType: "qr" | "api"
+  channelType: "qr" | "api",
+  connectionId?: string | null
 ): Promise<{ conversationId: string }> {
-  return createOutboundConversation(token, contactId, channelType);
+  return createOutboundConversation(token, contactId, channelType, connectionId ?? undefined);
 }
 
 export async function aiAssistText(

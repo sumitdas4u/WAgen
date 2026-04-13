@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import type { MessageTemplate, MetaBusinessStatus, TemplateCategory, TemplateStatus } from "../../../lib/api";
+import { MetaConnectionSelector, isMetaConnectionActive } from "../../../shared/dashboard/meta-connection-selector";
 import { TemplatePreviewPanel } from "./TemplatePreviewPanel";
 import { useDeleteTemplateMutation, useSendTestTemplateMutation, useSyncTemplatesMutation, useTemplatesQuery } from "./queries";
 import "./templates.css";
@@ -491,6 +492,10 @@ interface Props {
 
 export function TemplateListPage({ token, metaStatus }: Props) {
   const navigate = useNavigate();
+  const availableConnections = metaStatus?.connections ?? [];
+  const [selectedConnectionId, setSelectedConnectionId] = useState(
+    () => metaStatus?.connection?.id ?? availableConnections.find(isMetaConnectionActive)?.id ?? availableConnections[0]?.id ?? ""
+  );
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [activeTab, setActiveTab] = useState<"mine" | "library">("mine");
@@ -503,7 +508,18 @@ export function TemplateListPage({ token, metaStatus }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<MessageTemplate | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const templatesQuery = useTemplatesQuery(token);
+  useEffect(() => {
+    setSelectedConnectionId((current) => {
+      if (current && availableConnections.some((connection) => connection.id === current)) {
+        return current;
+      }
+      return metaStatus?.connection?.id ?? availableConnections.find(isMetaConnectionActive)?.id ?? availableConnections[0]?.id ?? "";
+    });
+  }, [availableConnections, metaStatus?.connection?.id]);
+
+  const selectedConnection = availableConnections.find((connection) => connection.id === selectedConnectionId) ?? null;
+  const selectedConnectionActive = isMetaConnectionActive(selectedConnection);
+  const templatesQuery = useTemplatesQuery(token, { connectionId: selectedConnectionId || undefined });
   const syncMutation = useSyncTemplatesMutation(token);
   const deleteMutation = useDeleteTemplateMutation(token);
 
@@ -642,6 +658,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
                 ⚠️ No Meta WhatsApp Business connection found. Connect your account in <strong>Settings → API Channel</strong>.
               </div>
             )}
+            {selectedConnection && !selectedConnectionActive ? <div className="tpl-banner is-warning">This connection is inactive. Reconnect or resume it before sending or creating templates.</div> : null}
             {syncMutation.isError && (
               <div className="tpl-banner is-error">
                 Sync failed: {(syncMutation.error as Error).message}
@@ -675,6 +692,16 @@ export function TemplateListPage({ token, metaStatus }: Props) {
               </div>
 
               <div className="tpl-toolbar-right">
+                <div style={{ minWidth: "260px" }}>
+                  <MetaConnectionSelector
+                    connections={availableConnections}
+                    value={selectedConnectionId}
+                    onChange={setSelectedConnectionId}
+                    label="Connection"
+                    allowEmpty
+                    emptyLabel="All API connections"
+                  />
+                </div>
                 <select className="tpl-filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TemplateStatus | "All")}>
                   <option value="All">Status: All</option>
                   <option value="APPROVED">Approved</option>

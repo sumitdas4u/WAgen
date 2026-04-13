@@ -1,7 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import type { MetaBusinessConfig, MetaBusinessStatus } from "../../../../lib/api";
+import { useEffect, useState } from "react";
+import type { MetaBusinessConfig, MetaBusinessConnection, MetaBusinessStatus } from "../../../../lib/api";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
+import { getConnectionActiveLabel, isMetaConnectionActive } from "../../../../shared/dashboard/meta-connection-selector";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import {
   completeMetaSignup,
@@ -9,7 +10,7 @@ import {
   fetchSettingsMetaStatus,
   setApiChannelEnabled,
 } from "../api";
-import { useSettingsMetaConfigQuery, useSettingsMetaStatusQuery } from "../queries";
+import { useSettingsMetaConfigQuery, useSettingsMetaConnectionsQuery, useSettingsMetaStatusQuery } from "../queries";
 
 const FACEBOOK_SDK_URL = "https://connect.facebook.net/en_US/sdk.js";
 
@@ -127,13 +128,28 @@ export function ApiChannelPage() {
 
   const metaConfigQuery = useSettingsMetaConfigQuery(token);
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
+  const metaConnectionsQuery = useSettingsMetaConnectionsQuery(token);
   const metaStatus: MetaBusinessStatus = metaStatusQuery.data ?? bootstrap?.channelSummary.metaApi ?? ({ connected: false, enabled: false, connection: null } as MetaBusinessStatus);
+  const connections = metaConnectionsQuery.data ?? metaStatus.connections ?? [];
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(() => metaStatus.connection?.id ?? connections[0]?.id ?? "");
+  useEffect(() => {
+    setSelectedConnectionId((current) => {
+      if (current && connections.some((connection) => connection.id === current)) {
+        return current;
+      }
+      return metaStatus.connection?.id ?? connections[0]?.id ?? "";
+    });
+  }, [connections, metaStatus.connection?.id]);
+  const selectedConnection: MetaBusinessConnection | null =
+    connections.find((connection) => connection.id === selectedConnectionId) ??
+    metaStatus.connection ??
+    null;
   const metaConfig = metaConfigQuery.data ?? null;
-  const hasConnection = Boolean(metaStatus.connection);
-  const isConnected = Boolean(metaStatus.connected && metaStatus.connection);
-  const channelEnabled = metaStatus.connection?.enabled ?? metaStatus.enabled;
+  const hasConnection = Boolean(selectedConnection);
+  const isConnected = Boolean(isMetaConnectionActive(selectedConnection));
+  const channelEnabled = selectedConnection?.enabled ?? metaStatus.enabled;
 
-  const metaHealthRecord = getNestedRecord(metaStatus.connection?.metadata?.metaHealth);
+  const metaHealthRecord = getNestedRecord(selectedConnection?.metadata?.metaHealth);
   const businessVerificationStatus = readMetaString(metaHealthRecord, "businessVerificationStatus");
   const messagingLimitTier = readMetaString(metaHealthRecord, "messagingLimitTier");
   const nameStatus = readMetaString(metaHealthRecord, "nameStatus");
@@ -144,7 +160,7 @@ export function ApiChannelPage() {
   const sharedBillingSupported = Boolean(metaConfig?.sharedBillingSupported);
   const sharedBillingRequired = Boolean(metaConfig?.sharedBillingRequired);
   const billingStatusLabel = formatMetaStatusLabel(
-    metaStatus.connection?.billingStatus,
+    selectedConnection?.billingStatus,
     sharedBillingSupported ? "Pending" : "Not configured"
   );
 
@@ -156,7 +172,7 @@ export function ApiChannelPage() {
   };
 
   const disconnectMutation = useMutation({
-    mutationFn: () => deactivateMetaChannel(token, metaStatus.connection?.id),
+    mutationFn: () => deactivateMetaChannel(token, selectedConnection?.id),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus }),
@@ -169,7 +185,7 @@ export function ApiChannelPage() {
 
   const toggleMutation = useMutation({
     mutationFn: async () => {
-      await setApiChannelEnabled(token, !channelEnabled, metaStatus.connection?.id);
+      await setApiChannelEnabled(token, !channelEnabled, selectedConnection?.id);
       return channelEnabled
         ? "Official WhatsApp API channel paused. The Meta connection stays linked, but automated replies are temporarily off."
         : "Official WhatsApp API channel resumed. The Meta connection stays linked and automated replies are back on.";
@@ -266,7 +282,7 @@ export function ApiChannelPage() {
       setError(null);
       setInfo(null);
       try {
-        await deactivateMetaChannel(token, metaStatus.connection?.id);
+        await deactivateMetaChannel(token, selectedConnection?.id);
         await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.settingsMetaStatus });
         await updateShellState();
         await openBusinessApiSetup({ skipInitialLoading: true });
@@ -339,6 +355,57 @@ export function ApiChannelPage() {
           </div>
         )}
 
+        {connections.length > 0 ? (
+          <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem" }}>
+            {connections.map((connection) => {
+              const active = isMetaConnectionActive(connection);
+              return (
+                <button
+                  key={connection.id}
+                  type="button"
+                  onClick={() => setSelectedConnectionId(connection.id)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.2fr 1fr 0.8fr 0.8fr 0.8fr auto",
+                    gap: "1rem",
+                    alignItems: "center",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "1rem 1.1rem",
+                    borderRadius: "14px",
+                    border: selectedConnection?.id === connection.id ? "1.5px solid #2563eb" : "1px solid #dbe4ee",
+                    background: selectedConnection?.id === connection.id ? "#eff6ff" : "#fff"
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Phone number</div>
+                    <div style={{ fontWeight: 700, color: "#0f172a" }}>{formatPhone(connection.linkedNumber ?? connection.displayPhoneNumber ?? "Unknown")}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Business Manager ID</div>
+                    <div style={{ fontWeight: 600, color: "#0f172a" }}>{connection.metaBusinessId ?? "Not available"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Status</div>
+                    <div style={{ fontWeight: 600, color: active ? "#15803d" : "#b45309" }}>{getConnectionActiveLabel(connection)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Billing</div>
+                    <div style={{ fontWeight: 600, color: "#0f172a" }}>{formatMetaStatusLabel(connection.billingStatus, "Pending")}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Limit</div>
+                    <div style={{ fontWeight: 600, color: "#0f172a" }}>{formatMetaStatusLabel(readMetaString(getNestedRecord(connection.metadata?.metaHealth), "messagingLimitTier"), "Unknown")}</div>
+                  </div>
+                  <div style={{ justifySelf: "end", fontSize: "0.78rem", color: active ? "#15803d" : "#92400e" }}>
+                    {selectedConnection?.id === connection.id ? "Selected" : "Select"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         {!isConnected ? (
           <div className="api-setup-alert">
             <strong>WhatsApp API is not connected</strong>
@@ -349,7 +416,7 @@ export function ApiChannelPage() {
         ) : (
           <>
             <div className="clone-channel-meta">
-              <div><h3>Connected Number</h3><p>{metaStatus.connection?.linkedNumber ? formatPhone(metaStatus.connection.linkedNumber) : (metaStatus.connection?.displayPhoneNumber ?? "Not linked")}</p></div>
+              <div><h3>Connected Number</h3><p>{selectedConnection?.linkedNumber ? formatPhone(selectedConnection.linkedNumber) : (selectedConnection?.displayPhoneNumber ?? "Not linked")}</p></div>
               <div><h3>Display Name</h3><p>{verifiedName ?? "Not available"}</p></div>
               <div><h3>Name Approval</h3><p>{formatMetaStatusLabel(nameStatus, "Pending")}</p></div>
             </div>
@@ -365,18 +432,18 @@ export function ApiChannelPage() {
 
             <div className="clone-channel-meta">
               <div><h3>Channel</h3><p>{channelEnabled ? "Active" : "Inactive"}</p></div>
-              <div><h3>Connection</h3><p>{metaStatus.connection?.status ?? "connected"}</p></div>
+              <div><h3>Connection</h3><p>{selectedConnection?.status ?? "connected"}</p></div>
               <div><h3>Message Limit</h3><p>{formatMetaStatusLabel(messagingLimitTier)}</p></div>
               <div><h3>Last Meta Sync</h3><p>{lastMetaSyncLabel ?? "Not synced"}</p></div>
             </div>
 
-            {(metaStatus.connection?.billingError || sharedBillingSupported) ? (
+            {(selectedConnection?.billingError || sharedBillingSupported) ? (
               <div className="api-setup-alert">
                 <strong>Billing</strong>
                 <p>
-                  {metaStatus.connection?.billingError
-                    ? metaStatus.connection.billingError
-                    : `Mode: ${formatMetaStatusLabel(metaStatus.connection?.billingMode, sharedBillingSupported ? "Partner" : "None")} | Status: ${billingStatusLabel} | Currency: ${metaStatus.connection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}`}
+                  {selectedConnection?.billingError
+                    ? selectedConnection.billingError
+                    : `Mode: ${formatMetaStatusLabel(selectedConnection?.billingMode, sharedBillingSupported ? "Partner" : "None")} | Status: ${billingStatusLabel} | Currency: ${selectedConnection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}`}
                 </p>
               </div>
             ) : null}

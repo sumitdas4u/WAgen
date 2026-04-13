@@ -25,12 +25,15 @@ import {
   type ContactField,
   type ContactRecord,
   type MessageTemplate,
+  type MetaBusinessConnection,
   type SegmentFilter,
   type SegmentFilterOp,
   type RetargetStatus
 } from "../../../lib/api";
 import { uploadBroadcastMedia as uploadBroadcastMediaToSupabase } from "../../../lib/supabase";
+import { MetaConnectionSelector, isMetaConnectionActive } from "../../../shared/dashboard/meta-connection-selector";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
+import { useDashboardShell } from "../../../shared/dashboard/shell-context";
 import { useInboxPublishedFlowsQuery } from "../inbox/queries";
 import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import { useTemplatesQuery } from "../templates/queries";
@@ -1030,7 +1033,14 @@ function BroadcastWizardPage({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const templatesQuery = useTemplatesQuery(token);
+  const { bootstrap } = useDashboardShell();
+  const apiConnections = bootstrap?.channelSummary.metaApi.connections ?? [];
+  const [selectedConnectionId, setSelectedConnectionId] = useState(
+    () => bootstrap?.channelSummary.metaApi.connection?.id ?? apiConnections.find(isMetaConnectionActive)?.id ?? apiConnections[0]?.id ?? ""
+  );
+  const selectedConnection = apiConnections.find((connection) => connection.id === selectedConnectionId) ?? null;
+  const selectedConnectionActive = isMetaConnectionActive(selectedConnection);
+  const templatesQuery = useTemplatesQuery(token, { connectionId: selectedConnectionId || undefined });
   const segmentsQuery = useQuery({
     queryKey: dashboardQueryKeys.contactSegments,
     queryFn: () => listContactSegments(token).then((response) => response.segments)
@@ -1102,6 +1112,24 @@ function BroadcastWizardPage({
   });
 
   useEffect(() => {
+    setSelectedConnectionId((current) => {
+      if (current && apiConnections.some((connection) => connection.id === current)) {
+        return current;
+      }
+      return bootstrap?.channelSummary.metaApi.connection?.id ?? apiConnections.find(isMetaConnectionActive)?.id ?? apiConnections[0]?.id ?? "";
+    });
+  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection?.id]);
+
+  useEffect(() => {
+    if (!selectedTemplateId) {
+      return;
+    }
+    if (!approvedTemplates.some((template) => template.id === selectedTemplateId)) {
+      setSelectedTemplateId("");
+    }
+  }, [approvedTemplates, selectedTemplateId]);
+
+  useEffect(() => {
     setBindings((current) => {
       const next: CampaignTemplateVariables = {};
       for (const placeholder of placeholders) {
@@ -1147,9 +1175,16 @@ function BroadcastWizardPage({
 
   const saveMutation = useMutation({
     mutationFn: async (launchNow: boolean) => {
+      if (!selectedConnectionId) {
+        throw new Error("Select a WhatsApp API connection before saving this broadcast.");
+      }
+      if (!selectedConnectionActive) {
+        throw new Error("The selected WhatsApp API connection is not active. Reconnect or resume it before launching this broadcast.");
+      }
       const draft = await createCampaignDraft(token, {
         name: name.trim(),
         broadcastType: mode === "retarget" ? "retarget" : "standard",
+        connectionId: selectedConnectionId,
         templateId: selectedTemplateId || null,
         templateVariables: bindings,
         targetSegmentId: mode === "new" ? primarySegmentId || null : null,
@@ -1199,7 +1234,9 @@ function BroadcastWizardPage({
   });
 
   const canContinueStep1 =
-    mode === "retarget" ? Boolean(retargetPreviewQuery.data?.count) : Boolean(selectedTemplateId);
+    Boolean(selectedConnectionId) &&
+    selectedConnectionActive &&
+    (mode === "retarget" ? Boolean(retargetPreviewQuery.data?.count) : Boolean(selectedTemplateId));
   const canContinueStep2 =
     mode === "retarget" ? Boolean(selectedTemplateId) : selectedSegmentIds.length > 0;
 
@@ -1284,6 +1321,10 @@ function BroadcastWizardPage({
       <section className="wz-body">
         {step === 1 && mode === "new" ? (
           <TemplateSelectionStep
+            connections={apiConnections}
+            selectedConnectionId={selectedConnectionId}
+            onSelectConnection={setSelectedConnectionId}
+            connectionActive={selectedConnectionActive}
             templates={approvedTemplates}
             selectedTemplateId={selectedTemplateId}
             onSelect={setSelectedTemplateId}
@@ -1349,6 +1390,10 @@ function BroadcastWizardPage({
 
         {step === 2 && mode === "retarget" ? (
           <TemplateSelectionStep
+            connections={apiConnections}
+            selectedConnectionId={selectedConnectionId}
+            onSelectConnection={setSelectedConnectionId}
+            connectionActive={selectedConnectionActive}
             templates={approvedTemplates}
             selectedTemplateId={selectedTemplateId}
             onSelect={setSelectedTemplateId}
@@ -1435,6 +1480,10 @@ function BroadcastWizardPage({
 }
 
 function TemplateSelectionStep({
+  connections,
+  selectedConnectionId,
+  onSelectConnection,
+  connectionActive,
   templates,
   selectedTemplateId,
   onSelect,
@@ -1442,6 +1491,10 @@ function TemplateSelectionStep({
   onContinue,
   canContinue
 }: {
+  connections: MetaBusinessConnection[];
+  selectedConnectionId: string;
+  onSelectConnection: (connectionId: string) => void;
+  connectionActive: boolean;
   templates: MessageTemplate[];
   selectedTemplateId: string;
   onSelect: (templateId: string) => void;
@@ -1477,6 +1530,17 @@ function TemplateSelectionStep({
           &#8592; Select Template
         </button>
         <div className="wz-tpl-toolbar-center">
+          <div style={{ minWidth: "280px", marginBottom: "0.75rem" }}>
+            <MetaConnectionSelector
+              connections={connections}
+              value={selectedConnectionId}
+              onChange={onSelectConnection}
+              label="WhatsApp API connection"
+              required
+              allowEmpty
+              emptyLabel="Select a connection"
+            />
+          </div>
           <div className="wz-tpl-search-wrap">
             <span className="wz-tpl-search-icon">&#128269;</span>
             <input
@@ -1497,6 +1561,8 @@ function TemplateSelectionStep({
           + New Template &#8599;
         </a>
       </div>
+      {!selectedConnectionId ? <div className="broadcast-feedback error">Select a WhatsApp API connection to load templates.</div> : null}
+      {selectedConnectionId && !connectionActive ? <div className="broadcast-feedback error">The selected connection is inactive. Reconnect or resume it before launching this broadcast.</div> : null}
 
       {/* Template grid */}
       <div className="wz-tpl-grid">

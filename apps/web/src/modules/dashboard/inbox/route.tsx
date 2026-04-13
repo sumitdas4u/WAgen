@@ -26,6 +26,7 @@ import {
   useInboxPublishedFlowsQuery,
   useInboxTemplatesQuery
 } from "./queries";
+import { MetaConnectionSelector, getConnectionActiveLabel, isMetaConnectionActive } from "../../../shared/dashboard/meta-connection-selector";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ type NewChatState = {
   step: NewChatStep;
   contact: ContactRecord | null;
   channelType: "qr" | "api";
+  connectionId: string;
   qrMode: NewChatQrMode;
   qrFlowId: string | null;
   messageText: string;
@@ -520,7 +522,7 @@ export function Component() {
   const [templateUploadingFieldKey, setTemplateUploadingFieldKey] = useState<string | null>(null);
 
   // New Chat dialog
-  const NEW_CHAT_DEFAULT: NewChatState = { open: false, step: "contact", contact: null, channelType: "qr", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null };
+  const NEW_CHAT_DEFAULT: NewChatState = { open: false, step: "contact", contact: null, channelType: "qr", connectionId: "", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null };
   const [newChat, setNewChat] = useState<NewChatState>(NEW_CHAT_DEFAULT);
   const [newChatContactSearch, setNewChatContactSearch] = useState("");
   const [newChatContacts, setNewChatContacts] = useState<ContactRecord[]>([]);
@@ -556,6 +558,9 @@ export function Component() {
   const selectedConversationId = params.conversationId ?? null;
   const searchParamString = searchParams.toString();
   const currentUserName = bootstrap?.userSummary.name.trim().toLowerCase() ?? "";
+  const apiConnections = bootstrap?.channelSummary.metaApi.connections ?? [];
+  const selectedNewChatConnection = apiConnections.find((connection) => connection.id === newChat.connectionId) ?? null;
+  const selectedNewChatConnectionActive = isMetaConnectionActive(selectedNewChatConnection);
 
   // ─── Queries ──────────────────────────────────────────────────────────────
   const conversationsQuery = useInboxConversationsQuery(token, { folder: "all", search });
@@ -574,7 +579,7 @@ export function Component() {
     staleTime: 60_000
   });
   const linkedContact = contactQuery.data ?? null;
-  const templatesQuery = useInboxTemplatesQuery(token);
+  const templatesQuery = useInboxTemplatesQuery(token, newChat.channelType === "api" ? (newChat.connectionId || null) : null);
   const approvedTemplates = templatesQuery.data ?? [];
 
   // ─── Derived data ─────────────────────────────────────────────────────────
@@ -626,6 +631,16 @@ export function Component() {
 
   const isQrConnected = Boolean(bootstrap?.channelSummary.whatsapp.status === "connected");
   const isApiConnected = Boolean(bootstrap?.channelSummary.metaApi.connected);
+  const selectedConversationApiConnection = useMemo(() => {
+    if (!selectedConversation || selectedConversation.channel_type !== "api") {
+      return null;
+    }
+    const linkedNumber = selectedConversation.channel_linked_number?.replace(/\D/g, "").trim();
+    if (!linkedNumber) {
+      return bootstrap?.channelSummary.metaApi.connection ?? null;
+    }
+    return apiConnections.find((connection) => connection.linkedNumber?.replace(/\D/g, "").trim() === linkedNumber) ?? null;
+  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection, selectedConversation]);
   const selectedConversationCanDeliver = useMemo(() => {
     if (!selectedConversation) {
       return false;
@@ -636,8 +651,8 @@ export function Component() {
     if (selectedConversation.channel_type === "qr") {
       return isQrConnected;
     }
-    return isApiConnected;
-  }, [isApiConnected, isQrConnected, selectedConversation]);
+    return isMetaConnectionActive(selectedConversationApiConnection);
+  }, [isQrConnected, selectedConversation, selectedConversationApiConnection]);
   const selectedConversationOfflineReason = useMemo(() => {
     if (!selectedConversation) {
       return "Select a conversation to reply.";
@@ -650,8 +665,10 @@ export function Component() {
     if (selectedConversation.channel_type === "qr") {
       return isQrConnected ? null : "WhatsApp QR is disconnected. Reconnect it to send replies in this chat.";
     }
-    return isApiConnected ? null : "WhatsApp API is disconnected. Reconnect it to send replies or templates in this chat.";
-  }, [isApiConnected, isQrConnected, selectedConversation]);
+    return selectedConversationCanDeliver
+      ? null
+      : `WhatsApp API connection is ${getConnectionActiveLabel(selectedConversationApiConnection).toLowerCase()}. Reconnect or resume it to send replies or templates in this chat.`;
+  }, [isQrConnected, selectedConversation, selectedConversationApiConnection, selectedConversationCanDeliver]);
 
   const newChatFilteredContacts = useMemo(() => {
     const q = newChatContactSearch.trim().toLowerCase();
@@ -663,9 +680,9 @@ export function Component() {
   }, [newChatContacts, newChatContactSearch]);
 
   const newChatAvailableTemplates = useMemo(() => {
-    if (newChat.channelType !== "api") return [];
+    if (newChat.channelType !== "api" || !newChat.connectionId) return [];
     return approvedTemplates;
-  }, [approvedTemplates, newChat.channelType]);
+  }, [approvedTemplates, newChat.channelType, newChat.connectionId]);
 
   const selectedConversationAiTimer = selectedConversation ? chatAiTimers[selectedConversation.id] ?? null : null;
   const selectedConversationAiTimerLabel = selectedConversationAiTimer
@@ -844,6 +861,30 @@ export function Component() {
     }
   }, [templateVarsDialog]);
 
+  useEffect(() => {
+    if (newChat.channelType !== "api") {
+      return;
+    }
+    if (!newChat.connectionId) {
+      setNewChat((prev) => (
+        prev.channelType === "api" && !prev.connectionId
+          ? {
+              ...prev,
+              connectionId:
+                apiConnections.find(isMetaConnectionActive)?.id ??
+                bootstrap?.channelSummary.metaApi.connection?.id ??
+                apiConnections[0]?.id ??
+                ""
+            }
+          : prev
+      ));
+      return;
+    }
+    if (!apiConnections.some((connection) => connection.id === newChat.connectionId)) {
+      setNewChat((prev) => ({ ...prev, connectionId: "", template: null, templateVars: null }));
+    }
+  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection?.id, newChat.channelType, newChat.connectionId]);
+
   // Auto-scroll when new messages arrive (only if already at bottom)
   useEffect(() => {
     if (!isScrolledToBottom) return;
@@ -1018,7 +1059,20 @@ export function Component() {
   const newChatMutation = useMutation({
     mutationFn: async () => {
       if (!newChat.contact) throw new Error("No contact selected.");
-      const { conversationId } = await startOutboundConversation(token, newChat.contact.id, newChat.channelType);
+      if (newChat.channelType === "api") {
+        if (!newChat.connectionId) {
+          throw new Error("Select a WhatsApp API connection before starting this chat.");
+        }
+        if (!selectedNewChatConnectionActive) {
+          throw new Error(`The selected WhatsApp API connection is ${getConnectionActiveLabel(selectedNewChatConnection).toLowerCase()}. Reconnect or resume it before sending.`);
+        }
+      }
+      const { conversationId } = await startOutboundConversation(
+        token,
+        newChat.contact.id,
+        newChat.channelType,
+        newChat.channelType === "api" ? newChat.connectionId : null
+      );
       if (newChat.channelType === "api" && newChat.templateVars) {
         await sendInboxConversationTemplate(token, conversationId, newChat.templateVars.template.id, newChat.templateVars.values);
       } else if (newChat.channelType === "qr") {
@@ -1194,7 +1248,12 @@ export function Component() {
 
   const handleOpenNewChat = useCallback(async () => {
     const defaultChannel: "qr" | "api" = isQrConnected ? "qr" : "api";
-    setNewChat({ ...NEW_CHAT_DEFAULT, open: true, channelType: defaultChannel });
+    const defaultConnectionId =
+      apiConnections.find(isMetaConnectionActive)?.id ??
+      bootstrap?.channelSummary.metaApi.connection?.id ??
+      apiConnections[0]?.id ??
+      "";
+    setNewChat({ ...NEW_CHAT_DEFAULT, open: true, channelType: defaultChannel, connectionId: defaultChannel === "api" ? defaultConnectionId : "" });
     setNewChatContactSearch("");
     try {
       const res = await fetchContacts(token, { limit: 250 });
@@ -1202,7 +1261,7 @@ export function Component() {
     } catch {
       setNewChatContacts([]);
     }
-  }, [token, isQrConnected]);
+  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection?.id, isQrConnected, token]);
 
   const handleNewChatSelectContact = useCallback((contact: ContactRecord) => {
     setNewChat((prev) => ({ ...prev, contact, step: "message", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }));
@@ -1903,7 +1962,7 @@ export function Component() {
                                 <button
                                   type="button"
                                   className={`compose-action-btn compose-toolbar-pill${showTemplateMenu ? " active" : ""}`}
-                                  disabled={!selectedConversationCanDeliver || !isApiConnected || sendTemplateMutation.isPending}
+                                  disabled={!selectedConversationCanDeliver || sendTemplateMutation.isPending}
                                   onClick={() => { setShowTemplateMenu((v) => !v); setShowToolbarFlowMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); setShowFormatMenu(false); }}
                                 >
                                   {sendTemplateMutation.isPending ? "Template..." : "Template"}
@@ -2322,7 +2381,7 @@ export function Component() {
                       className={`compose-toolbar-pill${newChat.channelType === "qr" ? " active" : ""}${!isQrConnected ? " disabled" : ""}`}
                       disabled={!isQrConnected}
                       title={isQrConnected ? "WhatsApp QR" : "WhatsApp QR not connected"}
-                      onClick={() => setNewChat((p) => ({ ...p, channelType: "qr", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
+                      onClick={() => setNewChat((p) => ({ ...p, channelType: "qr", connectionId: "", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
                     >
                       WA QR{!isQrConnected && " (offline)"}
                     </button>
@@ -2331,7 +2390,7 @@ export function Component() {
                       className={`compose-toolbar-pill${newChat.channelType === "api" ? " active" : ""}${!isApiConnected ? " disabled" : ""}`}
                       disabled={!isApiConnected}
                       title={isApiConnected ? "WhatsApp API" : "WhatsApp API not connected"}
-                      onClick={() => setNewChat((p) => ({ ...p, channelType: "api", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
+                      onClick={() => setNewChat((p) => ({ ...p, channelType: "api", connectionId: p.connectionId || apiConnections.find(isMetaConnectionActive)?.id || bootstrap?.channelSummary.metaApi.connection?.id || apiConnections[0]?.id || "", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null }))}
                     >
                       WA API{!isApiConnected && " (offline)"}
                     </button>
@@ -2440,8 +2499,26 @@ export function Component() {
                 {/* API: template picker */}
                 {newChat.channelType === "api" && (
                   <div className="new-chat-template-wrap">
+                    <div style={{ marginBottom: "12px" }}>
+                      <MetaConnectionSelector
+                        connections={apiConnections}
+                        value={newChat.connectionId}
+                        onChange={(connectionId) => setNewChat((prev) => ({ ...prev, connectionId, template: null, templateVars: null }))}
+                        label="WhatsApp API connection"
+                        required
+                        allowEmpty
+                        emptyLabel="Select a connection"
+                      />
+                    </div>
+                    {selectedNewChatConnection && !selectedNewChatConnectionActive ? (
+                      <p className="empty-note" style={{ padding: "8px 0" }}>
+                        This connection is {getConnectionActiveLabel(selectedNewChatConnection).toLowerCase()}. Reconnect or resume it before sending.
+                      </p>
+                    ) : null}
                     <label className="new-chat-compose-label">Select an approved template</label>
-                    {templatesQuery.isLoading ? (
+                    {!newChat.connectionId ? (
+                      <p className="empty-note" style={{ padding: "8px 0" }}>Select a connection to load its approved templates.</p>
+                    ) : templatesQuery.isLoading ? (
                       <p className="empty-note" style={{ padding: "8px 0" }}>Loading templates…</p>
                     ) : newChatAvailableTemplates.length === 0 ? (
                       <p className="empty-note" style={{ padding: "8px 0" }}>No approved templates found.</p>
@@ -2497,7 +2574,7 @@ export function Component() {
                       (newChat.channelType === "qr" && !newChat.qrMode) ||
                       (newChat.channelType === "qr" && newChat.qrMode === "manual" && !newChat.messageText.trim()) ||
                       (newChat.channelType === "qr" && newChat.qrMode === "flow" && !newChat.qrFlowId) ||
-                      (newChat.channelType === "api" && (!newChat.templateVars || (newChat.templateVars.fields.length > 0 && !newChat.templateVars.fields.every((f) => Boolean(newChat.templateVars?.values[f.key]?.trim())))))
+                      (newChat.channelType === "api" && (!newChat.connectionId || !selectedNewChatConnectionActive || !newChat.templateVars || (newChat.templateVars.fields.length > 0 && !newChat.templateVars.fields.every((f) => Boolean(newChat.templateVars?.values[f.key]?.trim())))))
                     }
                     onClick={() => newChatMutation.mutate()}
                   >

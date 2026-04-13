@@ -20,6 +20,7 @@ import { uploadSequenceMedia } from "../../../lib/supabase";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
+import { MetaConnectionSelector, isMetaConnectionActive } from "../../../shared/dashboard/meta-connection-selector";
 import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import {
   buildSequencesQueryOptions,
@@ -349,6 +350,7 @@ function getStepTitle(step: SequenceWriteStepInput, index: number) {
 function getSequenceValidationErrors(draft: SequenceWriteInput) {
   const errors: string[] = [];
   if (!draft.name.trim())                                                                errors.push("Sequence name is required.");
+  if (!draft.connectionId)                                                               errors.push("Select a WhatsApp API connection.");
   if (!draft.steps || draft.steps.length === 0)                                         errors.push("Add at least one step before publishing.");
   if (draft.timeMode === "window" && (!draft.timeWindowStart || !draft.timeWindowEnd))   errors.push("Select both a start and end time for the delivery window.");
   if ((draft.conditions ?? []).some((c) => !c.field.trim() || !c.value.trim()))         errors.push("Complete or remove any unfinished condition rows.");
@@ -356,9 +358,10 @@ function getSequenceValidationErrors(draft: SequenceWriteInput) {
   return errors;
 }
 
-function buildDefaultPayload(name: string, baseType = "contact", channel = "whatsapp"): SequenceWriteInput {
+function buildDefaultPayload(name: string, connectionId: string | null, baseType = "contact", channel = "whatsapp"): SequenceWriteInput {
   return {
     name,
+    connectionId,
     triggerType: "create",
     channel: channel as "whatsapp",
     baseType: baseType as "contact",
@@ -390,6 +393,7 @@ function normalizeSequenceDraftTemplates(draft: SequenceWriteInput, templates: M
 function toDraft(detail: SequenceDetail): SequenceWriteInput {
   return {
     name: detail.name,
+    connectionId: detail.connection_id,
     triggerType: detail.trigger_type,
     channel: detail.channel,
     baseType: "contact",
@@ -716,11 +720,26 @@ function SequenceTile({ sequence, onOpen }: { sequence: SequenceListItem; onOpen
 ───────────────────────────────────────────── */
 function SequenceCreatePage({ token }: { token: string }) {
   const navigate = useNavigate();
+  const { bootstrap } = useDashboardShell();
+  const apiConnections = bootstrap?.channelSummary.metaApi.connections ?? [];
   const [name, setName]       = useState("");
   const [baseType, setBaseType] = useState("contact");
   const [channel, setChannel]   = useState("whatsapp");
+  const [connectionId, setConnectionId] = useState(
+    () => bootstrap?.channelSummary.metaApi.connection?.id ?? apiConnections.find(isMetaConnectionActive)?.id ?? apiConnections[0]?.id ?? ""
+  );
   const createMutation = useCreateSequenceMutation(token);
-  const canContinue = Boolean(name.trim() && baseType && channel);
+  const selectedConnection = apiConnections.find((connection) => connection.id === connectionId) ?? null;
+  const canContinue = Boolean(name.trim() && baseType && channel && connectionId && isMetaConnectionActive(selectedConnection));
+
+  useEffect(() => {
+    setConnectionId((current) => {
+      if (current && apiConnections.some((connection) => connection.id === current)) {
+        return current;
+      }
+      return bootstrap?.channelSummary.metaApi.connection?.id ?? apiConnections.find(isMetaConnectionActive)?.id ?? apiConnections[0]?.id ?? "";
+    });
+  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection?.id]);
 
   return (
     <section className="seq-page">
@@ -782,6 +801,22 @@ function SequenceCreatePage({ token }: { token: string }) {
               hint="WhatsApp template sequences are supported in MVP.">
               <SelectField value={channel} options={CHANNEL_OPTIONS} onChange={setChannel} />
             </FieldLabel>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <MetaConnectionSelector
+                connections={apiConnections}
+                value={connectionId}
+                onChange={setConnectionId}
+                label="WhatsApp API connection"
+                required
+                allowEmpty
+                emptyLabel="Select a connection"
+              />
+              {selectedConnection && !isMetaConnectionActive(selectedConnection) ? (
+                <p style={{ margin: "0.45rem 0 0", color: "#b91c1c", fontSize: "0.82rem" }}>
+                  This connection is inactive. Reconnect or resume it before creating a sequence.
+                </p>
+              ) : null}
+            </div>
           </div>
           <div className="seq-create-actions">
             <button type="button" className="seq-btn seq-btn-ghost"
@@ -793,7 +828,7 @@ function SequenceCreatePage({ token }: { token: string }) {
               className="seq-btn seq-btn-primary"
               disabled={!canContinue || createMutation.isPending}
               onClick={async () => {
-                const sequence = await createMutation.mutateAsync(buildDefaultPayload(name.trim(), baseType, channel));
+                const sequence = await createMutation.mutateAsync(buildDefaultPayload(name.trim(), connectionId, baseType, channel));
                 navigate(`/dashboard/sequence/${sequence.id}`);
               }}
             >
@@ -833,6 +868,7 @@ function SequenceCreatePage({ token }: { token: string }) {
 ───────────────────────────────────────────── */
 function BuilderPage({ token }: { token: string }) {
   const navigate                    = useNavigate();
+  const { bootstrap }              = useDashboardShell();
   const { sequenceId }              = useParams<{ sequenceId: string }>();
   const detail                      = useSequenceDetailQuery(token, sequenceId ?? "").data;
   const enrollments                 = useSequenceEnrollmentsQuery(token, sequenceId ?? "").data ?? [];
@@ -842,10 +878,12 @@ function BuilderPage({ token }: { token: string }) {
   const resumeMutation              = useResumeSequenceMutation(token, sequenceId ?? "");
   const deleteMutation              = useDeleteSequenceMutation(token);
 
+  const apiConnections              = bootstrap?.channelSummary.metaApi.connections ?? [];
+  const [draft, setDraft]           = useState<SequenceWriteInput | null>(null);
   const templates = useQuery({
-    queryKey: dashboardQueryKeys.templates,
-    queryFn:  () => fetchTemplates(token).then((r) => r.templates.filter((t) => t.status === "APPROVED")),
-    enabled:  Boolean(token)
+    queryKey: [...dashboardQueryKeys.templates, draft?.connectionId ?? "none"],
+    queryFn:  () => fetchTemplates(token, { connectionId: draft?.connectionId ?? undefined }).then((r) => r.templates.filter((t) => t.status === "APPROVED")),
+    enabled:  Boolean(token && draft?.connectionId)
   }).data ?? [];
 
   const contactFieldDefinitions = useQuery({
@@ -859,7 +897,6 @@ function BuilderPage({ token }: { token: string }) {
     enabled: Boolean(token)
   }).data ?? [];
 
-  const [draft, setDraft]           = useState<SequenceWriteInput | null>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [bannerOpen, setBannerOpen] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -867,6 +904,25 @@ function BuilderPage({ token }: { token: string }) {
   useEffect(() => {
     if (detail) setDraft((cur) => cur ?? toDraft(detail));
   }, [detail]);
+
+  useEffect(() => {
+    if (!draft) {
+      return;
+    }
+    if (draft.connectionId) {
+      return;
+    }
+    const fallbackConnectionId =
+      detail?.connection_id ??
+      bootstrap?.channelSummary.metaApi.connection?.id ??
+      apiConnections.find(isMetaConnectionActive)?.id ??
+      apiConnections[0]?.id ??
+      null;
+    if (!fallbackConnectionId) {
+      return;
+    }
+    setDraft((current) => (current && !current.connectionId ? { ...current, connectionId: fallbackConnectionId } : current));
+  }, [apiConnections, bootstrap?.channelSummary.metaApi.connection?.id, detail?.connection_id, draft]);
 
   const conditionFieldOptions = useMemo(
     () => [...CONDITION_FIELD_OPTIONS, ...contactFieldDefinitions.map(mapContactFieldToConditionOption)],
@@ -928,6 +984,17 @@ function BuilderPage({ token }: { token: string }) {
             </Chip>
             <Chip>{formatDays(draft.allowedDays)}</Chip>
             {draft.retryEnabled && <Chip>Retry on</Chip>}
+          </div>
+          <div style={{ minWidth: "280px", marginTop: "0.9rem" }}>
+            <MetaConnectionSelector
+              connections={apiConnections}
+              value={draft.connectionId ?? ""}
+              onChange={(connectionId) => setDraft((current) => current ? { ...current, connectionId, steps: (current.steps ?? []).map((step) => ({ ...step, messageTemplateId: "", templateVariables: {}, mediaOverrides: {} })) } : current)}
+              label="WhatsApp API connection"
+              required
+              allowEmpty
+              emptyLabel="Select a connection"
+            />
           </div>
         </div>
         <div className="seq-builder-right">

@@ -6,6 +6,7 @@ import {
   disconnectWhatsApp,
   fetchMetaBusinessProfile,
   fetchMetaBusinessConfig,
+  fetchMetaBusinessConnections,
   fetchMetaBusinessStatus,
   setMetaBusinessChannelEnabled,
   setWhatsAppChannelEnabled,
@@ -21,6 +22,10 @@ export function fetchSettingsMetaConfig(token: string) {
 
 export function fetchSettingsMetaStatus(token: string, forceRefresh = false) {
   return fetchMetaBusinessStatus(token, { forceRefresh });
+}
+
+export function fetchSettingsMetaConnections(token: string, forceRefresh = false) {
+  return fetchMetaBusinessConnections(token, { forceRefresh });
 }
 
 export function activateQrChannel(token: string, options?: { resetAuth?: boolean }) {

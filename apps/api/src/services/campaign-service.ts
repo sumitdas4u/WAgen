@@ -2,6 +2,7 @@ import { pool, withTransaction } from "../db/pool.js";
 import type { Contact } from "../types/models.js";
 import { getSegmentContacts } from "./contact-segments-service.js";
 import { findSuppressedRecipients } from "./message-delivery-data-service.js";
+import { requireMetaConnection } from "./meta-whatsapp-service.js";
 import { getMessageTemplate, resolveTemplatePayload } from "./template-service.js";
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
@@ -27,6 +28,7 @@ export interface Campaign {
   name: string;
   status: CampaignStatus;
   broadcast_type: BroadcastType;
+  connection_id: string | null;
   template_id: string | null;
   template_variables: CampaignTemplateVariables;
   target_segment_id: string | null;
@@ -69,6 +71,7 @@ export interface CampaignMessage {
 export interface CreateCampaignInput {
   name: string;
   broadcastType?: BroadcastType;
+  connectionId?: string | null;
   templateId?: string | null;
   templateVariables?: CampaignTemplateVariables;
   targetSegmentId?: string | null;
@@ -77,6 +80,27 @@ export interface CreateCampaignInput {
   audienceSource?: CampaignAudienceSource;
   mediaOverrides?: CampaignMediaOverrides;
   scheduledAt?: string | null;
+}
+
+async function validateCampaignConnection(
+  userId: string,
+  connectionId: string | null | undefined,
+  templateId: string | null | undefined
+): Promise<void> {
+  if (!connectionId) {
+    throw new Error("Select a WhatsApp API connection.");
+  }
+
+  await requireMetaConnection(userId, connectionId, { allowDisconnected: true });
+
+  if (!templateId) {
+    return;
+  }
+
+  const template = await getMessageTemplate(userId, templateId);
+  if (template.connectionId !== connectionId) {
+    throw new Error("Selected template does not belong to the chosen WhatsApp API connection.");
+  }
 }
 
 function normalizePlaceholderKey(raw: string): string {
@@ -212,12 +236,14 @@ function resolveCampaignVariablesForContact(
 }
 
 export async function createCampaign(userId: string, input: CreateCampaignInput): Promise<Campaign> {
+  await validateCampaignConnection(userId, input.connectionId, input.templateId ?? null);
   const result = await pool.query<Campaign>(
     `INSERT INTO campaigns (
        user_id,
        name,
        status,
        broadcast_type,
+       connection_id,
        template_id,
        template_variables,
        target_segment_id,
@@ -227,13 +253,14 @@ export async function createCampaign(userId: string, input: CreateCampaignInput)
        media_overrides_json,
        scheduled_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11::jsonb, $12)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12::jsonb, $13)
      RETURNING *`,
     [
       userId,
       input.name,
       input.scheduledAt ? "scheduled" : "draft",
       input.broadcastType ?? "standard",
+      input.connectionId ?? null,
       input.templateId ?? null,
       JSON.stringify(input.templateVariables ?? {}),
       input.targetSegmentId ?? null,
@@ -266,29 +293,34 @@ export async function getCampaign(userId: string, campaignId: string): Promise<C
 export async function updateCampaign(
   userId: string,
   campaignId: string,
-  patch: Partial<Pick<CreateCampaignInput, "name" | "broadcastType" | "templateId" | "templateVariables" | "targetSegmentId" | "sourceCampaignId" | "retargetStatus" | "audienceSource" | "mediaOverrides" | "scheduledAt">>
+  patch: Partial<Pick<CreateCampaignInput, "name" | "broadcastType" | "connectionId" | "templateId" | "templateVariables" | "targetSegmentId" | "sourceCampaignId" | "retargetStatus" | "audienceSource" | "mediaOverrides" | "scheduledAt">>
 ): Promise<Campaign | null> {
   const current = await getCampaign(userId, campaignId);
   if (!current || (current.status !== "draft" && current.status !== "scheduled")) {
     return null;
   }
 
+  const nextConnectionId = patch.connectionId ?? current.connection_id;
+  const nextTemplateId = patch.templateId === undefined ? current.template_id : patch.templateId;
+  await validateCampaignConnection(userId, nextConnectionId, nextTemplateId);
+
   const result = await pool.query<Campaign>(
     `UPDATE campaigns
      SET name = COALESCE($3, name),
          broadcast_type = COALESCE($4, broadcast_type),
-         template_id = COALESCE($5, template_id),
-         template_variables = COALESCE($6::jsonb, template_variables),
-         target_segment_id = COALESCE($7, target_segment_id),
-         source_campaign_id = COALESCE($8, source_campaign_id),
-         retarget_status = COALESCE($9, retarget_status),
-         audience_source_json = COALESCE($10::jsonb, audience_source_json),
-         media_overrides_json = COALESCE($11::jsonb, media_overrides_json),
+         connection_id = COALESCE($5, connection_id),
+         template_id = COALESCE($6, template_id),
+         template_variables = COALESCE($7::jsonb, template_variables),
+         target_segment_id = COALESCE($8, target_segment_id),
+         source_campaign_id = COALESCE($9, source_campaign_id),
+         retarget_status = COALESCE($10, retarget_status),
+         audience_source_json = COALESCE($11::jsonb, audience_source_json),
+         media_overrides_json = COALESCE($12::jsonb, media_overrides_json),
          status = CASE
-           WHEN COALESCE($12, scheduled_at) IS NOT NULL THEN 'scheduled'
+           WHEN COALESCE($13, scheduled_at) IS NOT NULL THEN 'scheduled'
            ELSE 'draft'
          END,
-         scheduled_at = COALESCE($12, scheduled_at)
+         scheduled_at = COALESCE($13, scheduled_at)
      WHERE user_id = $1
        AND id = $2
      RETURNING *`,
@@ -297,6 +329,7 @@ export async function updateCampaign(
       campaignId,
       patch.name ?? null,
       patch.broadcastType ?? null,
+      patch.connectionId ?? null,
       patch.templateId ?? null,
       patch.templateVariables != null ? JSON.stringify(patch.templateVariables) : null,
       patch.targetSegmentId ?? null,
@@ -315,9 +348,14 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   if (!campaign || (campaign.status !== "draft" && campaign.status !== "scheduled")) {
     return null;
   }
+  if (!campaign.connection_id) {
+    throw new Error("Campaign is missing its WhatsApp API connection.");
+  }
   if (!campaign.template_id) {
     throw new Error("Campaign has no template selected.");
   }
+
+  await requireMetaConnection(userId, campaign.connection_id, { requireActive: true });
 
   const contacts = await getCampaignAudienceContacts(userId, campaign);
   if (contacts.length === 0) {
@@ -334,6 +372,9 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   );
 
   const template = await getMessageTemplate(userId, campaign.template_id);
+  if (template.connectionId !== campaign.connection_id) {
+    throw new Error("Campaign template does not belong to the selected WhatsApp API connection.");
+  }
   if (template.status !== "APPROVED") {
     throw new Error("Only approved templates can be used for broadcasts.");
   }

@@ -66,6 +66,13 @@ export interface MetaConnection {
   updatedAt: string;
 }
 
+export interface MetaBusinessStatus {
+  connected: boolean;
+  enabled: boolean;
+  connection: MetaConnection | null;
+  connections: MetaConnection[];
+}
+
 export interface MetaBusinessProfile {
   connectionId: string;
   phoneNumberId: string;
@@ -1200,6 +1207,47 @@ async function getLatestConnectionRowByUserId(userId: string): Promise<MetaConne
   return result.rows[0] ?? null;
 }
 
+async function listConnectionRowsByUserId(
+  userId: string,
+  options?: { includeDisconnected?: boolean }
+): Promise<MetaConnectionRow[]> {
+  const includeDisconnected = Boolean(options?.includeDisconnected);
+  const result = await pool.query<MetaConnectionRow>(
+    `SELECT id,
+            user_id,
+            meta_business_id,
+            waba_id,
+            phone_number_id,
+            display_phone_number,
+            linked_number,
+            access_token_encrypted,
+            token_expires_at::text,
+            enabled,
+            subscription_status,
+            status,
+            billing_mode,
+            billing_status,
+            billing_owner_business_id,
+            billing_attached_at::text,
+            billing_error,
+            billing_credit_line_id,
+            billing_allocation_config_id,
+            billing_currency,
+            metadata_json,
+            created_at::text,
+            updated_at::text
+     FROM whatsapp_business_connections
+     WHERE user_id = $1
+       AND ($2::boolean = TRUE OR status <> 'disconnected')
+     ORDER BY
+       CASE WHEN status = 'connected' THEN 0 WHEN status = 'pending' THEN 1 ELSE 2 END,
+       updated_at DESC,
+       created_at DESC`,
+    [userId, includeDisconnected]
+  );
+  return result.rows;
+}
+
 async function getProfileTargetConnectionRow(userId: string, connectionId?: string): Promise<MetaConnectionRow | null> {
   if (connectionId) {
     const result = await pool.query<MetaConnectionRow>(
@@ -1596,28 +1644,71 @@ export function getMetaBusinessConfig() {
 export async function getMetaBusinessStatus(
   userId: string,
   options?: { forceRefresh?: boolean }
-): Promise<{
-  connected: boolean;
-  enabled: boolean;
-  connection: MetaConnection | null;
-}> {
-  let row = await getLatestConnectionRowByUserId(userId);
-  if (row) {
+): Promise<MetaBusinessStatus> {
+  const rows = await listConnectionRowsByUserId(userId, { includeDisconnected: true });
+  const refreshedRows: MetaConnectionRow[] = [];
+
+  for (const row of rows) {
+    if (row.status !== "connected" && row.status !== "pending") {
+      refreshedRows.push(row);
+      continue;
+    }
     try {
-      row = await refreshConnectionStatusFromMeta(row, {
-        forceRefresh: options?.forceRefresh ?? true
-      });
+      refreshedRows.push(
+        await refreshConnectionStatusFromMeta(row, {
+          forceRefresh: options?.forceRefresh ?? true
+        })
+      );
     } catch (error) {
       console.warn(
         `[MetaStatusSync] unable to refresh user=${userId} phoneNumberId=${row.phone_number_id}: ${(error as Error).message}`
       );
+      refreshedRows.push(row);
     }
   }
+
+  const currentRow =
+    refreshedRows.find((row) => row.status !== "disconnected") ??
+    null;
+
   return {
-    connected: row?.status === "connected",
-    enabled: row?.enabled ?? false,
-    connection: row ? mapConnection(row) : null
+    connected: refreshedRows.some((row) => row.status === "connected"),
+    enabled: refreshedRows.some((row) => row.status === "connected" && row.enabled),
+    connection: currentRow ? mapConnection(currentRow) : null,
+    connections: refreshedRows.map(mapConnection)
   };
+}
+
+export async function listMetaBusinessConnections(
+  userId: string,
+  options?: { forceRefresh?: boolean; includeDisconnected?: boolean }
+): Promise<MetaConnection[]> {
+  const status = await getMetaBusinessStatus(userId, { forceRefresh: options?.forceRefresh });
+  return options?.includeDisconnected
+    ? status.connections
+    : status.connections.filter((connection) => connection.status !== "disconnected");
+}
+
+export async function requireMetaConnection(
+  userId: string,
+  connectionId: string,
+  options?: { requireActive?: boolean; allowDisconnected?: boolean }
+): Promise<MetaConnection> {
+  const row = await getProfileTargetConnectionRow(userId, connectionId);
+  if (!row || row.id !== connectionId) {
+    throw new Error("WhatsApp API connection not found.");
+  }
+
+  if (!options?.allowDisconnected && row.status === "disconnected") {
+    throw new Error("WhatsApp API connection has been deleted.");
+  }
+
+  const mapped = mapConnection(row);
+  if (options?.requireActive && (mapped.status !== "connected" || !mapped.enabled)) {
+    throw new Error("Selected WhatsApp API connection is not active.");
+  }
+
+  return mapped;
 }
 
 export async function getMetaBusinessProfile(userId: string, connectionId?: string): Promise<MetaBusinessProfile> {
@@ -2027,7 +2118,6 @@ export async function disconnectMetaBusinessConnection(
     }
   }
 
-  const shouldPurgeConnectionData = options?.purgeConnectionData ?? true;
   const targetConnectionIds = Array.from(new Set(rows.map((row) => row.id).filter(Boolean)));
   const client = await pool.connect();
   try {
@@ -2044,64 +2134,6 @@ export async function disconnectMetaBusinessConnection(
            AND connection_id = ANY($2::uuid[])`,
         [userId, targetConnectionIds]
       );
-    }
-
-    if (shouldPurgeConnectionData) {
-      if (connectionId) {
-        const linkedNumbers = Array.from(
-          new Set(
-            rows
-              .flatMap((row) => [row.linked_number, normalizePhoneDigits(row.display_phone_number)])
-              .filter((value): value is string => Boolean(value))
-          )
-        );
-
-        if (linkedNumbers.length > 0) {
-          await client.query(
-            `DELETE FROM agent_profiles
-             WHERE user_id = $1
-               AND channel_type = 'api'
-               AND linked_number = ANY($2::text[])`,
-            [userId, linkedNumbers]
-          );
-
-          await client.query(
-            `DELETE FROM conversations
-             WHERE user_id = $1
-               AND channel_type = 'api'
-               AND channel_linked_number = ANY($2::text[])`,
-            [userId, linkedNumbers]
-          );
-        } else {
-          await client.query(
-            `DELETE FROM agent_profiles
-             WHERE user_id = $1
-               AND channel_type = 'api'`,
-            [userId]
-          );
-
-          await client.query(
-            `DELETE FROM conversations
-             WHERE user_id = $1
-               AND channel_type = 'api'`,
-            [userId]
-          );
-        }
-      } else {
-        await client.query(
-          `DELETE FROM agent_profiles
-           WHERE user_id = $1
-             AND channel_type = 'api'`,
-          [userId]
-        );
-
-        await client.query(
-          `DELETE FROM conversations
-           WHERE user_id = $1
-             AND channel_type = 'api'`,
-          [userId]
-        );
-      }
     }
 
     if (connectionId) {

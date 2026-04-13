@@ -1,4 +1,5 @@
 import { pool, withTransaction } from "../db/pool.js";
+import { requireMetaConnection } from "./meta-whatsapp-service.js";
 import { getMessageTemplate } from "./template-service.js";
 import type {
   SequenceCondition,
@@ -44,6 +45,7 @@ export interface Sequence {
   user_id: string;
   name: string;
   status: SequenceStatus;
+  connection_id: string | null;
   base_type: SequenceBaseType;
   trigger_type: SequenceTriggerType;
   channel: SequenceChannel;
@@ -121,6 +123,7 @@ export interface SequenceWriteConditionInput {
 
 export interface SequenceWriteInput {
   name: string;
+  connectionId?: string | null;
   baseType?: SequenceBaseType;
   triggerType: SequenceTriggerType;
   channel?: SequenceChannel;
@@ -297,12 +300,18 @@ function normalizeAllowedDays(days?: string[]): string[] {
   );
 }
 
-async function ensureValidSteps(userId: string, steps: SequenceWriteStepInput[]): Promise<void> {
+async function ensureValidSteps(userId: string, connectionId: string | null | undefined, steps: SequenceWriteStepInput[]): Promise<void> {
+  if (!connectionId) {
+    throw new Error("Select a WhatsApp API connection.");
+  }
   for (const step of steps) {
     if (step.delayValue < 0) {
       throw new Error("Step delay cannot be negative.");
     }
     const template = await getMessageTemplate(userId, step.messageTemplateId);
+    if (template.connectionId !== connectionId) {
+      throw new Error("Sequence steps must use templates from the selected WhatsApp API connection.");
+    }
     if (template.status !== "APPROVED") {
       throw new Error("Sequence steps require approved WhatsApp templates.");
     }
@@ -311,12 +320,13 @@ async function ensureValidSteps(userId: string, steps: SequenceWriteStepInput[])
 
 async function replaceSequenceChildren(
   userId: string,
+  connectionId: string | null | undefined,
   sequenceId: string,
   steps: SequenceWriteStepInput[] | undefined,
   conditions: SequenceWriteConditionInput[] | undefined
 ): Promise<void> {
   if (steps) {
-    await ensureValidSteps(userId, steps);
+    await ensureValidSteps(userId, connectionId, steps);
   }
 
   await withTransaction(async (client) => {
@@ -457,10 +467,15 @@ export async function getSequenceDetail(userId: string, sequenceId: string): Pro
 }
 
 export async function createSequence(userId: string, input: SequenceWriteInput): Promise<SequenceDetail> {
+  if (!input.connectionId) {
+    throw new Error("Select a WhatsApp API connection.");
+  }
+  await requireMetaConnection(userId, input.connectionId, { allowDisconnected: true });
   const result = await pool.query<{ id: string }>(
     `INSERT INTO sequences (
        user_id,
        name,
+       connection_id,
        base_type,
        trigger_type,
        channel,
@@ -473,11 +488,12 @@ export async function createSequence(userId: string, input: SequenceWriteInput):
        time_window_start,
        time_window_end
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14)
      RETURNING id`,
     [
       userId,
       input.name.trim(),
+      input.connectionId,
       input.baseType ?? "contact",
       input.triggerType,
       input.channel ?? "whatsapp",
@@ -492,7 +508,7 @@ export async function createSequence(userId: string, input: SequenceWriteInput):
     ]
   );
 
-  await replaceSequenceChildren(userId, result.rows[0]!.id, input.steps, input.conditions);
+  await replaceSequenceChildren(userId, input.connectionId, result.rows[0]!.id, input.steps, input.conditions);
   return (await getSequenceDetail(userId, result.rows[0]!.id))!;
 }
 
@@ -506,20 +522,27 @@ export async function updateSequence(
     return null;
   }
 
+  const nextConnectionId = patch.connectionId ?? current.connection_id;
+  if (!nextConnectionId) {
+    throw new Error("Select a WhatsApp API connection.");
+  }
+  await requireMetaConnection(userId, nextConnectionId, { allowDisconnected: true });
+
   await pool.query(
     `UPDATE sequences
      SET name = COALESCE($3, name),
-         base_type = COALESCE($4, base_type),
-         trigger_type = COALESCE($5, trigger_type),
-         channel = COALESCE($6, channel),
-         allow_once = COALESCE($7, allow_once),
-         require_previous_delivery = COALESCE($8, require_previous_delivery),
-         retry_enabled = COALESCE($9, retry_enabled),
-         retry_window_hours = COALESCE($10, retry_window_hours),
-         allowed_days_json = COALESCE($11::jsonb, allowed_days_json),
-         time_mode = COALESCE($12, time_mode),
-         time_window_start = COALESCE($13, time_window_start),
-         time_window_end = COALESCE($14, time_window_end),
+         connection_id = COALESCE($4, connection_id),
+         base_type = COALESCE($5, base_type),
+         trigger_type = COALESCE($6, trigger_type),
+         channel = COALESCE($7, channel),
+         allow_once = COALESCE($8, allow_once),
+         require_previous_delivery = COALESCE($9, require_previous_delivery),
+         retry_enabled = COALESCE($10, retry_enabled),
+         retry_window_hours = COALESCE($11, retry_window_hours),
+         allowed_days_json = COALESCE($12::jsonb, allowed_days_json),
+         time_mode = COALESCE($13, time_mode),
+         time_window_start = COALESCE($14, time_window_start),
+         time_window_end = COALESCE($15, time_window_end),
          updated_at = NOW()
      WHERE user_id = $1
        AND id = $2`,
@@ -527,6 +550,7 @@ export async function updateSequence(
       userId,
       sequenceId,
       patch.name?.trim() || null,
+      patch.connectionId ?? null,
       patch.baseType ?? null,
       patch.triggerType ?? null,
       patch.channel ?? null,
@@ -541,7 +565,7 @@ export async function updateSequence(
     ]
   );
 
-  await replaceSequenceChildren(userId, sequenceId, patch.steps, patch.conditions);
+  await replaceSequenceChildren(userId, nextConnectionId, sequenceId, patch.steps, patch.conditions);
   return getSequenceDetail(userId, sequenceId);
 }
 
@@ -566,8 +590,13 @@ async function validatePublishableSequence(userId: string, sequenceId: string): 
   if (detail.steps.length === 0) {
     throw new Error("Add at least one step before publishing.");
   }
+  if (!detail.connection_id) {
+    throw new Error("Select a WhatsApp API connection.");
+  }
+  await requireMetaConnection(userId, detail.connection_id, { requireActive: true });
   await ensureValidSteps(
     userId,
+    detail.connection_id,
     detail.steps.map((step) => ({
       stepOrder: step.step_order,
       delayValue: step.delay_value,

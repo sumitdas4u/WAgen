@@ -33,6 +33,7 @@ export const dashboardQueryKeys = {
   settingsRoot: dashboardSettingsRoot,
   settingsMetaConfig: [...dashboardSettingsRoot, "meta-config"] as const,
   settingsMetaStatus: [...dashboardSettingsRoot, "meta-status"] as const,
+  settingsMetaConnections: [...dashboardSettingsRoot, "meta-connections"] as const,
   reviewRoot: dashboardReviewRoot,
   reviewQueue: (status: string) => [...dashboardReviewRoot, "queue", status] as const,
   reviewConversation: (conversationId: string) => [...dashboardReviewRoot, "conversation", conversationId] as const,
