@@ -16,7 +16,7 @@ ALTER TABLE sequences
 WITH sequence_template_connections AS (
   SELECT
     ss.sequence_id,
-    MIN(mt.connection_id) AS connection_id,
+    (ARRAY_AGG(DISTINCT mt.connection_id))[1] AS connection_id,
     COUNT(DISTINCT mt.connection_id) AS connection_count
   FROM sequence_steps ss
   JOIN message_templates mt ON mt.id = ss.message_template_id
