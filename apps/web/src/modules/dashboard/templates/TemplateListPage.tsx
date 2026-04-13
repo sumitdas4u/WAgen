@@ -524,7 +524,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
 
   const selectedConnection = availableConnections.find((connection) => connection.id === selectedConnectionId) ?? null;
   const selectedConnectionActive = isMetaConnectionActive(selectedConnection);
-  const templatesQuery = useTemplatesQuery(token, { connectionId: selectedConnectionId || undefined });
+  const templatesQuery = useTemplatesQuery(token);
   const syncMutation = useSyncTemplatesMutation(token);
   const deleteMutation = useDeleteTemplateMutation(token);
 
@@ -536,16 +536,20 @@ export function TemplateListPage({ token, metaStatus }: Props) {
   );
 
   const filtered = useMemo(() => allTemplates.filter((t) => {
+    if (selectedConnectionId && t.connectionId !== selectedConnectionId) return false;
     if (!showInactiveTemplates && !activeConnectionIds.has(t.connectionId)) return false;
     if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== "All" && t.status !== statusFilter) return false;
     if (typeFilter !== "All" && t.category !== typeFilter) return false;
     return true;
-  }), [activeConnectionIds, allTemplates, search, showInactiveTemplates, statusFilter, typeFilter]);
+  }), [activeConnectionIds, allTemplates, search, selectedConnectionId, showInactiveTemplates, statusFilter, typeFilter]);
 
   const hiddenInactiveTemplateCount = useMemo(
-    () => allTemplates.filter((t) => !activeConnectionIds.has(t.connectionId)).length,
-    [activeConnectionIds, allTemplates]
+    () => allTemplates.filter((t) => {
+      if (selectedConnectionId && t.connectionId !== selectedConnectionId) return false;
+      return !activeConnectionIds.has(t.connectionId);
+    }).length,
+    [activeConnectionIds, allTemplates, selectedConnectionId]
   );
 
   // Stats
@@ -730,7 +734,7 @@ export function TemplateListPage({ token, metaStatus }: Props) {
                     onChange={setSelectedConnectionId}
                     label="Connection"
                     allowEmpty
-                    emptyLabel="All API connections"
+                    emptyLabel={showInactiveTemplates ? "All API connections" : "All active API connections"}
                     activeOnly={!showInactiveTemplates}
                   />
                 </div>

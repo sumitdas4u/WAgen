@@ -150,10 +150,6 @@ export function QrChannelPage() {
             <h3>Linked Number</h3>
             <p>{qrPhoneNumber ? formatPhone(qrPhoneNumber) : "Not linked"}</p>
           </div>
-          <div>
-            <h3>Session</h3>
-            <p>{qrHasQr ? "QR generated" : "Not generated"}</p>
-          </div>
         </div>
 
         <div className="clone-hero-actions">
