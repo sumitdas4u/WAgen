@@ -1120,6 +1120,17 @@ export interface MetaBusinessStatus {
   connections: MetaBusinessConnection[];
 }
 
+export type ChannelDefaultReplyMode = "manual" | "flow" | "ai";
+
+export interface ChannelDefaultReplyConfig {
+  channel: "web" | "qr" | "api";
+  mode: ChannelDefaultReplyMode;
+  flowId: string | null;
+  agentProfileId: string | null;
+  invalidReplyLimit: number;
+  source: "explicit" | "legacy_flow_ai" | "legacy_default_flow" | "default";
+}
+
 export interface MetaBusinessProfile {
   connectionId: string;
   phoneNumberId: string;
@@ -1163,6 +1174,32 @@ export function fetchMetaBusinessConnections(token: string, options?: { forceRef
   const query = params.toString();
   const path = query ? `/api/meta/business/connections?${query}` : "/api/meta/business/connections";
   return apiRequest<{ connections: MetaBusinessConnection[] }>(path, { token });
+}
+
+export function fetchChannelDefaultReply(token: string, channel: "web" | "qr" | "api") {
+  return apiRequest<{ config: ChannelDefaultReplyConfig }>(`/api/channels/default-reply/${channel}`, {
+    token
+  });
+}
+
+export function saveChannelDefaultReply(
+  token: string,
+  channel: "web" | "qr" | "api",
+  payload: {
+    mode: ChannelDefaultReplyMode;
+    flowId?: string | null;
+    agentProfileId?: string | null;
+    invalidReplyLimit?: number | null;
+  }
+) {
+  return apiRequest<{ ok: boolean; config: ChannelDefaultReplyConfig }>(
+    `/api/channels/default-reply/${channel}`,
+    {
+      method: "PUT",
+      token,
+      body: JSON.stringify(payload)
+    }
+  );
 }
 
 export function completeMetaBusinessSignup(token: string, payload: CompleteMetaSignupPayload) {

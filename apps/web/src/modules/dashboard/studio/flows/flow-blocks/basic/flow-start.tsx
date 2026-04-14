@@ -79,22 +79,6 @@ function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
             + Add Trigger
           </button>
         </div>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.45rem",
-            fontSize: "0.72rem",
-            color: "var(--text-2)"
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={data.fallbackUseAi === true}
-            onChange={(event) => patch({ fallbackUseAi: event.target.checked })}
-          />
-          Fallback to AI when no flow trigger matches
-        </label>
       </div>
       <Handle type="source" position={Position.Right} id="out" className="fn-handle-out" />
     </div>
@@ -118,8 +102,7 @@ export const flowStartStudioBlock: StudioFlowBlockDefinition<FlowStartData> = {
       kind: "flowStart",
       label: "Flow Start",
       triggers: [],
-      welcomeMessage: "",
-      fallbackUseAi: false
+      welcomeMessage: ""
     };
   },
   NodeComponent: FlowStartNode

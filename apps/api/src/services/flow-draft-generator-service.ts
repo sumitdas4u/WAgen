@@ -172,8 +172,7 @@ function makeMinimalDraft(channel: FlowChannel, prompt: string): GenerateFlowDra
           kind: "flowStart",
           label: "{{flow_label}}",
           triggers: [],
-          welcomeMessage: "Hi from {{business_name}}. We would love your feedback about {{feedback_topic}}.",
-          fallbackUseAi: false
+          welcomeMessage: "Hi from {{business_name}}. We would love your feedback about {{feedback_topic}}."
         }
       },
       {
@@ -229,7 +228,7 @@ function buildSystemPrompt(channel: FlowChannel, prompt: string) {
     "Use placeholders like {{business_name}}, {{feedback_topic}}, {{thank_you_message}}, {{handoff_contact}}, {{trigger_keyword}}.",
     "Every node must have id, type, and data.",
     "Return edges separately as { source, sourceHandle?, target }.",
-    "flowStart nodes should have data with: kind, label, welcomeMessage, fallbackUseAi.",
+    "flowStart nodes should have data with: kind, label, welcomeMessage.",
     "sendText nodes should have data with: kind, text.",
     "askQuestion nodes should have data with: kind, question, variableName, inputType.",
     "condition nodes should have data with: kind, variable, operator, value.",
@@ -269,8 +268,7 @@ function normalizeNodeData(
         welcomeMessage: normalizeText(
           data.welcomeMessage,
           "Hi from {{business_name}}. How can we help you with {{feedback_topic}} today?"
-        ),
-        fallbackUseAi: data.fallbackUseAi === true
+        )
       };
     case "sendText":
       return {

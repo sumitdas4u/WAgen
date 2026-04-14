@@ -36,10 +36,12 @@ import {
   type FlowSessionRow,
   type FlowTrigger
 } from "./flow-service.js";
+import { resolveChannelDefaultReplyConfig } from "./channel-default-reply-service.js";
 
 export type FlowHandleResult =
   | { result: "handled" }
   | { result: "use_ai" }
+  | { result: "use_default_reply" }
   | { result: "not_matched" }
   | { result: "failed" };
 
@@ -49,6 +51,7 @@ interface FlowExecutionOptions {
 }
 
 const MAX_STEPS = 20;
+const FLOW_META_KEY = "__flow";
 
 interface ConversationVariableContextRow {
   id: string;
@@ -183,6 +186,67 @@ function getEffectiveTriggers(flow: FlowRow): { type: string; value: string }[] 
   }
 
   return merged;
+}
+
+function readFlowMeta(vars: FlowVariables): {
+  invalidReplyCounts: Record<string, number>;
+} {
+  const raw = vars[FLOW_META_KEY];
+  if (!raw || typeof raw !== "object") {
+    return { invalidReplyCounts: {} };
+  }
+
+  const record = raw as Record<string, unknown>;
+  const source =
+    record.invalidReplyCounts && typeof record.invalidReplyCounts === "object"
+      ? (record.invalidReplyCounts as Record<string, unknown>)
+      : {};
+
+  return {
+    invalidReplyCounts: Object.fromEntries(
+      Object.entries(source).map(([key, value]) => [key, Math.max(0, Number(value) || 0)])
+    )
+  };
+}
+
+function writeFlowMeta(
+  vars: FlowVariables,
+  meta: { invalidReplyCounts: Record<string, number> }
+): FlowVariables {
+  return {
+    ...vars,
+    [FLOW_META_KEY]: meta
+  };
+}
+
+function incrementInvalidReplyCount(vars: FlowVariables, nodeId: string): {
+  attempts: number;
+  variables: FlowVariables;
+} {
+  const meta = readFlowMeta(vars);
+  const attempts = (meta.invalidReplyCounts[nodeId] ?? 0) + 1;
+  return {
+    attempts,
+    variables: writeFlowMeta(vars, {
+      invalidReplyCounts: {
+        ...meta.invalidReplyCounts,
+        [nodeId]: attempts
+      }
+    })
+  };
+}
+
+function resetInvalidReplyCount(vars: FlowVariables, nodeId: string): FlowVariables {
+  const meta = readFlowMeta(vars);
+  if (!(nodeId in meta.invalidReplyCounts)) {
+    return vars;
+  }
+
+  const nextCounts = { ...meta.invalidReplyCounts };
+  delete nextCounts[nodeId];
+  return writeFlowMeta(vars, {
+    invalidReplyCounts: nextCounts
+  });
 }
 
 function matchesTemplateReply(message: string, triggerValue: string): boolean {
@@ -508,7 +572,8 @@ async function resumeWaiting(
   edges: FlowEdge[],
   message: string,
   sendReply: SendReplyFn,
-  options: FlowExecutionOptions
+  options: FlowExecutionOptions,
+  invalidReplyLimit: number
 ): Promise<FlowHandleResult> {
   if (session.waiting_for === "ai_reply") {
     if (!session.waiting_node_id) {
@@ -558,8 +623,19 @@ async function resumeWaiting(
       });
 
   if (resumeResult.signal === "stay_waiting") {
+    const invalidAttempt = incrementInvalidReplyCount(resumeResult.variables, waitNode.id);
+    if (invalidAttempt.attempts >= invalidReplyLimit) {
+      await updateFlowSession(session.id, {
+        variables: invalidAttempt.variables,
+        status: "completed",
+        waiting_for: null,
+        waiting_node_id: null
+      });
+      return { result: "use_default_reply" };
+    }
+
     await updateFlowSession(session.id, {
-      variables: resumeResult.variables,
+      variables: invalidAttempt.variables,
       status: "waiting",
       waiting_for: session.waiting_for,
       waiting_node_id: session.waiting_node_id
@@ -598,9 +674,11 @@ async function resumeWaiting(
     return { result: "handled" };
   }
 
+  const advancedVariables = resetInvalidReplyCount(resumeResult.variables, waitNode.id);
+
   await updateFlowSession(session.id, {
     current_node_id: nextNode.id,
-    variables: resumeResult.variables,
+    variables: advancedVariables,
     status: "active",
     waiting_for: null,
     waiting_node_id: null
@@ -610,8 +688,8 @@ async function resumeWaiting(
     nextNode,
     nodes,
     edges,
-    { ...session, variables: resumeResult.variables },
-    resumeResult.variables,
+    { ...session, variables: advancedVariables },
+    advancedVariables,
     sendReply,
     options
   );
@@ -799,6 +877,14 @@ export async function handleFlowMessage(input: {
 
   try {
     const { userId, conversationId, channelType, message, sendReply } = input;
+    const flows = await getPublishedFlowsForUser(userId, channelType);
+    const defaultReplyConfig = await resolveChannelDefaultReplyConfig(userId, channelType, {
+      publishedFlows: flows
+    });
+    const selectedDefaultReplyFlow =
+      defaultReplyConfig.mode === "flow" && defaultReplyConfig.flowId
+        ? flows.find((flow) => flow.id === defaultReplyConfig.flowId) ?? null
+        : null;
 
     const existingSession = await getActiveFlowSession(conversationId);
     if (existingSession) {
@@ -829,7 +915,7 @@ export async function handleFlowMessage(input: {
           return await resumeWaiting(existingSession, nodes, edges, message, sendReply, {
             userId,
             channelType
-          });
+          }, defaultReplyConfig.invalidReplyLimit);
         }
 
         const currentNode =
@@ -864,12 +950,12 @@ export async function handleFlowMessage(input: {
       }
     }
 
-    const flows = await getPublishedFlowsForUser(userId, channelType);
     const firstInbound = await isFirstInboundMessage(conversationId);
 
     // Exclude default reply flow from trigger matching — it is handled explicitly below
-    const nonDefaultFlows = flows.filter((flow) => !flow.is_default_reply);
-    const defaultReplyFlow = flows.find((flow) => flow.is_default_reply === true);
+    const nonDefaultFlows = selectedDefaultReplyFlow
+      ? flows.filter((flow) => flow.id !== selectedDefaultReplyFlow.id)
+      : flows;
 
     const matchedFlow = matchingFlow({
       message,
@@ -890,7 +976,7 @@ export async function handleFlowMessage(input: {
         );
       })();
 
-    if (defaultReplyFlow && (isGenericMatch || matchedFlow === null)) {
+    if ((selectedDefaultReplyFlow || defaultReplyConfig.mode === "ai") && (isGenericMatch || matchedFlow === null)) {
       // Also: if a specific flow just completed and would re-trigger, prefer default reply
       const recentlyCompleted =
         !isGenericMatch && matchedFlow
@@ -898,44 +984,49 @@ export async function handleFlowMessage(input: {
           : null;
       const shouldUseDefaultReply =
         isGenericMatch ||
-        (recentlyCompleted?.flow_id === matchedFlow?.id);
+        (recentlyCompleted?.flow_id === matchedFlow?.id) ||
+        matchedFlow === null;
 
       if (shouldUseDefaultReply) {
-        const { nodes, edges, startNode: drStartNode } = getFlowGraph(defaultReplyFlow);
-        if (drStartNode) {
-          const initialVars = await buildConversationFlowVariables({ userId, conversationId });
-          const session = await createFlowSession(defaultReplyFlow.id, conversationId, initialVars);
-          sessionIdToFail = session.id;
-          try {
-            return await runChain(drStartNode, nodes, edges, session, initialVars, sendReply, {
-              userId,
-              channelType
-            });
-          } catch (error) {
-            await markFlowSessionFailed(session.id);
-            console.warn(
-              `[FlowEngine] Default reply flow failed conversation=${conversationId} session=${session.id}:`,
-              error
-            );
-            return { result: "failed" };
+        if (defaultReplyConfig.mode === "flow" && selectedDefaultReplyFlow) {
+          const { nodes, edges, startNode: drStartNode } = getFlowGraph(selectedDefaultReplyFlow);
+          if (drStartNode) {
+            const initialVars = await buildConversationFlowVariables({ userId, conversationId });
+            const session = await createFlowSession(selectedDefaultReplyFlow.id, conversationId, initialVars);
+            sessionIdToFail = session.id;
+            try {
+              return await runChain(drStartNode, nodes, edges, session, initialVars, sendReply, {
+                userId,
+                channelType
+              });
+            } catch (error) {
+              await markFlowSessionFailed(session.id);
+              console.warn(
+                `[FlowEngine] Default reply flow failed conversation=${conversationId} session=${session.id}:`,
+                error
+              );
+              return { result: "failed" };
+            }
           }
+        }
+
+        if (defaultReplyConfig.mode === "ai") {
+          return { result: "use_ai" };
         }
       }
     }
 
     if (!matchedFlow) {
-      const fallbackFlow = flows.find((flow) => {
-        const { startNode } = getFlowGraph(flow);
-        return startNode?.data?.fallbackUseAi === true;
-      });
-      if (fallbackFlow) return { result: "use_ai" };
+      if (defaultReplyConfig.mode === "ai") {
+        return { result: "use_ai" };
+      }
 
       // Check for a default reply flow — catches all unmatched messages for this channel
-      if (defaultReplyFlow) {
-        const { nodes, edges, startNode: drStartNode } = getFlowGraph(defaultReplyFlow);
+      if (defaultReplyConfig.mode === "flow" && selectedDefaultReplyFlow) {
+        const { nodes, edges, startNode: drStartNode } = getFlowGraph(selectedDefaultReplyFlow);
         if (drStartNode) {
           const initialVars = await buildConversationFlowVariables({ userId, conversationId });
-          const session = await createFlowSession(defaultReplyFlow.id, conversationId, initialVars);
+          const session = await createFlowSession(selectedDefaultReplyFlow.id, conversationId, initialVars);
           sessionIdToFail = session.id;
           try {
             return await runChain(drStartNode, nodes, edges, session, initialVars, sendReply, {

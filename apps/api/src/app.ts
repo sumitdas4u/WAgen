@@ -15,6 +15,7 @@ import { whatsappRoutes } from "./routes/whatsapp.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { conversationRoutes } from "./routes/conversations.js";
 import { flowRoutes } from "./routes/flows.js";
+import { channelDefaultReplyRoutes } from "./routes/channel-default-reply.js";
 import { billingRoutes } from "./routes/billing.js";
 import { agentRoutes } from "./routes/agents.js";
 import { metaRoutes } from "./routes/meta.js";
@@ -213,6 +214,7 @@ export async function buildApp() {
   await genericWebhookRoutes(app);
   await sequenceRoutes(app);
   await flowRoutes(app);
+  await channelDefaultReplyRoutes(app);
   await registerRealtimeRoutes(app);
   await registerWidgetChatGatewayRoutes(app);
 

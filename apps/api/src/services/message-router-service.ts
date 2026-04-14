@@ -5,6 +5,7 @@ import {
   advanceFlowAfterAiReply,
   getActiveAiReplyContextNote
 } from "./flow-engine-service.js";
+import { resolveChannelDefaultReplyConfig } from "./channel-default-reply-service.js";
 import { buildSalesReply } from "./ai-reply-service.js";
 import { resolveAgentProfileForChannel } from "./agent-profile-service.js";
 import { isAgentSenderPhone } from "./agent-loop-guard-service.js";
@@ -251,7 +252,7 @@ export async function processIncomingMessage(
   // ── Flow engine runs regardless of manual_takeover/ai_paused ─────────────────
   // A flow assigned to this conversation always gets to respond.
   // manual_takeover only blocks the AI fallback below.
-  const flowResult: import("./flow-engine-service.js").FlowHandleResult =
+  let flowResult: import("./flow-engine-service.js").FlowHandleResult =
     await handleFlowMessage({
       userId: input.userId,
       conversationId: conversation.id,
@@ -259,6 +260,28 @@ export async function processIncomingMessage(
       message: normalizedFlowMessage,
       sendReply: sendTrackedFlowReply
     });
+
+  if (flowResult.result === "use_default_reply") {
+    const defaultReplyConfig = await resolveChannelDefaultReplyConfig(
+      input.userId,
+      input.channelType,
+      { user }
+    );
+
+    if (defaultReplyConfig.mode === "flow") {
+      flowResult = await handleFlowMessage({
+        userId: input.userId,
+        conversationId: conversation.id,
+        channelType: input.channelType,
+        message: normalizedFlowMessage,
+        sendReply: sendTrackedFlowReply
+      });
+    } else if (defaultReplyConfig.mode === "ai") {
+      flowResult = { result: "use_ai" };
+    } else {
+      flowResult = { result: "not_matched" };
+    }
+  }
 
   if (flowResult.result === "handled") {
     return {
@@ -268,6 +291,10 @@ export async function processIncomingMessage(
       autoReplySent: true,
       reason: "sent"
     };
+  }
+
+  if (flowResult.result === "use_default_reply") {
+    flowResult = { result: "not_matched" };
   }
 
   if (flowResult.result === "failed") {

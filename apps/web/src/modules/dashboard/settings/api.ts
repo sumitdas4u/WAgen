@@ -7,7 +7,9 @@ import {
   fetchMetaBusinessProfile,
   fetchMetaBusinessConfig,
   fetchMetaBusinessConnections,
+  fetchChannelDefaultReply,
   fetchMetaBusinessStatus,
+  saveChannelDefaultReply,
   setMetaBusinessChannelEnabled,
   setWhatsAppChannelEnabled,
   setAgentActive,
@@ -26,6 +28,18 @@ export function fetchSettingsMetaStatus(token: string, forceRefresh = false) {
 
 export function fetchSettingsMetaConnections(token: string, forceRefresh = false) {
   return fetchMetaBusinessConnections(token, { forceRefresh });
+}
+
+export function fetchSettingsChannelDefaultReply(token: string, channel: "web" | "qr" | "api") {
+  return fetchChannelDefaultReply(token, channel);
+}
+
+export function saveSettingsChannelDefaultReply(
+  token: string,
+  channel: "web" | "qr" | "api",
+  payload: Parameters<typeof saveChannelDefaultReply>[2]
+) {
+  return saveChannelDefaultReply(token, channel, payload);
 }
 
 export function activateQrChannel(token: string, options?: { resetAuth?: boolean }) {

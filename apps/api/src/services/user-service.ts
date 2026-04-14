@@ -252,11 +252,15 @@ export async function updateBusinessBasics(
     manualFaq?: string;
   }
 ): Promise<void> {
+  const current = await getUserById(userId);
+  const existingBasics =
+    (current?.business_basics as Record<string, unknown> | null | undefined) ?? {};
+
   await pool.query(
     `UPDATE users
      SET business_basics = $1::jsonb
      WHERE id = $2`,
-    [JSON.stringify(basics), userId]
+    [JSON.stringify({ ...existingBasics, ...basics }), userId]
   );
 }
 
