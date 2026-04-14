@@ -29,6 +29,7 @@ const BaseEnvSchema = z.object({
   DELIVERY_WEBHOOK_CONCURRENCY: z.coerce.number().int().positive().default(20),
   DELIVERY_PER_CONNECTION_RATE_LIMIT: z.coerce.number().int().positive().default(8),
   QUEUE_STALLED_JOB_TIMEOUT_MS: z.coerce.number().int().positive().default(300000),
+  BREVO_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_CHAT_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
