@@ -9,6 +9,7 @@ export type AgentChannelType = "web" | "qr" | "api";
 export type AgentObjectiveType = "lead" | "feedback" | "complaint" | "hybrid";
 export type ConversationKind = "lead" | "feedback" | "complaint" | "other";
 export type ContactSourceType = "manual" | "import" | "web" | "qr" | "api";
+export type MarketingConsentStatus = "unknown" | "subscribed" | "unsubscribed" | "revoked";
 
 export interface User {
   id: string;
@@ -59,6 +60,18 @@ export interface Contact {
   email: string | null;
   contact_type: ConversationKind;
   tags: string[];
+  marketing_consent_status: MarketingConsentStatus;
+  marketing_consent_recorded_at: string | null;
+  marketing_consent_source: string | null;
+  marketing_consent_text: string | null;
+  marketing_consent_proof_ref: string | null;
+  marketing_unsubscribed_at: string | null;
+  marketing_unsubscribe_source: string | null;
+  global_opt_out_at: string | null;
+  last_incoming_message_at: string | null;
+  last_outgoing_template_at: string | null;
+  last_outgoing_marketing_at: string | null;
+  last_outgoing_utility_at: string | null;
   source_type: ContactSourceType;
   source_id: string | null;
   source_url: string | null;

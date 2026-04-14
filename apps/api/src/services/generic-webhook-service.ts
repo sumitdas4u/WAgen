@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { pool } from "../db/pool.js";
+import { queueApiConversationSend } from "./api-outbound-router-service.js";
 import { sendConversationFlowMessage } from "./channel-outbound-service.js";
 import { listContactFields } from "./contact-fields-service.js";
 import { getOrCreateConversation } from "./conversation-service.js";
 import { upsertWebhookContact } from "./contacts-service.js";
 import { startFlowForConversation } from "./flow-engine-service.js";
 import { getFlow } from "./flow-service.js";
-import { deliverConversationTemplateMessage } from "./message-delivery-service.js";
 import { queueGenericWebhookOutboundMessage } from "./outbound-message-service.js";
 import { getMessageTemplate } from "./template-service.js";
 import { whatsappSessionManager } from "./whatsapp-session-manager.js";
@@ -839,16 +839,17 @@ async function executePreparedGenericWebhookExecution(input: PreparedGenericWebh
       channelLinkedNumber: template.linkedNumber ?? null
     });
 
-    const delivery = await deliverConversationTemplateMessage({
+    await queueApiConversationSend({
       userId: input.userId,
       conversationId: apiConversation.id,
+      source: "manual",
       templateId: input.templateId,
       variableValues: input.variableValues,
       senderName: await getUserDisplayName(input.userId)
     });
 
     return {
-      providerMessageId: delivery.messageId,
+      providerMessageId: null,
       resultJson: {
         workflowName: input.workflowName,
         integrationName: input.integrationName,

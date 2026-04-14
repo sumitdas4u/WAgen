@@ -226,6 +226,30 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+function getTemplateComplianceWarnings(input: {
+  category: TemplateCategory;
+  headerText: string;
+  bodyText: string;
+  footerText: string;
+  buttons: DraftButton[];
+}): string[] {
+  const text = [input.headerText, input.bodyText, input.footerText, ...input.buttons.map((button) => button.text), ...input.buttons.map((button) => button.url ?? "")]
+    .join("\n")
+    .toLowerCase();
+  const warnings: string[] = [];
+  const promotionalSignals = ["sale", "offer", "discount", "coupon", "% off", "limited time", "shop now", "deal"];
+  const hasPromo = promotionalSignals.some((signal) => text.includes(signal));
+  const hasOptOut = text.includes("reply stop") || text.includes("unsubscribe");
+
+  if ((input.category === "UTILITY" || input.category === "AUTHENTICATION") && hasPromo) {
+    warnings.push("Utility/auth templates should not contain promotional language like offers, discounts, or sales.");
+  }
+  if (input.category === "MARKETING" && !hasOptOut) {
+    warnings.push("Marketing templates should include a clear opt-out instruction such as Reply STOP to unsubscribe.");
+  }
+  return warnings;
+}
+
 type DraftButton = { type: string; text: string; url?: string; phone?: string; coupon?: string };
 
 type DraftButtonValidation = {
@@ -647,6 +671,13 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     buttons,
     variableMapping
   });
+  const complianceWarnings = getTemplateComplianceWarnings({
+    category,
+    headerText,
+    bodyText,
+    footerText,
+    buttons
+  });
 
   useEffect(() => {
     if (formError && draftValidation.formError !== formError) {
@@ -843,6 +874,11 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             {category === "AUTHENTICATION" && (
               <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>
                 Authentication templates use Meta&apos;s separate authentication-template format and are not supported here yet.
+              </div>
+            )}
+            {complianceWarnings.length > 0 && (
+              <div style={{ marginTop: "8px", fontSize: "12px", color: "#92400e", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "8px", padding: "8px 10px" }}>
+                {complianceWarnings[0]}
               </div>
             )}
           </div>

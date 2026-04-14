@@ -14,6 +14,10 @@ import {
   trackOutboundMessage
 } from "./conversation-service.js";
 import {
+  getContactByPhoneForUser,
+  markContactTemplateOutboundActivity
+} from "./contacts-service.js";
+import {
   applyDeliveryAttemptWebhookStatusUpdate,
   applyCampaignDeliveryStatusUpdate,
   applyConversationDeliveryStatusUpdate,
@@ -28,12 +32,16 @@ import {
   upsertRecipientSuppression
 } from "./message-delivery-data-service.js";
 import { sendMetaFlowMessageDirect } from "./meta-whatsapp-service.js";
+import {
+  evaluateOutboundTemplatePolicy,
+  summarizeOutboundPolicyReasons
+} from "./outbound-policy-service.js";
 import type { FlowMessagePayload } from "./outbound-message-types.js";
 import { getQueueRedisConnection } from "./queue-service.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { dispatchTemplateMessage, getMessageTemplate } from "./template-service.js";
 
-const MAX_RETRIES = 4;
+const MAX_RETRIES = 1;
 const rateLimitLocks = new Map<string, number>();
 
 function sleep(ms: number): Promise<void> {
@@ -130,6 +138,14 @@ export async function sendTrackedApiConversationFlowMessage(input: {
     markAsAiReply?: boolean;
   };
 }): Promise<{ messageId: string | null }> {
+  const lastInboundContact = await getContactByPhoneForUser(input.userId, input.conversation.phone_number);
+  const lastInboundAt = lastInboundContact?.last_incoming_message_at
+    ? Date.parse(lastInboundContact.last_incoming_message_at)
+    : Number.NaN;
+  if (!Number.isFinite(lastInboundAt) || lastInboundAt < Date.now() - 24 * 60 * 60_000) {
+    throw new Error("Freeform WhatsApp API replies are only allowed within 24 hours of the customer's latest inbound message.");
+  }
+
   const attempt = await recordDeliveryAttemptStart({
     userId: input.userId,
     conversationId: input.conversation.id,
@@ -232,6 +248,16 @@ export async function deliverConversationTemplateMessage(input: {
   }
 
   const template = await getMessageTemplate(input.userId, input.templateId);
+  const contact = await getContactByPhoneForUser(input.userId, conversation.phone_number);
+  const policy = await evaluateOutboundTemplatePolicy({
+    userId: input.userId,
+    phoneNumber: conversation.phone_number,
+    category: template.category,
+    contact
+  });
+  if (!policy.allowed) {
+    throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
+  }
   const attempt = await recordDeliveryAttemptStart({
     userId: input.userId,
     conversationId: conversation.id,
@@ -283,6 +309,7 @@ export async function deliverConversationTemplateMessage(input: {
       result.messagePayload,
       result.messageId ?? null
     );
+    await markContactTemplateOutboundActivity(input.userId, conversation.phone_number, result.template.category);
     await setConversationManualAndPaused(input.userId, conversation.id);
 
     realtimeHub.broadcast(input.userId, "conversation.updated", {
@@ -344,6 +371,20 @@ export async function deliverCampaignMessage(input: {
   }
 
   const template = await getMessageTemplate(input.userId, input.campaign.template_id);
+  const contact = input.message.contact_id
+    ? await getContactByPhoneForUser(input.userId, input.message.phone_number)
+    : await getContactByPhoneForUser(input.userId, input.message.phone_number);
+  const policy = await evaluateOutboundTemplatePolicy({
+    userId: input.userId,
+    phoneNumber: input.message.phone_number,
+    category: template.category,
+    contact
+  });
+  if (!policy.allowed) {
+    const policyMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
+    await markCampaignMessageFailed(input.message.id, "POLICY_BLOCK", policyMessage, true);
+    return { status: "failed", errorMessage: policyMessage };
+  }
   const attempt = await recordDeliveryAttemptStart({
     userId: input.userId,
     campaignId: input.campaign.id,
@@ -403,6 +444,7 @@ export async function deliverCampaignMessage(input: {
       sent.messagePayload,
       sent.messageId ?? null
     );
+    await markContactTemplateOutboundActivity(input.userId, input.message.phone_number, sent.template.category);
 
     realtimeHub.broadcast(input.userId, "conversation.updated", {
       conversationId: conversation.id,
@@ -415,7 +457,7 @@ export async function deliverCampaignMessage(input: {
     return { status: "sent" };
   } catch (error) {
     const classification = classifyDeliveryFailure(error);
-    const shouldRetry = classification.retryable && input.message.retry_count < MAX_RETRIES;
+    const shouldRetry = classification.category === "transient" && classification.retryable && input.message.retry_count < MAX_RETRIES;
     const nextRetryAt = shouldRetry ? new Date(Date.now() + retryDelayMs(input.message.retry_count)) : null;
 
     await markCampaignMessageFailed(

@@ -19,9 +19,15 @@ import {
   setConversationManualAndPaused,
   trackInboundMessage
 } from "./conversation-service.js";
+import {
+  detectMarketingUnsubscribe,
+  markContactInboundActivity,
+  unsubscribeContactMarketingByPhone
+} from "./contacts-service.js";
 import { detectExternalBotLoop } from "./external-bot-detector-service.js";
 import { sendConversationFlowMessage } from "./channel-outbound-service.js";
 import { getActiveFlowSession } from "./flow-service.js";
+import { upsertRecipientSuppression } from "./message-delivery-data-service.js";
 import type { FlowMessagePayload } from "./outbound-message-types.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
@@ -109,6 +115,27 @@ export async function processIncomingMessage(
       mediaUrl: input.mediaUrl ?? null
     }
   );
+  await markContactInboundActivity(input.userId, input.customerIdentifier);
+
+  const unsubscribeKeyword = detectMarketingUnsubscribe(normalizedMessage);
+  if (unsubscribeKeyword) {
+    const unsubscribedContact = await unsubscribeContactMarketingByPhone({
+      userId: input.userId,
+      phoneNumber: input.customerIdentifier,
+      source: `inbound:${unsubscribeKeyword}`
+    });
+    await upsertRecipientSuppression({
+      userId: input.userId,
+      phoneNumber: input.customerIdentifier,
+      contactId: unsubscribedContact?.id ?? null,
+      reason: "opt_out",
+      source: "manual",
+      metadata: {
+        conversationId: conversation.id,
+        keyword: unsubscribeKeyword
+      }
+    });
+  }
 
   realtimeHub.broadcast(input.userId, "conversation.updated", {
     conversationId: conversation.id,

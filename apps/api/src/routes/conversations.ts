@@ -2,9 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { openAIService } from "../services/openai-service.js";
+import { queueApiConversationSend } from "../services/api-outbound-router-service.js";
 import { requireMetaConnection } from "../services/meta-whatsapp-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
-import { queueConversationTemplateMessage } from "../services/outbound-message-service.js";
 import {
   listLeadsWithSummary,
   listConversationMessages,
@@ -354,15 +354,16 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         );
         const senderName = userRow.rows[0]?.name?.trim() || request.authUser.email.split("@")[0] || "Agent";
 
-        const result = await queueConversationTemplateMessage({
+        const result = await queueApiConversationSend({
           userId: request.authUser.userId,
           conversationId: params.conversationId,
+          source: "manual",
           templateId: parsed.data.templateId,
           variableValues: parsed.data.variableValues,
           senderName
         });
 
-        return { ok: true, queued: true, messageId: result.queuedMessageId };
+        return { ok: true, queued: true, messageId: result.queuedMessageId, policy: result.policy };
       } catch (error) {
         const message = (error as Error).message;
         if (message.toLowerCase().includes("not found")) {

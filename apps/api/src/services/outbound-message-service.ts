@@ -135,10 +135,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function jobOptions(scheduledAt?: string | null): JobsOptions {
+function jobOptions(payload: OutboundJobPayload, scheduledAt?: string | null): JobsOptions {
   const delayMs = scheduledAt ? Math.max(0, Date.parse(scheduledAt) - Date.now()) : 0;
+  const attempts = payload.type === "campaign_send" || payload.type === "sequence_send" ? 1 : 5;
   return {
-    attempts: 5,
+    attempts,
     backoff: {
       type: "exponential",
       delay: 3000
@@ -149,8 +150,9 @@ function jobOptions(scheduledAt?: string | null): JobsOptions {
   };
 }
 
-function hasRemainingAttempts(job: Job<OutboundJobPayload>, maxAttempts = 5): boolean {
-  return job.attemptsMade + 1 < maxAttempts;
+function hasRemainingAttempts(job: Job<OutboundJobPayload>, maxAttempts?: number): boolean {
+  const configured = typeof maxAttempts === "number" ? maxAttempts : Number(job.opts.attempts ?? 1);
+  return job.attemptsMade + 1 < configured;
 }
 
 function toBullMqSafeJobId(value: string): string {
@@ -321,7 +323,7 @@ async function enqueueOutboundJob(payload: OutboundJobPayload, jobKey: string, s
 
   await queue.add("execute-outbound", payload, {
     jobId: toBullMqSafeJobId(jobKey),
-    ...jobOptions(scheduledAt)
+    ...jobOptions(payload, scheduledAt)
   });
 }
 
@@ -791,6 +793,7 @@ export async function queueConversationOutboundMessage(input: {
   mediaMimeType?: string | null;
   senderName?: string | null;
   usage?: OutboundConversationUsage;
+  scheduledAt?: string | null;
 }): Promise<{ queuedMessageId: string; channelType: "api" | "qr" | "web"; summaryText: string }> {
   const conversation = await getConversationById(input.conversationId);
   if (!conversation || conversation.user_id !== input.userId) {
@@ -820,7 +823,8 @@ export async function queueConversationOutboundMessage(input: {
     mediaUrl: input.mediaUrl ?? getPayloadMediaUrl(canonicalPayload) ?? null,
     mediaMimeType: input.mediaMimeType ?? null,
     payloadJson: canonicalPayload as Record<string, unknown>,
-    usage: (input.usage ?? {}) as Record<string, unknown>
+    usage: (input.usage ?? {}) as Record<string, unknown>,
+    scheduledAt: input.scheduledAt ?? null
   });
   await enqueueOutboundJob(buildConversationJobPayload(type as "conversation_api" | "conversation_qr" | "conversation_web", row.id), row.job_key, row.scheduled_at);
   return {
@@ -836,6 +840,7 @@ export async function queueConversationTemplateMessage(input: {
   templateId: string;
   variableValues: Record<string, string>;
   senderName?: string | null;
+  scheduledAt?: string | null;
 }): Promise<{ queuedMessageId: string; channelType: "api" }> {
   const conversation = await getConversationById(input.conversationId);
   if (!conversation || conversation.user_id !== input.userId) {
@@ -856,7 +861,8 @@ export async function queueConversationTemplateMessage(input: {
     templateId: input.templateId,
     groupingKey: conversation.id,
     senderName: input.senderName ?? null,
-    variableValues: input.variableValues
+    variableValues: input.variableValues,
+    scheduledAt: input.scheduledAt ?? null
   });
   await enqueueOutboundJob({ type: "template_api", messageId: row.id }, row.job_key, row.scheduled_at);
   return {

@@ -7,11 +7,13 @@ import {
   getContactByConversationId,
   importContactsWorkbook,
   previewContactsWorkbookImport,
-  listContacts
+  listContacts,
+  updateContactCompliance
 } from "../services/contacts-service.js";
 
 const ContactTypeSchema = z.enum(["lead", "feedback", "complaint", "other"]);
 const ContactSourceSchema = z.enum(["manual", "import", "web", "qr", "api"]);
+const MarketingConsentStatusSchema = z.enum(["unknown", "subscribed", "unsubscribed", "revoked"]);
 
 const ListContactsQuerySchema = z.object({
   q: z.string().trim().optional(),
@@ -29,7 +31,23 @@ const CreateContactBodySchema = z.object({
   tags: z.array(z.string().trim().min(1).max(80)).max(24).optional(),
   sourceId: z.string().trim().optional(),
   sourceUrl: z.string().trim().optional(),
-  customFields: z.record(z.string(), z.string()).optional()
+  customFields: z.record(z.string(), z.string()).optional(),
+  marketingConsentStatus: MarketingConsentStatusSchema.optional(),
+  marketingConsentRecordedAt: z.string().datetime({ offset: true }).optional(),
+  marketingConsentSource: z.string().trim().max(160).optional(),
+  marketingConsentText: z.string().trim().max(2000).optional(),
+  marketingConsentProofRef: z.string().trim().max(500).optional()
+});
+
+const UpdateContactComplianceBodySchema = z.object({
+  marketingConsentStatus: MarketingConsentStatusSchema.optional(),
+  marketingConsentRecordedAt: z.string().datetime({ offset: true }).nullable().optional(),
+  marketingConsentSource: z.string().trim().max(160).nullable().optional(),
+  marketingConsentText: z.string().trim().max(2000).nullable().optional(),
+  marketingConsentProofRef: z.string().trim().max(500).nullable().optional(),
+  marketingUnsubscribedAt: z.string().datetime({ offset: true }).nullable().optional(),
+  marketingUnsubscribeSource: z.string().trim().max(160).nullable().optional(),
+  globalOptOutAt: z.string().datetime({ offset: true }).nullable().optional()
 });
 
 const ExportContactsBodySchema = z.object({
@@ -95,7 +113,12 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
           tags: parsed.data.tags,
           sourceId: parsed.data.sourceId,
           sourceUrl: parsed.data.sourceUrl,
-          customFields: parsed.data.customFields
+          customFields: parsed.data.customFields,
+          marketingConsentStatus: parsed.data.marketingConsentStatus,
+          marketingConsentRecordedAt: parsed.data.marketingConsentRecordedAt,
+          marketingConsentSource: parsed.data.marketingConsentSource,
+          marketingConsentText: parsed.data.marketingConsentText,
+          marketingConsentProofRef: parsed.data.marketingConsentProofRef
         });
         return reply.status(result.action === "created" ? 201 : 200).send({ contact: result.contact });
       } catch (error) {
@@ -153,6 +176,33 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
       const { conversationId } = request.params as { conversationId: string };
       const contact = await getContactByConversationId(request.authUser.userId, conversationId);
       if (!contact) return reply.status(404).send({ error: "No contact found." });
+      return { contact };
+    }
+  );
+
+  fastify.patch(
+    "/api/contacts/:contactId/compliance",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { contactId } = request.params as { contactId: string };
+      const parsed = UpdateContactComplianceBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid contact compliance payload" });
+      }
+
+      const contact = await updateContactCompliance(request.authUser.userId, contactId, {
+        marketingConsentStatus: parsed.data.marketingConsentStatus,
+        marketingConsentRecordedAt: parsed.data.marketingConsentRecordedAt ?? undefined,
+        marketingConsentSource: parsed.data.marketingConsentSource ?? undefined,
+        marketingConsentText: parsed.data.marketingConsentText ?? undefined,
+        marketingConsentProofRef: parsed.data.marketingConsentProofRef ?? undefined,
+        marketingUnsubscribedAt: parsed.data.marketingUnsubscribedAt ?? undefined,
+        marketingUnsubscribeSource: parsed.data.marketingUnsubscribeSource ?? undefined,
+        globalOptOutAt: parsed.data.globalOptOutAt ?? undefined
+      });
+      if (!contact) {
+        return reply.status(404).send({ error: "Contact not found" });
+      }
       return { contact };
     }
   );

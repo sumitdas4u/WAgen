@@ -48,7 +48,7 @@ function sharedJobCleanup(): Pick<JobsOptions, "removeOnComplete" | "removeOnFai
 
 function sharedRetryOptions(): Pick<JobsOptions, "attempts" | "backoff"> {
   return {
-    attempts: 5,
+    attempts: 2,
     backoff: {
       type: "exponential",
       delay: 3000
@@ -96,6 +96,7 @@ async function scheduleCampaignMessageJob(message: CampaignMessage, userId: stri
     },
     {
       jobId: campaignMessageJobId(message.id, message.retry_count),
+      delay: 1000 + Math.floor(Math.random() * 4000),
       ...sharedRetryOptions(),
       ...sharedJobCleanup()
     }
@@ -137,7 +138,7 @@ async function processCampaignDispatch(job: CampaignDispatchJob): Promise<void> 
       break;
     }
 
-    const messages = await claimQueuedCampaignMessages(job.campaignId, 100);
+    const messages = await claimQueuedCampaignMessages(job.campaignId, 25);
     if (messages.length === 0) {
       break;
     }

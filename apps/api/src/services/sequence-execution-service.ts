@@ -1,5 +1,7 @@
 import { pool } from "../db/pool.js";
 import { classifyDeliveryFailure } from "./message-delivery-data-service.js";
+import { getContactByPhoneForUser, markContactTemplateOutboundActivity } from "./contacts-service.js";
+import { evaluateOutboundTemplatePolicy, summarizeOutboundPolicyReasons } from "./outbound-policy-service.js";
 import { queueSequenceOutboundMessage } from "./outbound-message-service.js";
 import { evaluateSequenceConditions } from "./sequence-condition-service.js";
 import { appendSequenceLog } from "./sequence-log-service.js";
@@ -16,11 +18,11 @@ import {
   resolveSequenceEnrollmentQueueKind,
   type SequenceEnrollmentQueueKind
 } from "./sequence-queue-service.js";
-import { dispatchTemplateMessage } from "./template-service.js";
+import { dispatchTemplateMessage, getMessageTemplate } from "./template-service.js";
 
 const MAX_MESSAGES_PER_CONTACT_PER_DAY = 20;
 const MIN_LOOP_GUARD_MS = 10_000;
-const RETRY_DELAYS_MS = [0, 5 * 60_000, 30 * 60_000, 2 * 60 * 60_000];
+const RETRY_DELAYS_MS = [5 * 60_000];
 
 function normalizePlaceholderKey(raw: string): string {
   const inner = raw.replace(/^\{\{\s*|\s*\}\}$/g, "").trim();
@@ -381,12 +383,38 @@ export async function executeSequenceOutboundMessage(input: {
   }
 
   try {
+    const template = await getMessageTemplate(contact.user_id, step.message_template_id);
+    const policy = await evaluateOutboundTemplatePolicy({
+      userId: contact.user_id,
+      phoneNumber: contact.phone_number,
+      category: template.category,
+      contact: await getContactByPhoneForUser(contact.user_id, contact.phone_number)
+    });
+    if (!policy.allowed) {
+      const policyMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
+      await updateSequenceEnrollment(enrollment.id, {
+        status: "failed",
+        lastExecutedAt: now.toISOString(),
+        lastDeliveryStatus: "failed"
+      });
+      await appendSequenceLog({
+        enrollmentId: enrollment.id,
+        sequenceId: sequence.id,
+        stepId: step.id,
+        status: "failed",
+        errorMessage: policyMessage
+      });
+      await clearSequenceEnrollmentQueueState(enrollment.id);
+      return { status: "failed", errorMessage: policyMessage };
+    }
+
     const variableValues = resolveSequenceStepVariables(contact, step);
     const sent = await dispatchTemplateMessage(contact.user_id, {
       templateId: step.message_template_id,
       to: contact.phone_number,
       variableValues
     });
+    await markContactTemplateOutboundActivity(contact.user_id, contact.phone_number, template.category);
 
     const nextStepIndex = enrollment.current_step + 1;
     const nextStep = steps[nextStepIndex];
@@ -427,6 +455,7 @@ export async function executeSequenceOutboundMessage(input: {
     const retryWindowMs = sequence.retry_window_hours * 60 * 60_000;
     const canRetry =
       sequence.retry_enabled &&
+      classification.category === "transient" &&
       classification.retryable &&
       enrollment.retry_count < RETRY_DELAYS_MS.length &&
       elapsedMs <= retryWindowMs;

@@ -1,7 +1,14 @@
 import type { Pool, PoolClient } from "pg";
 import * as XLSX from "xlsx";
 import { pool, withTransaction } from "../db/pool.js";
-import type { Contact, ContactFieldValue, ContactSourceType, Conversation, ConversationKind } from "../types/models.js";
+import type {
+  Contact,
+  ContactFieldValue,
+  ContactSourceType,
+  Conversation,
+  ConversationKind,
+  MarketingConsentStatus
+} from "../types/models.js";
 
 const CONTACT_TYPE_VALUES = new Set<ConversationKind>(["lead", "feedback", "complaint", "other"]);
 const CONTACT_SOURCE_VALUES = new Set<ContactSourceType>(["manual", "import", "web", "qr", "api"]);
@@ -12,6 +19,11 @@ const CONTACT_TEMPLATE_HEADERS = [
   "Email",
   "Type",
   "Tags",
+  "Consent Status",
+  "Consent Recorded At",
+  "Consent Source",
+  "Consent Text",
+  "Consent Proof Ref",
   "Contact Created Source",
   "Source ID",
   "Source URL"
@@ -23,6 +35,18 @@ const DEFAULT_CONTACT_EXPORT_FIELDS = [
   "email",
   "contact_type",
   "tags",
+  "marketing_consent_status",
+  "marketing_consent_recorded_at",
+  "marketing_consent_source",
+  "marketing_consent_text",
+  "marketing_consent_proof_ref",
+  "marketing_unsubscribed_at",
+  "marketing_unsubscribe_source",
+  "global_opt_out_at",
+  "last_incoming_message_at",
+  "last_outgoing_template_at",
+  "last_outgoing_marketing_at",
+  "last_outgoing_utility_at",
   "source_type",
   "source_id",
   "source_url",
@@ -36,6 +60,18 @@ const CONTACT_EXPORT_FIELD_LABELS: Record<string, string> = {
   email: "Email",
   contact_type: "Type",
   tags: "Tags",
+  marketing_consent_status: "Consent Status",
+  marketing_consent_recorded_at: "Consent Recorded At",
+  marketing_consent_source: "Consent Source",
+  marketing_consent_text: "Consent Text",
+  marketing_consent_proof_ref: "Consent Proof Ref",
+  marketing_unsubscribed_at: "Marketing Unsubscribed At",
+  marketing_unsubscribe_source: "Marketing Unsubscribe Source",
+  global_opt_out_at: "Global Opt Out At",
+  last_incoming_message_at: "Last Incoming Message At",
+  last_outgoing_template_at: "Last Outgoing Template At",
+  last_outgoing_marketing_at: "Last Outgoing Marketing At",
+  last_outgoing_utility_at: "Last Outgoing Utility At",
   source_type: "Contact Created Source",
   source_id: "Source ID",
   source_url: "Source URL",
@@ -64,6 +100,14 @@ export interface ContactWriteInput {
   sourceId?: string | null;
   sourceUrl?: string | null;
   linkedConversationId?: string | null;
+  marketingConsentStatus?: MarketingConsentStatus;
+  marketingConsentRecordedAt?: string | null;
+  marketingConsentSource?: string | null;
+  marketingConsentText?: string | null;
+  marketingConsentProofRef?: string | null;
+  marketingUnsubscribedAt?: string | null;
+  marketingUnsubscribeSource?: string | null;
+  globalOptOutAt?: string | null;
 }
 
 export interface CreateManualContactInput {
@@ -75,6 +119,22 @@ export interface CreateManualContactInput {
   sourceId?: string | null;
   sourceUrl?: string | null;
   customFields?: Record<string, string>;
+  marketingConsentStatus?: MarketingConsentStatus;
+  marketingConsentRecordedAt?: string | null;
+  marketingConsentSource?: string | null;
+  marketingConsentText?: string | null;
+  marketingConsentProofRef?: string | null;
+}
+
+export interface ContactComplianceUpdateInput {
+  marketingConsentStatus?: MarketingConsentStatus;
+  marketingConsentRecordedAt?: string | null;
+  marketingConsentSource?: string | null;
+  marketingConsentText?: string | null;
+  marketingConsentProofRef?: string | null;
+  marketingUnsubscribedAt?: string | null;
+  marketingUnsubscribeSource?: string | null;
+  globalOptOutAt?: string | null;
 }
 
 export interface ContactImportError {
@@ -126,6 +186,8 @@ interface ContactImportWorkbookOptions {
   columnMapping?: Record<string, string>;
 }
 
+const MARKETING_CONSENT_VALUES = new Set<MarketingConsentStatus>(["unknown", "subscribed", "unsubscribed", "revoked"]);
+
 function normalizePhoneNumber(value: string | null | undefined): string | null {
   const digits = (value ?? "").replace(/\D/g, "");
   if (digits.length < 8 || digits.length > 15) {
@@ -150,6 +212,11 @@ function getContactImportAliases(): Record<string, string[]> {
     email: ["email", "email address"],
     contact_type: ["type", "contact type", "lead type"],
     tags: ["tags", "tag"],
+    consent_status: ["consent status", "marketing consent status", "opt in status", "opt-in status"],
+    consent_recorded_at: ["consent recorded at", "consent date", "opt in date", "opt-in date"],
+    consent_source: ["consent source", "opt in source", "opt-in source"],
+    consent_text: ["consent text", "opt in text", "opt-in text"],
+    consent_proof_ref: ["consent proof", "consent proof ref", "opt in proof", "opt-in proof"],
     source_type: ["contact created source", "source", "source type"],
     source_id: ["source id", "external id"],
     source_url: ["source url", "url", "source link"]
@@ -279,6 +346,27 @@ function normalizeSourceType(value: string | null | undefined): ContactSourceTyp
   return CONTACT_SOURCE_VALUES.has(normalized as ContactSourceType) ? (normalized as ContactSourceType) : null;
 }
 
+function normalizeMarketingConsentStatus(value: string | null | undefined): MarketingConsentStatus | null {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return MARKETING_CONSENT_VALUES.has(normalized as MarketingConsentStatus)
+    ? (normalized as MarketingConsentStatus)
+    : null;
+}
+
+function normalizeOptionalText(value: string | null | undefined, maxLength = 500): string | null {
+  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
+  return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function normalizeIsoDate(value: string | null | undefined): string | null {
+  const normalized = (value ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
 function normalizeTags(values: string[] | null | undefined): string[] {
   if (!values) {
     return [];
@@ -358,6 +446,28 @@ function normalizeContactExportFields(columns?: string[]): string[] {
 
 function arraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function buildContactCompliancePatch(contact: Contact): {
+  marketingConsentStatus: MarketingConsentStatus;
+  marketingConsentRecordedAt: string | null;
+  marketingConsentSource: string | null;
+  marketingConsentText: string | null;
+  marketingConsentProofRef: string | null;
+  marketingUnsubscribedAt: string | null;
+  marketingUnsubscribeSource: string | null;
+  globalOptOutAt: string | null;
+} {
+  return {
+    marketingConsentStatus: contact.marketing_consent_status,
+    marketingConsentRecordedAt: contact.marketing_consent_recorded_at,
+    marketingConsentSource: contact.marketing_consent_source,
+    marketingConsentText: contact.marketing_consent_text,
+    marketingConsentProofRef: contact.marketing_consent_proof_ref,
+    marketingUnsubscribedAt: contact.marketing_unsubscribed_at,
+    marketingUnsubscribeSource: contact.marketing_unsubscribe_source,
+    globalOptOutAt: contact.global_opt_out_at
+  };
 }
 
 function getContactTypeWeight(value: ConversationKind): number {
@@ -472,6 +582,14 @@ async function insertContact(db: DbExecutor, input: {
   email: string | null;
   contactType: ConversationKind;
   tags: string[];
+  marketingConsentStatus: MarketingConsentStatus;
+  marketingConsentRecordedAt: string | null;
+  marketingConsentSource: string | null;
+  marketingConsentText: string | null;
+  marketingConsentProofRef: string | null;
+  marketingUnsubscribedAt: string | null;
+  marketingUnsubscribeSource: string | null;
+  globalOptOutAt: string | null;
   sourceType: ContactSourceType;
   sourceId: string | null;
   sourceUrl: string | null;
@@ -485,12 +603,20 @@ async function insertContact(db: DbExecutor, input: {
         email,
         contact_type,
         tags,
+        marketing_consent_status,
+        marketing_consent_recorded_at,
+        marketing_consent_source,
+        marketing_consent_text,
+        marketing_consent_proof_ref,
+        marketing_unsubscribed_at,
+        marketing_unsubscribe_source,
+        global_opt_out_at,
         source_type,
         source_id,
         source_url,
         linked_conversation_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *`,
     [
       input.userId,
@@ -499,6 +625,14 @@ async function insertContact(db: DbExecutor, input: {
       input.email,
       input.contactType,
       input.tags,
+      input.marketingConsentStatus,
+      input.marketingConsentRecordedAt,
+      input.marketingConsentSource,
+      input.marketingConsentText,
+      input.marketingConsentProofRef,
+      input.marketingUnsubscribedAt,
+      input.marketingUnsubscribeSource,
+      input.globalOptOutAt,
       input.sourceType,
       input.sourceId,
       input.sourceUrl,
@@ -517,6 +651,14 @@ async function updateContact(
     email: string | null;
     contactType: ConversationKind;
     tags: string[];
+    marketingConsentStatus: MarketingConsentStatus;
+    marketingConsentRecordedAt: string | null;
+    marketingConsentSource: string | null;
+    marketingConsentText: string | null;
+    marketingConsentProofRef: string | null;
+    marketingUnsubscribedAt: string | null;
+    marketingUnsubscribeSource: string | null;
+    globalOptOutAt: string | null;
     sourceType: ContactSourceType;
     sourceId: string | null;
     sourceUrl: string | null;
@@ -529,18 +671,34 @@ async function updateContact(
          email = $2,
          contact_type = $3,
          tags = $4::text[],
-         source_type = $5,
-         source_id = $6,
-         source_url = $7,
-         linked_conversation_id = $8,
+         marketing_consent_status = $5,
+         marketing_consent_recorded_at = $6,
+         marketing_consent_source = $7,
+         marketing_consent_text = $8,
+         marketing_consent_proof_ref = $9,
+         marketing_unsubscribed_at = $10,
+         marketing_unsubscribe_source = $11,
+         global_opt_out_at = $12,
+         source_type = $13,
+         source_id = $14,
+         source_url = $15,
+         linked_conversation_id = $16,
          updated_at = NOW()
-     WHERE id = $9
+     WHERE id = $17
      RETURNING *`,
     [
       input.displayName,
       input.email,
       input.contactType,
       input.tags,
+      input.marketingConsentStatus,
+      input.marketingConsentRecordedAt,
+      input.marketingConsentSource,
+      input.marketingConsentText,
+      input.marketingConsentProofRef,
+      input.marketingUnsubscribedAt,
+      input.marketingUnsubscribeSource,
+      input.globalOptOutAt,
       input.sourceType,
       input.sourceId,
       input.sourceUrl,
@@ -604,6 +762,23 @@ async function upsertContact(
   const requestedContactType = input.contactType;
   const contactType = requestedContactType ?? existing?.contact_type ?? "lead";
   const tags = input.tags === undefined ? undefined : normalizeTags(input.tags);
+  const marketingConsentStatus =
+    input.marketingConsentStatus === undefined
+      ? undefined
+      : normalizeMarketingConsentStatus(input.marketingConsentStatus) ?? "unknown";
+  const marketingConsentRecordedAt =
+    input.marketingConsentRecordedAt === undefined ? undefined : normalizeIsoDate(input.marketingConsentRecordedAt);
+  const marketingConsentSource =
+    input.marketingConsentSource === undefined ? undefined : normalizeOptionalText(input.marketingConsentSource, 160);
+  const marketingConsentText =
+    input.marketingConsentText === undefined ? undefined : normalizeOptionalText(input.marketingConsentText, 2000);
+  const marketingConsentProofRef =
+    input.marketingConsentProofRef === undefined ? undefined : normalizeOptionalText(input.marketingConsentProofRef, 500);
+  const marketingUnsubscribedAt =
+    input.marketingUnsubscribedAt === undefined ? undefined : normalizeIsoDate(input.marketingUnsubscribedAt);
+  const marketingUnsubscribeSource =
+    input.marketingUnsubscribeSource === undefined ? undefined : normalizeOptionalText(input.marketingUnsubscribeSource, 160);
+  const globalOptOutAt = input.globalOptOutAt === undefined ? undefined : normalizeIsoDate(input.globalOptOutAt);
   const sourceType = input.sourceType ?? existing?.source_type ?? "manual";
   const sourceId = input.sourceId === undefined ? undefined : (input.sourceId?.trim() || null);
   const sourceUrl = input.sourceUrl === undefined ? undefined : (input.sourceUrl?.trim() || null);
@@ -618,6 +793,14 @@ async function upsertContact(
       email: email ?? null,
       contactType,
       tags: tags ?? [],
+      marketingConsentStatus: marketingConsentStatus ?? "unknown",
+      marketingConsentRecordedAt: marketingConsentRecordedAt ?? null,
+      marketingConsentSource: marketingConsentSource ?? null,
+      marketingConsentText: marketingConsentText ?? null,
+      marketingConsentProofRef: marketingConsentProofRef ?? null,
+      marketingUnsubscribedAt: marketingUnsubscribedAt ?? null,
+      marketingUnsubscribeSource: marketingUnsubscribeSource ?? null,
+      globalOptOutAt: globalOptOutAt ?? null,
       sourceType,
       sourceId: sourceId ?? null,
       sourceUrl: sourceUrl ?? null,
@@ -647,6 +830,21 @@ async function upsertContact(
       : options?.mergeTags
         ? mergeTags(existing.tags, tags)
         : tags;
+  const nextMarketingConsentStatus =
+    marketingConsentStatus === undefined ? existing.marketing_consent_status : marketingConsentStatus;
+  const nextMarketingConsentRecordedAt =
+    marketingConsentRecordedAt === undefined ? existing.marketing_consent_recorded_at : marketingConsentRecordedAt;
+  const nextMarketingConsentSource =
+    marketingConsentSource === undefined ? existing.marketing_consent_source : marketingConsentSource;
+  const nextMarketingConsentText =
+    marketingConsentText === undefined ? existing.marketing_consent_text : marketingConsentText;
+  const nextMarketingConsentProofRef =
+    marketingConsentProofRef === undefined ? existing.marketing_consent_proof_ref : marketingConsentProofRef;
+  const nextMarketingUnsubscribedAt =
+    marketingUnsubscribedAt === undefined ? existing.marketing_unsubscribed_at : marketingUnsubscribedAt;
+  const nextMarketingUnsubscribeSource =
+    marketingUnsubscribeSource === undefined ? existing.marketing_unsubscribe_source : marketingUnsubscribeSource;
+  const nextGlobalOptOutAt = globalOptOutAt === undefined ? existing.global_opt_out_at : globalOptOutAt;
   const nextSourceType = preserveSource ? existing.source_type : sourceType;
   const nextSourceId = preserveSource ? existing.source_id : sourceId === undefined ? existing.source_id : sourceId;
   const nextSourceUrl = preserveSource ? existing.source_url : sourceUrl === undefined ? existing.source_url : sourceUrl;
@@ -657,6 +855,14 @@ async function upsertContact(
     nextEmail !== existing.email ||
     nextContactType !== existing.contact_type ||
     !arraysEqual(nextTags, existing.tags) ||
+    nextMarketingConsentStatus !== existing.marketing_consent_status ||
+    nextMarketingConsentRecordedAt !== existing.marketing_consent_recorded_at ||
+    nextMarketingConsentSource !== existing.marketing_consent_source ||
+    nextMarketingConsentText !== existing.marketing_consent_text ||
+    nextMarketingConsentProofRef !== existing.marketing_consent_proof_ref ||
+    nextMarketingUnsubscribedAt !== existing.marketing_unsubscribed_at ||
+    nextMarketingUnsubscribeSource !== existing.marketing_unsubscribe_source ||
+    nextGlobalOptOutAt !== existing.global_opt_out_at ||
     nextSourceType !== existing.source_type ||
     nextSourceId !== existing.source_id ||
     nextSourceUrl !== existing.source_url ||
@@ -677,6 +883,14 @@ async function upsertContact(
     email: nextEmail,
     contactType: nextContactType,
     tags: nextTags,
+    marketingConsentStatus: nextMarketingConsentStatus,
+    marketingConsentRecordedAt: nextMarketingConsentRecordedAt,
+    marketingConsentSource: nextMarketingConsentSource,
+    marketingConsentText: nextMarketingConsentText,
+    marketingConsentProofRef: nextMarketingConsentProofRef,
+    marketingUnsubscribedAt: nextMarketingUnsubscribedAt,
+    marketingUnsubscribeSource: nextMarketingUnsubscribeSource,
+    globalOptOutAt: nextGlobalOptOutAt,
     sourceType: nextSourceType,
     sourceId: nextSourceId,
     sourceUrl: nextSourceUrl,
@@ -743,6 +957,18 @@ export async function listContacts(userId: string, filters: ContactsListFilters 
         c.email,
         c.contact_type,
         c.tags,
+        c.marketing_consent_status,
+        c.marketing_consent_recorded_at,
+        c.marketing_consent_source,
+        c.marketing_consent_text,
+        c.marketing_consent_proof_ref,
+        c.marketing_unsubscribed_at,
+        c.marketing_unsubscribe_source,
+        c.global_opt_out_at,
+        c.last_incoming_message_at,
+        c.last_outgoing_template_at,
+        c.last_outgoing_marketing_at,
+        c.last_outgoing_utility_at,
         c.source_type,
         c.source_id,
         c.source_url,
@@ -785,6 +1011,11 @@ export async function createManualContact(userId: string, input: CreateManualCon
         email: input.email ?? undefined,
         contactType: input.contactType ?? "lead",
         tags: input.tags ?? [],
+        marketingConsentStatus: input.marketingConsentStatus,
+        marketingConsentRecordedAt: input.marketingConsentRecordedAt ?? undefined,
+        marketingConsentSource: input.marketingConsentSource ?? undefined,
+        marketingConsentText: input.marketingConsentText ?? undefined,
+        marketingConsentProofRef: input.marketingConsentProofRef ?? undefined,
         sourceType: "manual",
         sourceId: input.sourceId ?? undefined,
         sourceUrl: input.sourceUrl ?? undefined
@@ -825,6 +1056,7 @@ export async function upsertWebhookContact(input: {
         phoneNumber: input.phoneNumber,
         email: input.email ?? undefined,
         tags: input.tags ?? [],
+        marketingConsentStatus: "unknown",
         sourceType: "api",
         sourceId: input.sourceId ?? undefined,
         sourceUrl: input.sourceUrl ?? undefined
@@ -861,6 +1093,7 @@ export async function syncConversationContact(input: {
       phoneNumber: input.phoneNumber,
       email: input.email ?? undefined,
       contactType: input.contactType ?? "lead",
+      marketingConsentStatus: "unknown",
       sourceType: input.sourceType,
       linkedConversationId: input.linkedConversationId
     })
@@ -948,6 +1181,7 @@ export async function updateContactFieldValueFromFlow(input: {
         email: contact.email,
         contactType: contact.contact_type,
         tags: nextTags,
+        ...buildContactCompliancePatch(contact),
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
@@ -959,6 +1193,7 @@ export async function updateContactFieldValueFromFlow(input: {
         email: contact.email,
         contactType: contact.contact_type,
         tags: contact.tags,
+        ...buildContactCompliancePatch(contact),
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
@@ -971,6 +1206,7 @@ export async function updateContactFieldValueFromFlow(input: {
         email: nextEmailValue ? normalizeEmail(nextEmailValue) ?? contact.email : null,
         contactType: contact.contact_type,
         tags: contact.tags,
+        ...buildContactCompliancePatch(contact),
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
@@ -998,6 +1234,7 @@ export async function updateContactFieldValueFromFlow(input: {
         email: contact.email,
         contactType: normalizedType,
         tags: contact.tags,
+        ...buildContactCompliancePatch(contact),
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
@@ -1011,6 +1248,7 @@ export async function updateContactFieldValueFromFlow(input: {
         email: contact.email,
         contactType: contact.contact_type,
         tags: contact.tags,
+        ...buildContactCompliancePatch(contact),
         sourceType: normalizedSource,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
@@ -1022,6 +1260,7 @@ export async function updateContactFieldValueFromFlow(input: {
         email: contact.email,
         contactType: contact.contact_type,
         tags: contact.tags,
+        ...buildContactCompliancePatch(contact),
         sourceType: contact.source_type,
         sourceId: applyTextOperation(contact.source_id, rawValue, op),
         sourceUrl: contact.source_url,
@@ -1033,6 +1272,7 @@ export async function updateContactFieldValueFromFlow(input: {
         email: contact.email,
         contactType: contact.contact_type,
         tags: contact.tags,
+        ...buildContactCompliancePatch(contact),
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: applyTextOperation(contact.source_url, rawValue, op),
@@ -1149,12 +1389,35 @@ export async function reconcileContactPhone(
     const nextSourceUrl =
       nextSourceType === target.source_type ? target.source_url ?? source.source_url : source.source_url ?? target.source_url;
     const nextLinkedConversationId = resolvedConversationId ?? target.linked_conversation_id ?? source.linked_conversation_id;
+    const nextMarketingConsentStatus =
+      target.marketing_consent_status !== "unknown" ? target.marketing_consent_status : source.marketing_consent_status;
+    const nextMarketingConsentRecordedAt =
+      target.marketing_consent_recorded_at ?? source.marketing_consent_recorded_at;
+    const nextMarketingConsentSource =
+      target.marketing_consent_source ?? source.marketing_consent_source;
+    const nextMarketingConsentText =
+      target.marketing_consent_text ?? source.marketing_consent_text;
+    const nextMarketingConsentProofRef =
+      target.marketing_consent_proof_ref ?? source.marketing_consent_proof_ref;
+    const nextMarketingUnsubscribedAt =
+      target.marketing_unsubscribed_at ?? source.marketing_unsubscribed_at;
+    const nextMarketingUnsubscribeSource =
+      target.marketing_unsubscribe_source ?? source.marketing_unsubscribe_source;
+    const nextGlobalOptOutAt = target.global_opt_out_at ?? source.global_opt_out_at;
 
     await updateContact(client, target.id, {
       displayName: nextDisplayName,
       email: nextEmail,
       contactType: nextContactType,
       tags: nextTags,
+      marketingConsentStatus: nextMarketingConsentStatus,
+      marketingConsentRecordedAt: nextMarketingConsentRecordedAt,
+      marketingConsentSource: nextMarketingConsentSource,
+      marketingConsentText: nextMarketingConsentText,
+      marketingConsentProofRef: nextMarketingConsentProofRef,
+      marketingUnsubscribedAt: nextMarketingUnsubscribedAt,
+      marketingUnsubscribeSource: nextMarketingUnsubscribeSource,
+      globalOptOutAt: nextGlobalOptOutAt,
       sourceType: nextSourceType,
       sourceId: nextSourceId,
       sourceUrl: nextSourceUrl,
@@ -1200,6 +1463,11 @@ export async function importContactsWorkbook(
     const email = String(getMappedWorkbookValue(row, mapping, "email") ?? "");
     const typeCell = String(getMappedWorkbookValue(row, mapping, "contact_type") ?? "");
     const tagsCell = getMappedWorkbookValue(row, mapping, "tags");
+    const consentStatusCell = String(getMappedWorkbookValue(row, mapping, "consent_status") ?? "");
+    const consentRecordedAtCell = String(getMappedWorkbookValue(row, mapping, "consent_recorded_at") ?? "");
+    const consentSourceCell = String(getMappedWorkbookValue(row, mapping, "consent_source") ?? "");
+    const consentTextCell = String(getMappedWorkbookValue(row, mapping, "consent_text") ?? "");
+    const consentProofRefCell = String(getMappedWorkbookValue(row, mapping, "consent_proof_ref") ?? "");
     const sourceCell = String(getMappedWorkbookValue(row, mapping, "source_type") ?? "");
     const sourceId = String(getMappedWorkbookValue(row, mapping, "source_id") ?? "");
     const sourceUrl = String(getMappedWorkbookValue(row, mapping, "source_url") ?? "");
@@ -1210,7 +1478,23 @@ export async function importContactsWorkbook(
         .filter(([, value]) => value)
     );
 
-    if (![name, phone, email, typeCell, String(tagsCell ?? ""), sourceCell, sourceId, sourceUrl].some((value) => value.trim())) {
+    if (
+      ![
+        name,
+        phone,
+        email,
+        typeCell,
+        String(tagsCell ?? ""),
+        consentStatusCell,
+        consentRecordedAtCell,
+        consentSourceCell,
+        consentTextCell,
+        consentProofRefCell,
+        sourceCell,
+        sourceId,
+        sourceUrl
+      ].some((value) => value.trim())
+    ) {
       skipped += 1;
       continue;
     }
@@ -1236,6 +1520,28 @@ export async function importContactsWorkbook(
       continue;
     }
 
+    const consentStatus =
+      consentStatusCell.trim()
+        ? normalizeMarketingConsentStatus(consentStatusCell)
+        : options?.marketingOptIn
+          ? "subscribed"
+          : "unknown";
+    if (consentStatusCell && !consentStatus) {
+      errors.push({ row: rowNumber, message: "Consent Status must be unknown, subscribed, unsubscribed, or revoked." });
+      continue;
+    }
+
+    const consentRecordedAt =
+      consentRecordedAtCell.trim()
+        ? normalizeIsoDate(consentRecordedAtCell)
+        : options?.marketingOptIn
+          ? new Date().toISOString()
+          : null;
+    if (consentRecordedAtCell && !consentRecordedAt) {
+      errors.push({ row: rowNumber, message: "Consent Recorded At must be a valid date/time." });
+      continue;
+    }
+
     if (email && !normalizeEmail(email)) {
       errors.push({ row: rowNumber, message: "Email is invalid." });
       continue;
@@ -1250,6 +1556,11 @@ export async function importContactsWorkbook(
         email: email || undefined,
         contactType: contactType ?? undefined,
         tags: parsedTags.length > 0 || extraTags.length > 0 ? [...parsedTags, ...extraTags] : undefined,
+        marketingConsentStatus: consentStatus ?? undefined,
+        marketingConsentRecordedAt: consentRecordedAt ?? undefined,
+        marketingConsentSource: consentSourceCell || (options?.marketingOptIn ? "import" : undefined),
+        marketingConsentText: consentTextCell || undefined,
+        marketingConsentProofRef: consentProofRefCell || undefined,
         sourceType: sourceType ?? "import",
         sourceId: sourceId || undefined,
         sourceUrl: sourceUrl || undefined
@@ -1360,6 +1671,30 @@ export async function generateContactsExportWorkbook(input: {
             return [headers[index], contact.contact_type];
           case "tags":
             return [headers[index], contact.tags.join(", ")];
+          case "marketing_consent_status":
+            return [headers[index], contact.marketing_consent_status];
+          case "marketing_consent_recorded_at":
+            return [headers[index], formatWorkbookDate(contact.marketing_consent_recorded_at)];
+          case "marketing_consent_source":
+            return [headers[index], contact.marketing_consent_source || ""];
+          case "marketing_consent_text":
+            return [headers[index], contact.marketing_consent_text || ""];
+          case "marketing_consent_proof_ref":
+            return [headers[index], contact.marketing_consent_proof_ref || ""];
+          case "marketing_unsubscribed_at":
+            return [headers[index], formatWorkbookDate(contact.marketing_unsubscribed_at)];
+          case "marketing_unsubscribe_source":
+            return [headers[index], contact.marketing_unsubscribe_source || ""];
+          case "global_opt_out_at":
+            return [headers[index], formatWorkbookDate(contact.global_opt_out_at)];
+          case "last_incoming_message_at":
+            return [headers[index], formatWorkbookDate(contact.last_incoming_message_at)];
+          case "last_outgoing_template_at":
+            return [headers[index], formatWorkbookDate(contact.last_outgoing_template_at)];
+          case "last_outgoing_marketing_at":
+            return [headers[index], formatWorkbookDate(contact.last_outgoing_marketing_at)];
+          case "last_outgoing_utility_at":
+            return [headers[index], formatWorkbookDate(contact.last_outgoing_utility_at)];
           case "source_type":
             return [headers[index], contact.source_type];
           case "source_id":
@@ -1416,6 +1751,161 @@ export async function getContactByConversationId(userId: string, conversationId:
   const contact = result.rows[0];
   const fieldMap = await loadFieldValues(pool, [contact.id]);
   return { ...contact, custom_field_values: fieldMap.get(contact.id) ?? [] };
+}
+
+export async function getContactByPhoneForUser(userId: string, phoneNumber: string): Promise<Contact | null> {
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+  if (!normalizedPhone) {
+    return null;
+  }
+  const contact = await getContactByPhone(pool, userId, normalizedPhone);
+  if (!contact) {
+    return null;
+  }
+  const fieldMap = await loadFieldValues(pool, [contact.id]);
+  return { ...contact, custom_field_values: fieldMap.get(contact.id) ?? [] };
+}
+
+export async function updateContactCompliance(
+  userId: string,
+  contactId: string,
+  input: ContactComplianceUpdateInput
+): Promise<Contact | null> {
+  const existingResult = await pool.query<Contact>(
+    `SELECT *
+     FROM contacts
+     WHERE user_id = $1
+       AND id = $2
+     LIMIT 1`,
+    [userId, contactId]
+  );
+  const existing = existingResult.rows[0] ?? null;
+  if (!existing) {
+    return null;
+  }
+
+  const updated = await updateContact(pool, existing.id, {
+    displayName: existing.display_name,
+    email: existing.email,
+    contactType: existing.contact_type,
+    tags: existing.tags,
+    marketingConsentStatus:
+      input.marketingConsentStatus === undefined
+        ? existing.marketing_consent_status
+        : normalizeMarketingConsentStatus(input.marketingConsentStatus) ?? existing.marketing_consent_status,
+    marketingConsentRecordedAt:
+      input.marketingConsentRecordedAt === undefined
+        ? existing.marketing_consent_recorded_at
+        : normalizeIsoDate(input.marketingConsentRecordedAt),
+    marketingConsentSource:
+      input.marketingConsentSource === undefined
+        ? existing.marketing_consent_source
+        : normalizeOptionalText(input.marketingConsentSource, 160),
+    marketingConsentText:
+      input.marketingConsentText === undefined
+        ? existing.marketing_consent_text
+        : normalizeOptionalText(input.marketingConsentText, 2000),
+    marketingConsentProofRef:
+      input.marketingConsentProofRef === undefined
+        ? existing.marketing_consent_proof_ref
+        : normalizeOptionalText(input.marketingConsentProofRef, 500),
+    marketingUnsubscribedAt:
+      input.marketingUnsubscribedAt === undefined
+        ? existing.marketing_unsubscribed_at
+        : normalizeIsoDate(input.marketingUnsubscribedAt),
+    marketingUnsubscribeSource:
+      input.marketingUnsubscribeSource === undefined
+        ? existing.marketing_unsubscribe_source
+        : normalizeOptionalText(input.marketingUnsubscribeSource, 160),
+    globalOptOutAt:
+      input.globalOptOutAt === undefined ? existing.global_opt_out_at : normalizeIsoDate(input.globalOptOutAt),
+    sourceType: existing.source_type,
+    sourceId: existing.source_id,
+    sourceUrl: existing.source_url,
+    linkedConversationId: existing.linked_conversation_id
+  });
+
+  const fieldMap = await loadFieldValues(pool, [updated.id]);
+  return { ...updated, custom_field_values: fieldMap.get(updated.id) ?? [] };
+}
+
+export async function markContactInboundActivity(userId: string, phoneNumber: string, at = new Date()): Promise<void> {
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+  if (!normalizedPhone) {
+    return;
+  }
+  await pool.query(
+    `UPDATE contacts
+     SET last_incoming_message_at = GREATEST(COALESCE(last_incoming_message_at, to_timestamp(0)), $3),
+         updated_at = NOW()
+     WHERE user_id = $1
+       AND phone_number = $2`,
+    [userId, normalizedPhone, at.toISOString()]
+  );
+}
+
+export async function markContactTemplateOutboundActivity(
+  userId: string,
+  phoneNumber: string,
+  category: "MARKETING" | "UTILITY" | "AUTHENTICATION",
+  at = new Date()
+): Promise<void> {
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+  if (!normalizedPhone) {
+    return;
+  }
+  await pool.query(
+    `UPDATE contacts
+     SET last_outgoing_template_at = GREATEST(COALESCE(last_outgoing_template_at, to_timestamp(0)), $3),
+         last_outgoing_marketing_at = CASE
+           WHEN $4 = 'MARKETING'
+             THEN GREATEST(COALESCE(last_outgoing_marketing_at, to_timestamp(0)), $3)
+           ELSE last_outgoing_marketing_at
+         END,
+         last_outgoing_utility_at = CASE
+           WHEN $4 IN ('UTILITY', 'AUTHENTICATION')
+             THEN GREATEST(COALESCE(last_outgoing_utility_at, to_timestamp(0)), $3)
+           ELSE last_outgoing_utility_at
+         END,
+         updated_at = NOW()
+     WHERE user_id = $1
+       AND phone_number = $2`,
+    [userId, normalizedPhone, at.toISOString(), category]
+  );
+}
+
+export const DEFAULT_UNSUBSCRIBE_KEYWORDS = [
+  "stop",
+  "unsubscribe",
+  "no more",
+  "opt out",
+  "opt-out",
+  "remove me"
+] as const;
+
+export function detectMarketingUnsubscribe(text: string): string | null {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) {
+    return null;
+  }
+  return DEFAULT_UNSUBSCRIBE_KEYWORDS.find((keyword) => normalized === keyword || normalized.includes(keyword)) ?? null;
+}
+
+export async function unsubscribeContactMarketingByPhone(input: {
+  userId: string;
+  phoneNumber: string;
+  source: string;
+  at?: string | null;
+}): Promise<Contact | null> {
+  const contact = await getContactByPhoneForUser(input.userId, input.phoneNumber);
+  if (!contact) {
+    return null;
+  }
+  return updateContactCompliance(input.userId, contact.id, {
+    marketingConsentStatus: "unsubscribed",
+    marketingUnsubscribedAt: input.at ?? new Date().toISOString(),
+    marketingUnsubscribeSource: input.source
+  });
 }
 
 export function extractCapturedProfileDetails(message: string): { displayName: string | null; phoneNumber: string | null; email: string | null } {

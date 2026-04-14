@@ -1659,6 +1659,18 @@ export interface ContactRecord {
   email: string | null;
   contact_type: ContactType;
   tags: string[];
+  marketing_consent_status: "unknown" | "subscribed" | "unsubscribed" | "revoked";
+  marketing_consent_recorded_at: string | null;
+  marketing_consent_source: string | null;
+  marketing_consent_text: string | null;
+  marketing_consent_proof_ref: string | null;
+  marketing_unsubscribed_at: string | null;
+  marketing_unsubscribe_source: string | null;
+  global_opt_out_at: string | null;
+  last_incoming_message_at: string | null;
+  last_outgoing_template_at: string | null;
+  last_outgoing_marketing_at: string | null;
+  last_outgoing_utility_at: string | null;
   source_type: ContactSourceType;
   source_id: string | null;
   source_url: string | null;
@@ -1720,6 +1732,11 @@ export function createContact(
     sourceId?: string;
     sourceUrl?: string;
     customFields?: Record<string, string>;
+    marketingConsentStatus?: "unknown" | "subscribed" | "unsubscribed" | "revoked";
+    marketingConsentRecordedAt?: string;
+    marketingConsentSource?: string;
+    marketingConsentText?: string;
+    marketingConsentProofRef?: string;
   }
 ) {
   return apiRequest<{ contact: ContactRecord }>("/api/contacts", {
@@ -2304,6 +2321,19 @@ export interface BroadcastReport {
   buckets: Record<RetargetStatus, number>;
 }
 
+export interface CampaignLaunchPreview {
+  eligibleCount: number;
+  ineligibleCount: number;
+  reasons: Array<{ code: string; count: number; label: string }>;
+  sampleBlockedContacts: Array<{
+    contactId: string | null;
+    phoneNumber: string;
+    displayName: string | null;
+    reasonCodes: string[];
+    nextAllowedAt: string | null;
+  }>;
+}
+
 export interface BroadcastRetargetPreview {
   campaign: Campaign;
   status: RetargetStatus;
@@ -2536,6 +2566,10 @@ export function fetchCampaignMessages(
 
 export function fetchCampaignDeliveryAnalytics(token: string, campaignId: string) {
   return apiRequest<{ analytics: CampaignDeliveryAnalytics }>(`/api/campaigns/${campaignId}/analytics`, { token });
+}
+
+export function fetchCampaignLaunchPreview(token: string, campaignId: string) {
+  return apiRequest<{ preview: CampaignLaunchPreview }>(`/api/campaigns/${campaignId}/launch-preview`, { token });
 }
 
 export function fetchBroadcasts(token: string) {

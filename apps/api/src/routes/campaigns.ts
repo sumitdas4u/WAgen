@@ -4,6 +4,7 @@ import {
   cancelCampaign,
   createCampaign,
   getCampaign,
+  previewCampaignLaunch,
   launchCampaign,
   listCampaignMessages,
   listCampaigns,
@@ -118,6 +119,19 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: "Campaign not found" });
       }
       return { campaign };
+    }
+  );
+
+  fastify.get(
+    "/api/campaigns/:campaignId/launch-preview",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { campaignId } = request.params as { campaignId: string };
+      const preview = await previewCampaignLaunch(request.authUser.userId, campaignId);
+      if (!preview) {
+        return reply.status(404).send({ error: "Campaign not found" });
+      }
+      return { preview };
     }
   );
 

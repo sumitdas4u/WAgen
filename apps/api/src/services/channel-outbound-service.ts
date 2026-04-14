@@ -1,4 +1,5 @@
 import { getConversationById, setConversationManualAndPaused, trackOutboundMessage } from "./conversation-service.js";
+import { queueApiConversationSend } from "./api-outbound-router-service.js";
 import { queueConversationOutboundMessage } from "./outbound-message-service.js";
 import {
   adaptPayloadForChannel,
@@ -55,6 +56,24 @@ export async function sendConversationFlowMessage(input: {
   const summaryText = input.displayText ?? summarizeFlowMessage(deliveryPayload);
   if (!summaryText) {
     throw new Error("Message text is required.");
+  }
+
+  if (conversation.channel_type === "api") {
+    const queued = await queueApiConversationSend({
+      userId: input.userId,
+      conversationId: conversation.id,
+      source: input.usage?.markAsAiReply ? "ai" : "chat",
+      payload: deliveryPayload,
+      senderName: input.senderName ?? null,
+      usage: input.usage
+    });
+
+    return {
+      conversationId: conversation.id,
+      channelType: "api",
+      delivered: true,
+      summaryText: queued.summaryText
+    };
   }
 
   await queueConversationOutboundMessage({

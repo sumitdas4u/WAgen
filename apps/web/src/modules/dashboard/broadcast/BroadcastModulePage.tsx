@@ -2269,7 +2269,7 @@ function AudienceSelectionStep({
                     <div className="eu-field-info">
                       <span className="eu-field-label">Marketing Opt-In <span className="eu-required">*</span> <span className="eu-info-icon">&#9432;</span></span>
                       <span className="eu-field-desc">
-                        Provide the new contacts consent to receive marketing messages.{" "}
+                        Legacy import helper only. This does not count as documented Meta-compliant consent proof by itself.{" "}
                         <a href="#" className="aud-bottom-link">Learn more</a>
                       </span>
                     </div>

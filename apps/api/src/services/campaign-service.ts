@@ -3,6 +3,11 @@ import type { Contact } from "../types/models.js";
 import { getSegmentContacts } from "./contact-segments-service.js";
 import { findSuppressedRecipients } from "./message-delivery-data-service.js";
 import { requireMetaConnection } from "./meta-whatsapp-service.js";
+import {
+  evaluateOutboundTemplatePolicy,
+  summarizeOutboundPolicyReasons,
+  type OutboundPolicyReasonCode
+} from "./outbound-policy-service.js";
 import { getMessageTemplate, resolveTemplatePayload } from "./template-service.js";
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
@@ -80,6 +85,19 @@ export interface CreateCampaignInput {
   audienceSource?: CampaignAudienceSource;
   mediaOverrides?: CampaignMediaOverrides;
   scheduledAt?: string | null;
+}
+
+export interface CampaignLaunchPreview {
+  eligibleCount: number;
+  ineligibleCount: number;
+  reasons: Array<{ code: OutboundPolicyReasonCode; count: number; label: string }>;
+  sampleBlockedContacts: Array<{
+    contactId: string | null;
+    phoneNumber: string;
+    displayName: string | null;
+    reasonCodes: OutboundPolicyReasonCode[];
+    nextAllowedAt: string | null;
+  }>;
 }
 
 async function validateCampaignConnection(
@@ -378,6 +396,9 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   if (template.status !== "APPROVED") {
     throw new Error("Only approved templates can be used for broadcasts.");
   }
+  if (template.category === "MARKETING") {
+    throw new Error("Marketing templates are disabled for proactive outbound. Use approved utility or authentication templates only.");
+  }
 
   await pool.query(`DELETE FROM campaign_messages WHERE campaign_id = $1`, [campaignId]);
 
@@ -403,6 +424,20 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
     if (suppression) {
       status = "skipped";
       errorMessage = `Recipient suppressed: ${suppression.reason_label}`;
+    }
+
+    if (status === "queued") {
+      const policy = await evaluateOutboundTemplatePolicy({
+        userId,
+        phoneNumber,
+        category: template.category,
+        contact,
+        suppression
+      });
+      if (!policy.allowed) {
+        status = "skipped";
+        errorMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
+      }
     }
 
     if (status === "queued" && resolved.missing.length > 0) {
@@ -468,6 +503,64 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   }
 
   return result.rows[0] ?? null;
+}
+
+export async function previewCampaignLaunch(userId: string, campaignId: string): Promise<CampaignLaunchPreview | null> {
+  const campaign = await getCampaign(userId, campaignId);
+  if (!campaign || !campaign.template_id) {
+    return null;
+  }
+
+  const contacts = await getCampaignAudienceContacts(userId, campaign);
+  const template = await getMessageTemplate(userId, campaign.template_id);
+  const suppressedRecipients = await findSuppressedRecipients(
+    userId,
+    contacts.map((contact) => contact.phone_number)
+  );
+
+  let eligibleCount = 0;
+  let ineligibleCount = 0;
+  const reasons = new Map<OutboundPolicyReasonCode, number>();
+  const sampleBlockedContacts: CampaignLaunchPreview["sampleBlockedContacts"] = [];
+
+  for (const contact of contacts) {
+    const policy = await evaluateOutboundTemplatePolicy({
+      userId,
+      phoneNumber: contact.phone_number,
+      category: template.category,
+      contact,
+      suppression: suppressedRecipients.get(contact.phone_number)
+    });
+    if (policy.allowed) {
+      eligibleCount += 1;
+      continue;
+    }
+
+    ineligibleCount += 1;
+    for (const code of policy.reasonCodes) {
+      reasons.set(code, (reasons.get(code) ?? 0) + 1);
+    }
+    if (sampleBlockedContacts.length < 25) {
+      sampleBlockedContacts.push({
+        contactId: contact.id,
+        phoneNumber: contact.phone_number,
+        displayName: contact.display_name,
+        reasonCodes: policy.reasonCodes,
+        nextAllowedAt: policy.nextAllowedAt
+      });
+    }
+  }
+
+  return {
+    eligibleCount,
+    ineligibleCount,
+    reasons: Array.from(reasons.entries()).map(([code, count]) => ({
+      code,
+      count,
+      label: summarizeOutboundPolicyReasons([code])[0] ?? code
+    })),
+    sampleBlockedContacts
+  };
 }
 
 export async function cancelCampaign(userId: string, campaignId: string): Promise<Campaign | null> {

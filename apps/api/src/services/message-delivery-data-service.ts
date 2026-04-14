@@ -691,6 +691,16 @@ async function refreshFailureRateAlert(userId: string, campaignId?: string | nul
   const failureRate = total > 0 ? Number(((failed / total) * 100).toFixed(2)) : 0;
 
   if (total >= HIGH_FAILURE_MIN_ATTEMPTS && failureRate > env.DELIVERY_FAILURE_ALERT_THRESHOLD_PERCENT) {
+    if (campaignId && failureRate >= Math.max(20, env.DELIVERY_FAILURE_ALERT_THRESHOLD_PERCENT)) {
+      await pool.query(
+        `UPDATE campaigns
+         SET status = 'paused',
+             updated_at = NOW()
+         WHERE id = $1
+           AND status = 'running'`,
+        [campaignId]
+      );
+    }
     await openOrRefreshAlert({
       userId,
       campaignId,

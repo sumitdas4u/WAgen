@@ -11,7 +11,9 @@ import {
   type GraphListResponse
 } from "./meta-whatsapp-service.js";
 import { env } from "../config/env.js";
+import { getContactByPhoneForUser, markContactTemplateOutboundActivity } from "./contacts-service.js";
 import type { FlowMessagePayload } from "./outbound-message-types.js";
+import { evaluateOutboundTemplatePolicy, summarizeOutboundPolicyReasons } from "./outbound-policy-service.js";
 import {
   resolveTemplatePayload as resolveTemplateDispatchPayload,
   type ResolvedTemplatePayload
@@ -214,6 +216,7 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
   const errors: string[] = [];
   const placeholders: string[] = [];
   let hasBody = false;
+  const textFragments: string[] = [];
 
   for (const component of payload.components) {
     if (component.type === "HEADER") {
@@ -222,6 +225,7 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
       }
       if (component.format === "TEXT" && component.text) {
         placeholders.push(...listPlaceholders(component.text));
+        textFragments.push(component.text);
       }
       if ((component.format === "IMAGE" || component.format === "VIDEO" || component.format === "DOCUMENT") && !component.example) {
         errors.push(`Header ${component.format.toLowerCase()} templates need a sample file before submission.`);
@@ -232,10 +236,12 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
     if (component.type === "BODY" && component.text) {
       hasBody = true;
       placeholders.push(...listPlaceholders(component.text));
+      textFragments.push(component.text);
       continue;
     }
 
     if (component.type === "FOOTER" && component.text) {
+      textFragments.push(component.text);
       if (/[\r\n]/.test(component.text)) {
         errors.push("Footer text must stay on a single line.");
       }
@@ -264,6 +270,7 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
           placeholders.push(...listPlaceholders(button.url));
         }
       }
+      textFragments.push(button.text);
       if (button.type === "PHONE_NUMBER" && !button.phone_number?.trim()) {
         errors.push(`Phone button ${index + 1} needs a phone number.`);
       }
@@ -291,6 +298,18 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
   }
 
   errors.push(...validateSequentialNumericPlaceholders(Array.from(new Set(placeholders))));
+
+  const fullText = textFragments.join("\n").toLowerCase();
+  const promotionalSignals = ["sale", "offer", "discount", "coupon", "% off", "limited time", "shop now", "deal"];
+  const hasPromotionalSignal = promotionalSignals.some((signal) => fullText.includes(signal));
+  const hasOptOutInstruction = fullText.includes("reply stop") || fullText.includes("unsubscribe");
+
+  if (payload.category === "UTILITY" && hasPromotionalSignal) {
+    errors.push("Utility templates cannot contain promotional copy like offers, discounts, or sale language.");
+  }
+  if (payload.category === "MARKETING" && !hasOptOutInstruction) {
+    errors.push("Marketing templates must include a clear opt-out instruction such as Reply STOP to unsubscribe.");
+  }
 
   if (errors.length > 0) {
     throw new Error(errors[0]!);
@@ -1133,6 +1152,18 @@ export async function sendTestTemplate(
   userId: string,
   payload: { templateId: string; to: string; variableValues: Record<string, string> }
 ): Promise<{ messageId: string | null }> {
+  const template = await getMessageTemplate(userId, payload.templateId);
+  const contact = await getContactByPhoneForUser(userId, payload.to);
+  const policy = await evaluateOutboundTemplatePolicy({
+    userId,
+    phoneNumber: payload.to,
+    category: template.category,
+    contact
+  });
+  if (!policy.allowed) {
+    throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
+  }
   const result = await dispatchTemplateMessage(userId, payload);
+  await markContactTemplateOutboundActivity(userId, payload.to, template.category);
   return { messageId: result.messageId };
 }
