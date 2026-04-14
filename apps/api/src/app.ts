@@ -34,6 +34,7 @@ import { broadcastRoutes } from "./routes/broadcasts.js";
 import { deliveryRoutes } from "./routes/delivery.js";
 import { genericWebhookRoutes } from "./routes/generic-webhooks.js";
 import { sequenceRoutes } from "./routes/sequences.js";
+import { notificationsRoutes } from "./routes/notifications.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerQueueDashboard } from "./services/queue-dashboard-service.js";
 import { registerQueueOperations } from "./services/queue-operations-service.js";
@@ -213,6 +214,7 @@ export async function buildApp() {
   await deliveryRoutes(app);
   await genericWebhookRoutes(app);
   await sequenceRoutes(app);
+  await notificationsRoutes(app);
   await flowRoutes(app);
   await channelDefaultReplyRoutes(app);
   await registerRealtimeRoutes(app);

@@ -6,6 +6,7 @@ import { startDeliveryWebhookWorker, stopDeliveryWebhookWorker } from "./service
 import { startOutboundWorker, stopOutboundWorker } from "./services/outbound-message-service.js";
 import { closeQueueInfrastructure } from "./services/queue-service.js";
 import { startSequenceWorker, stopSequenceWorker } from "./services/sequence-worker-service.js";
+import { startDailyReportWorker, stopDailyReportWorker } from "./services/daily-report-worker-service.js";
 
 await runMigrations({
   silent: env.NODE_ENV === "production"
@@ -15,12 +16,14 @@ startCampaignWorker();
 startDeliveryWebhookWorker();
 startOutboundWorker();
 startSequenceWorker();
+startDailyReportWorker();
 
 const shutdown = async () => {
   await stopCampaignWorker();
   await stopDeliveryWebhookWorker();
   await stopOutboundWorker();
   await stopSequenceWorker();
+  await stopDailyReportWorker();
   await closeQueueInfrastructure();
   process.exit(0);
 };
