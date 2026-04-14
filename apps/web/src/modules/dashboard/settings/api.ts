@@ -15,7 +15,9 @@ import {
   setAgentActive,
   type CompleteMetaSignupPayload,
   updateMetaBusinessProfile,
-  uploadMetaBusinessProfileLogo
+  uploadMetaBusinessProfileLogo,
+  getNotificationSettings,
+  updateNotificationSettings
 } from "../../../lib/api";
 
 export function fetchSettingsMetaConfig(token: string) {
@@ -87,4 +89,12 @@ export function toggleWebsiteAgent(token: string, active: boolean) {
 
 export function deleteAccount(token: string) {
   return deleteMyAccount(token, { confirmText: "DELETE" });
+}
+
+export function fetchNotificationSettings(token: string) {
+  return getNotificationSettings(token);
+}
+
+export function saveNotificationSettings(token: string, dailyReportEnabled: boolean) {
+  return updateNotificationSettings(token, dailyReportEnabled);
 }

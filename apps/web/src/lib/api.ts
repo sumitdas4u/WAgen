@@ -3358,3 +3358,18 @@ export function deleteGenericWebhookWorkflow(token: string, integrationId: strin
 export function fetchGenericWebhookLogs(token: string, integrationId: string) {
   return apiRequest<{ logs: GenericWebhookLog[] }>(`/api/integrations/webhooks/${integrationId}/logs`, { token });
 }
+
+export function getNotificationSettings(token: string): Promise<{ dailyReportEnabled: boolean }> {
+  return apiRequest("/api/notifications/settings", { token });
+}
+
+export function updateNotificationSettings(
+  token: string,
+  dailyReportEnabled: boolean
+): Promise<{ dailyReportEnabled: boolean }> {
+  return apiRequest("/api/notifications/settings", {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ dailyReportEnabled })
+  });
+}
