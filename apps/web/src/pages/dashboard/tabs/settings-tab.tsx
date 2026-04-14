@@ -721,15 +721,16 @@ export function SettingsTab(props: SettingsTabProps) {
             performance.
           </p>
         </header>
-        <div className="go-live-row">
-          <span className="go-live-label">Daily report email</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <span className="web-widget-label">Daily report email</span>
           <button
             type="button"
-            className={`go-live-switch${dailyReportEnabled ? " active" : ""}`}
+            className={dailyReportEnabled ? "go-live-switch on" : "go-live-switch"}
             disabled={dailyReportBusy}
             onClick={onToggleDailyReport}
+            aria-label={dailyReportEnabled ? "Disable daily report email" : "Enable daily report email"}
           >
-            {dailyReportEnabled ? "On" : "Off"}
+            <span />
           </button>
         </div>
       </article>
