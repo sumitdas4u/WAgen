@@ -15,6 +15,7 @@ const dashboardAnalyticsRoot = ["dashboard", "analytics"] as const;
 const dashboardBroadcastRoot = ["dashboard", "broadcast"] as const;
 const dashboardSequenceRoot = ["dashboard", "sequence"] as const;
 const dashboardWebhooksRoot = ["dashboard", "webhooks"] as const;
+const dashboardReportsRoot = ["dashboard", "reports"] as const;
 
 export const dashboardQueryKeys = {
   bootstrap: dashboardBootstrapRoot,
@@ -80,5 +81,9 @@ export const dashboardQueryKeys = {
   contactSegmentsRoot: dashboardContactSegmentsRoot,
   contactSegments: [...dashboardContactSegmentsRoot, "list"] as const,
   segmentContacts: (segmentId: string) => [...dashboardContactSegmentsRoot, "contacts", segmentId] as const,
-  contactByConversation: (conversationId: string) => [...dashboardContactFieldsRoot, "by-conversation", conversationId] as const
+  contactByConversation: (conversationId: string) => [...dashboardContactFieldsRoot, "by-conversation", conversationId] as const,
+  reportsRoot: dashboardReportsRoot,
+  todayReport: [...dashboardReportsRoot, "today"] as const,
+  dailyReports: [...dashboardReportsRoot, "history"] as const,
+  notificationSettings: [...dashboardReportsRoot, "notification-settings"] as const
 };

@@ -3373,3 +3373,51 @@ export function updateNotificationSettings(
     body: JSON.stringify({ dailyReportEnabled })
   });
 }
+
+export type DailyReportSnapshot = {
+  date: string;
+  overview: {
+    totalConversations: number;
+    leads: number;
+    complaints: number;
+    feedback: number;
+  };
+  topLeads: {
+    conversationId: string;
+    phoneNumber: string;
+    summary: string;
+    score: number;
+    status: string;
+  }[];
+  topComplaints: {
+    conversationId: string;
+    phoneNumber: string;
+    summary: string;
+    sentiment: string | null;
+    score: number;
+    status: string;
+  }[];
+  topFeedback: {
+    conversationId: string;
+    phoneNumber: string;
+    summary: string;
+    status: string;
+  }[];
+  broadcasts: { sent: number; delivered: number; failed: number };
+  automation: { sequencesCompleted: number; flowsCompleted: number };
+  alerts: string[];
+};
+
+export type DailyReportEntry = {
+  id: string;
+  reportDate: string;
+  snapshot: DailyReportSnapshot;
+};
+
+export function fetchTodayReport(token: string): Promise<DailyReportSnapshot> {
+  return apiRequest("/api/reports/daily/today", { token });
+}
+
+export function fetchDailyReports(token: string): Promise<{ reports: DailyReportEntry[] }> {
+  return apiRequest("/api/reports/daily", { token });
+}
