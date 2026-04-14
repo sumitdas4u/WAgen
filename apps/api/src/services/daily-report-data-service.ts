@@ -73,61 +73,78 @@ async function queryOverview(userId: string, start: Date): Promise<Record<string
 }
 
 async function queryTopInsights(userId: string, type: string, limit = 5): Promise<InsightRow[]> {
-  const result = await pool.query<InsightRow>(
-    `SELECT ci.conversation_id,
-            c.phone_number,
-            COALESCE(ls.summary_text, ci.summary) AS summary,
-            ci.sentiment,
-            ci.priority_score,
-            ci.status
-     FROM conversation_insights ci
-     JOIN conversations c ON c.id = ci.conversation_id
-     LEFT JOIN lead_summaries ls ON ls.conversation_id = ci.conversation_id
-     WHERE ci.user_id = $1 AND ci.type = $2
-     ORDER BY ci.priority_score DESC
-     LIMIT $3`,
-    [userId, type, limit]
-  );
-  return result.rows;
+  try {
+    const result = await pool.query<InsightRow>(
+      `SELECT ci.conversation_id,
+              c.phone_number,
+              COALESCE(ls.summary_text, ci.summary) AS summary,
+              ci.sentiment,
+              ci.priority_score,
+              ci.status
+       FROM conversation_insights ci
+       JOIN conversations c ON c.id = ci.conversation_id
+       LEFT JOIN lead_summaries ls ON ls.conversation_id = ci.conversation_id
+       WHERE ci.user_id = $1 AND ci.type = $2
+       ORDER BY ci.priority_score DESC
+       LIMIT $3`,
+      [userId, type, limit]
+    );
+    return result.rows;
+  } catch {
+    return [];
+  }
 }
 
 async function queryBroadcastStats(userId: string, start: Date): Promise<BroadcastRow> {
-  const result = await pool.query<BroadcastRow>(
-    `SELECT
-       COALESCE(SUM(sent_count), 0)::text      AS sent_count,
-       COALESCE(SUM(delivered_count), 0)::text AS delivered_count,
-       COALESCE(SUM(failed_count), 0)::text    AS failed_count
-     FROM campaigns
-     WHERE user_id = $1 AND status = 'completed' AND completed_at >= $2`,
-    [userId, start]
-  );
-  return result.rows[0] ?? { sent_count: "0", delivered_count: "0", failed_count: "0" };
+  try {
+    const result = await pool.query<BroadcastRow>(
+      `SELECT
+         COALESCE(SUM(sent_count), 0)::text      AS sent_count,
+         COALESCE(SUM(delivered_count), 0)::text AS delivered_count,
+         COALESCE(SUM(failed_count), 0)::text    AS failed_count
+       FROM campaigns
+       WHERE user_id = $1 AND status = 'completed' AND completed_at >= $2`,
+      [userId, start]
+    );
+    return result.rows[0] ?? { sent_count: "0", delivered_count: "0", failed_count: "0" };
+  } catch {
+    return { sent_count: "0", delivered_count: "0", failed_count: "0" };
+  }
 }
 
 async function queryAiInsights(userId: string, start: Date): Promise<AiReviewRow> {
-  const result = await pool.query<AiReviewRow>(
-    `SELECT COUNT(*)::text AS count FROM ai_review_queue WHERE user_id = $1 AND created_at >= $2`,
-    [userId, start]
-  );
-  return result.rows[0] ?? { count: "0" };
+  try {
+    const result = await pool.query<AiReviewRow>(
+      `SELECT COUNT(*)::text AS count FROM ai_review_queue WHERE user_id = $1 AND created_at >= $2`,
+      [userId, start]
+    );
+    return result.rows[0] ?? { count: "0" };
+  } catch {
+    return { count: "0" };
+  }
 }
 
 async function queryAutomationStats(userId: string, start: Date): Promise<AutomationRow> {
-  const seqResult = await pool.query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM sequence_enrollments
-     WHERE sequence_id IN (SELECT id FROM sequences WHERE user_id = $1)
-       AND status = 'completed' AND updated_at >= $2`,
-    [userId, start]
-  );
-  const flowResult = await pool.query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM flow_sessions
-     WHERE user_id = $1 AND status = 'completed' AND updated_at >= $2`,
-    [userId, start]
-  );
-  return {
-    sequences_completed: seqResult.rows[0]?.count ?? "0",
-    flows_completed: flowResult.rows[0]?.count ?? "0"
-  };
+  let sequences_completed = "0";
+  let flows_completed = "0";
+  try {
+    const seqResult = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM sequence_enrollments
+       WHERE sequence_id IN (SELECT id FROM sequences WHERE user_id = $1)
+         AND status = 'completed' AND updated_at >= $2`,
+      [userId, start]
+    );
+    sequences_completed = seqResult.rows[0]?.count ?? "0";
+  } catch { /* table may not exist yet */ }
+  try {
+    const flowResult = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM flow_sessions
+       WHERE user_id = $1 AND status = 'completed' AND updated_at >= $2`,
+      [userId, start]
+    );
+    flows_completed = flowResult.rows[0]?.count ?? "0";
+  } catch { /* table may not exist yet */ }
+  return { sequences_completed, flows_completed };
 }
 
 function buildAlerts(
