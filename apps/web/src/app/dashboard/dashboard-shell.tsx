@@ -125,7 +125,7 @@ const ANALYTICS_MENU_ITEMS: AnalyticsNavItem[] = [
   { label: "WA Failed message", icon: "unanswered", to: "/dashboard/analytics/failed-messages" },
   { label: "WA Notification message", icon: "templates", to: "/dashboard/analytics/notification-messages" },
   { label: "Conversation report", icon: "chats", to: "/dashboard/analytics/conversation-report" },
-  { label: "Reports", icon: "billing", to: "/dashboard/analytics/reports" }
+  { label: "Reports", icon: "billing", to: "/dashboard/reports" }
 ];
 
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
