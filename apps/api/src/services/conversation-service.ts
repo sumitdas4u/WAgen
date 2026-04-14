@@ -1,6 +1,11 @@
 import { pool, withTransaction } from "../db/pool.js";
 import { clamp } from "../utils/index.js";
 import type { AgentChannelType, Conversation, ConversationKind } from "../types/models.js";
+import {
+  upsertConversationInsight,
+  deriveSentiment,
+  type InsightType
+} from "./conversation-insight-service.js";
 import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
 import { openAIService } from "./openai-service.js";
 import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
@@ -587,6 +592,22 @@ export async function trackInboundMessage(
       });
     } catch (error) {
       console.warn(`[Contacts] contact sync failed for conversation ${conversation.id}`, error);
+    }
+  }
+
+  // Write insight record for daily email report — non-fatal
+  const insightType = classification.kind as InsightType;
+  if (insightType === "lead" || insightType === "complaint" || insightType === "feedback") {
+    try {
+      await upsertConversationInsight(conversation.id, userId, {
+        type: insightType,
+        summary: message.slice(0, 150),
+        sentiment: deriveSentiment(insightType, score),
+        priority_score: score,
+        status: "open"
+      });
+    } catch (insightError) {
+      console.warn(`[ConversationInsight] upsert failed for ${conversation.id}`, insightError);
     }
   }
 
