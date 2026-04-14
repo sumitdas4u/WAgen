@@ -82,6 +82,9 @@ interface SettingsTabProps {
   onDeleteAccountConfirmTextChange: (value: string) => void;
   onDeleteAccount: () => void;
   onSelectSetupTemplates: () => void;
+  dailyReportEnabled: boolean;
+  dailyReportBusy: boolean;
+  onToggleDailyReport: () => void;
   renderNavIcon: (name: "knowledge" | "chats" | "settings" | "templates") => ReactNode;
 }
 
@@ -142,6 +145,9 @@ export function SettingsTab(props: SettingsTabProps) {
     onDeleteAccountConfirmTextChange,
     onDeleteAccount,
     onSelectSetupTemplates,
+    dailyReportEnabled,
+    dailyReportBusy,
+    onToggleDailyReport,
     renderNavIcon
   } = props;
 
@@ -706,6 +712,27 @@ export function SettingsTab(props: SettingsTabProps) {
           </p>
         </article>
       )}
+
+      <article className="channel-setup-panel">
+        <header>
+          <h3>Notifications</h3>
+          <p>
+            Receive a daily summary email at 11:59 PM with conversation stats, top leads, complaints, and broadcast
+            performance.
+          </p>
+        </header>
+        <div className="go-live-row">
+          <span className="go-live-label">Daily report email</span>
+          <button
+            type="button"
+            className={`go-live-switch${dailyReportEnabled ? " active" : ""}`}
+            disabled={dailyReportBusy}
+            onClick={onToggleDailyReport}
+          >
+            {dailyReportEnabled ? "On" : "Off"}
+          </button>
+        </div>
+      </article>
 
       <article className="channel-setup-panel account-danger-panel">
         <header>

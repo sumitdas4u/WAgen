@@ -14,7 +14,9 @@ import {
   deactivateMetaChannel,
   deactivateQrChannel,
   deleteAccount,
+  fetchNotificationSettings,
   fetchSettingsMetaStatus,
+  saveNotificationSettings,
   toggleWebsiteAgent
 } from "./api";
 import { useSettingsMetaConfigQuery, useSettingsMetaStatusQuery } from "./queries";
@@ -281,6 +283,8 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dailyReportEnabled, setDailyReportEnabled] = useState(false);
+  const [dailyReportBusy, setDailyReportBusy] = useState(false);
 
   const metaConfigQuery = useSettingsMetaConfigQuery(token);
   const metaStatusQuery = useSettingsMetaStatusQuery(token);
@@ -326,6 +330,17 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
       // Ignore malformed local draft.
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    fetchNotificationSettings(token).then((data) => {
+      setDailyReportEnabled(data.dailyReportEnabled);
+    }).catch(() => {
+      // Non-fatal: leave default false
+    });
+  }, [token]);
 
   useEffect(() => {
     if (!widgetSetupDraft.previewOpen) {
@@ -375,6 +390,20 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
     if (!nextBusy) {
       setMetaApiSetupLoading(false);
       setMetaApiSetupLoadingText(null);
+    }
+  };
+
+  const handleToggleDailyReport = async () => {
+    const next = !dailyReportEnabled;
+    setDailyReportEnabled(next);
+    setDailyReportBusy(true);
+    try {
+      await saveNotificationSettings(token, next);
+    } catch {
+      setDailyReportEnabled(!next);
+      setError("Failed to update notification settings.");
+    } finally {
+      setDailyReportBusy(false);
     }
   };
 
@@ -676,6 +705,9 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
             }
           });
         }}
+        dailyReportEnabled={dailyReportEnabled}
+        dailyReportBusy={dailyReportBusy}
+        onToggleDailyReport={() => { void handleToggleDailyReport(); }}
         renderNavIcon={(name) => <DashboardIcon name={name} />}
       />
     </section>
