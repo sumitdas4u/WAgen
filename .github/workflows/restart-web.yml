@@ -1,0 +1,56 @@
+name: Restart Web
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  restart_web_staging:
+    name: Restart Web (Staging)
+    runs-on: ubuntu-latest
+    if: inputs.environment == 'staging'
+    environment: staging
+    steps:
+      - name: Restart web
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_PORT }}
+          command_timeout: 5m
+          script_stop: true
+          script: |
+            cd "${{ secrets.STAGING_APP_DIR }}"
+            docker compose -f infra/docker-compose.full.yml restart web
+            docker compose -f infra/docker-compose.full.yml ps web
+            echo "Web restarted successfully"
+
+  restart_web_production:
+    name: Restart Web (Production)
+    runs-on: ubuntu-latest
+    if: inputs.environment == 'production'
+    environment: production
+    steps:
+      - name: Restart web
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT }}
+          command_timeout: 5m
+          script_stop: true
+          script: |
+            cd "${{ secrets.PROD_APP_DIR }}"
+            docker compose -f infra/docker-compose.full.yml restart web
+            docker compose -f infra/docker-compose.full.yml ps web
+            echo "Web restarted successfully"
