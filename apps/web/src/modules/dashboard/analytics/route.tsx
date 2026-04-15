@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import type { ReactNode } from "react";
+
+const DailyReportsPage = lazy(() =>
+  import("../reports/route").then((m) => ({ default: m.Component }))
+);
 import "./analytics.css";
 import { Link, useLocation, useNavigate, useRoutes, useSearchParams } from "react-router-dom";
 import type {
@@ -924,123 +928,11 @@ function CampaignRow({ campaign }: { campaign: Campaign }) {
   );
 }
 
-function ReportsPage({
-  token,
-  days,
-  summary
-}: {
-  token: string;
-  days: number;
-  summary: DeliveryReportSummary | null;
-}) {
-  const alertsQuery = useQuery({
-    queryKey: dashboardQueryKeys.deliveryAlerts("open"),
-    queryFn: () => fetchDeliveryAlerts(token, { status: "open", limit: 10 }).then((response) => response.alerts),
-    enabled: Boolean(token)
-  });
-
-  const usageQuery = useQuery({
-    queryKey: [...dashboardQueryKeys.analyticsRoot, "usage", days] as const,
-    queryFn: () => fetchUsageAnalytics(token, { days, limit: 10 }).then((response) => response.usage),
-    enabled: Boolean(token)
-  });
-
-  const campaignsQuery = useQuery({
-    queryKey: dashboardQueryKeys.campaigns,
-    queryFn: () => fetchCampaigns(token).then((response) => response.campaigns),
-    enabled: Boolean(token)
-  });
-
-  const alerts = alertsQuery.data ?? [];
-  const usage = usageQuery.data ?? null;
-  const campaigns = useMemo(() => {
-    return [...(campaignsQuery.data ?? [])]
-      .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
-      .slice(0, 6);
-  }, [campaignsQuery.data]);
-
+function ReportsPage() {
   return (
-    <section className="an-shell">
-      <div className="an-summary-grid">
-        <OperationalCard label="Open alerts" value={formatNumber(alerts.length)} />
-        <OperationalCard label="Campaigns" value={formatNumber(campaignsQuery.data?.length ?? 0)} />
-        <OperationalCard label="AI messages" value={formatNumber(usage?.messages ?? 0)} />
-        <OperationalCard label="Top failures" value={formatNumber(summary?.topFailureReasons.length ?? 0)} />
-      </div>
-
-      <div className="an-detail-grid">
-        <TableShell title="Delivery alerts" subtitle="Operational issues detected by the delivery service.">
-          {alertsQuery.isLoading ? (
-            <LoadingState label="Loading delivery alerts..." />
-          ) : alerts.length === 0 ? (
-            <EmptyState label="No open delivery alerts right now." />
-          ) : (
-            <div style={{ display: "grid", gap: "0.65rem", marginTop: "1rem" }}>
-              {alerts.map((alert) => (
-                <div key={alert.id} className="an-failure-reason">
-                  <div className="an-failure-reason-head">
-                    <span className="an-failure-reason-msg">{alert.summary}</span>
-                    <span className={`an-severity-pill sev-${alert.severity}`}>
-                      {getAlertSeverityLabel(alert)}
-                    </span>
-                  </div>
-                  <div className="an-failure-reason-code">
-                    {alert.alert_type} — {formatDateTime(alert.triggered_at)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </TableShell>
-
-        <TableShell title="Usage snapshot" subtitle={`AI usage for the same ${days}-day range.`}>
-          {usageQuery.isLoading ? (
-            <LoadingState label="Loading usage summary..." />
-          ) : !usage ? (
-            <EmptyState label="No usage summary available yet." />
-          ) : (
-            <div style={{ display: "grid", gap: "0.5rem", marginTop: "1rem" }}>
-              <UsageMetric label="Messages" value={formatNumber(usage.messages)} />
-              <UsageMetric label="Prompt tokens" value={formatNumber(usage.prompt_tokens)} />
-              <UsageMetric label="Completion tokens" value={formatNumber(usage.completion_tokens)} />
-              <UsageMetric label="Total tokens" value={formatNumber(usage.total_tokens)} />
-              <UsageMetric label="Estimated cost" value={`INR ${usage.estimated_cost_inr.toFixed(2)}`} />
-            </div>
-          )}
-        </TableShell>
-      </div>
-
-      <TableShell title="Recent broadcast campaigns" subtitle="Latest campaign runs with delivery totals.">
-        {campaignsQuery.isLoading ? (
-          <LoadingState label="Loading campaigns..." />
-        ) : campaigns.length === 0 ? (
-          <EmptyState label="No campaigns have been created yet." />
-        ) : (
-          <div className="an-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Campaign</th>
-                  <th>Status</th>
-                  <th>Audience</th>
-                  <th>Sent</th>
-                  <th>Delivered</th>
-                  <th>Read</th>
-                  <th>Failed</th>
-                  <th>Skipped</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {campaigns.map((campaign) => (
-                  <CampaignRow key={campaign.id} campaign={campaign} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </TableShell>
-    </section>
+    <Suspense fallback={null}>
+      <DailyReportsPage />
+    </Suspense>
   );
 }
 
@@ -1089,6 +981,7 @@ function AnalyticsModule() {
   };
 
   const showStatusFilter = location.pathname.includes("/dashboard/analytics/notification-messages");
+  const isReportsPage = location.pathname.endsWith("/reports");
 
   const routes = useRoutes([
     {
@@ -1109,9 +1002,13 @@ function AnalyticsModule() {
     },
     {
       path: "reports",
-      element: <ReportsPage token={token} days={days} summary={summary} />
+      element: <ReportsPage />
     }
   ]);
+
+  if (isReportsPage) {
+    return <section className="an-shell">{routes}</section>;
+  }
 
   return (
     <section className="an-shell">
