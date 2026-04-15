@@ -8,22 +8,17 @@ const DailyReportsPage = lazy(() =>
 import "./analytics.css";
 import { Link, useLocation, useNavigate, useRoutes, useSearchParams } from "react-router-dom";
 import type {
-  Campaign,
   Conversation,
-  DeliveryAlert,
   DeliveryReportChannel,
   DeliveryReportStatus,
   DeliveryReportSummary
 } from "../../../lib/api";
 import {
-  fetchCampaigns,
-  fetchDeliveryAlerts,
   fetchDeliveryConversations,
   fetchDeliveryFailures,
   fetchDeliveryNotifications,
   fetchDeliveryOverview,
-  fetchDeliveryReportSummary,
-  fetchUsageAnalytics
+  fetchDeliveryReportSummary
 } from "../../../lib/api";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
@@ -129,16 +124,7 @@ function getStatusLabel(status: DeliveryReportStatus): string {
   }
 }
 
-function getAlertSeverityLabel(alert: DeliveryAlert): string {
-  switch (alert.severity) {
-    case "critical":
-      return "Critical";
-    case "warning":
-      return "Warning";
-    default:
-      return "Info";
-  }
-}
+
 
 function getModeLabel(conversation: Conversation): string {
   return conversation.ai_paused || conversation.manual_takeover ? "Human" : "AI Live";
@@ -395,14 +381,6 @@ function OperationalCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function UsageMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="an-channel-row">
-      <span className="an-channel-msgs">{label}</span>
-      <strong className="an-channel-name">{value}</strong>
-    </div>
-  );
-}
 
 
 function DashboardPage({
@@ -895,38 +873,7 @@ function ConversationReportPage({
   );
 }
 
-function CampaignRow({ campaign }: { campaign: Campaign }) {
-  return (
-    <tr>
-      <td>
-        <div style={{ fontWeight: 700, color: "#0f172a" }}>{campaign.name}</div>
-        <div style={{ marginTop: "4px", color: "#64748b", fontSize: "0.84rem" }}>{campaign.template_id ?? "No template"}</div>
-      </td>
-      <td>
-        <span
-          style={{
-            display: "inline-flex",
-            padding: "6px 10px",
-            borderRadius: "999px",
-            border: "1px solid #d7dee8",
-            background: "#f8fafc",
-            color: "#334155",
-            fontWeight: 700
-          }}
-        >
-          {campaign.status}
-        </span>
-      </td>
-      <td>{formatNumber(campaign.total_count)}</td>
-      <td>{formatNumber(campaign.sent_count)}</td>
-      <td style={{ color: "#2563eb" }}>{formatNumber(campaign.delivered_count)}</td>
-      <td style={{ color: "#16a34a" }}>{formatNumber(campaign.read_count)}</td>
-      <td style={{ color: "#dc2626" }}>{formatNumber(campaign.failed_count)}</td>
-      <td style={{ color: "#c2410c" }}>{formatNumber(campaign.skipped_count)}</td>
-      <td>{formatDateTime(campaign.updated_at)}</td>
-    </tr>
-  );
-}
+
 
 function ReportsPage() {
   return (
