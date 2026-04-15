@@ -25,22 +25,22 @@ function scoreBadgeClass(score: number): string {
 }
 
 function scoreBadgeLabel(score: number): string {
-  if (score >= 80) return `🔴 HOT · ${score}`;
-  if (score >= 50) return `🟡 WARM · ${score}`;
-  return `⚪ COLD · ${score}`;
+  if (score >= 80) return `HOT · ${score}`;
+  if (score >= 50) return `WARM · ${score}`;
+  return `COLD · ${score}`;
 }
 
 function statusLabel(status: string): string {
-  if (status === "open") return "❌ Not resolved";
-  if (status === "pending") return "⏳ Follow-up pending";
-  if (status === "resolved") return "✅ Resolved";
+  if (status === "open") return "Not resolved";
+  if (status === "pending") return "Follow-up pending";
+  if (status === "resolved") return "Resolved";
   return status;
 }
 
 function sentimentLabel(s: string | null): string {
   const map: Record<string, string> = {
-    angry: "😡 Angry", frustrated: "😤 Frustrated",
-    negative: "😞 Negative", positive: "😊 Positive", neutral: "😐 Neutral"
+    angry: "Angry", frustrated: "Frustrated",
+    negative: "Negative", positive: "Positive", neutral: "Neutral"
   };
   return s ? (map[s] ?? s) : "";
 }
@@ -52,39 +52,40 @@ function ReportCard({ snapshot }: { snapshot: DailyReportSnapshot }) {
 
   return (
     <div className="reports-card-body">
-      {/* Overview stat row */}
+
+      {/* Stat row */}
       <div className="reports-stat-grid">
-        <div className="reports-stat-card total">
-          <div className="stat-value">{overview.totalConversations}</div>
-          <div className="stat-label">Conversations</div>
+        <div className="reports-stat-cell">
+          <div className="reports-stat-label">Conversations</div>
+          <div className="reports-stat-value">{overview.totalConversations}</div>
         </div>
-        <div className="reports-stat-card leads">
-          <div className="stat-value">{overview.leads}</div>
-          <div className="stat-label">Leads</div>
+        <div className="reports-stat-cell">
+          <div className="reports-stat-label">Leads</div>
+          <div className="reports-stat-value is-leads">{overview.leads}</div>
         </div>
-        <div className="reports-stat-card complaints">
-          <div className="stat-value">{overview.complaints}</div>
-          <div className="stat-label">Complaints</div>
+        <div className="reports-stat-cell">
+          <div className="reports-stat-label">Complaints</div>
+          <div className="reports-stat-value is-complaints">{overview.complaints}</div>
         </div>
-        <div className="reports-stat-card feedback">
-          <div className="stat-value">{overview.feedback}</div>
-          <div className="stat-label">Feedback</div>
+        <div className="reports-stat-cell">
+          <div className="reports-stat-label">Feedback</div>
+          <div className="reports-stat-value is-feedback">{overview.feedback}</div>
         </div>
       </div>
 
-      {/* Alerts banner */}
+      {/* Alerts */}
       {alerts.length > 0 && (
         <div className="reports-alerts">
           {alerts.map((a, i) => (
-            <div key={i} className="reports-alert-item">⚠️ {a}</div>
+            <div key={i} className="reports-alert-item">⚠ {a}</div>
           ))}
         </div>
       )}
 
+      {/* Leads + Complaints */}
       <div className="reports-two-col">
-        {/* Leads */}
-        <div className="reports-section-card">
-          <div className="reports-section-card-header lead">🧲 Top Leads</div>
+        <div className="reports-section-panel">
+          <div className="reports-section-title">Top Leads</div>
           {topLeads.length === 0
             ? <p className="reports-empty-small">No leads recorded today</p>
             : <div className="reports-insight-list">
@@ -94,7 +95,7 @@ function ReportCard({ snapshot }: { snapshot: DailyReportSnapshot }) {
                       <span className="reports-insight-phone">{r.phoneNumber}</span>
                       <span className={scoreBadgeClass(r.score)}>{scoreBadgeLabel(r.score)}</span>
                     </div>
-                    <div className="reports-insight-summary">{r.summary}</div>
+                    {r.summary && <div className="reports-insight-summary">{r.summary}</div>}
                     <div className="reports-insight-status">{statusLabel(r.status)}</div>
                   </div>
                 ))}
@@ -102,9 +103,8 @@ function ReportCard({ snapshot }: { snapshot: DailyReportSnapshot }) {
           }
         </div>
 
-        {/* Complaints */}
-        <div className="reports-section-card">
-          <div className="reports-section-card-header complaint">⚠️ Top Complaints</div>
+        <div className="reports-section-panel">
+          <div className="reports-section-title">Top Complaints</div>
           {topComplaints.length === 0
             ? <p className="reports-empty-small">No complaints recorded today</p>
             : <div className="reports-insight-list">
@@ -116,7 +116,7 @@ function ReportCard({ snapshot }: { snapshot: DailyReportSnapshot }) {
                         <span className="reports-badge sentiment">{sentimentLabel(r.sentiment)}</span>
                       )}
                     </div>
-                    <div className="reports-insight-summary">{r.summary}</div>
+                    {r.summary && <div className="reports-insight-summary">{r.summary}</div>}
                     <div className="reports-insight-status">{statusLabel(r.status)}</div>
                   </div>
                 ))}
@@ -127,13 +127,13 @@ function ReportCard({ snapshot }: { snapshot: DailyReportSnapshot }) {
 
       {/* Feedback */}
       {topFeedback.length > 0 && (
-        <div className="reports-section-card">
-          <div className="reports-section-card-header feedback">💬 Customer Feedback</div>
+        <div className="reports-section-panel-full">
+          <div className="reports-section-title">Customer Feedback</div>
           <div className="reports-insight-list">
             {topFeedback.map((r) => (
               <div key={r.conversationId} className="reports-insight-item feedback">
                 <div className="reports-insight-phone">{r.phoneNumber}</div>
-                <div className="reports-insight-summary">{r.summary}</div>
+                {r.summary && <div className="reports-insight-summary">{r.summary}</div>}
                 <div className="reports-insight-status">{statusLabel(r.status)}</div>
               </div>
             ))}
@@ -141,40 +141,41 @@ function ReportCard({ snapshot }: { snapshot: DailyReportSnapshot }) {
         </div>
       )}
 
-      {/* Bottom row: Broadcasts + Automation */}
+      {/* Broadcasts + Automation */}
       <div className="reports-two-col">
-        <div className="reports-section-card">
-          <div className="reports-section-card-header neutral">📩 Broadcasts</div>
+        <div className="reports-section-panel">
+          <div className="reports-section-title">Broadcasts</div>
           <div className="reports-broadcast-grid">
-            <div className="reports-broadcast-card">
+            <div className="reports-mini-stat">
               <div className="stat-value">{broadcasts.sent}</div>
               <div className="stat-label">Sent</div>
             </div>
-            <div className="reports-broadcast-card">
-              <div className="stat-value" style={{ color: "#22c55e" }}>{broadcasts.delivered}</div>
+            <div className="reports-mini-stat is-delivered">
+              <div className="stat-value">{broadcasts.delivered}</div>
               <div className="stat-label">Delivered</div>
             </div>
-            <div className={`reports-broadcast-card${broadcasts.failed > 0 ? " failed-nonzero" : ""}`}>
+            <div className={`reports-mini-stat${broadcasts.failed > 0 ? " is-failed" : ""}`}>
               <div className="stat-value">{broadcasts.failed}</div>
               <div className="stat-label">Failed</div>
             </div>
           </div>
         </div>
 
-        <div className="reports-section-card">
-          <div className="reports-section-card-header neutral">⚙️ Automation</div>
+        <div className="reports-section-panel">
+          <div className="reports-section-title">Automation</div>
           <div className="reports-auto-grid">
-            <div className="reports-auto-card">
+            <div className="reports-mini-stat">
               <div className="stat-value">{automation.sequencesCompleted}</div>
-              <div className="stat-label">Sequences completed</div>
+              <div className="stat-label">Sequences</div>
             </div>
-            <div className="reports-auto-card">
+            <div className="reports-mini-stat">
               <div className="stat-value">{automation.flowsCompleted}</div>
-              <div className="stat-label">Flows completed</div>
+              <div className="stat-label">Flows</div>
             </div>
           </div>
         </div>
       </div>
+
     </div>
   );
 }
@@ -183,13 +184,13 @@ function ReportCard({ snapshot }: { snapshot: DailyReportSnapshot }) {
 
 function ReportSkeleton() {
   return (
-    <div className="reports-card-body">
-      <div className="reports-stat-grid">
+    <div className="reports-skeleton">
+      <div className="reports-skeleton-grid">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="reports-skeleton-card" />
+          <div key={i} className="reports-skeleton-cell" />
         ))}
       </div>
-      <div className="reports-two-col">
+      <div className="reports-skeleton-body">
         <div className="reports-skeleton-section" />
         <div className="reports-skeleton-section" />
       </div>
@@ -213,10 +214,10 @@ export function Component() {
     <section className="reports-page">
 
       {/* Header */}
-      <div className="reports-header">
+      <div className="reports-page-header">
         <div>
-          <h2 className="reports-title">Reports</h2>
-          <p className="reports-subtitle">Daily conversation and performance summary</p>
+          <h2 className="reports-page-title">Reports</h2>
+          <p className="reports-page-subtitle">Daily conversation and performance summary</p>
         </div>
         <div className="reports-notif-row">
           <span className="reports-notif-label">Daily email</span>
@@ -232,29 +233,28 @@ export function Component() {
         </div>
       </div>
 
-      {/* Today */}
-      <div className="reports-panel">
-        <div className="reports-panel-header">
-          <span className="reports-panel-title">Today</span>
-          {todayQuery.data && (
-            <span className="reports-panel-date">{formatReportDate(todayQuery.data.date)}</span>
-          )}
-        </div>
+      {/* Summary of Day */}
+      <p className="reports-section-heading">Summary of Day</p>
 
-        {todayQuery.isPending ? (
-          <ReportSkeleton />
-        ) : todayQuery.isError ? (
-          <div className="reports-error-state">
-            <span>⚠️ Could not load today&apos;s report</span>
-            <button type="button" onClick={() => { void todayQuery.refetch(); }}>Retry</button>
+      {todayQuery.isPending ? (
+        <ReportSkeleton />
+      ) : todayQuery.isError ? (
+        <div className="reports-error-state">
+          <span>Could not load today&apos;s report</span>
+          <button type="button" onClick={() => { void todayQuery.refetch(); }}>Retry</button>
+        </div>
+      ) : todayQuery.data ? (
+        <div className="reports-overview-card">
+          <div className="reports-overview-head">
+            <span className="reports-overview-title">Today</span>
+            <span className="reports-overview-date">{formatReportDate(todayQuery.data.date)}</span>
           </div>
-        ) : todayQuery.data ? (
           <ReportCard snapshot={todayQuery.data} />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {/* Past Reports */}
-      <div className="reports-panel-title" style={{ marginTop: "0.5rem" }}>Past Reports</div>
+      <p className="reports-section-heading">Past Reports</p>
 
       {historyQuery.isPending ? (
         <p className="reports-loading">Loading history…</p>
@@ -269,14 +269,17 @@ export function Component() {
       ) : (
         <div className="reports-history-list">
           {historyQuery.data.reports.map((r) => (
-            <div key={r.id} className="reports-history-row">
+            <div
+              key={r.id}
+              className={`reports-history-row${expandedId === r.id ? " is-open" : ""}`}
+            >
               <button
                 type="button"
                 className="reports-history-toggle"
                 onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
               >
                 <span>{formatReportDate(r.reportDate)}</span>
-                <span className="reports-history-chevron">{expandedId === r.id ? "▲" : "▶"}</span>
+                <span className="reports-history-chevron">▼</span>
               </button>
               {expandedId === r.id && (
                 <div className="reports-history-content">
@@ -287,6 +290,7 @@ export function Component() {
           ))}
         </div>
       )}
+
     </section>
   );
 }
