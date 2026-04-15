@@ -2105,6 +2105,18 @@ export interface AiReviewQueueItem {
   resolution_answer: string | null;
   resolved_at: string | null;
   resolved_by: string | null;
+  recurrence_count: number;
+  created_at: string;
+}
+
+export interface AiReviewAuditLogItem {
+  id: string;
+  user_id: string;
+  question: string;
+  ai_response: string;
+  confidence_score: number;
+  triage_category: "noise" | "monitor";
+  dismiss_reason: string;
   created_at: string;
 }
 
@@ -2138,6 +2150,19 @@ export function resolveAiReviewQueueItem(
     token,
     body: JSON.stringify(payload)
   });
+}
+
+export function fetchAiReviewAuditLog(
+  token: string,
+  options?: { limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/ai-review/audit-log?${query}` : "/api/ai-review/audit-log";
+  return apiRequest<{ items: AiReviewAuditLogItem[] }>(path, { token });
 }
 
 // ─── Message Templates ────────────────────────────────────────────────────────

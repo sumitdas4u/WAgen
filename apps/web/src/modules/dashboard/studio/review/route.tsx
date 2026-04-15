@@ -6,12 +6,14 @@ import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
 import { resolveReviewItem } from "./api";
 import {
+  buildAuditLogQueryOptions,
   buildReviewQueueQueryOptions,
+  useAuditLogQuery,
   useReviewConversationQuery,
   useReviewQueueQuery
 } from "./queries";
 
-type ReviewStatusFilter = "all" | "pending" | "resolved";
+type ReviewStatusFilter = "pending" | "resolved" | "all" | "dismissed";
 
 function isSameLocalDay(value: string | null | undefined): boolean {
   if (!value) {
@@ -64,6 +66,22 @@ function getReviewSignalLabel(signal: string) {
   return signal.replace(/_/g, " ");
 }
 
+function getConfidenceClass(score: number): string {
+  if (score >= 60) {
+    return "ai-review-confidence good";
+  }
+  if (score >= 35) {
+    return "ai-review-confidence medium";
+  }
+  return "ai-review-confidence low";
+}
+
+function getDismissReasonLabel(reason: string): string {
+  if (reason === "noise") return "Auto-dismissed: high confidence";
+  if (reason === "monitor") return "Auto-dismissed: monitor only";
+  return reason;
+}
+
 export function Component() {
   const queryClient = useQueryClient();
   const { token } = useDashboardShell();
@@ -72,17 +90,22 @@ export function Component() {
   const [reviewResolutionAnswer, setReviewResolutionAnswer] = useState("");
   const reviewStatusFilter = (searchParams.get("status") as ReviewStatusFilter | null) ?? "pending";
 
-  const reviewQuery = useReviewQueueQuery(token, reviewStatusFilter);
+  const isDismissedTab = reviewStatusFilter === "dismissed";
+  const queueStatus = isDismissedTab ? "pending" : reviewStatusFilter;
+
+  const reviewQuery = useReviewQueueQuery(token, queueStatus as "all" | "pending" | "resolved");
+  const auditLogQuery = useAuditLogQuery(token);
+
   const selectedReview = useMemo(
     () => (reviewQuery.data ?? []).find((item) => item.id === selectedReviewId) ?? null,
     [reviewQuery.data, selectedReviewId]
   );
 
   useEffect(() => {
-    if (!selectedReviewId && reviewQuery.data?.[0]) {
+    if (!isDismissedTab && !selectedReviewId && reviewQuery.data?.[0]) {
       setSelectedReviewId(reviewQuery.data[0].id);
     }
-  }, [reviewQuery.data, selectedReviewId]);
+  }, [reviewQuery.data, selectedReviewId, isDismissedTab]);
 
   useEffect(() => {
     setReviewResolutionAnswer(selectedReview?.resolution_answer ?? "");
@@ -100,7 +123,7 @@ export function Component() {
           if (row.status === "resolved" && isSameLocalDay(row.resolved_at)) {
             acc.resolvedToday += 1;
           }
-          if (isSameLocalDay(row.created_at) && row.confidence_score < 70) {
+          if (isSameLocalDay(row.created_at) && row.confidence_score < 35) {
             acc.lowConfidenceToday += 1;
           }
           return acc;
@@ -108,6 +131,11 @@ export function Component() {
         { pending: 0, resolvedToday: 0, lowConfidenceToday: 0 }
       ),
     [reviewQuery.data]
+  );
+
+  const autoDismissedToday = useMemo(
+    () => (auditLogQuery.data ?? []).filter((item) => isSameLocalDay(item.created_at)).length,
+    [auditLogQuery.data]
   );
 
   const resolveMutation = useMutation({
@@ -132,12 +160,12 @@ export function Component() {
           <button
             type="button"
             className="ghost-btn"
-            disabled={reviewQuery.isFetching}
+            disabled={reviewQuery.isFetching || auditLogQuery.isFetching}
             onClick={() => {
               void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.reviewRoot });
             }}
           >
-            Refresh Queue
+            Refresh
           </button>
         </div>
       </div>
@@ -153,11 +181,15 @@ export function Component() {
         </article>
         <article>
           <strong>{reviewHighlights.lowConfidenceToday}</strong>
-          <span>Low confidence today</span>
+          <span>Critical today</span>
         </article>
         <article>
           <strong>{reviewHighlights.resolvedToday}</strong>
           <span>Resolved today</span>
+        </article>
+        <article>
+          <strong>{autoDismissedToday}</strong>
+          <span>Auto-dismissed today</span>
         </article>
       </div>
 
@@ -165,7 +197,8 @@ export function Component() {
         {([
           { value: "pending", label: "Pending" },
           { value: "resolved", label: "Resolved" },
-          { value: "all", label: "All" }
+          { value: "all", label: "All" },
+          { value: "dismissed", label: "Dismissed" }
         ] as Array<{ value: ReviewStatusFilter; label: string }>).map((item) => (
           <button
             key={item.value}
@@ -179,6 +212,7 @@ export function Component() {
                 next.set("status", item.value);
               }
               setSearchParams(next, { replace: true });
+              setSelectedReviewId(null);
             }}
           >
             {item.label}
@@ -186,142 +220,198 @@ export function Component() {
         ))}
       </div>
 
-      <div className="ai-review-layout">
-        <div className="ai-review-table-wrap finance-table-wrap">
-          {reviewQuery.isLoading ? (
-            <p className="empty-note">Loading review queue...</p>
-          ) : (reviewQuery.data ?? []).length === 0 ? (
-            <p className="empty-note">No conversations in this filter yet.</p>
-          ) : (
-            <table className="finance-table ai-review-table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Question</th>
-                  <th>AI Answer</th>
-                  <th>Confidence</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(reviewQuery.data ?? []).map((item) => (
-                  <tr
-                    key={item.id}
-                    className={selectedReviewId === item.id ? "selected" : ""}
-                    onClick={() => setSelectedReviewId(item.id)}
-                  >
-                    <td>
-                      <strong>{formatPhone(item.customer_phone)}</strong>
-                      <small>{formatDateTime(item.created_at)}</small>
-                    </td>
-                    <td>{item.question}</td>
-                    <td>{item.ai_response}</td>
-                    <td>
-                      <span className={item.confidence_score < 70 ? "ai-review-confidence low" : "ai-review-confidence"}>
-                        {item.confidence_score}%
-                      </span>
-                    </td>
-                    <td>{getReviewStatusLabel(item.status)}</td>
-                    <td>
-                      <button type="button" className="ghost-btn" onClick={() => setSelectedReviewId(item.id)}>
-                        Review
-                      </button>
-                    </td>
+      {isDismissedTab ? (
+        <div className="ai-review-layout">
+          <div className="ai-review-table-wrap finance-table-wrap">
+            {auditLogQuery.isLoading ? (
+              <p className="empty-note">Loading dismissed items...</p>
+            ) : (auditLogQuery.data ?? []).length === 0 ? (
+              <p className="empty-note">No auto-dismissed items yet. High-confidence replies land here.</p>
+            ) : (
+              <table className="finance-table ai-review-table">
+                <thead>
+                  <tr>
+                    <th>Question</th>
+                    <th>AI Answer</th>
+                    <th>Confidence</th>
+                    <th>Reason</th>
+                    <th>Dismissed at</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <aside className="ai-review-detail">
-          {!selectedReview ? (
-            <p className="empty-note">Select a conversation to review.</p>
-          ) : (
-            <>
-              <header>
-                <h3>{getReviewStatusLabel(selectedReview.status)}</h3>
-                <small>{formatPhone(selectedReview.customer_phone)}</small>
-              </header>
-
-              <div className="ai-review-block">
-                <strong>Customer question</strong>
-                <p>{selectedReview.question}</p>
-              </div>
-
-              <div className="ai-review-block">
-                <strong>AI generated answer</strong>
-                <p>{selectedReview.ai_response}</p>
-              </div>
-
-              <div className="ai-review-meta-row">
-                <span className={selectedReview.confidence_score < 70 ? "ai-review-confidence low" : "ai-review-confidence"}>
-                  Confidence {selectedReview.confidence_score}%
-                </span>
-                <div className="ai-review-signals">
-                  {selectedReview.trigger_signals.map((signal) => (
-                    <span key={signal}>{getReviewSignalLabel(signal)}</span>
+                </thead>
+                <tbody>
+                  {(auditLogQuery.data ?? []).map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.question}</td>
+                      <td>{item.ai_response}</td>
+                      <td>
+                        <span className={getConfidenceClass(item.confidence_score)}>
+                          {item.confidence_score}%
+                        </span>
+                      </td>
+                      <td>{getDismissReasonLabel(item.triage_category)}</td>
+                      <td>{formatDateTime(item.created_at)}</td>
+                    </tr>
                   ))}
-                </div>
-              </div>
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="ai-review-layout">
+          <div className="ai-review-table-wrap finance-table-wrap">
+            {reviewQuery.isLoading ? (
+              <p className="empty-note">Loading review queue...</p>
+            ) : (reviewQuery.data ?? []).length === 0 ? (
+              <p className="empty-note">No conversations in this filter yet.</p>
+            ) : (
+              <table className="finance-table ai-review-table">
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>Question</th>
+                    <th>AI Answer</th>
+                    <th>Confidence</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(reviewQuery.data ?? []).map((item) => (
+                    <tr
+                      key={item.id}
+                      className={selectedReviewId === item.id ? "selected" : ""}
+                      onClick={() => setSelectedReviewId(item.id)}
+                    >
+                      <td>
+                        <strong>{formatPhone(item.customer_phone)}</strong>
+                        <small>{formatDateTime(item.created_at)}</small>
+                      </td>
+                      <td>
+                        <span className="ai-review-question">{item.question}</span>
+                        {item.recurrence_count > 0 && (
+                          <span className="ai-review-recurrence-badge" title={`Recurring failure: ${item.recurrence_count} time(s)`}>
+                            Recurring ×{item.recurrence_count}
+                          </span>
+                        )}
+                      </td>
+                      <td>{item.ai_response}</td>
+                      <td>
+                        <span className={getConfidenceClass(item.confidence_score)}>
+                          {item.confidence_score}%
+                        </span>
+                      </td>
+                      <td>{getReviewStatusLabel(item.status)}</td>
+                      <td>
+                        <button type="button" className="ghost-btn" onClick={() => setSelectedReviewId(item.id)}>
+                          Review
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
 
-              {selectedReview.conversation_id ? (
+          <aside className="ai-review-detail">
+            {!selectedReview ? (
+              <p className="empty-note">Select a conversation to review.</p>
+            ) : (
+              <>
+                <header>
+                  <h3>{getReviewStatusLabel(selectedReview.status)}</h3>
+                  <small>{formatPhone(selectedReview.customer_phone)}</small>
+                </header>
+
+                {selectedReview.recurrence_count > 0 && (
+                  <div className="ai-review-recurrence-warning">
+                    This failure has recurred {selectedReview.recurrence_count} time(s) after previous KB resolutions.
+                    Update the knowledge base answer to prevent further failures.
+                  </div>
+                )}
+
                 <div className="ai-review-block">
-                  <strong>Conversation context</strong>
-                  {reviewConversationQuery.isLoading ? (
-                    <p className="empty-note">Loading conversation...</p>
-                  ) : (reviewConversationQuery.data ?? []).length === 0 ? (
-                    <p className="empty-note">No conversation history found.</p>
-                  ) : (
-                    <div className="ai-review-context">
-                      {(reviewConversationQuery.data ?? []).slice(-12).map((message) => (
-                        <div key={message.id} className={`ai-review-context-item ${message.direction}`}>
-                          <p>{message.message_text}</p>
-                          <small>{new Date(message.created_at).toLocaleString()}</small>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <strong>Customer question</strong>
+                  <p>{selectedReview.question}</p>
                 </div>
-              ) : null}
 
-              <label>
-                Correct answer
-                <textarea
-                  rows={5}
-                  value={reviewResolutionAnswer}
-                  onChange={(event) => setReviewResolutionAnswer(event.target.value)}
-                  placeholder="Write the correct answer to teach AI for future similar questions."
-                />
-              </label>
+                <div className="ai-review-block">
+                  <strong>AI generated answer</strong>
+                  <p>{selectedReview.ai_response}</p>
+                </div>
 
-              <div className="clone-hero-actions">
-                <button
-                  type="button"
-                  className="primary-btn"
-                  disabled={resolveMutation.isPending || selectedReview.status === "resolved"}
-                  onClick={() => resolveMutation.mutate({ addToKnowledgeBase: true })}
-                >
-                  Save & Add to Knowledge Base
-                </button>
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  disabled={resolveMutation.isPending || selectedReview.status === "resolved"}
-                  onClick={() => resolveMutation.mutate({ addToKnowledgeBase: false })}
-                >
-                  Mark resolved
-                </button>
-              </div>
-            </>
-          )}
-        </aside>
-      </div>
+                <div className="ai-review-meta-row">
+                  <span className={getConfidenceClass(selectedReview.confidence_score)}>
+                    Confidence {selectedReview.confidence_score}%
+                  </span>
+                  <div className="ai-review-signals">
+                    {selectedReview.trigger_signals.map((signal) => (
+                      <span key={signal}>{getReviewSignalLabel(signal)}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedReview.conversation_id ? (
+                  <div className="ai-review-block">
+                    <strong>Conversation context</strong>
+                    {reviewConversationQuery.isLoading ? (
+                      <p className="empty-note">Loading conversation...</p>
+                    ) : (reviewConversationQuery.data ?? []).length === 0 ? (
+                      <p className="empty-note">No conversation history found.</p>
+                    ) : (
+                      <div className="ai-review-context">
+                        {(reviewConversationQuery.data ?? []).slice(-12).map((message) => (
+                          <div key={message.id} className={`ai-review-context-item ${message.direction}`}>
+                            <p>{message.message_text}</p>
+                            <small>{new Date(message.created_at).toLocaleString()}</small>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                <label>
+                  Correct answer
+                  <textarea
+                    rows={5}
+                    value={reviewResolutionAnswer}
+                    onChange={(event) => setReviewResolutionAnswer(event.target.value)}
+                    placeholder="Write the correct answer to teach AI for future similar questions."
+                  />
+                </label>
+
+                <div className="clone-hero-actions">
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    disabled={resolveMutation.isPending || selectedReview.status === "resolved"}
+                    onClick={() => resolveMutation.mutate({ addToKnowledgeBase: true })}
+                  >
+                    Save & Add to Knowledge Base
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    disabled={resolveMutation.isPending || selectedReview.status === "resolved"}
+                    onClick={() => resolveMutation.mutate({ addToKnowledgeBase: false })}
+                  >
+                    Mark resolved
+                  </button>
+                </div>
+              </>
+            )}
+          </aside>
+        </div>
+      )}
     </section>
   );
 }
 
 export async function prefetchData({ token, queryClient }: DashboardModulePrefetchContext) {
-  await queryClient.prefetchQuery(buildReviewQueueQueryOptions(token, "pending"));
+  await Promise.all([
+    queryClient.prefetchQuery(buildReviewQueueQueryOptions(token, "pending")),
+    queryClient.prefetchQuery(buildAuditLogQueryOptions(token))
+  ]);
 }

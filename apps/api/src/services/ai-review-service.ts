@@ -2,255 +2,7 @@ import { pool } from "../db/pool.js";
 import { listRecentConversationMessages, type ConversationMessageSnapshot } from "./conversation-service.js";
 import { ingestManualText } from "./knowledge-ingestion-service.js";
 
-const REVIEW_CONFIDENCE_THRESHOLD = 70;
 const DUPLICATE_WINDOW_SECONDS = 6 * 60 * 60;
-
-const FALLBACK_REPLY_PATTERNS = [
-  // "I don't know" variations (10 patterns)
-  "i'm not sure",
-  "i am not sure",
-  "i dont know",
-  "i don't know",
-  "i do not know",
-  "do not know",
-  "won't know",
-  "can't say for sure",
-  "not certain",
-  "uncertain",
-
-  // "Don't have information" variations (30+ patterns)
-  "do not have that information",
-  "don't have that information",
-  "do not have information",
-  "don't have information",
-  "do not have any information",
-  "don't have any information",
-  "do not have specific information",
-  "don't have specific information",
-  "do not have details",
-  "don't have details",
-  "do not have data",
-  "don't have data",
-  "do not have records",
-  "don't have records",
-  "do not have that on file",
-  "don't have that on file",
-  "do not have that in my system",
-  "don't have that in my system",
-  "i don't have the exact",
-  "i do not have the exact",
-  "i don't have the exact number",
-  "i do not have the exact number",
-  "i don't have the exact details",
-  "i do not have the exact details",
-  "unfortunately, i don't have",
-  "unfortunately i don't have",
-  "unfortunately i do not have",
-  "not in my records",
-  "not in my system",
-  "not on file",
-  "not in my knowledge",
-  "not in the database",
-  "not available in my system",
-  "no information available",
-  "no data available",
-  "no such information",
-  "no record of",
-  "no details available",
-
-  // "I appreciate your" variations (3 patterns)
-  "i appreciate your",
-  "thanks for your",
-  "thank you for your",
-
-  // "Contact support" variations (8 patterns)
-  "please contact support",
-  "contact support",
-  "reach out to support",
-  "please reach out",
-  "contact our team",
-  "reach out to our team",
-  "contact the team",
-  "get in touch with support",
-
-  // "Unable to" variations (12 patterns)
-  "unable to find",
-  "unable to help",
-  "unable to provide",
-  "unable to assist",
-  "unable to access",
-  "unable to retrieve",
-  "unable to locate",
-  "unable to answer",
-  "unable to respond",
-  "unable to comment",
-  "unable to verify",
-  "unable to determine",
-
-  // "Cannot/Can't" variations (18 patterns)
-  "cannot help with that",
-  "can't help with that",
-  "cannot provide",
-  "can't provide",
-  "cannot assist",
-  "can't assist",
-  "cannot find",
-  "can't find",
-  "cannot access",
-  "can't access",
-  "cannot retrieve",
-  "can't retrieve",
-  "cannot confirm",
-  "can't confirm",
-  "cannot determine",
-  "can't determine",
-  "cannot verify",
-  "can't verify",
-
-  // "Not familiar" variations (8 patterns)
-  "not familiar with",
-  "i'm not familiar",
-  "i am not familiar",
-  "i'm not sure about",
-  "i am not sure about",
-  "not acquainted with",
-  "not aware of",
-  "unfamiliar with",
-
-  // "Don't understand" variations (12 patterns)
-  "i don't understand",
-  "i do not understand",
-  "don't understand",
-  "i don't comprehend",
-  "i do not comprehend",
-  "i'm confused",
-  "i am confused",
-  "i'm not aware",
-  "i am not aware",
-  "not clear",
-  "unclear",
-  "confusing question",
-
-  // General disclaimer patterns (8 patterns)
-  "i'm sorry, but i can't",
-  "i am sorry, but i can't",
-  "i'm sorry but i can't",
-  "sorry but i can't",
-  "i'm sorry, but i don't",
-  "i am sorry, but i don't",
-  "sorry i can't",
-  "sorry i don't",
-
-  // "Don't have access" variations (6 patterns)
-  "don't have access",
-  "do not have access",
-  "don't have permission",
-  "do not have permission",
-  "i'm unable to",
-  "i am unable to",
-
-  // "Not found" variations (10 patterns)
-  "not found",
-  "not located",
-  "couldn't find",
-  "could not find",
-  "not available",
-  "unavailable",
-  "currently unavailable",
-  "out of stock",
-  "not in stock",
-  "not listed",
-
-  // "Need clarification" variations (8 patterns)
-  "need more information",
-  "need clarification",
-  "please clarify",
-  "could you clarify",
-  "could you be more specific",
-  "need more details",
-  "specify",
-  "more details needed",
-
-  // "Beyond scope" variations (10 patterns)
-  "beyond my knowledge",
-  "outside my scope",
-  "beyond my scope",
-  "not my area",
-  "not my expertise",
-  "beyond what i know",
-  "not my specialty",
-  "beyond what i can help",
-  "outside my expertise",
-  "not within my knowledge",
-
-  // "Refer to someone else" variations (8 patterns)
-  "you should ask",
-  "you might want to ask",
-  "better to ask",
-  "best to ask",
-  "contact the manager",
-  "speak to the manager",
-  "ask the team",
-  "check with",
-
-  // "Limited by system" variations (8 patterns)
-  "my system doesn't have",
-  "my system doesn't show",
-  "not in my system",
-  "not stored in my system",
-  "my database doesn't contain",
-  "no access to that",
-  "not accessible",
-  "not retrievable",
-
-  // "Apologizing/Unable" variations (8 patterns)
-  "sorry, i can't help",
-  "sorry i cannot help",
-  "afraid i cannot",
-  "afraid i can't",
-  "regret i cannot",
-  "regret i can't",
-  "unfortunate that i can't",
-  "hate that i can't",
-
-  // "Lack of expertise" variations (6 patterns)
-  "not an expert",
-  "not my expertise",
-  "outside my expertise",
-  "beyond my expertise",
-  "limited knowledge",
-  "limited information",
-
-  // "Don't have authority" variations (6 patterns)
-  "don't have the authority",
-  "not authorized to",
-  "not my decision",
-  "not in my power",
-  "can't make that decision",
-  "not my call",
-
-  // Additional catch-all patterns (15+ patterns)
-  "i lack",
-  "lacking information",
-  "insufficient information",
-  "not enough information",
-  "incomplete information",
-  "partial information only",
-  "limited details",
-  "vague",
-  "general information",
-  "unclear how to",
-  "no idea",
-  "no clue",
-  "haven't got",
-  "haven't a",
-  "no way to",
-  "no means to",
-  "no method to",
-  "unable to verify",
-  "can't verify",
-  "cannot validate"
-];
 
 const NEGATIVE_FEEDBACK_PATTERNS = [
   "that's wrong",
@@ -265,35 +17,6 @@ const NEGATIVE_FEEDBACK_PATTERNS = [
   "this is wrong"
 ];
 
-const STRONG_UNKNOWN_REPLY_PATTERNS = [
-  "i don't know",
-  "i do not know",
-  "i'm not sure",
-  "i am not sure",
-  "i don't have",
-  "i do not have",
-  "not familiar with",
-  "unable to find",
-  "unable to help",
-  "cannot help with that",
-  "can't help with that",
-  "please contact support",
-  "no information available",
-  "not in my system",
-  "not in my knowledge"
-];
-
-const CLARIFICATION_REPLY_PATTERNS = [
-  "please clarify",
-  "could you clarify",
-  "could you provide more details",
-  "please provide more details",
-  "please share more details",
-  "could you share more details",
-  "which one",
-  "what exactly",
-  "can you be more specific"
-];
 
 const IRRELEVANT_QUESTION_PATTERNS = [
   "hi",
@@ -331,6 +54,18 @@ export interface AiReviewQueueItem {
   resolved_at: string | null;
   resolved_by: string | null;
   created_at: string;
+  recurrence_count: number;
+}
+
+export interface AiReviewAuditLogItem {
+  id: string;
+  user_id: string;
+  question: string;
+  ai_response: string;
+  confidence_score: number;
+  triage_category: "noise" | "monitor";
+  dismiss_reason: string;
+  created_at: string;
 }
 
 interface CreateQueueItemInput {
@@ -341,6 +76,7 @@ interface CreateQueueItemInput {
   aiResponse: string;
   confidenceScore: number;
   signals: string[];
+  recurrenceCount?: number;
   skipQuestionFilter?: boolean;
 }
 
@@ -361,24 +97,67 @@ function clampConfidence(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function isFallbackResponse(aiResponse: string): boolean {
-  const isFallback = includesPattern(aiResponse, FALLBACK_REPLY_PATTERNS);
-  if (isFallback) {
-    console.log(`[AI-Review] Fallback response detected: "${aiResponse.substring(0, 80)}..."`);
-  }
-  return isFallback;
+// ─── New severity-classified pattern arrays ────────────────────────────────
+
+const STRONG_UNKNOWN_PATTERNS = [
+  "i don't know", "i do not know", "i'm not sure", "i am not sure",
+  "i don't have", "i do not have", "not familiar with",
+  "unable to find", "unable to help", "cannot help with that", "can't help with that",
+  "no information available", "not in my system", "not in my knowledge",
+  "i am not familiar", "i'm not familiar"
+];
+
+const FALLBACK_PATTERNS = [
+  "please contact support", "contact support", "reach out to",
+  "i appreciate your", "unfortunately, i don't have", "unfortunately i don't have",
+  "unfortunately i do not have",
+  "i'm sorry, but i can't", "i am sorry, but i can't", "i'm sorry but i can't",
+  "sorry but i can't", "sorry i can't", "sorry i don't",
+  "i'm unable to", "i am unable to",
+  "please reach out", "contact our team", "reach out to our team",
+  "contact the team", "get in touch with support",
+  "afraid i cannot", "afraid i can't", "regret i cannot", "regret i can't"
+];
+
+const CLARIFICATION_PATTERNS = [
+  "please clarify", "could you clarify", "could you provide more details",
+  "please provide more details", "please share more details",
+  "could you share more details", "which one", "what exactly",
+  "can you be more specific"
+];
+
+export type ResponseSeverity = "strong_unknown" | "fallback" | "clarification";
+
+export function detectResponseSeverity(aiResponse: string): ResponseSeverity | null {
+  if (includesPattern(aiResponse, STRONG_UNKNOWN_PATTERNS)) return "strong_unknown";
+  if (includesPattern(aiResponse, FALLBACK_PATTERNS)) return "fallback";
+  if (includesPattern(aiResponse, CLARIFICATION_PATTERNS)) return "clarification";
+  return null;
+}
+
+export function estimateConfidenceScore(input: {
+  retrievalChunks: number;
+  severity: ResponseSeverity | null;
+  hasNegativeFeedback?: boolean;
+}): number {
+  const chunks = Math.max(0, Number(input.retrievalChunks || 0));
+  const chunkFactor = chunks === 0 ? -20 : chunks === 1 ? 0 : chunks === 2 ? 8 : 15;
+  const severityPenalty =
+    input.severity === "strong_unknown" ? -30 :
+    input.severity === "fallback" ? -15 :
+    input.severity === "clarification" ? -5 : 0;
+  const feedbackPenalty = input.hasNegativeFeedback ? -25 : 0;
+  return clampConfidence(50 + chunkFactor + severityPenalty + feedbackPenalty);
+}
+
+export function triageCategory(score: number): "noise" | "monitor" | "review" {
+  if (score >= 60) return "noise";
+  if (score >= 35) return "monitor";
+  return "review";
 }
 
 function isNegativeFeedbackMessage(message: string): boolean {
   return includesPattern(message, NEGATIVE_FEEDBACK_PATTERNS);
-}
-
-function isStrongUnknownResponse(aiResponse: string): boolean {
-  return includesPattern(aiResponse, STRONG_UNKNOWN_REPLY_PATTERNS);
-}
-
-function isClarificationStyleResponse(aiResponse: string): boolean {
-  return includesPattern(aiResponse, CLARIFICATION_REPLY_PATTERNS);
 }
 
 function getQuestionRejectionReason(question: string): string | null {
@@ -423,106 +202,65 @@ function getQuestionRejectionReason(question: string): string | null {
   return null;
 }
 
-function shouldQueueFailureForLearning(input: {
-  question: string;
-  aiResponse: string;
-  signals: string[];
-}): { shouldQueue: boolean; reason: string | null } {
-  const questionRejection = getQuestionRejectionReason(input.question);
-  if (questionRejection) {
-    return { shouldQueue: false, reason: questionRejection };
-  }
-
-  const strongUnknown = isStrongUnknownResponse(input.aiResponse);
-  const clarification = isClarificationStyleResponse(input.aiResponse);
-  const tokenCount = normalizeText(input.question).split(" ").filter(Boolean).length;
-  if (clarification && tokenCount <= 3) {
-    return { shouldQueue: false, reason: "clarification_for_short_question" };
-  }
-
-  const hasFallbackSignal = input.signals.includes("fallback_response");
-  const hasNoKnowledgeSignal = input.signals.includes("no_knowledge_match");
-  if (!hasFallbackSignal && !strongUnknown) {
-    return { shouldQueue: false, reason: "response_not_confidently_unknown" };
-  }
-
-  if (!hasFallbackSignal && !hasNoKnowledgeSignal) {
-    return { shouldQueue: false, reason: "weak_failure_signals" };
-  }
-
-  return { shouldQueue: true, reason: null };
-}
-
-function estimateConfidenceScore(input: {
-  retrievalChunks: number;
-  aiResponse: string;
-}): number {
-  const retrieval = Math.max(0, Number(input.retrievalChunks || 0));
-  let score = 52 + Math.min(4, retrieval) * 11;
-  if (isFallbackResponse(input.aiResponse)) {
-    score = Math.min(score, 38);
-  }
-  return clampConfidence(score);
-}
 
 function inferFailureSignals(input: {
   retrievalChunks: number;
-  aiResponse: string;
+  severity: ResponseSeverity | null;
   confidenceScore: number;
+  recurrenceCount?: number;
 }): string[] {
   const signals: string[] = [];
-  const retrieval = Math.max(0, Number(input.retrievalChunks || 0));
-
-  if (retrieval === 0) {
-    signals.push("no_knowledge_match");
-  }
-  if (isFallbackResponse(input.aiResponse)) {
+  if (input.retrievalChunks === 0) signals.push("no_knowledge_match");
+  if (input.severity === "strong_unknown" || input.severity === "fallback") {
     signals.push("fallback_response");
   }
-  if (input.confidenceScore < REVIEW_CONFIDENCE_THRESHOLD) {
-    signals.push("low_confidence");
-  }
-
+  if (input.confidenceScore < 35) signals.push("low_confidence");
+  if ((input.recurrenceCount ?? 0) > 0) signals.push("kb_not_effective");
   return Array.from(new Set(signals));
 }
 
-async function findPendingDuplicate(input: {
+async function checkPriorResolutions(input: {
   userId: string;
   conversationId: string;
   question: string;
-  aiResponse: string;
-}): Promise<string | null> {
+  severity: ResponseSeverity | null;
+}): Promise<{ skipQueue: boolean; recurrenceCount: number; duplicateId: string | null }> {
   const normalizedQuestion = normalizeText(input.question);
 
-  // Check for RESOLVED items globally (across all conversations)
-  // If a question is already resolved and has knowledge in KB, don't queue it again
-  // This prevents duplicate learning center items for the same question
-  const result = await pool.query<{ id: string; question: string; status: string }>(
-    `SELECT id, question, status
+  // Check resolved items in the last 24 hours for the same question
+  const resolved = await pool.query<{ id: string; question: string; recurrence_count: number }>(
+    `SELECT id, question, recurrence_count
      FROM ai_review_queue
      WHERE user_id = $1
        AND status = 'resolved'
-       AND created_at >= NOW() - ($2::text || ' seconds')::interval
+       AND created_at >= NOW() - INTERVAL '24 hours'
      ORDER BY created_at DESC
-     LIMIT 50`,  // Check more resolved items globally
-    [
-      input.userId,
-      String(DUPLICATE_WINDOW_SECONDS * 4)  // Extend window for resolved items (24 hours)
-    ]
+     LIMIT 50`,
+    [input.userId]
   );
 
-  // Check if this question has already been resolved before
-  for (const row of result.rows) {
-    if (normalizeText(row.question) === normalizedQuestion) {
-      console.log(`[AI-Review] ✓ SKIP QUEUE - Question already resolved: existing_id=${row.id}, question="${input.question.substring(0, 50)}..."`);
-      console.log(`[AI-Review]   Reason: This question has knowledge in the database from previous resolution`);
-      return row.id;  // Return existing ID to skip queuing
+  const matchingResolved = resolved.rows.filter(
+    (row) => normalizeText(row.question) === normalizedQuestion
+  );
+
+  if (matchingResolved.length > 0) {
+    const hasStrongFailure =
+      input.severity === "strong_unknown" || input.severity === "fallback";
+
+    if (!hasStrongFailure) {
+      // KB is working — question came back but AI answered well enough
+      console.log(`[AI-Review] KB effective — skipping queue for: "${input.question.substring(0, 60)}..."`);
+      return { skipQueue: true, recurrenceCount: 0, duplicateId: matchingResolved[0].id };
     }
+
+    // KB not effective — same question still failing, increment recurrence
+    const maxRecurrence = Math.max(...matchingResolved.map((r) => r.recurrence_count));
+    console.log(`[AI-Review] Recurring failure (recurrence_count=${maxRecurrence + 1}): "${input.question.substring(0, 60)}..."`);
+    return { skipQueue: false, recurrenceCount: maxRecurrence + 1, duplicateId: null };
   }
 
-  // Also check for PENDING duplicates in SAME conversation only (6-hour window)
-  // This prevents rapid duplicate submissions in the same conversation
-  const pendingResult = await pool.query<{ id: string; question: string }>(
+  // No resolved history — check for pending duplicate in same conversation (6-hour window)
+  const pending = await pool.query<{ id: string; question: string }>(
     `SELECT id, question
      FROM ai_review_queue
      WHERE user_id = $1
@@ -531,21 +269,40 @@ async function findPendingDuplicate(input: {
        AND created_at >= NOW() - ($3::text || ' seconds')::interval
      ORDER BY created_at DESC
      LIMIT 10`,
-    [
-      input.userId,
-      input.conversationId,
-      String(DUPLICATE_WINDOW_SECONDS)
-    ]
+    [input.userId, input.conversationId, String(DUPLICATE_WINDOW_SECONDS)]
   );
 
-  for (const row of pendingResult.rows) {
+  for (const row of pending.rows) {
     if (normalizeText(row.question) === normalizedQuestion) {
-      console.log(`[AI-Review] Found duplicate pending question (6hr window): existing_id=${row.id}, question="${input.question.substring(0, 50)}..."`);
-      return row.id;
+      console.log(`[AI-Review] Pending duplicate found: existing_id=${row.id}`);
+      return { skipQueue: true, recurrenceCount: 0, duplicateId: row.id };
     }
   }
 
-  return null;
+  return { skipQueue: false, recurrenceCount: 0, duplicateId: null };
+}
+
+async function writeAuditLog(input: {
+  userId: string;
+  question: string;
+  aiResponse: string;
+  confidenceScore: number;
+  triageCategory: "noise" | "monitor";
+  dismissReason: string;
+}): Promise<void> {
+  await pool.query(
+    `INSERT INTO ai_review_audit_log
+       (user_id, question, ai_response, confidence_score, triage_category, dismiss_reason)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      input.userId,
+      input.question,
+      input.aiResponse,
+      input.confidenceScore,
+      input.triageCategory,
+      input.dismissReason
+    ]
+  );
 }
 
 async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: boolean; itemId: string | null }> {
@@ -580,19 +337,6 @@ async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: 
     return { created: false, itemId: null };
   }
 
-  const duplicateId = await findPendingDuplicate({
-    userId: input.userId,
-    conversationId: input.conversationId,
-    question,
-    aiResponse
-  });
-  if (duplicateId) {
-    console.log(`[AI-Review] Queue item rejected: ALREADY RESOLVED - skipping duplicate queue (existing_id=${duplicateId})`);
-    console.log(`[AI-Review]   User already provided answer for: "${question.substring(0, 70)}..."`);
-    console.log(`[AI-Review]   Knowledge is now available in knowledge base for this question`);
-    return { created: false, itemId: duplicateId };
-  }
-
   const inserted = await pool.query<{ id: string }>(
     `INSERT INTO ai_review_queue (
        user_id,
@@ -601,9 +345,10 @@ async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: 
        question,
        ai_response,
        confidence_score,
-       trigger_signals
+       trigger_signals,
+       recurrence_count
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7::text[])
+     VALUES ($1, $2, $3, $4, $5, $6, $7::text[], $8)
      RETURNING id`,
     [
       input.userId,
@@ -612,7 +357,8 @@ async function createQueueItem(input: CreateQueueItemInput): Promise<{ created: 
       question,
       aiResponse,
       clampConfidence(input.confidenceScore),
-      input.signals
+      input.signals,
+      input.recurrenceCount ?? 0
     ]
   );
 
@@ -652,39 +398,51 @@ export async function queueAiFailureForReview(input: {
   aiResponse: string;
   retrievalChunks: number;
 }): Promise<{ queued: boolean; signals: string[]; confidenceScore: number; itemId: string | null }> {
-  console.log(`[AI-Review] Processing response: "${input.aiResponse.substring(0, 100)}..."`);
+  // Step 1: Question quality filter
+  const questionRejection = getQuestionRejectionReason(input.question.trim());
+  if (questionRejection) {
+    console.log(`[AI-Review] Question filtered: reason=${questionRejection}`);
+    return { queued: false, signals: [], confidenceScore: 0, itemId: null };
+  }
 
-  const confidenceScore = estimateConfidenceScore({
-    retrievalChunks: input.retrievalChunks,
-    aiResponse: input.aiResponse
-  });
-  const signals = inferFailureSignals({
-    retrievalChunks: input.retrievalChunks,
-    aiResponse: input.aiResponse,
-    confidenceScore
-  });
+  // Step 2: Score and triage
+  const severity = detectResponseSeverity(input.aiResponse);
+  const confidenceScore = estimateConfidenceScore({ retrievalChunks: input.retrievalChunks, severity });
+  const category = triageCategory(confidenceScore);
 
-  console.log(`[AI-Review] Failure detection: chunks=${input.retrievalChunks}, confidence=${confidenceScore}, signals=[${signals.join(",")}]`);
+  console.log(`[AI-Review] Triage: chunks=${input.retrievalChunks}, severity=${severity ?? "none"}, score=${confidenceScore}, category=${category}`);
 
-  if (signals.length === 0) {
-    console.log(`[AI-Review] ❌ No failure signals inferred - response appears normal (confidence=${confidenceScore}%)`);
-    console.log(`[AI-Review] Response text: "${input.aiResponse.substring(0, 150)}..."`);
+  if (category === "noise" || category === "monitor") {
+    await writeAuditLog({
+      userId: input.userId,
+      question: input.question,
+      aiResponse: input.aiResponse,
+      confidenceScore,
+      triageCategory: category,
+      dismissReason: `score_${confidenceScore}_${category}_threshold`
+    });
+    console.log(`[AI-Review] Auto-dismissed (${category}): score=${confidenceScore}`);
     return { queued: false, signals: [], confidenceScore, itemId: null };
   }
 
-  const queueDecision = shouldQueueFailureForLearning({
+  // Step 3: Learning loop
+  const priorCheck = await checkPriorResolutions({
+    userId: input.userId,
+    conversationId: input.conversationId,
     question: input.question,
-    aiResponse: input.aiResponse,
-    signals
+    severity
   });
-  if (!queueDecision.shouldQueue) {
-    console.log(
-      `[AI-Review] Queue item skipped by smart filter: reason=${queueDecision.reason}, question="${input.question.substring(0, 80)}..."`
-    );
-    return { queued: false, signals, confidenceScore, itemId: null };
+
+  if (priorCheck.skipQueue) {
+    return { queued: false, signals: [], confidenceScore, itemId: priorCheck.duplicateId };
   }
 
-  console.log(`[AI-Review] Signals detected: ${signals.join(", ")}`);
+  const signals = inferFailureSignals({
+    retrievalChunks: input.retrievalChunks,
+    severity,
+    confidenceScore,
+    recurrenceCount: priorCheck.recurrenceCount
+  });
 
   const created = await createQueueItem({
     userId: input.userId,
@@ -693,7 +451,8 @@ export async function queueAiFailureForReview(input: {
     question: input.question,
     aiResponse: input.aiResponse,
     confidenceScore,
-    signals
+    signals,
+    recurrenceCount: priorCheck.recurrenceCount
   });
 
   return {
@@ -821,12 +580,14 @@ export async function listAiReviewQueue(
        resolution_answer,
        resolved_at::text,
        resolved_by,
+       recurrence_count,
        created_at::text
      FROM ai_review_queue
      WHERE user_id = $1
        AND ($2::text = 'all' OR status = $2::text)
      ORDER BY
        CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
+       CASE WHEN status = 'pending' THEN recurrence_count ELSE 0 END DESC,
        created_at DESC
      LIMIT $3`,
     [userId, status, limit]
@@ -834,8 +595,26 @@ export async function listAiReviewQueue(
 
   return result.rows.map((row) => ({
     ...row,
-    trigger_signals: Array.isArray(row.trigger_signals) ? row.trigger_signals : []
+    trigger_signals: Array.isArray(row.trigger_signals) ? row.trigger_signals : [],
+    recurrence_count: row.recurrence_count ?? 0
   }));
+}
+
+export async function listAiReviewAuditLog(
+  userId: string,
+  options?: { limit?: number }
+): Promise<AiReviewAuditLogItem[]> {
+  const limit = Math.max(1, Math.min(500, options?.limit ?? 100));
+  const result = await pool.query<AiReviewAuditLogItem>(
+    `SELECT id, user_id, question, ai_response, confidence_score,
+            triage_category, dismiss_reason, created_at::text
+     FROM ai_review_audit_log
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return result.rows;
 }
 
 export async function resolveAiReviewQueueItem(input: {

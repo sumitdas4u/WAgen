@@ -1,9 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { listAiReviewQueue, resolveAiReviewQueueItem } from "../services/ai-review-service.js";
+import { listAiReviewAuditLog, listAiReviewQueue, resolveAiReviewQueueItem } from "../services/ai-review-service.js";
 
 const QueueQuerySchema = z.object({
   status: z.enum(["all", "pending", "resolved"]).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional()
+});
+
+const AuditLogQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional()
 });
 
@@ -27,6 +31,22 @@ export async function aiReviewRoutes(fastify: FastifyInstance): Promise<void> {
         limit: parsed.data.limit
       });
       return { queue };
+    }
+  );
+
+  fastify.get(
+    "/api/ai-review/audit-log",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = AuditLogQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid audit log query." });
+      }
+
+      const items = await listAiReviewAuditLog(request.authUser.userId, {
+        limit: parsed.data.limit
+      });
+      return { items };
     }
   );
 

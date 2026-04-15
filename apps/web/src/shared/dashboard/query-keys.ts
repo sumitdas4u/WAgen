@@ -38,6 +38,7 @@ export const dashboardQueryKeys = {
   reviewRoot: dashboardReviewRoot,
   reviewQueue: (status: string) => [...dashboardReviewRoot, "queue", status] as const,
   reviewConversation: (conversationId: string) => [...dashboardReviewRoot, "conversation", conversationId] as const,
+  reviewAuditLog: [...dashboardReviewRoot, "audit-log"] as const,
   knowledgeRoot: dashboardKnowledgeRoot,
   knowledgeSources: [...dashboardKnowledgeRoot, "sources"] as const,
   knowledgeChunks: (sourceType: string, sourceName: string) =>

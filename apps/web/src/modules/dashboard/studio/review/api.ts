@@ -1,7 +1,9 @@
 import {
+  fetchAiReviewAuditLog,
   fetchAiReviewQueue,
   fetchConversationMessages,
   resolveAiReviewQueueItem,
+  type AiReviewAuditLogItem,
   type AiReviewQueueItem,
   type ConversationMessage
 } from "../../../../lib/api";
@@ -27,4 +29,9 @@ export function resolveReviewItem(
   return resolveAiReviewQueueItem(token, reviewId, payload);
 }
 
-export type { AiReviewQueueItem, ConversationMessage };
+export async function fetchAuditLog(token: string, limit?: number) {
+  const response = await fetchAiReviewAuditLog(token, { limit });
+  return response.items;
+}
+
+export type { AiReviewAuditLogItem, AiReviewQueueItem, ConversationMessage };
