@@ -256,6 +256,29 @@ function pct(part: number, total: number): string {
   return `${Math.round((part / total) * 100)}%`;
 }
 
+function pctNum(part: number, total: number): number {
+  if (!total) return 0;
+  return Math.round((part / total) * 100);
+}
+
+function CircularProgress({ value, color = "#94a3b8", trackColor = "#e2e8f0" }: { value: number; color?: string; trackColor?: string }) {
+  const r = 10;
+  const circ = 2 * Math.PI * r;
+  const dash = (value / 100) * circ;
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" style={{ flexShrink: 0 }}>
+      <circle cx="14" cy="14" r={r} fill="none" stroke={trackColor} strokeWidth="3" />
+      <circle
+        cx="14" cy="14" r={r} fill="none"
+        stroke={color} strokeWidth="3"
+        strokeDasharray={`${dash} ${circ}`}
+        strokeLinecap="round"
+        transform="rotate(-90 14 14)"
+      />
+    </svg>
+  );
+}
+
 function formatShortDate(value: string): string {
   const timestamp = Date.parse(`${value}T00:00:00`);
   if (!Number.isFinite(timestamp)) {
@@ -700,6 +723,10 @@ function BroadcastListPage({ token }: { token: string }) {
               const delivPct = pct(broadcast.delivered_count, broadcast.total_count);
               const readPct = pct(broadcast.read_count, broadcast.total_count);
               const failPct = pct(broadcast.failed_count, broadcast.total_count);
+              const sentPctNum = pctNum(broadcast.sent_count, broadcast.total_count);
+              const delivPctNum = pctNum(broadcast.delivered_count, broadcast.total_count);
+              const readPctNum = pctNum(broadcast.read_count, broadcast.total_count);
+              const failPctNum = pctNum(broadcast.failed_count, broadcast.total_count);
               return (
                 <tr key={broadcast.id}>
                   <td
@@ -722,7 +749,7 @@ function BroadcastListPage({ token }: { token: string }) {
                   </td>
                   <td>
                     <div className="bl-count-wrap">
-                      <span className="bl-ring-icon" />
+                      <CircularProgress value={sentPctNum} color="#94a3b8" trackColor="#e2e8f0" />
                       <div>
                         <div>{broadcast.sent_count}</div>
                         <div className="bl-count-pct">{sentPct}</div>
@@ -731,7 +758,7 @@ function BroadcastListPage({ token }: { token: string }) {
                   </td>
                   <td>
                     <div className="bl-count-wrap">
-                      <span className="bl-ring-icon" />
+                      <CircularProgress value={delivPctNum} color="#94a3b8" trackColor="#e2e8f0" />
                       <div>
                         <div>{broadcast.delivered_count}</div>
                         <div className="bl-count-pct">{delivPct}</div>
@@ -740,7 +767,7 @@ function BroadcastListPage({ token }: { token: string }) {
                   </td>
                   <td>
                     <div className="bl-count-wrap">
-                      <span className="bl-ring-icon bl-ring-blue" />
+                      <CircularProgress value={readPctNum} color="#3b82f6" trackColor="#bfdbfe" />
                       <div>
                         <div>{broadcast.read_count}</div>
                         <div className="bl-count-pct">{readPct}</div>
@@ -752,7 +779,7 @@ function BroadcastListPage({ token }: { token: string }) {
                   <td className="bl-muted-cell">N/A</td>
                   <td>
                     <div className="bl-count-wrap">
-                      <span className="bl-ring-icon bl-ring-rose" />
+                      <CircularProgress value={failPctNum} color="#f43f5e" trackColor="#fecdd3" />
                       <div>
                         <div>{broadcast.failed_count}</div>
                         <div className="bl-count-pct">{failPct}</div>
