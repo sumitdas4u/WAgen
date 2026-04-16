@@ -120,6 +120,13 @@ export function DashboardIcon({ name }: { name: DashboardIconName }) {
           <path d="M11 7.5 14 10l-3 2.5M14 10H7" />
         </svg>
       );
+    case "account":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
+          <circle cx="10" cy="7.5" r="3" />
+          <path d="M4.5 17a5.5 5.5 0 0 1 11 0" />
+        </svg>
+      );
     default:
       return null;
   }

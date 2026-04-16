@@ -252,5 +252,78 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     lazyRoute: () => import("../modules/dashboard/settings/webhooks/route"),
     prefetchStrategy: "code",
     requiresAuth: true
+  },
+  // ── Account section ────────────────────────────────────────────────────────
+  {
+    id: "account-details",
+    path: "account/details",
+    navTo: "/dashboard/account/details",
+    navLabel: "Account Details",
+    subtitle: "Workspace name, timezone, and preferences",
+    icon: "account",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/details/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-subscription",
+    path: "account/subscription",
+    navTo: "/dashboard/account/subscription",
+    navLabel: "Subscription",
+    subtitle: "Plan, billing, and renewals",
+    icon: "billing",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/subscription/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-credits",
+    path: "account/credits",
+    navTo: "/dashboard/account/credits",
+    navLabel: "Message Credits",
+    subtitle: "WhatsApp message credit balance and history",
+    icon: "templates",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/credits/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-ai-wallet",
+    path: "account/ai-wallet",
+    navTo: "/dashboard/account/ai-wallet",
+    navLabel: "AI Wallet",
+    subtitle: "AI token usage and top-up packs",
+    icon: "agents",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/ai-wallet/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-profile",
+    path: "account/profile",
+    navTo: "/dashboard/account/profile",
+    navLabel: "Profile & Password",
+    subtitle: "Your name, email, and password",
+    icon: "personality",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/profile/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-users",
+    path: "account/users",
+    navTo: "/dashboard/account/users",
+    navLabel: "Users & Teams",
+    subtitle: "Invite members and manage roles",
+    icon: "leads",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/users/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
   }
 ];

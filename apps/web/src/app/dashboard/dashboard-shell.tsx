@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "billing" | "knowledge" | "settings";
+type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "billing" | "knowledge" | "settings" | "account";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -94,6 +94,13 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "settings",
     title: "Settings",
     defaultModuleIds: ["settings-web", "settings-qr", "settings-api", "settings-templates", "settings-contact-fields", "settings-webhooks"]
+  },
+  {
+    id: "account",
+    label: "Account",
+    icon: "account",
+    title: "Account",
+    defaultModuleIds: ["account-details", "account-subscription", "account-credits", "account-ai-wallet", "account-profile", "account-users"]
   }
 ];
 
@@ -118,6 +125,22 @@ const SETTINGS_MENU_ITEMS: SettingsNavItem[] = [
   { moduleId: "settings-qr", label: "WhatsApp QR", icon: "chats", to: "/dashboard/settings/qr" },
   { moduleId: "settings-contact-fields", label: "Contact Fields", icon: "leads", to: "/dashboard/settings/contact-fields" },
   { moduleId: "settings-webhooks", label: "Generic Webhooks", icon: "settings", to: "/dashboard/settings/webhooks" }
+];
+
+type AccountNavItem = {
+  moduleId: string;
+  label: string;
+  icon: DashboardIconName;
+  to: string;
+};
+
+const ACCOUNT_MENU_ITEMS: AccountNavItem[] = [
+  { moduleId: "account-details",      label: "Account Details",    icon: "account",     to: "/dashboard/account/details" },
+  { moduleId: "account-subscription", label: "Subscription",       icon: "billing",     to: "/dashboard/account/subscription" },
+  { moduleId: "account-credits",      label: "Message Credits",    icon: "templates",   to: "/dashboard/account/credits" },
+  { moduleId: "account-ai-wallet",    label: "AI Wallet",          icon: "agents",      to: "/dashboard/account/ai-wallet" },
+  { moduleId: "account-profile",      label: "Profile & Password", icon: "personality", to: "/dashboard/account/profile" },
+  { moduleId: "account-users",        label: "Users & Teams",      icon: "leads",       to: "/dashboard/account/users" }
 ];
 
 const ANALYTICS_MENU_ITEMS: AnalyticsNavItem[] = [
@@ -149,7 +172,13 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   "settings-api": { label: "Settings", subtitle: "Configure QR and Business API channels" },
   "settings-templates": { label: "Settings", subtitle: "Manage WhatsApp message templates" },
   "settings-contact-fields": { label: "Settings", subtitle: "Manage contact fields" },
-  "settings-webhooks": { label: "Settings", subtitle: "Configure generic webhook automations" }
+  "settings-webhooks": { label: "Settings", subtitle: "Configure generic webhook automations" },
+  "account-details":      { label: "Account", subtitle: "Workspace name, timezone, and preferences" },
+  "account-subscription": { label: "Account", subtitle: "Current plan, upgrades, and invoices" },
+  "account-credits":      { label: "Account", subtitle: "WhatsApp message credit balance and history" },
+  "account-ai-wallet":    { label: "Account", subtitle: "AI token usage and top-up packs" },
+  "account-profile":      { label: "Account", subtitle: "Your profile and password" },
+  "account-users":        { label: "Account", subtitle: "Team members and roles" }
 };
 
 function DashboardShellLayout() {
@@ -250,7 +279,9 @@ function DashboardShellLayout() {
                 ? "/dashboard/billing"
                 : item.id === "knowledge"
                   ? studioDefaultTo
-                  : settingsDefaultTo
+                  : item.id === "account"
+                    ? "/dashboard/account/details"
+                    : settingsDefaultTo
     }));
 
   const currentPrimaryNavId: PrimaryNavId =
@@ -266,9 +297,11 @@ function DashboardShellLayout() {
             ? "analytics"
             : currentModuleId === "billing"
               ? "billing"
-              : currentModuleId.startsWith("settings-")
-                ? "settings"
-                : "knowledge";
+              : currentModuleId.startsWith("account-")
+                ? "account"
+                : currentModuleId.startsWith("settings-")
+                  ? "settings"
+                  : "knowledge";
 
   const handleModulePrefetch = async (moduleId: string) => {
     const module = dashboardModules.find((definition) => definition.id === moduleId);
@@ -352,7 +385,9 @@ function DashboardShellLayout() {
   const isStudioSection = visibleStudioItems.some((item) => item.moduleId === currentModuleId);
   const isSettingsSection = currentModuleId.startsWith("settings-");
   const isAnalyticsSection = currentModuleId === "analytics";
+  const isAccountSection = currentModuleId.startsWith("account-");
   const visibleSettingsItems = SETTINGS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
+  const visibleAccountItems = ACCOUNT_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const showBillingActions = isModuleEnabled("billing");
 
   const renderSubSidebar = (title: string, items: Array<{ moduleId: string; label: string; icon: DashboardIconName; to: string }>) => (
@@ -396,6 +431,10 @@ function DashboardShellLayout() {
         icon: item.icon,
         to: item.to
       })));
+    }
+
+    if (isAccountSection) {
+      return renderSubSidebar("Account", visibleAccountItems);
     }
 
     return <Outlet />;

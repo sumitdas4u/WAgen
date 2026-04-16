@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import type { PlanEntitlements } from "../../lib/api";
 import type { DashboardBootstrapResponse } from "./contracts";
 
-export type DashboardNavSection = "main" | "studio" | "settings";
+export type DashboardNavSection = "main" | "studio" | "settings" | "account";
 export type DashboardPrefetchStrategy = "code" | "code+data";
 export type DashboardRequiredPlan = PlanEntitlements["planCode"];
 
@@ -23,7 +23,8 @@ export type DashboardIconName =
   | "personality"
   | "unanswered"
   | "templates"
-  | "logout";
+  | "logout"
+  | "account";
 
 export interface DashboardEntitlementRequirement {
   maxApiNumbers?: number;
