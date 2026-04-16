@@ -192,6 +192,7 @@ export const appRoutes: RouteObject[] = [
 ];
 
 const router = createBrowserRouter(appRoutes, {
+  basename: import.meta.env.BASE_URL,
   future: {
     v7_relativeSplatPath: true
   }
