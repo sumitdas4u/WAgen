@@ -129,7 +129,7 @@ jobs:
             cd /root/WAgen-staging
             git fetch origin --prune
             git checkout develop
-            git pull --ff-only origin develop
+            git reset --hard origin/develop
             export COMPOSE_BAKE=false
 
             # ── Create staging API env (copy prod env as base if not exists) ─
@@ -176,7 +176,7 @@ jobs:
             cd /root/WAgen
             git fetch origin --prune
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
             export COMPOSE_BAKE=false
 
             # ── Export build-time vars for web docker build ──────────────────
