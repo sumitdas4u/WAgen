@@ -29,7 +29,7 @@ const {
 vi.mock("firebase/auth", () => ({
   PhoneAuthProvider: class {
     verifyPhoneNumber = mockVerifyPhoneNumber;
-    static credential = vi.fn((..._args: unknown[]) => ({
+    static credential = vi.fn(() => ({
       providerId: "phone"
     }));
   },
