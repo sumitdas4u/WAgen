@@ -58,6 +58,15 @@ function PhoneVerifySection({
 
   const firebaseUser = firebaseAuth.currentUser;
 
+  const clearVerifier = () => {
+    try {
+      recaptchaVerifierRef.current?.clear();
+    } catch {
+      // verifier may already be destroyed by Firebase internally
+    }
+    recaptchaVerifierRef.current = null;
+  };
+
   const sendOtp = async () => {
     setError(null);
     const normalized = phone.trim();
@@ -70,9 +79,8 @@ function PhoneVerifySection({
       return;
     }
     setStep("sending");
+    clearVerifier();
     try {
-      // Clear previous verifier
-      recaptchaVerifierRef.current?.clear();
       recaptchaVerifierRef.current = new RecaptchaVerifier(
         firebaseAuth,
         "prf-recaptcha-container",
@@ -85,9 +93,14 @@ function PhoneVerifySection({
       );
       setStep("sent");
     } catch (e) {
-      setError((e as Error).message);
+      const msg = (e as Error).message;
+      if (msg.includes("auth/operation-not-allowed")) {
+        setError("Phone authentication is not enabled. Contact support.");
+      } else {
+        setError(msg);
+      }
       setStep("error");
-      recaptchaVerifierRef.current?.clear();
+      clearVerifier();
     }
   };
 
