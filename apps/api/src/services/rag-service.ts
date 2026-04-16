@@ -1,6 +1,7 @@
 import { pool, withTransaction } from "../db/pool.js";
 import { openAIService } from "./openai-service.js";
 import { toVectorLiteral } from "../utils/index.js";
+import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
 
 export interface KnowledgeChunk {
   id: string;
@@ -141,6 +142,8 @@ export async function ingestKnowledgeChunks(input: {
       try {
         const embedding = await openAIService.embed(chunk.content);
         vectorLiteral = toVectorLiteral(embedding);
+        // Deduct one token per successfully embedded chunk
+        void deductTokens(input.userId, "kb_ingest_chunk", AI_TOKEN_COSTS.kb_ingest_chunk);
       } catch {
         vectorLiteral = ZERO_VECTOR;
       }
@@ -204,6 +207,8 @@ export async function retrieveKnowledge(input: {
 
   try {
     const embedding = await openAIService.embed(input.query);
+    // Deduct one token for the retrieval embed query
+    void deductTokens(input.userId, "rag_embed_query", AI_TOKEN_COSTS.rag_embed_query);
     const vectorLiteral = toVectorLiteral(embedding);
 
     const vectorResult = await pool.query<KnowledgeChunk>(

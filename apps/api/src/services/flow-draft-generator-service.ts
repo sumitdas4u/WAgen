@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { openAIService } from "./openai-service.js";
+import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
 
 export type FlowChannel = "web" | "qr" | "api";
 export type FlowTriggerType =
@@ -32,6 +33,7 @@ export interface FlowDraftEdge {
 export interface GenerateFlowDraftRequest {
   prompt: string;
   channel: FlowChannel;
+  userId?: string;
 }
 
 export interface GenerateFlowDraftResponse {
@@ -502,6 +504,9 @@ export async function generateFlowDraft(
       buildSystemPrompt(input.channel, prompt),
       buildUserPrompt(prompt)
     );
+    if (input.userId) {
+      void deductTokens(input.userId, "flow_draft_generate", AI_TOKEN_COSTS.flow_draft_generate);
+    }
     return normalizeDraft(raw, input.channel, prompt);
   } catch (error) {
     console.warn(`[FlowDraftGenerator] Falling back to minimal draft: ${(error as Error).message}`);

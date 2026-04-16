@@ -74,7 +74,7 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
         return reply.status(400).send({ error: "Description must be at least 20 characters" });
       }
 
-      const draft = await generateOnboardingDraft(parsed.data.description);
+      const draft = await generateOnboardingDraft(request.authUser.userId, parsed.data.description);
       return reply.send({ ok: true, draft });
     }
   );

@@ -1,5 +1,6 @@
 import { pool } from "../db/pool.js";
 import { openAIService } from "./openai-service.js";
+import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
 import {
   decryptToken,
   graphDelete,
@@ -1023,7 +1024,7 @@ export async function applyTemplateWebhookUpdate(event: {
 }
 
 export async function generateTemplateWithAI(
-  _userId: string,
+  userId: string,
   payload: GenerateTemplatePayload
 ): Promise<GeneratedTemplate> {
   const styleInstruction = STYLE_INSTRUCTIONS[payload.style];
@@ -1054,6 +1055,7 @@ Rules:
   const userPrompt = `Create a WhatsApp message template for: ${payload.prompt}`;
 
   const raw = await openAIService.generateJson(systemPrompt, userPrompt);
+  void deductTokens(userId, "template_generate", AI_TOKEN_COSTS.template_generate);
 
   const suggestedName =
     typeof raw.suggestedName === "string"

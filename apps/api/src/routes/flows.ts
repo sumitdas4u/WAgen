@@ -108,7 +108,7 @@ export async function flowRoutes(app: FastifyInstance) {
       }
 
       try {
-        const draft = await generateFlowDraft({ prompt, channel });
+        const draft = await generateFlowDraft({ prompt, channel, userId: req.authUser.userId });
         return reply.send(draft);
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message || "Could not generate flow draft." });

@@ -1,4 +1,5 @@
 import { openAIService } from "../../openai-service.js";
+import { deductTokens, AI_TOKEN_COSTS } from "../../ai-token-service.js";
 import { getNextNodeId, interpolate } from "../helpers.js";
 import type { FlowBlockModule, FlowVariables } from "../types.js";
 
@@ -147,6 +148,9 @@ export const aiAgentBlock: FlowBlockModule = {
           ].join("\n\n"),
           inputTemplate || "No input provided."
         );
+        if (context.userId) {
+          void deductTokens(context.userId, "ai_agent_flow", AI_TOKEN_COSTS.ai_agent_flow);
+        }
 
         return {
           signal: "continue",
@@ -171,6 +175,9 @@ export const aiAgentBlock: FlowBlockModule = {
         ].join("\n\n"),
         inputTemplate || "No input provided."
       );
+      if (context.userId) {
+        void deductTokens(context.userId, "ai_agent_flow", AI_TOKEN_COSTS.ai_agent_flow);
+      }
 
       return {
         signal: "continue",

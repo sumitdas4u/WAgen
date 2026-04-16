@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { resolvePersonalityPrompt } from "./personality.js";
 import { openAIService } from "./openai-service.js";
 import { retrieveKnowledge, type KnowledgeChunk } from "./rag-service.js";
+import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
 
 interface ReplyInput {
   user: User;
@@ -1475,6 +1476,9 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
 
   try {
     const response = await openAIService.generateReply(systemPrompt, userPrompt);
+    // Deduct tokens for a successful AI reply (fire-and-forget)
+    void deductTokens(input.user.id, "chatbot_reply", AI_TOKEN_COSTS.chatbot_reply);
+
     let finalText = allowSelfIntroduction ? response.content : stripRepeatedSelfIntroduction(response.content);
     const lastOutbound = resolveLastOutboundReply(historyForPrompt);
     const lastInboundBeforeCurrent = [...historyForPrompt]
@@ -1522,6 +1526,9 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
       const retry = await openAIService.generateReply(systemPrompt, retryPrompt, undefined, {
         maxTokens: Math.max(160, Math.min(260, env.OPENAI_MAX_OUTPUT_TOKENS))
       });
+      // Deduct for the retry attempt that succeeded
+      void deductTokens(input.user.id, "chatbot_reply", AI_TOKEN_COSTS.chatbot_reply);
+
       const retryText = allowSelfIntroduction ? retry.content : stripRepeatedSelfIntroduction(retry.content);
       return {
         text: retryText,
@@ -1533,6 +1540,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
       console.warn(
         `[ReplyFunnel] retry generation failed user=${input.user.id}: ${(retryError as Error).message}`
       );
+      // Both attempts failed — no tokens deducted (no AI work done)
       return {
         text: buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage),
         model: null,

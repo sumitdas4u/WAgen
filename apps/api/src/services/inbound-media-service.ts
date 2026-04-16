@@ -4,6 +4,7 @@ import pdfParse from "pdf-parse";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { openAIService } from "./openai-service.js";
+import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
 
 function unwrapMessageContent(message: NonNullable<WAMessage["message"]>): NonNullable<WAMessage["message"]> {
   let current = message as Record<string, any>;
@@ -154,6 +155,9 @@ export async function extractInboundMediaText(
         env.INBOUND_MEDIA_TIMEOUT_MS,
         "Image analysis timed out"
       );
+      if (userId) {
+        void deductTokens(userId, "image_analyze", AI_TOKEN_COSTS.image_analyze);
+      }
       const cleaned = normalizeExtractedText(description);
       const text = cleaned ? `[Image received]: ${limitText(cleaned)}` : "[Image received with no description available]";
       return { text, mediaUrl };
