@@ -126,7 +126,7 @@ jobs:
           script_stop: true
           script: |
             # ── Pull latest develop ──────────────────────────────────────────
-            cd "${{ secrets.STAGING_APP_DIR }}"
+            cd /root/WAgen-staging
             git fetch origin --prune
             git checkout develop
             git pull --ff-only origin develop
@@ -173,7 +173,7 @@ jobs:
           command_timeout: 30m
           script_stop: true
           script: |
-            cd "${{ secrets.PROD_APP_DIR }}"
+            cd /root/WAgen
             git fetch origin --prune
             git checkout main
             git pull --ff-only origin main
