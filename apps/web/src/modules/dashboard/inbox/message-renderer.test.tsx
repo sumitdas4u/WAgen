@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "../../../lib/api";
 import { normalizeMessage, renderFormattedText } from "./message-renderer";
