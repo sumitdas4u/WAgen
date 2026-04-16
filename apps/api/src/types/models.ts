@@ -21,6 +21,8 @@ export interface User {
   personality: PersonalityOption;
   custom_personality_prompt: string | null;
   ai_active: boolean;
+  phone_number: string | null;
+  phone_verified: boolean;
 }
 
 export interface Conversation {

@@ -1,10 +1,14 @@
 import { useMutation } from "@tanstack/react-query";
 import {
   EmailAuthProvider,
+  PhoneAuthProvider,
+  RecaptchaVerifier,
+  linkWithCredential,
   reauthenticateWithCredential,
-  updatePassword
+  updatePassword,
+  updatePhoneNumber
 } from "firebase/auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { updateMyProfile } from "../../../../lib/api";
 import { useAuth } from "../../../../lib/auth-context";
 import { firebaseAuth } from "../../../../lib/firebase";
@@ -31,6 +35,213 @@ function passwordStrength(pw: string): 0 | 1 | 2 | 3 {
 
 const STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Strong"];
 const STRENGTH_CLASSES = ["", "filled-weak", "filled-fair", "filled-strong"];
+
+type PhoneStep = "idle" | "sending" | "sent" | "verifying" | "done" | "error";
+
+function PhoneVerifySection({
+  currentPhone,
+  currentVerified,
+  token,
+  onSaved
+}: {
+  currentPhone: string | null;
+  currentVerified: boolean;
+  token: string;
+  onSaved: () => Promise<void>;
+}) {
+  const [phone, setPhone] = useState(currentPhone ?? "");
+  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState<PhoneStep>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const verificationIdRef = useRef<string | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
+  const firebaseUser = firebaseAuth.currentUser;
+
+  const sendOtp = async () => {
+    setError(null);
+    const normalized = phone.trim();
+    if (!normalized.startsWith("+") || normalized.length < 8) {
+      setError("Enter phone in international format: +91XXXXXXXXXX");
+      return;
+    }
+    if (!firebaseUser) {
+      setError("No active session — please refresh and try again.");
+      return;
+    }
+    setStep("sending");
+    try {
+      // Clear previous verifier
+      recaptchaVerifierRef.current?.clear();
+      recaptchaVerifierRef.current = new RecaptchaVerifier(
+        firebaseAuth,
+        "prf-recaptcha-container",
+        { size: "invisible" }
+      );
+      const provider = new PhoneAuthProvider(firebaseAuth);
+      verificationIdRef.current = await provider.verifyPhoneNumber(
+        normalized,
+        recaptchaVerifierRef.current
+      );
+      setStep("sent");
+    } catch (e) {
+      setError((e as Error).message);
+      setStep("error");
+      recaptchaVerifierRef.current?.clear();
+    }
+  };
+
+  const verifyOtp = async () => {
+    setError(null);
+    if (!verificationIdRef.current || !firebaseUser) return;
+    if (otp.trim().length !== 6) {
+      setError("Enter the 6-digit OTP.");
+      return;
+    }
+    setStep("verifying");
+    try {
+      const credential = PhoneAuthProvider.credential(verificationIdRef.current, otp.trim());
+      const hasPhoneProvider = firebaseUser.providerData.some(
+        (p) => p.providerId === "phone"
+      );
+      if (hasPhoneProvider) {
+        await updatePhoneNumber(firebaseUser, credential);
+      } else {
+        await linkWithCredential(firebaseUser, credential);
+      }
+      // Persist to backend
+      await updateMyProfile(token, {
+        phoneNumber: phone.trim(),
+        phoneVerified: true
+      });
+      await onSaved();
+      setStep("done");
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg.includes("auth/invalid-verification-code")) {
+        setError("Incorrect OTP. Please try again.");
+      } else if (msg.includes("auth/code-expired")) {
+        setError("OTP expired. Please resend.");
+      } else {
+        setError(msg);
+      }
+      setStep("sent"); // back to OTP entry
+    }
+  };
+
+  if (step === "done") {
+    return (
+      <div className="acc-card">
+        <div className="acc-card-head">
+          <h2 className="acc-card-title">Phone number</h2>
+        </div>
+        <div className="acc-card-body">
+          <div className="acc-info-grid">
+            <span className="acc-info-key">Number</span>
+            <span className="acc-info-value acc-info-mono">{phone}</span>
+            <span className="acc-info-key">Status</span>
+            <span className="acc-info-value">
+              <span className="acc-status-dot acc-status-dot--on">Verified</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="acc-card">
+      <div className="acc-card-head">
+        <div>
+          <h2 className="acc-card-title">Phone number</h2>
+          <p className="acc-card-subtitle">Verify your mobile number via OTP</p>
+        </div>
+        {currentVerified && currentPhone && step === "idle" && (
+          <span className="acc-status-dot acc-status-dot--on">Verified</span>
+        )}
+      </div>
+      <div className="acc-card-body">
+        {/* invisible reCAPTCHA mount point */}
+        <div id="prf-recaptcha-container" />
+
+        {currentVerified && currentPhone && step === "idle" && (
+          <div className="acc-info-grid" style={{ marginBottom: "0.75rem" }}>
+            <span className="acc-info-key">Current number</span>
+            <span className="acc-info-value acc-info-mono">{currentPhone}</span>
+          </div>
+        )}
+
+        {(step === "idle" || step === "error") && (
+          <>
+            <div className="acc-form-row">
+              <label className="acc-label" htmlFor="prf-phone">
+                {currentPhone ? "Update phone number" : "Phone number"}
+              </label>
+              <input
+                id="prf-phone"
+                className="acc-input"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+91XXXXXXXXXX"
+              />
+              <span className="acc-input-hint">Include country code — e.g. +91 for India</span>
+            </div>
+            {error && <p className="acc-save-error">{error}</p>}
+            <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0 }}>
+              <button className="acc-save-btn" onClick={() => void sendOtp()}>
+                Send OTP
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "sending" && (
+          <p style={{ color: "#5f6f86", fontSize: "0.83rem" }}>Sending OTP to {phone}…</p>
+        )}
+
+        {(step === "sent" || step === "verifying") && (
+          <>
+            <p style={{ fontSize: "0.83rem", color: "#334155" }}>
+              OTP sent to <strong>{phone}</strong>. Enter the 6-digit code below.
+            </p>
+            <div className="acc-form-row">
+              <label className="acc-label" htmlFor="prf-otp">One-time code</label>
+              <input
+                id="prf-otp"
+                className="acc-input"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                placeholder="123456"
+                autoFocus
+              />
+            </div>
+            {error && <p className="acc-save-error">{error}</p>}
+            <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0 }}>
+              <button
+                className="acc-secondary-btn"
+                onClick={() => { setStep("idle"); setOtp(""); setError(null); }}
+                disabled={step === "verifying"}
+              >
+                Change number
+              </button>
+              <button
+                className="acc-save-btn"
+                onClick={() => void verifyOtp()}
+                disabled={step === "verifying" || otp.length !== 6}
+              >
+                {step === "verifying" ? "Verifying…" : "Verify OTP"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function Component() {
   const { user, refreshUser } = useAuth();
@@ -299,6 +510,14 @@ export function Component() {
           </div>
         </div>
       )}
+
+      {/* ── Phone verification ────────────────────────────────────────────── */}
+      <PhoneVerifySection
+        currentPhone={user?.phone_number ?? null}
+        currentVerified={user?.phone_verified ?? false}
+        token={token}
+        onSaved={refreshUser}
+      />
 
       {/* ── Danger zone ────────────────────────────────────────────────────── */}
       <div className="acc-danger-zone">

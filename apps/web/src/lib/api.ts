@@ -245,6 +245,8 @@ export interface User {
   personality: "friendly_warm" | "professional" | "hard_closer" | "premium_consultant" | "custom";
   custom_personality_prompt: string | null;
   ai_active: boolean;
+  phone_number: string | null;
+  phone_verified: boolean;
 }
 
 export interface AuthResponse {
@@ -634,6 +636,8 @@ export function updateMyProfile(
     companyName?: string;
     websiteUrl?: string;
     supportEmail?: string;
+    phoneNumber?: string;
+    phoneVerified?: boolean;
   }
 ) {
   return apiRequest<{ user: User }>("/api/auth/me", {

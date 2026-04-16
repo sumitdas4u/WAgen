@@ -57,7 +57,9 @@ const UpdateMeSchema = z.object({
   businessType: z.string().max(100).optional(),
   companyName: z.string().max(200).optional(),
   websiteUrl: z.string().max(500).optional(),
-  supportEmail: z.string().max(200).optional()
+  supportEmail: z.string().max(200).optional(),
+  phoneNumber: z.string().max(30).optional(),
+  phoneVerified: z.boolean().optional()
 });
 
 const DeleteAccountSchema = z.object({
