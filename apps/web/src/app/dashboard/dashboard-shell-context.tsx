@@ -31,7 +31,7 @@ export function DashboardShellDataProvider({ children }: PropsWithChildren) {
   const value = useMemo<DashboardShellContextValue>(
     () => ({
       token,
-      bootstrap: bootstrapQuery.data ? normalizeDashboardBootstrap(bootstrapQuery.data) : null,
+      bootstrap: bootstrapQuery.data ?? null,
       loading: bootstrapQuery.isLoading,
       refetchBootstrap: () => bootstrapQuery.refetch()
     }),

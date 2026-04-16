@@ -1,0 +1,107 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: typo_staging
+    volumes:
+      - staging_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d typo_staging"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - staging_redis_data:/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - ../apps/api/.env.staging
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_WORKERS_ENABLED: "false"
+      APP_BASE_URL: https://wagenai.com
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/typo_staging
+      REDIS_URL: redis://redis:6379
+      METRICS_ENABLED: "false"
+      PG_POOL_MAX: 10
+      PG_POOL_IDLE_TIMEOUT_MS: 30000
+      PG_POOL_CONNECTION_TIMEOUT_MS: 5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "4001:4000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:4000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "apps/api/dist/worker.js"]
+    env_file:
+      - ../apps/api/.env.staging
+    environment:
+      NODE_ENV: production
+      API_WORKERS_ENABLED: "true"
+      APP_BASE_URL: https://wagenai.com
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/typo_staging
+      REDIS_URL: redis://redis:6379
+      METRICS_ENABLED: "false"
+      PG_POOL_MAX: 10
+      PG_POOL_IDLE_TIMEOUT_MS: 30000
+      PG_POOL_CONNECTION_TIMEOUT_MS: 5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: https://wagenai.com/staging
+        VITE_BASE_PATH: /staging
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  staging_postgres_data:
+  staging_redis_data:

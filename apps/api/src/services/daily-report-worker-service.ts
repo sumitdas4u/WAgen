@@ -262,7 +262,11 @@ export function startDailyReportWorker(): void {
       const { userId } = job.data as { userId: string };
       await processReportJob(userId);
     },
-    { connection, concurrency: 3 }
+    {
+      connection,
+      prefix: env.QUEUE_PREFIX?.trim() || undefined,
+      concurrency: 3
+    }
   );
   reportWorker.on("completed", (job) => console.log(`[DailyReport] Job completed: ${job.id}`));
   reportWorker.on("failed", (job, err) =>

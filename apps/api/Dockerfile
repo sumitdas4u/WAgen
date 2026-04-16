@@ -18,6 +18,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/infra/schema.sql ./infra/schema.sql
+COPY --from=builder /app/infra/baseline ./infra/baseline
 COPY --from=builder /app/infra/migrations ./infra/migrations
 
 EXPOSE 4000
