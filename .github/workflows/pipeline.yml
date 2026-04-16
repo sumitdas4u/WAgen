@@ -139,8 +139,12 @@ jobs:
             fi
 
             # ── Update nginx config on host ──────────────────────────────────
-            cp infra/nginx/host-default.conf /etc/nginx/sites-available/wagenai.com
+            cp infra/nginx/host-default.conf /etc/nginx/sites-enabled/default
             nginx -t && systemctl reload nginx
+
+            # ── Export build-time vars for web docker build ──────────────────
+            export VITE_SUPABASE_URL="https://rbuvaekbwvkcaoffkzum.supabase.co"
+            export VITE_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJidXZhZWtid3ZrY2FvZmZrenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NTM3MzUsImV4cCI6MjA5MDAyOTczNX0.rQJq3RdLOk8KuxBXjfBh5IgY_CJ6gxSgJ-i5oZ01DVc"
 
             # ── Build and start staging stack ────────────────────────────────
             docker compose -p staging -f infra/docker-compose.staging.yml up -d postgres redis
@@ -150,7 +154,7 @@ jobs:
 
             # ── Smoke test ───────────────────────────────────────────────────
             curl -fsS http://localhost:4001/api/health >/dev/null
-            echo "Staging deployed → http://wagenai.com/staging/"
+            echo "Staging deployed → https://wagenai.com/staging/"
 
   deploy_production:
     name: Deploy Production
@@ -174,16 +178,17 @@ jobs:
             git checkout main
             git pull --ff-only origin main
             export COMPOSE_BAKE=false
-            cat > apps/web/.env <<'EOF'
-            VITE_API_URL=http://api:4000
-            VITE_SUPABASE_URL=https://rbuvaekbwvkcaoffkzum.supabase.co
-            VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJidXZhZWtid3ZrY2FvZmZrenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NTM3MzUsImV4cCI6MjA5MDAyOTczNX0.rQJq3RdLOk8KuxBXjfBh5IgY_CJ6gxSgJ-i5oZ01DVc
-            EOF
-            set -a
-            if [ -f apps/web/.env ]; then . apps/web/.env; fi
-            set +a
+
+            # ── Export build-time vars for web docker build ──────────────────
+            export VITE_SUPABASE_URL="https://rbuvaekbwvkcaoffkzum.supabase.co"
+            export VITE_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJidXZhZWtid3ZrY2FvZmZrenVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NTM3MzUsImV4cCI6MjA5MDAyOTczNX0.rQJq3RdLOk8KuxBXjfBh5IgY_CJ6gxSgJ-i5oZ01DVc"
+
+            # ── Build and start production stack ─────────────────────────────
             docker compose -f infra/docker-compose.full.yml up -d postgres redis
             docker compose -f infra/docker-compose.full.yml build api web worker
             docker compose -f infra/docker-compose.full.yml run --rm api node apps/api/dist/scripts/migrate.js
             docker compose -f infra/docker-compose.full.yml up -d --wait --wait-timeout 120 api web worker
+
+            # ── Smoke test ───────────────────────────────────────────────────
             curl -fsS http://localhost:4000/api/health >/dev/null
+            echo "Production deployed → https://wagenai.com/"
