@@ -156,6 +156,10 @@ jobs:
             curl -fsS http://localhost:4001/api/health >/dev/null
             echo "Staging deployed → https://wagenai.com/staging/"
 
+            # ── Prune unused Docker images and build cache ───────────────────
+            docker image prune -a -f
+            docker builder prune -a -f || true
+
   deploy_production:
     name: Deploy Production
     runs-on: ubuntu-latest
@@ -192,3 +196,7 @@ jobs:
             # ── Smoke test ───────────────────────────────────────────────────
             curl -fsS http://localhost:4000/api/health >/dev/null
             echo "Production deployed → https://wagenai.com/"
+
+            # ── Prune unused Docker images and build cache ───────────────────
+            docker image prune -a -f
+            docker builder prune -a -f || true
