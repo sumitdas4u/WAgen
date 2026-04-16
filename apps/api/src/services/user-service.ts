@@ -287,6 +287,64 @@ export async function setAgentActive(userId: string, active: boolean): Promise<v
   );
 }
 
+export async function updateUserDetails(
+  userId: string,
+  data: {
+    name?: string;
+    businessType?: string;
+    companyName?: string;
+    websiteUrl?: string;
+    supportEmail?: string;
+  }
+): Promise<User | null> {
+  const current = await getUserById(userId);
+  if (!current) return null;
+
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+
+  if (data.name !== undefined) {
+    setClauses.push(`name = $${idx++}`);
+    values.push(data.name.trim());
+  }
+  if (data.businessType !== undefined) {
+    setClauses.push(`business_type = $${idx++}`);
+    values.push(data.businessType.trim() || null);
+  }
+
+  const needsBasicsUpdate =
+    data.companyName !== undefined ||
+    data.websiteUrl !== undefined ||
+    data.supportEmail !== undefined;
+
+  if (needsBasicsUpdate) {
+    const existingBasics = (current.business_basics as Record<string, unknown>) ?? {};
+    const merged = {
+      ...existingBasics,
+      ...(data.companyName !== undefined ? { companyName: data.companyName.trim() } : {}),
+      ...(data.websiteUrl !== undefined ? { websiteUrl: data.websiteUrl.trim() } : {}),
+      ...(data.supportEmail !== undefined ? { supportEmail: data.supportEmail.trim() } : {})
+    };
+    setClauses.push(`business_basics = $${idx++}::jsonb`);
+    values.push(JSON.stringify(merged));
+  }
+
+  if (setClauses.length === 0) return current;
+
+  values.push(userId);
+  const result = await pool.query<UserRow>(
+    `UPDATE users
+     SET ${setClauses.join(", ")}
+     WHERE id = $${idx}
+     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active`,
+    values
+  );
+
+  const row = result.rows[0];
+  return row ? toPublicUser(row) : null;
+}
+
 export async function deleteUserById(userId: string): Promise<boolean> {
   const result = await pool.query(
     `DELETE FROM users

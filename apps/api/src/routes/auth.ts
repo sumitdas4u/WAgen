@@ -12,6 +12,7 @@ import {
   setUserFirebaseUid,
   setUserGoogleAuthSub,
   setUserFirebaseUidAndDisableLegacyPassword,
+  updateUserDetails,
   userEmailExists
 } from "../services/user-service.js";
 import {
@@ -49,6 +50,14 @@ const FirebaseSessionSchema = z.object({
 const LegacyMigrateSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
+});
+
+const UpdateMeSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  businessType: z.string().max(100).optional(),
+  companyName: z.string().max(200).optional(),
+  websiteUrl: z.string().max(500).optional(),
+  supportEmail: z.string().max(200).optional()
 });
 
 const DeleteAccountSchema = z.object({
@@ -418,6 +427,20 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.get("/api/auth/me", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
     const user = await getUserById(request.authUser.userId);
+    if (!user) {
+      return reply.status(404).send({ error: "User not found" });
+    }
+
+    return reply.send({ user });
+  });
+
+  fastify.patch("/api/auth/me", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+    const parsed = UpdateMeSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid update payload" });
+    }
+
+    const user = await updateUserDetails(request.authUser.userId, parsed.data);
     if (!user) {
       return reply.status(404).send({ error: "User not found" });
     }

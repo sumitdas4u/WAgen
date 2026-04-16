@@ -549,6 +549,57 @@
 .acc-strength-bar.filled-fair   { background: #f59e0b; }
 .acc-strength-bar.filled-strong { background: #25d366; }
 
+/* ── Read-only input ──────────────────────────────────────────────────────── */
+.acc-input-readonly {
+  background: #f8fafc;
+  color: #5f6f86;
+  cursor: default;
+}
+
+/* ── Mono value (account ID etc.) ────────────────────────────────────────── */
+.acc-info-mono {
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.78rem;
+  color: #475569;
+  letter-spacing: 0.02em;
+}
+
+/* ── Inline status dot ────────────────────────────────────────────────────── */
+.acc-status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.acc-status-dot::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.acc-status-dot--on  { color: #166534; }
+.acc-status-dot--on::before  { background: #22c55e; }
+.acc-status-dot--off { color: #be123c; }
+.acc-status-dot--off::before { background: #f43f5e; }
+
+/* ── Save feedback messages ───────────────────────────────────────────────── */
+.acc-save-success {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #166534;
+}
+
+.acc-save-error {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #be123c;
+}
+
 /* ── Add-on cards ─────────────────────────────────────────────────────────── */
 .acc-addons-grid {
   display: grid;

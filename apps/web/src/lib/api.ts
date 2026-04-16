@@ -626,6 +626,23 @@ export function fetchMe(token: string) {
   return apiRequest<{ user: User }>("/api/auth/me", { token });
 }
 
+export function updateMyProfile(
+  token: string,
+  payload: {
+    name?: string;
+    businessType?: string;
+    companyName?: string;
+    websiteUrl?: string;
+    supportEmail?: string;
+  }
+) {
+  return apiRequest<{ user: User }>("/api/auth/me", {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
 export function deleteMyAccount(token: string, payload: { confirmText: string }) {
   return apiRequest<{ ok: boolean }>("/api/auth/account/delete", {
     method: "POST",
