@@ -44,8 +44,7 @@ export function Component() {
     setBusinessType(user.business_type ?? "");
     setWebsiteUrl(b.websiteUrl);
     setSupportEmail(b.supportEmail);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id]); // intentionally only re-seed on user identity change
 
   const mutation = useMutation({
     mutationFn: () =>

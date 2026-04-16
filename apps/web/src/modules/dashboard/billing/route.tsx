@@ -1,16 +1,7 @@
-import { DashboardBillingCenter } from "../../../components/dashboard-billing-center";
-import { useDashboardShell } from "../../../shared/dashboard/shell-context";
+import { Navigate } from "react-router-dom";
 
 export function Component() {
-  const { token, refetchBootstrap } = useDashboardShell();
-  return (
-    <DashboardBillingCenter
-      token={token}
-      onCreditsRefresh={async () => {
-        await refetchBootstrap();
-      }}
-    />
-  );
+  return <Navigate to="/dashboard/account/credits" replace />;
 }
 
 export function prefetchData() {

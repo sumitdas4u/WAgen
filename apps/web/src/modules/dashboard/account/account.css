@@ -600,6 +600,236 @@
   color: #be123c;
 }
 
+/* ── Warning banner ───────────────────────────────────────────────────────── */
+.acc-warning-banner {
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #92400e;
+}
+
+/* ── Recharge preset buttons ──────────────────────────────────────────────── */
+.acc-recharge-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.acc-preset-btn {
+  appearance: none;
+  height: 2.2rem;
+  padding: 0 1rem;
+  border: 1px solid #e2eaf4;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.acc-preset-btn:hover {
+  background: #f5f8ff;
+  border-color: #bfdbfe;
+}
+
+.acc-preset-btn.is-active {
+  background: #f0f4ff;
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+
+/* ── Recharge cost breakdown ──────────────────────────────────────────────── */
+.acc-recharge-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #5f6f86;
+  padding-bottom: 0.15rem;
+}
+
+.acc-breakdown-total {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #122033;
+}
+
+/* ── Usage bar chart ──────────────────────────────────────────────────────── */
+.acc-usage-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.acc-usage-bar-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 52px;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.acc-usage-month {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #5f6f86;
+  text-align: right;
+}
+
+.acc-usage-track {
+  height: 10px;
+  border-radius: 999px;
+  background: #edf2f7;
+  overflow: hidden;
+}
+
+.acc-usage-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb, #1d4ed8);
+  transition: width 400ms ease;
+  min-width: 2px;
+}
+
+.acc-usage-value {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #122033;
+  text-align: right;
+}
+
+/* ── Toggle switch (auto-recharge) ────────────────────────────────────────── */
+.acc-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.acc-toggle-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.acc-toggle-track {
+  position: relative;
+  width: 2.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: #e2eaf4;
+  flex-shrink: 0;
+  transition: background 150ms ease;
+}
+
+.acc-toggle-checkbox:checked + .acc-toggle-track {
+  background: #25d366;
+}
+
+.acc-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 150ms ease;
+}
+
+.acc-toggle-checkbox:checked + .acc-toggle-track .acc-toggle-thumb {
+  transform: translateX(1rem);
+}
+
+/* ── Auto-recharge status line ────────────────────────────────────────────── */
+.acc-auto-status {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #5f6f86;
+  margin: 0;
+}
+
+/* ── Profile avatar (large initials circle) ───────────────────────────────── */
+.acc-profile-avatar {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #dbeafe, #c7d6f7);
+  color: #2563eb;
+  font-size: 1rem;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+/* ── Auth provider pill ───────────────────────────────────────────────────── */
+.acc-provider-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 1.8rem;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2eaf4;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+/* ── AI Wallet / Users coming-soon banner ─────────────────────────────────── */
+.acc-ai-wallet-banner {
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eff6ff, #f0f4ff);
+  padding: 1.5rem 1.75rem;
+}
+
+.acc-ai-wallet-banner-inner {
+  max-width: 540px;
+}
+
+.acc-ai-wallet-banner-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  margin: 0 0 0.4rem;
+}
+
+.acc-ai-wallet-banner-body {
+  font-size: 0.83rem;
+  font-weight: 500;
+  color: #475569;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── Placeholder stat value ───────────────────────────────────────────────── */
+.acc-stat-placeholder {
+  color: #94a3b8 !important;
+  font-size: 1.1rem !important;
+}
+
+/* ── Feature preview card (AI wallet) ────────────────────────────────────── */
+.acc-feature-preview-card {
+  background: #f8fafc;
+}
+
+.acc-feature-preview-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
 /* ── Add-on cards ─────────────────────────────────────────────────────────── */
 .acc-addons-grid {
   display: grid;

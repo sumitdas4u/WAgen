@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "billing" | "knowledge" | "settings" | "account";
+type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -73,13 +73,6 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "analytics",
     title: "Analytics",
     defaultModuleIds: ["analytics"]
-  },
-  {
-    id: "billing",
-    label: "Billing",
-    icon: "billing",
-    title: "Billing",
-    defaultModuleIds: ["billing"]
   },
   {
     id: "knowledge",
@@ -154,7 +147,6 @@ const ANALYTICS_MENU_ITEMS: AnalyticsNavItem[] = [
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   inbox: { label: "Chats", subtitle: "Live Inbox" },
   leads: { label: "Contacts", subtitle: "Customer Directory" },
-  billing: { label: "Billing", subtitle: "Credits, invoices, and renewals" },
   broadcast: { label: "Broadcast", subtitle: "Broadcast campaigns, audiences, and retargeting" },
   sequence: { label: "Sequence", subtitle: "Behavior-based follow ups and remarketing" },
   analytics: { label: "Analytics", subtitle: "Message delivery and reporting" },
@@ -275,9 +267,7 @@ function DashboardShellLayout() {
               ? "/dashboard/sequence"
             : item.id === "analytics"
               ? "/dashboard/analytics"
-              : item.id === "billing"
-                ? "/dashboard/billing"
-                : item.id === "knowledge"
+              : item.id === "knowledge"
                   ? studioDefaultTo
                   : item.id === "account"
                     ? "/dashboard/account/details"
@@ -295,9 +285,7 @@ function DashboardShellLayout() {
             ? "sequence"
           : currentModuleId === "analytics"
             ? "analytics"
-            : currentModuleId === "billing"
-              ? "billing"
-              : currentModuleId.startsWith("account-")
+            : currentModuleId.startsWith("account-")
                 ? "account"
                 : currentModuleId.startsWith("settings-")
                   ? "settings"
@@ -388,7 +376,7 @@ function DashboardShellLayout() {
   const isAccountSection = currentModuleId.startsWith("account-");
   const visibleSettingsItems = SETTINGS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const visibleAccountItems = ACCOUNT_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
-  const showBillingActions = isModuleEnabled("billing");
+  const showBillingActions = isModuleEnabled("account-credits") || isModuleEnabled("billing");
 
   const renderSubSidebar = (title: string, items: Array<{ moduleId: string; label: string; icon: DashboardIconName; to: string }>) => (
     <section className="chatbot-studio-shell dashboard-flat-studio">
@@ -548,8 +536,8 @@ function DashboardShellLayout() {
                 <button
                   type="button"
                   className={bootstrap?.creditsSummary.low_credit ? "credits-chip credits-chip-low" : "credits-chip"}
-                  onClick={() => navigate("/dashboard/billing")}
-                  title="Open Billing"
+                  onClick={() => navigate("/dashboard/account/credits")}
+                  title="Open Credits"
                 >
                   Credits: {workspaceCreditsLabel}
                 </button>
