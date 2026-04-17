@@ -15,6 +15,7 @@ export interface QrSessionHealthState {
   lastEvaluatedAt: number | null;
   lastDegradedAt: number | null;
   recoveryCooldownUntil: number | null;
+  lastConnectionOpenAt: number | null;
 }
 
 export interface QrSessionHealthSummary {
@@ -36,6 +37,9 @@ export const QR_SESSION_HEALTH_WINDOW_MS = 10 * 60 * 1000;
 export const QR_SESSION_DECRYPT_FAILURE_THRESHOLD = 5;
 export const QR_SESSION_RECONNECT_THRESHOLD = 3;
 export const QR_SESSION_RECOVERY_COOLDOWN_MS = 15 * 60 * 1000;
+// After a reconnect, WA delivers queued offline messages whose Signal keys may
+// be out of sync. Decrypt failures during this window are noise, not corruption.
+export const QR_SESSION_RECONNECT_GRACE_MS = 60 * 1000;
 
 function pruneTimestamps(values: number[], now: number, windowMs = QR_SESSION_HEALTH_WINDOW_MS): number[] {
   return values.filter((value) => now - value <= windowMs);
@@ -58,7 +62,8 @@ export function createQrSessionHealthState(): QrSessionHealthState {
     },
     lastEvaluatedAt: null,
     lastDegradedAt: null,
-    recoveryCooldownUntil: null
+    recoveryCooldownUntil: null,
+    lastConnectionOpenAt: null
   };
 }
 
@@ -81,7 +86,8 @@ export function recordQrSessionHealthEvent(
   return {
     ...state,
     eventTimestamps: nextValues,
-    lastEvaluatedAt: now
+    lastEvaluatedAt: now,
+    lastConnectionOpenAt: event === "connection_open" ? now : state.lastConnectionOpenAt
   };
 }
 
@@ -108,10 +114,15 @@ export function evaluateQrSessionHealth(
   const decryptFailures = pruneTimestamps(state.eventTimestamps.decrypt_failure, now).length;
   const successfulDirectInbound = pruneTimestamps(state.eventTimestamps.direct_inbound_success, now).length;
 
+  const inReconnectGrace =
+    state.lastConnectionOpenAt !== null &&
+    now - state.lastConnectionOpenAt <= QR_SESSION_RECONNECT_GRACE_MS;
+
   let reason: QrSessionHealthEvaluation["reason"] = null;
   if (registrationAttempts >= QR_SESSION_RECONNECT_THRESHOLD || connectionCloses >= QR_SESSION_RECONNECT_THRESHOLD) {
     reason = "reconnect_thrashing";
   } else if (
+    !inReconnectGrace &&
     decryptFailures >= QR_SESSION_DECRYPT_FAILURE_THRESHOLD &&
     successfulDirectInbound === 0 &&
     connectionOpens + registrationAttempts > 0
@@ -141,7 +152,8 @@ export function markQrSessionRecovered(state: QrSessionHealthState, now: number)
   return {
     ...createQrSessionHealthState(),
     lastDegradedAt: now,
-    recoveryCooldownUntil: now + QR_SESSION_RECOVERY_COOLDOWN_MS
+    recoveryCooldownUntil: now + QR_SESSION_RECOVERY_COOLDOWN_MS,
+    lastConnectionOpenAt: null
   };
 }
 
