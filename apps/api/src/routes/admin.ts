@@ -26,7 +26,8 @@ import {
   setActiveProviderConfig,
   clearActiveProviderConfig,
   SUPPORTED_PROVIDERS,
-  type SupportedProvider
+  type SupportedProvider,
+  aiService
 } from "../services/ai-service.js";
 
 const AdminLoginSchema = z.object({
@@ -356,5 +357,30 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.delete("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin] }, async () => {
     await clearActiveProviderConfig();
     return { ok: true };
+  });
+
+  fastify.post("/api/admin/provider/test", { preHandler: [fastify.requireSuperAdmin] }, async (_request, reply) => {
+    const config = await getActiveProviderConfig();
+    const providerName = config?.provider ?? "openai (env fallback)";
+    const t0 = Date.now();
+    try {
+      const result = await aiService.generateReply(
+        "You are a test assistant. Reply in one short sentence.",
+        "Say hello and confirm which AI model you are."
+      );
+      return reply.send({
+        ok: true,
+        provider: providerName,
+        model: result.model,
+        reply: result.content,
+        latencyMs: Date.now() - t0
+      });
+    } catch (err) {
+      return reply.status(502).send({
+        ok: false,
+        provider: providerName,
+        error: (err as Error).message
+      });
+    }
   });
 }

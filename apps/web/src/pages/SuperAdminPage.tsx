@@ -17,6 +17,7 @@ import {
   fetchAdminProvider,
   updateAdminProvider,
   clearAdminProvider,
+  testAdminProvider,
   type AdminSubscriptionSummary,
   type AdminOverview,
   type AdminUserUsage,
@@ -43,6 +44,12 @@ export function SuperAdminPage() {
   const [activeProvider, setActiveProvider] = useState<{ provider: string; model: string | null; hasApiKey: boolean } | null>(null);
   const [providerDraft, setProviderDraft] = useState<{ provider: string; apiKey: string; model: string }>({ provider: "openai", apiKey: "", model: "" });
   const [providerSaving, setProviderSaving] = useState(false);
+  const [providerTesting, setProviderTesting] = useState(false);
+  const [providerTestResult, setProviderTestResult] = useState<
+    { ok: true; provider: string; model: string; reply: string; latencyMs: number } |
+    { ok: false; provider: string; error: string } |
+    null
+  >(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -151,6 +158,20 @@ export function SuperAdminPage() {
       setError((e as Error).message);
     } finally {
       setProviderSaving(false);
+    }
+  };
+
+  const handleTestProvider = async () => {
+    if (!token) return;
+    setProviderTesting(true);
+    setProviderTestResult(null);
+    try {
+      const result = await testAdminProvider(token);
+      setProviderTestResult(result);
+    } catch (e) {
+      setProviderTestResult({ ok: false, provider: providerDraft.provider, error: (e as Error).message });
+    } finally {
+      setProviderTesting(false);
     }
   };
 
@@ -386,7 +407,45 @@ export function SuperAdminPage() {
               Clear (use env)
             </button>
           )}
+          <button
+            className="ghost-btn"
+            onClick={() => void handleTestProvider()}
+            disabled={providerTesting}
+            style={{ borderColor: providerTestResult ? (providerTestResult.ok ? "#22c55e" : "#be123c") : undefined }}
+          >
+            {providerTesting ? "Testing…" : "Test Connection"}
+          </button>
         </div>
+        {providerTestResult && (
+          <div style={{
+            marginTop: "0.75rem",
+            padding: "0.75rem 1rem",
+            borderRadius: 8,
+            border: `1px solid ${providerTestResult.ok ? "#bbf7d0" : "#fecdd3"}`,
+            background: providerTestResult.ok ? "#f0fdf4" : "#fff1f2",
+            fontSize: "0.82rem"
+          }}>
+            {providerTestResult.ok ? (
+              <>
+                <strong style={{ color: "#166534" }}>✓ Connected</strong>
+                {" — "}
+                <span style={{ color: "#334155" }}>
+                  <strong>{providerTestResult.provider}</strong> / <code style={{ background: "#e2e8f0", padding: "1px 5px", borderRadius: 4 }}>{providerTestResult.model}</code>
+                  {" "}({providerTestResult.latencyMs}ms)
+                </span>
+                <p style={{ margin: "0.4rem 0 0", color: "#475569", fontStyle: "italic" }}>
+                  "{providerTestResult.reply.slice(0, 160)}{providerTestResult.reply.length > 160 ? "…" : ""}"
+                </p>
+              </>
+            ) : (
+              <>
+                <strong style={{ color: "#be123c" }}>✗ Failed</strong>
+                {" — "}
+                <span style={{ color: "#be123c" }}>{providerTestResult.error}</span>
+              </>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ── Legacy model override (per-model within the active provider) ── */}

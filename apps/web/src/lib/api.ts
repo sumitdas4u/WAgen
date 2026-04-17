@@ -658,6 +658,13 @@ export function clearAdminProvider(token: string) {
   });
 }
 
+export function testAdminProvider(token: string) {
+  return apiRequest<
+    | { ok: true; provider: string; model: string; reply: string; latencyMs: number }
+    | { ok: false; provider: string; error: string }
+  >("/api/admin/provider/test", { method: "POST", token });
+}
+
 export interface AiWalletStatus {
   balance: number;
   planCode: string;
