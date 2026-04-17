@@ -292,7 +292,7 @@ const CHATBOT_BUNDLE_JS = `(function () {
       socket.onmessage = function (event) {
         try {
           var payload = JSON.parse(event.data || "{}");
-          if (payload && payload.event === "message" && payload.data && payload.data.text) {
+          if (payload && payload.event === "message" && payload.data && payload.data.text && payload.data.sender !== "system") {
             var messageText = String(payload.data.text);
             push(messageText, "ai");
             triggerIncomingAlert(messageText);
