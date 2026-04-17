@@ -7,7 +7,8 @@ import {
   type InsightType
 } from "./conversation-insight-service.js";
 import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
-import { openAIService } from "./openai-service.js";
+import { aiService } from "./ai-service.js";
+import { chargeUser } from "./ai-token-service.js";
 import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
 import { extractCapturedProfileDetails, reconcileContactPhone, syncConversationContact } from "./contacts-service.js";
 import { isWidgetVisitorConnected } from "./widget-connection-registry.js";
@@ -202,11 +203,12 @@ function parseClassificationKind(value: unknown): ConversationKind | null {
 async function classifyInboundMessage(input: {
   message: string;
   agentProfile: AgentProfileRecord | null;
+  userId?: string;
 }): Promise<{ kind: ConversationKind; confidence: number }> {
   const heuristic = inferKindFromHeuristics(input.message, input.agentProfile?.objectiveType ?? null);
 
   const shouldUseLlm =
-    openAIService.isConfigured() &&
+    aiService.isConfigured() &&
     input.message.trim().length >= 8 &&
     (heuristic.ambiguous || input.message.length >= 160);
 
@@ -215,7 +217,7 @@ async function classifyInboundMessage(input: {
   }
 
   try {
-    const payload = await openAIService.generateJson(
+    const payload = await aiService.generateJson(
       [
         "Classify customer chat intent.",
         "Return valid JSON only.",
@@ -239,6 +241,7 @@ async function classifyInboundMessage(input: {
       ? clamp(Math.round(confidenceRaw), 20, 99)
       : heuristic.confidence;
 
+    if (input.userId) void chargeUser(input.userId, "ai_intent_classify");
     return { kind, confidence };
   } catch {
     return { kind: heuristic.kind, confidence: heuristic.confidence };
@@ -515,7 +518,8 @@ export async function trackInboundMessage(
 
   const classification = await classifyInboundMessage({
     message,
-    agentProfile
+    agentProfile,
+    userId
   });
 
   const [intentDelta, knowledgeDelta] = await Promise.all([
@@ -871,7 +875,8 @@ function fallbackLeadSummary(
 
 async function generateLeadSummary(
   conversation: { stage: string; score: number; lead_kind: ConversationKind; phone_number: string; last_message: string | null },
-  messages: Array<{ direction: "inbound" | "outbound"; message_text: string; created_at: string }>
+  messages: Array<{ direction: "inbound" | "outbound"; message_text: string; created_at: string }>,
+  userId?: string
 ): Promise<{ summary: string; model: string | null }> {
   const clipped = messages
     .slice(-10)
@@ -885,7 +890,7 @@ async function generateLeadSummary(
     };
   }
 
-  if (!openAIService.isConfigured()) {
+  if (!aiService.isConfigured()) {
     return {
       summary: fallbackLeadSummary(conversation, messages),
       model: null
@@ -908,7 +913,8 @@ async function generateLeadSummary(
   ].join("\n");
 
   try {
-    const response = await openAIService.generateReply(systemPrompt, userPrompt);
+    const response = await aiService.generateReply(systemPrompt, userPrompt);
+    if (userId) void chargeUser(userId, "ai_lead_summary");
     return { summary: response.content, model: response.model };
   } catch {
     return {
@@ -1152,7 +1158,7 @@ export async function summarizeLeadConversations(
     processed += 1;
     try {
       const history = await getRecentMessagesForSummary(row.id, 10);
-      const generated = await generateLeadSummary(row, history);
+      const generated = await generateLeadSummary(row, history, userId);
       const summary = generated.summary.trim() || fallbackLeadSummary(row, history);
       await upsertLeadSummary(row.id, summary, row.last_message_at, generated.model);
       updated += 1;

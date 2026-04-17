@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
-import { openAIService } from "../services/openai-service.js";
+import { aiService } from "../services/ai-service.js";
+import { chargeUser } from "../services/ai-token-service.js";
 import { queueApiConversationSend } from "../services/api-outbound-router-service.js";
 import { requireMetaConnection } from "../services/meta-whatsapp-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
@@ -475,7 +476,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         action === "rewrite"
           ? "You are a professional WhatsApp business messaging assistant. Rewrite the given message to be clearer, more professional, and friendly. Return only the rewritten message text with no explanation or prefix."
           : `You are a professional translator. Translate the given message to ${language ?? "English"}. Return only the translated text with no explanation or prefix.`;
-      const result = await openAIService.generateReply(systemPrompt, text, undefined, { temperature: 0.5 });
+      const result = await aiService.generateReply(systemPrompt, text, undefined, { temperature: 0.5 });
+      void chargeUser(request.authUser.userId, "ai_text_assist");
       return { text: result.content.trim() };
     }
   );

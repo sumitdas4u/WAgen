@@ -23,8 +23,11 @@ export const AI_TOKEN_COSTS = {
   template_generate:   10,   // POST /api/meta/templates/ai-generate
   onboarding_autofill: 10,   // POST /api/onboarding/autofill
   flow_draft_generate: 15,   // POST /api/flows/generate-draft
-  ai_agent_flow:        3,   // per aiAgent flow-block execution
+  ai_agent_flow:        3,   // per aiAgent flow-block execution / calendar booking parse
   image_analyze:        5,   // per inbound image analysed
+  ai_text_assist:       3,   // per rewrite/translate in conversation editor
+  ai_lead_summary:      5,   // per lead conversation summary generated
+  ai_intent_classify:   1,   // per inbound message intent classification (LLM path)
 } as const;
 
 export type AiTokenAction = keyof typeof AI_TOKEN_COSTS;

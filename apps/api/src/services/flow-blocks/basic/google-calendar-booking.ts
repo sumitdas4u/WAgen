@@ -4,7 +4,8 @@ import {
   type GoogleCalendarBusyInterval,
   type GoogleCalendarEventResult
 } from "../../google-calendar-service.js";
-import { openAIService } from "../../openai-service.js";
+import { aiService } from "../../ai-service.js";
+import { chargeUser } from "../../ai-token-service.js";
 import {
   buildChoicePrompt,
   getNextNodeId,
@@ -820,18 +821,19 @@ async function parseSchedulingRequest(input: {
   timeZone: string | null;
   slotDurationMinutes: number;
   promptSearchWindowHours: number;
+  userId?: string;
 }): Promise<ParsedSchedulingRequest | null> {
   const fallback = tryParseSchedulingRequestFallback(input);
   if (fallback) {
     return fallback;
   }
-  if (!openAIService.isConfigured()) {
+  if (!aiService.isConfigured()) {
     return null;
   }
 
   try {
     const now = new Date().toISOString();
-    const raw = await openAIService.generateJson(
+    const raw = await aiService.generateJson(
       [
         "You convert booking date/time replies into JSON for a calendar scheduler.",
         "Return only valid JSON with keys: kind, summary, requestedStart, requestedEnd, windowStart, windowEnd.",
@@ -849,12 +851,14 @@ async function parseSchedulingRequest(input: {
       input.message
     );
 
-    return normalizeParsedSchedulingRequest({
+    const parsed = normalizeParsedSchedulingRequest({
       raw,
       fallbackSummary: input.message.trim(),
       slotDurationMinutes: input.slotDurationMinutes,
       promptSearchWindowHours: input.promptSearchWindowHours
     });
+    if (input.userId) void chargeUser(input.userId, "ai_agent_flow");
+    return parsed;
   } catch {
     return null;
   }
@@ -1697,7 +1701,8 @@ export const googleCalendarBookingBlock: FlowBlockModule = {
         bookingMode,
         timeZone,
         slotDurationMinutes,
-        promptSearchWindowHours
+        promptSearchWindowHours,
+        userId: context.userId ?? undefined
       });
 
       if (!parsedRequest) {
