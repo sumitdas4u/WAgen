@@ -1,5 +1,5 @@
-import { openAIService } from "../../openai-service.js";
-import { deductTokens, AI_TOKEN_COSTS } from "../../ai-token-service.js";
+import { aiService } from "../../ai-service.js";
+import { chargeUser } from "../../ai-token-service.js";
 import { getNextNodeId, interpolate } from "../helpers.js";
 import type { FlowBlockModule, FlowVariables } from "../types.js";
 
@@ -130,7 +130,7 @@ export const aiAgentBlock: FlowBlockModule = {
       }
     });
 
-    if (!openAIService.isConfigured()) {
+    if (!aiService.isConfigured()) {
       return fail("OPENAI_API_KEY is not configured.");
     }
     if (!instructions) {
@@ -139,7 +139,7 @@ export const aiAgentBlock: FlowBlockModule = {
 
     try {
       if (outputMode === "json") {
-        const json = await openAIService.generateJson(
+        const json = await aiService.generateJson(
           [
             "You are a flow automation AI agent.",
             "Return only valid JSON.",
@@ -149,7 +149,7 @@ export const aiAgentBlock: FlowBlockModule = {
           inputTemplate || "No input provided."
         );
         if (context.userId) {
-          void deductTokens(context.userId, "ai_agent_flow", AI_TOKEN_COSTS.ai_agent_flow);
+          void chargeUser(context.userId, "ai_agent_flow");
         }
 
         return {
@@ -167,7 +167,7 @@ export const aiAgentBlock: FlowBlockModule = {
         };
       }
 
-      const reply = await openAIService.generateReply(
+      const reply = await aiService.generateReply(
         [
           "You are a flow automation AI agent.",
           "Process the provided input and return the final result only.",
@@ -176,7 +176,7 @@ export const aiAgentBlock: FlowBlockModule = {
         inputTemplate || "No input provided."
       );
       if (context.userId) {
-        void deductTokens(context.userId, "ai_agent_flow", AI_TOKEN_COSTS.ai_agent_flow);
+        void chargeUser(context.userId, "ai_agent_flow");
       }
 
       return {

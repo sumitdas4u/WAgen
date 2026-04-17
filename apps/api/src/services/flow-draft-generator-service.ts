@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { openAIService } from "./openai-service.js";
-import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
+import { aiService } from "./ai-service.js";
+import { chargeUser } from "./ai-token-service.js";
 
 export type FlowChannel = "web" | "qr" | "api";
 export type FlowTriggerType =
@@ -495,17 +495,17 @@ export async function generateFlowDraft(
     throw new Error("Prompt is required.");
   }
 
-  if (!openAIService.isConfigured() || isPromptVague(prompt)) {
+  if (!aiService.isConfigured() || isPromptVague(prompt)) {
     return makeMinimalDraft(input.channel, prompt);
   }
 
   try {
-    const raw = await openAIService.generateJson(
+    const raw = await aiService.generateJson(
       buildSystemPrompt(input.channel, prompt),
       buildUserPrompt(prompt)
     );
     if (input.userId) {
-      void deductTokens(input.userId, "flow_draft_generate", AI_TOKEN_COSTS.flow_draft_generate);
+      void chargeUser(input.userId, "flow_draft_generate");
     }
     return normalizeDraft(raw, input.channel, prompt);
   } catch (error) {

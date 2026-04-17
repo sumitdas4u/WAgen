@@ -12,6 +12,7 @@ import {
   uploadTemplateMedia,
   type TemplateStatus
 } from "../services/template-service.js";
+import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
 
 type TemplateUploadMediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
 
@@ -137,6 +138,14 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
           error: "Invalid AI generate payload",
           details: parsed.error.flatten().fieldErrors
         });
+      }
+      try {
+        await requireAiCredit(request.authUser.userId, "template_generate");
+      } catch (e) {
+        if (e instanceof AiTokensDepletedError) {
+          return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });
+        }
+        throw e;
       }
       const generated = await generateTemplateWithAI(request.authUser.userId, parsed.data);
       return { generated };

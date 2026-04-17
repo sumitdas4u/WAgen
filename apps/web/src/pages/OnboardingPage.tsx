@@ -10,12 +10,14 @@ import {
   saveBusinessBasics,
   savePersonality,
   setAgentActive,
+  updateMyProfile,
   type BusinessBasicsPayload,
   type KnowledgeIngestJob
 } from "../lib/api";
 
-type JourneyStep = 1 | 2 | 3 | 4;
+type JourneyStep = 1 | 2 | 3 | 4 | 5;
 type KnowledgeMode = "website" | "file" | "manual";
+type PhoneStep = "idle" | "sent" | "verifying" | "done" | "error";
 
 type ChatRow = {
   id: string;
@@ -28,6 +30,8 @@ const MAX_KNOWLEDGE_FILE_UPLOAD_BYTES = 20 * 1024 * 1024;
 const KNOWLEDGE_UPLOAD_POLL_INTERVAL_MS = 1500;
 const KNOWLEDGE_UPLOAD_TIMEOUT_MS = 5 * 60_000;
 const SUPPORTED_KNOWLEDGE_FILE_EXTENSIONS = new Set(["pdf", "txt", "doc", "docx", "xls", "xlsx"]);
+const TOTAL_STEPS = 5;
+const MOCK_OTP = "0000";
 
 function isSupportedKnowledgeFile(file: File): boolean {
   const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
@@ -46,9 +50,7 @@ function nowTimeLabel() {
 }
 
 function readSavedString(value: unknown, fallback: string): string {
-  if (typeof value !== "string") {
-    return fallback;
-  }
+  if (typeof value !== "string") return fallback;
   const cleaned = value.trim();
   return cleaned || fallback;
 }
@@ -66,12 +68,53 @@ export function OnboardingPage() {
   const navigate = useNavigate();
 
   const savedBasics = (user?.business_basics ?? {}) as Record<string, unknown>;
-  const [step, setStep] = useState<JourneyStep>(1);
+
+  // Start at step 1 (phone verify) unless already verified
+  const [step, setStep] = useState<JourneyStep>(() => (user?.phone_verified ? 2 : 1));
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Step 1: Phone verify (mock OTP) ─────────────────────────────────────
+  const [phone, setPhone] = useState(user?.phone_number ?? "");
+  const [otp, setOtp] = useState("");
+  const [phoneStep, setPhoneStep] = useState<PhoneStep>(
+    user?.phone_verified ? "done" : "idle"
+  );
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+
+  const sendOtp = () => {
+    setPhoneError(null);
+    const normalized = phone.trim();
+    if (!normalized.startsWith("+") || normalized.length < 8) {
+      setPhoneError("Enter phone in international format: +91XXXXXXXXXX");
+      return;
+    }
+    // Mock: just advance to OTP entry — no real SMS sent yet
+    setPhoneStep("sent");
+  };
+
+  const verifyOtp = async () => {
+    setPhoneError(null);
+    if (otp.trim() !== MOCK_OTP) {
+      setPhoneError(`Incorrect OTP. (Use ${MOCK_OTP} during testing.)`);
+      return;
+    }
+    setPhoneStep("verifying");
+    try {
+      if (token) {
+        await updateMyProfile(token, { phoneNumber: phone.trim(), phoneVerified: true });
+        await refreshUser();
+      }
+      setPhoneStep("done");
+    } catch (e) {
+      setPhoneError((e as Error).message);
+      setPhoneStep("sent");
+    }
+  };
+
+  // ── Step 2: Bot identity ─────────────────────────────────────────────────
   const [botName, setBotName] = useState(readSavedString(savedBasics.companyName, user?.name ?? ""));
   const [businessAbout, setBusinessAbout] = useState(readSavedString(savedBasics.whatDoYouSell, ""));
   const [unknownReply, setUnknownReply] = useState(
@@ -81,35 +124,28 @@ export function OnboardingPage() {
   const [doRules, setDoRules] = useState(readSavedString(savedBasics.aiDoRules, ""));
   const [dontRules, setDontRules] = useState(readSavedString(savedBasics.aiDontRules, ""));
 
+  // ── Step 4: Knowledge ────────────────────────────────────────────────────
   const [knowledgeMode, setKnowledgeMode] = useState<KnowledgeMode>("website");
   const [websiteUrl, setWebsiteUrl] = useState(readSavedString(savedBasics.websiteUrl, ""));
   const [manualText, setManualText] = useState(readSavedString(savedBasics.manualFaq, ""));
   const [knowledgeFiles, setKnowledgeFiles] = useState<File[]>([]);
 
+  // ── Step 5: Test chatbot ─────────────────────────────────────────────────
   const [chatInput, setChatInput] = useState("");
   const [chatRows, setChatRows] = useState<ChatRow[]>([firstBotMessage]);
   const [botTyping, setBotTyping] = useState(false);
 
-  const canGoStep1 = botName.trim().length >= 2 && businessAbout.trim().length >= 2;
-  const canGoStep2 = true;
+  const canGoStep2 = botName.trim().length >= 2 && businessAbout.trim().length >= 2;
   const canProceedKnowledge = useMemo(() => {
-    if (knowledgeMode === "website") {
-      return websiteUrl.trim().length > 0;
-    }
-    if (knowledgeMode === "manual") {
-      return manualText.trim().length >= 20;
-    }
+    if (knowledgeMode === "website") return websiteUrl.trim().length > 0;
+    if (knowledgeMode === "manual") return manualText.trim().length >= 20;
     return knowledgeFiles.length > 0;
   }, [knowledgeMode, knowledgeFiles, manualText, websiteUrl]);
 
   const progressTicks = [24, 41, 57, 73, 88, 100];
-  const stepLabel = `${step} of 4`;
 
   const persistBusinessProfile = async () => {
-    if (!token) {
-      return;
-    }
-
+    if (!token) return;
     const payload: BusinessBasicsPayload = {
       companyName: botName.trim(),
       whatDoYouSell: businessAbout.trim(),
@@ -135,7 +171,6 @@ export function OnboardingPage() {
       websiteUrl: websiteUrl.trim(),
       manualFaq: manualText.trim()
     };
-
     await saveBusinessBasics(token, payload);
     await savePersonality(token, {
       personality: "custom",
@@ -152,49 +187,32 @@ export function OnboardingPage() {
   };
 
   const waitForKnowledgeUploadJobs = async (jobIds: string[]) => {
-    if (!token) {
-      return;
-    }
-    if (jobIds.length === 0) {
-      throw new Error("Could not start knowledge upload. Please try again.");
-    }
-
+    if (!token) return;
+    if (jobIds.length === 0) throw new Error("Could not start knowledge upload. Please try again.");
     const startedAt = Date.now();
     while (Date.now() - startedAt < KNOWLEDGE_UPLOAD_TIMEOUT_MS) {
       const response = await fetchIngestionJobs(token, jobIds);
       const failedJobs = response.jobs.filter((job) => job.status === "failed");
-      if (failedJobs.length > 0) {
-        throw new Error(formatKnowledgeUploadFailure(failedJobs));
-      }
-
+      if (failedJobs.length > 0) throw new Error(formatKnowledgeUploadFailure(failedJobs));
       const allCompleted =
         response.jobs.length === jobIds.length &&
         response.jobs.every((job) => job.status === "completed" || Boolean(job.completed_at) || job.progress >= 100);
-      if (allCompleted) {
-        return;
-      }
-
+      if (allCompleted) return;
       await new Promise((resolve) => setTimeout(resolve, KNOWLEDGE_UPLOAD_POLL_INTERVAL_MS));
     }
-
     throw new Error("Knowledge upload is taking longer than expected. Please check the Knowledge Base page in Dashboard.");
   };
 
   const ingestKnowledge = async () => {
-    if (!token) {
-      return;
-    }
-
+    if (!token) return;
     if (knowledgeMode === "website") {
       await ingestWebsite(token, websiteUrl.trim(), `${botName.trim()} Website`);
       return;
     }
-
     if (knowledgeMode === "manual") {
       await ingestManual(token, manualText.trim(), `${botName.trim()} Manual`);
       return;
     }
-
     if (knowledgeFiles.length > 0) {
       const response = await ingestKnowledgeFiles(token, knowledgeFiles);
       await waitForKnowledgeUploadJobs(response.jobs.map((job) => job.id));
@@ -204,49 +222,33 @@ export function OnboardingPage() {
   const runTrainingSequence = async () => {
     setIsTraining(true);
     setTrainingProgress(12);
-
     for (const tick of progressTicks) {
       await new Promise((resolve) => setTimeout(resolve, 220));
       setTrainingProgress(tick);
     }
-
     setIsTraining(false);
-    setStep(4);
+    setStep(5);
   };
 
   const ensureAgentEnabled = async () => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     await setAgentActive(token, true);
   };
 
-  const handleStep1Proceed = () => {
-    if (!canGoStep1) {
-      setError("Enter bot identity details to continue.");
-      return;
-    }
-    setError(null);
-    setStep(2);
-  };
+  // Step handlers
+  const handleStep1Proceed = () => { setError(null); setStep(2); };
 
   const handleStep2Proceed = () => {
-    if (!canGoStep2) {
-      return;
-    }
+    if (!canGoStep2) { setError("Enter bot identity details to continue."); return; }
     setError(null);
     setStep(3);
   };
 
-  const handleStep3Proceed = async () => {
-    if (!token) {
-      return;
-    }
-    if (!canProceedKnowledge) {
-      setError("Add one knowledge source first, or use skip.");
-      return;
-    }
+  const handleStep3Proceed = () => { setError(null); setStep(4); };
 
+  const handleStep4Proceed = async () => {
+    if (!token) return;
+    if (!canProceedKnowledge) { setError("Add one knowledge source first, or use skip."); return; }
     setError(null);
     setLoading(true);
     try {
@@ -264,10 +266,7 @@ export function OnboardingPage() {
   };
 
   const handleSkipKnowledge = async () => {
-    if (!token) {
-      return;
-    }
-
+    if (!token) return;
     setError(null);
     setLoading(true);
     try {
@@ -286,39 +285,20 @@ export function OnboardingPage() {
   const handleSendTestChat = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = chatInput.trim();
-    if (!text || botTyping || !token) {
-      return;
-    }
-
-    const userMessage: ChatRow = {
-      id: `u-${Date.now()}`,
-      sender: "user",
-      text,
-      time: nowTimeLabel()
-    };
+    if (!text || botTyping || !token) return;
+    const userMessage: ChatRow = { id: `u-${Date.now()}`, sender: "user", text, time: nowTimeLabel() };
     const historyRows = [...chatRows, userMessage];
-
     setChatRows(historyRows);
     setChatInput("");
     setBotTyping(true);
-
     try {
       const response = await requestTestChatbotReply(token, {
         message: text,
-        history: historyRows.map((row) => ({
-          sender: row.sender,
-          text: row.text
-        }))
+        history: historyRows.map((row) => ({ sender: row.sender, text: row.text }))
       });
-
       setChatRows((current) => [
         ...current,
-        {
-          id: `b-${Date.now()}`,
-          sender: "bot",
-          text: response.reply,
-          time: nowTimeLabel()
-        }
+        { id: `b-${Date.now()}`, sender: "bot", text: response.reply, time: nowTimeLabel() }
       ]);
     } catch (chatError) {
       setChatRows((current) => [
@@ -343,37 +323,142 @@ export function OnboardingPage() {
     navigate("/dashboard?tab=chatbot_personality", { replace: true });
   };
 
+  const stepTitles: Record<JourneyStep, string> = {
+    1: "Verify your phone number",
+    2: "Set your bot identity",
+    3: "Define custom instructions",
+    4: "Add initial knowledge base",
+    5: "Test your chatbot"
+  };
+
+  const stepSubs: Record<JourneyStep, string> = {
+    1: "We'll send a one-time code to confirm your number.",
+    2: "Only the essential setup fields.",
+    3: "Add do's and don'ts for how your bot should behave.",
+    4: "Import website, documents, or manual content to train responses.",
+    5: "Ask sample questions and check answer quality."
+  };
+
   return (
     <main className="journey-shell">
       <section className="journey-card">
         <header className="journey-header">
-          <p className="journey-step-count">Step {stepLabel}</p>
-          <h1>
-            {step === 1
-              ? "Set your bot identity"
-              : step === 2
-                ? "Define custom instructions"
-                : step === 3
-                  ? "Add initial knowledge base"
-                  : "Test your chatbot"}
-          </h1>
-          <p className="journey-sub">
-            {step === 1
-              ? "Only the essential setup fields."
-              : step === 2
-                ? "Add do's and don'ts for how your bot should behave."
-                : step === 3
-                  ? "Import website, documents, or manual content to train responses."
-                  : "Ask sample questions and check answer quality."}
-          </p>
+          <p className="journey-step-count">Step {step} of {TOTAL_STEPS}</p>
+          <h1>{stepTitles[step]}</h1>
+          <p className="journey-sub">{stepSubs[step]}</p>
           <nav className="journey-stepper" aria-label="Onboarding steps">
-            {[1, 2, 3, 4].map((item) => (
+            {[1, 2, 3, 4, 5].map((item) => (
               <span key={item} className={item <= step ? "active" : ""} />
             ))}
           </nav>
         </header>
 
+        {/* ── Step 1: Phone verification ────────────────────────────────── */}
         {step === 1 && (
+          <section className="journey-step">
+            {phoneStep === "done" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.6rem",
+                    padding: "0.85rem 1rem",
+                    borderRadius: "10px",
+                    background: "#dcfce7",
+                    border: "1px solid #bbf7d0"
+                  }}
+                >
+                  <span style={{ fontSize: "1.1rem" }}>✓</span>
+                  <div>
+                    <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 700, color: "#166534" }}>
+                      Phone verified
+                    </p>
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "#166534" }}>{phone}</p>
+                  </div>
+                </div>
+                <div className="journey-actions">
+                  <button type="button" className="primary-btn" onClick={handleStep1Proceed}>
+                    Continue
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {(phoneStep === "idle" || phoneStep === "error") && (
+                  <>
+                    <label>
+                      Phone number
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+91XXXXXXXXXX"
+                      />
+                      <small className="journey-muted">Include country code — e.g. +91 for India</small>
+                    </label>
+                    {phoneError && <p className="error-text">{phoneError}</p>}
+                    <div className="journey-actions">
+                      <button
+                        type="button"
+                        className="primary-btn"
+                        onClick={sendOtp}
+                        disabled={phone.trim().length < 8}
+                      >
+                        Send OTP
+                      </button>
+                      <button type="button" className="ghost-btn" onClick={handleStep1Proceed}>
+                        Skip for now
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {(phoneStep === "sent" || phoneStep === "verifying") && (
+                  <>
+                    <p style={{ fontSize: "0.83rem", color: "#334155" }}>
+                      OTP sent to <strong>{phone}</strong>. Enter the 4-digit code below.
+                    </p>
+                    <label>
+                      One-time code
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                        placeholder="0000"
+                        autoFocus
+                      />
+                    </label>
+                    {phoneError && <p className="error-text">{phoneError}</p>}
+                    <div className="journey-actions">
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        onClick={() => { setPhoneStep("idle"); setOtp(""); setPhoneError(null); }}
+                        disabled={phoneStep === "verifying"}
+                      >
+                        Change number
+                      </button>
+                      <button
+                        type="button"
+                        className="primary-btn"
+                        onClick={() => void verifyOtp()}
+                        disabled={phoneStep === "verifying" || otp.length !== 4}
+                      >
+                        {phoneStep === "verifying" ? "Verifying…" : "Verify OTP"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        {/* ── Step 2: Bot identity ──────────────────────────────────────── */}
+        {step === 2 && (
           <section className="journey-step">
             <label>
               Bot name
@@ -405,14 +490,15 @@ export function OnboardingPage() {
               />
             </label>
             <div className="journey-actions">
-              <button type="button" className="primary-btn" disabled={!canGoStep1 || loading} onClick={handleStep1Proceed}>
+              <button type="button" className="primary-btn" disabled={!canGoStep2 || loading} onClick={handleStep2Proceed}>
                 Proceed
               </button>
             </div>
           </section>
         )}
 
-        {step === 2 && (
+        {/* ── Step 3: Custom instructions ───────────────────────────────── */}
+        {step === 3 && (
           <section className="journey-step">
             <label>
               Do's
@@ -433,14 +519,15 @@ export function OnboardingPage() {
               />
             </label>
             <div className="journey-actions">
-              <button type="button" className="primary-btn" disabled={loading} onClick={handleStep2Proceed}>
+              <button type="button" className="primary-btn" disabled={loading} onClick={handleStep3Proceed}>
                 Proceed
               </button>
             </div>
           </section>
         )}
 
-        {step === 3 && (
+        {/* ── Step 4: Knowledge base ────────────────────────────────────── */}
+        {step === 4 && (
           <section className="journey-step">
             <div className="journey-inline-pills">
               <button type="button" className={knowledgeMode === "website" ? "active" : ""} onClick={() => setKnowledgeMode("website")}>
@@ -493,7 +580,7 @@ export function OnboardingPage() {
             )}
 
             <div className="journey-actions">
-              <button type="button" className="primary-btn" disabled={!canProceedKnowledge || loading} onClick={() => void handleStep3Proceed()}>
+              <button type="button" className="primary-btn" disabled={!canProceedKnowledge || loading} onClick={() => void handleStep4Proceed()}>
                 {loading ? "Processing..." : "Proceed"}
               </button>
               <button type="button" className="ghost-btn" disabled={loading} onClick={() => void handleSkipKnowledge()}>
@@ -503,6 +590,7 @@ export function OnboardingPage() {
           </section>
         )}
 
+        {/* ── Training animation ────────────────────────────────────────── */}
         {isTraining && (
           <section className="journey-training">
             <div className="journey-bot-pulse" aria-hidden="true">
@@ -517,7 +605,8 @@ export function OnboardingPage() {
           </section>
         )}
 
-        {step === 4 && !isTraining && (
+        {/* ── Step 5: Test chatbot ──────────────────────────────────────── */}
+        {step === 5 && !isTraining && (
           <section className="journey-step">
             <article className="journey-chat-preview">
               <header>

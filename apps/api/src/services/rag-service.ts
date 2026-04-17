@@ -1,7 +1,7 @@
 import { pool, withTransaction } from "../db/pool.js";
-import { openAIService } from "./openai-service.js";
+import { aiService } from "./ai-service.js";
 import { toVectorLiteral } from "../utils/index.js";
-import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
+import { chargeUser } from "./ai-token-service.js";
 
 export interface KnowledgeChunk {
   id: string;
@@ -116,7 +116,7 @@ export async function ingestKnowledgeChunks(input: {
     return 0;
   }
 
-  if (!openAIService.isConfigured()) {
+  if (!aiService.isConfigured()) {
     throw new Error("OPENAI_API_KEY is missing. Cannot ingest knowledge without embeddings.");
   }
 
@@ -140,10 +140,10 @@ export async function ingestKnowledgeChunks(input: {
     for (const chunk of validChunks) {
       let vectorLiteral = ZERO_VECTOR;
       try {
-        const embedding = await openAIService.embed(chunk.content);
+        const embedding = await aiService.embed(chunk.content);
         vectorLiteral = toVectorLiteral(embedding);
-        // Deduct one token per successfully embedded chunk
-        void deductTokens(input.userId, "kb_ingest_chunk", AI_TOKEN_COSTS.kb_ingest_chunk);
+        // Charge one token per successfully embedded chunk
+        void chargeUser(input.userId, "kb_ingest_chunk");
       } catch {
         vectorLiteral = ZERO_VECTOR;
       }
@@ -171,7 +171,7 @@ export async function retrieveKnowledge(input: {
   const limit = input.limit ?? 5;
   const minSimilarity = Math.max(0, Math.min(1, input.minSimilarity ?? 0));
 
-  if (!openAIService.isConfigured()) {
+  if (!aiService.isConfigured()) {
     return [];
   }
 
@@ -206,9 +206,9 @@ export async function retrieveKnowledge(input: {
   };
 
   try {
-    const embedding = await openAIService.embed(input.query);
+    const embedding = await aiService.embed(input.query);
     // Deduct one token for the retrieval embed query
-    void deductTokens(input.userId, "rag_embed_query", AI_TOKEN_COSTS.rag_embed_query);
+    void chargeUser(input.userId, "rag_embed_query");
     const vectorLiteral = toVectorLiteral(embedding);
 
     const vectorResult = await pool.query<KnowledgeChunk>(

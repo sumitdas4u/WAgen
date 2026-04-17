@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../../../lib/auth-context";
+import { useAiGate } from "../../../../components/ai-gate";
 import type { DashboardModulePrefetchContext } from "../../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
@@ -181,6 +182,7 @@ export function Component() {
   const queryClient = useQueryClient();
   const { user, refreshUser } = useAuth();
   const { token } = useDashboardShell();
+  const { blocked: aiBlocked } = useAiGate();
   const knowledgeSourcesQuery = useKnowledgeSourcesQuery(token);
   const uploadPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const knowledgeModalRequestRef = useRef(0);
@@ -640,8 +642,14 @@ export function Component() {
               <button type="button" className="ghost-btn" onClick={closeKnowledgeModal}>
                 Cancel
               </button>
-              <button type="button" className="primary-btn" disabled={busy} onClick={() => void handleProceedKnowledgeModal()}>
-                Proceed
+              <button
+                type="button"
+                className="primary-btn"
+                disabled={busy || aiBlocked}
+                title={aiBlocked ? "Upgrade your plan to add knowledge sources" : undefined}
+                onClick={() => void handleProceedKnowledgeModal()}
+              >
+                {aiBlocked ? "Upgrade to Ingest" : "Proceed"}
               </button>
             </div>
           </div>

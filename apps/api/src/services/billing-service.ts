@@ -3,6 +3,7 @@ import Razorpay from "razorpay";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { getWorkspaceIdByUserId, syncWorkspaceSubscriptionFromBillingEvent } from "./workspace-billing-service.js";
+import { creditMonthlyTokens } from "./ai-token-service.js";
 import {
   createWorkspaceRechargeOrder,
   issueSubscriptionInvoiceFromPayment,
@@ -595,6 +596,8 @@ async function syncUserPlan(userId: string, planCode: string, status: string): P
        WHERE id = $2`,
       [planCode, userId]
     );
+    // Credit monthly AI tokens whenever a plan becomes active (activation or renewal)
+    void creditMonthlyTokens(userId, planCode, `plan-activation-${userId}-${Date.now()}`);
     return;
   }
 

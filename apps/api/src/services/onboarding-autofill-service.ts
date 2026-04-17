@@ -1,6 +1,6 @@
 import type { PersonalityOption } from "../types/models.js";
-import { openAIService } from "./openai-service.js";
-import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
+import { aiService } from "./ai-service.js";
+import { chargeUser } from "./ai-token-service.js";
 
 export interface AutofillDraft {
   businessBasics: {
@@ -153,7 +153,7 @@ function fallbackDraft(description: string): AutofillDraft {
 }
 
 export async function generateOnboardingDraft(userId: string, description: string): Promise<AutofillDraft> {
-  if (!openAIService.isConfigured()) {
+  if (!aiService.isConfigured()) {
     return fallbackDraft(description);
   }
 
@@ -185,8 +185,8 @@ export async function generateOnboardingDraft(userId: string, description: strin
   ].join("\n");
 
   try {
-    const raw = await openAIService.generateJson(systemPrompt, userPrompt);
-    void deductTokens(userId, "onboarding_autofill", AI_TOKEN_COSTS.onboarding_autofill);
+    const raw = await aiService.generateJson(systemPrompt, userPrompt);
+    void chargeUser(userId, "onboarding_autofill");
     return mergeDraft(raw);
   } catch {
     return fallbackDraft(description);

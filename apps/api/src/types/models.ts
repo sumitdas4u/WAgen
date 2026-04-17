@@ -23,6 +23,7 @@ export interface User {
   ai_active: boolean;
   phone_number: string | null;
   phone_verified: boolean;
+  ai_token_balance: number;
 }
 
 export interface Conversation {

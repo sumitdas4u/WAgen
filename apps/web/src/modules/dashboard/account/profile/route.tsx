@@ -1,19 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
 import {
   EmailAuthProvider,
-  PhoneAuthProvider,
-  RecaptchaVerifier,
-  linkWithCredential,
   reauthenticateWithCredential,
-  updatePassword,
-  updatePhoneNumber
+  updatePassword
 } from "firebase/auth";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { updateMyProfile } from "../../../../lib/api";
 import { useAuth } from "../../../../lib/auth-context";
 import { firebaseAuth } from "../../../../lib/firebase";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import "./../account.css";
+
+const MOCK_OTP = "0000";
 
 function getInitials(name: string): string {
   return name
@@ -36,7 +34,7 @@ function passwordStrength(pw: string): 0 | 1 | 2 | 3 {
 const STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Strong"];
 const STRENGTH_CLASSES = ["", "filled-weak", "filled-fair", "filled-strong"];
 
-type PhoneStep = "idle" | "sending" | "sent" | "verifying" | "done" | "error";
+type PhoneStep = "idle" | "sent" | "verifying" | "done" | "error";
 
 function PhoneVerifySection({
   currentPhone,
@@ -51,94 +49,35 @@ function PhoneVerifySection({
 }) {
   const [phone, setPhone] = useState(currentPhone ?? "");
   const [otp, setOtp] = useState("");
-  const [step, setStep] = useState<PhoneStep>("idle");
+  const [step, setStep] = useState<PhoneStep>(currentVerified ? "done" : "idle");
   const [error, setError] = useState<string | null>(null);
-  const verificationIdRef = useRef<string | null>(null);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
-  const firebaseUser = firebaseAuth.currentUser;
-
-  const clearVerifier = () => {
-    try {
-      recaptchaVerifierRef.current?.clear();
-    } catch {
-      // verifier may already be destroyed by Firebase internally
-    }
-    recaptchaVerifierRef.current = null;
-  };
-
-  const sendOtp = async () => {
+  const sendOtp = () => {
     setError(null);
     const normalized = phone.trim();
     if (!normalized.startsWith("+") || normalized.length < 8) {
       setError("Enter phone in international format: +91XXXXXXXXXX");
       return;
     }
-    if (!firebaseUser) {
-      setError("No active session — please refresh and try again.");
-      return;
-    }
-    setStep("sending");
-    clearVerifier();
-    try {
-      recaptchaVerifierRef.current = new RecaptchaVerifier(
-        firebaseAuth,
-        "prf-recaptcha-container",
-        { size: "invisible" }
-      );
-      const provider = new PhoneAuthProvider(firebaseAuth);
-      verificationIdRef.current = await provider.verifyPhoneNumber(
-        normalized,
-        recaptchaVerifierRef.current
-      );
-      setStep("sent");
-    } catch (e) {
-      const msg = (e as Error).message;
-      if (msg.includes("auth/operation-not-allowed")) {
-        setError("Phone authentication is not enabled. Contact support.");
-      } else {
-        setError(msg);
-      }
-      setStep("error");
-      clearVerifier();
-    }
+    // Mock: advance to OTP entry — no real SMS sent yet
+    setStep("sent");
   };
 
   const verifyOtp = async () => {
     setError(null);
-    if (!verificationIdRef.current || !firebaseUser) return;
-    if (otp.trim().length !== 6) {
-      setError("Enter the 6-digit OTP.");
+    if (otp.trim() !== MOCK_OTP) {
+      setError(`Incorrect OTP. (Use ${MOCK_OTP} during testing.)`);
       return;
     }
     setStep("verifying");
     try {
-      const credential = PhoneAuthProvider.credential(verificationIdRef.current, otp.trim());
-      const hasPhoneProvider = firebaseUser.providerData.some(
-        (p) => p.providerId === "phone"
-      );
-      if (hasPhoneProvider) {
-        await updatePhoneNumber(firebaseUser, credential);
-      } else {
-        await linkWithCredential(firebaseUser, credential);
-      }
-      // Persist to backend
-      await updateMyProfile(token, {
-        phoneNumber: phone.trim(),
-        phoneVerified: true
-      });
+      await updateMyProfile(token, { phoneNumber: phone.trim(), phoneVerified: true });
       await onSaved();
       setStep("done");
     } catch (e) {
       const msg = (e as Error).message;
-      if (msg.includes("auth/invalid-verification-code")) {
-        setError("Incorrect OTP. Please try again.");
-      } else if (msg.includes("auth/code-expired")) {
-        setError("OTP expired. Please resend.");
-      } else {
-        setError(msg);
-      }
-      setStep("sent"); // back to OTP entry
+      setError(msg);
+      setStep("sent");
     }
   };
 
@@ -157,6 +96,14 @@ function PhoneVerifySection({
               <span className="acc-status-dot acc-status-dot--on">Verified</span>
             </span>
           </div>
+          <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0, marginTop: "0.75rem" }}>
+            <button
+              className="acc-secondary-btn"
+              onClick={() => { setStep("idle"); setOtp(""); setError(null); }}
+            >
+              Change number
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -174,9 +121,6 @@ function PhoneVerifySection({
         )}
       </div>
       <div className="acc-card-body">
-        {/* invisible reCAPTCHA mount point */}
-        <div id="prf-recaptcha-container" />
-
         {currentVerified && currentPhone && step === "idle" && (
           <div className="acc-info-grid" style={{ marginBottom: "0.75rem" }}>
             <span className="acc-info-key">Current number</span>
@@ -202,21 +146,17 @@ function PhoneVerifySection({
             </div>
             {error && <p className="acc-save-error">{error}</p>}
             <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0 }}>
-              <button className="acc-save-btn" onClick={() => void sendOtp()}>
+              <button className="acc-save-btn" onClick={sendOtp}>
                 Send OTP
               </button>
             </div>
           </>
         )}
 
-        {step === "sending" && (
-          <p style={{ color: "#5f6f86", fontSize: "0.83rem" }}>Sending OTP to {phone}…</p>
-        )}
-
         {(step === "sent" || step === "verifying") && (
           <>
             <p style={{ fontSize: "0.83rem", color: "#334155" }}>
-              OTP sent to <strong>{phone}</strong>. Enter the 6-digit code below.
+              OTP sent to <strong>{phone}</strong>. Enter the 4-digit code below.
             </p>
             <div className="acc-form-row">
               <label className="acc-label" htmlFor="prf-otp">One-time code</label>
@@ -225,10 +165,10 @@ function PhoneVerifySection({
                 className="acc-input"
                 type="text"
                 inputMode="numeric"
-                maxLength={6}
+                maxLength={4}
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                placeholder="123456"
+                placeholder="0000"
                 autoFocus
               />
             </div>
@@ -244,7 +184,7 @@ function PhoneVerifySection({
               <button
                 className="acc-save-btn"
                 onClick={() => void verifyOtp()}
-                disabled={step === "verifying" || otp.length !== 6}
+                disabled={step === "verifying" || otp.length !== 4}
               >
                 {step === "verifying" ? "Verifying…" : "Verify OTP"}
               </button>
@@ -271,9 +211,8 @@ export function Component() {
 
   useEffect(() => {
     if (user) setName(user.name ?? "");
-  }, [user?.id]); // intentionally only re-seed on user identity change
+  }, [user?.id]);
 
-  // Detect if user has password-based login (Firebase email provider)
   const firebaseUser = firebaseAuth.currentUser;
   const hasPasswordProvider = firebaseUser?.providerData.some(
     (p) => p.providerId === "password"
@@ -295,16 +234,9 @@ export function Component() {
       if (!firebaseUser || !firebaseUser.email) {
         throw new Error("No Firebase session — please log out and back in.");
       }
-      if (newPw.length < 8) {
-        throw new Error("New password must be at least 8 characters.");
-      }
-      if (newPw !== confirmPw) {
-        throw new Error("Passwords do not match.");
-      }
-      const credential = EmailAuthProvider.credential(
-        firebaseUser.email,
-        currentPw
-      );
+      if (newPw.length < 8) throw new Error("New password must be at least 8 characters.");
+      if (newPw !== confirmPw) throw new Error("Passwords do not match.");
+      const credential = EmailAuthProvider.credential(firebaseUser.email, currentPw);
       await reauthenticateWithCredential(firebaseUser, credential);
       await updatePassword(firebaseUser, newPw);
     },
@@ -379,9 +311,7 @@ export function Component() {
           <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0 }}>
             {profileMutation.isError && (
               <span className="acc-save-error">
-                {profileMutation.error instanceof Error
-                  ? profileMutation.error.message
-                  : "Save failed"}
+                {profileMutation.error instanceof Error ? profileMutation.error.message : "Save failed"}
               </span>
             )}
             {profileSavedOk && <span className="acc-save-success">Name updated</span>}

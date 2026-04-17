@@ -11,6 +11,7 @@ import {
 } from "../services/knowledge-ingestion-service.js";
 import { createFileIngestionJobs, listIngestionJobs } from "../services/knowledge-ingestion-jobs-service.js";
 import { deleteKnowledgeSource, getKnowledgeStats, listKnowledgeChunks, listKnowledgeSources } from "../services/rag-service.js";
+import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
 
 const ManualSchema = z.object({
   text: z.string().min(20),
@@ -65,6 +66,15 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Manual text must be at least 20 characters" });
       }
 
+      try {
+        await requireAiCredit(request.authUser.userId, "kb_ingest_chunk");
+      } catch (e) {
+        if (e instanceof AiTokensDepletedError) {
+          return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });
+        }
+        throw e;
+      }
+
       const chunks = await ingestManualText(request.authUser.userId, parsed.data.text, parsed.data.sourceName);
       return reply.send({ ok: true, chunks });
     }
@@ -79,12 +89,30 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Invalid website URL" });
       }
 
+      try {
+        await requireAiCredit(request.authUser.userId, "kb_ingest_chunk");
+      } catch (e) {
+        if (e instanceof AiTokensDepletedError) {
+          return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });
+        }
+        throw e;
+      }
+
       const chunks = await ingestWebsiteUrl(request.authUser.userId, parsed.data.url, parsed.data.sourceName);
       return reply.send({ ok: true, chunks });
     }
   );
 
   const ingestFilesHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await requireAiCredit(request.authUser.userId, "kb_ingest_chunk");
+    } catch (e) {
+      if (e instanceof AiTokensDepletedError) {
+        return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });
+      }
+      throw e;
+    }
+
     const files = await withTimeout(
       request.saveRequestFiles(),
       env.PDF_UPLOAD_BUFFER_TIMEOUT_MS,

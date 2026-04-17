@@ -27,6 +27,13 @@ import {
   renderGoogleAuthPopupPage
 } from "../services/google-auth-service.js";
 import { deleteAccountWithAssociatedData } from "../services/account-deletion-service.js";
+import {
+  creditSignupTokens,
+  getTokenStatus,
+  getTokenLedger,
+  getTokenUsageByAction,
+  getTokenUsageByDay
+} from "../services/ai-token-service.js";
 import { env } from "../config/env.js";
 
 const SignupSchema = z.object({
@@ -115,6 +122,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     try {
       const user = await createUser(parsed.data);
+      void creditSignupTokens(user.id);
       const token = issueToken(user.id, user.email);
       return reply.send({ token, user });
     } catch (error) {
@@ -185,6 +193,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             firebaseUid: decodedToken.uid,
             businessType: parsed.data.businessType
           });
+          if (user) void creditSignupTokens(user.id);
         }
       }
 
@@ -348,6 +357,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             googleAuthSub: googleProfile.googleAccountId,
             businessType: googleProfile.businessType ?? undefined
           });
+          if (user) void creditSignupTokens(user.id);
         }
       }
 
@@ -448,6 +458,21 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     return reply.send({ user });
+  });
+
+  fastify.get("/api/auth/ai-wallet", { preHandler: [fastify.requireAuth] }, async (request) => {
+    const userId = request.authUser.userId;
+    const user = await getUserById(userId);
+    const planCode = user?.subscription_plan ?? "trial";
+
+    const [status, ledger, usageByAction, usageByDay] = await Promise.all([
+      getTokenStatus(userId, planCode),
+      getTokenLedger(userId, 50),
+      getTokenUsageByAction(userId, 30),
+      getTokenUsageByDay(userId, 30)
+    ]);
+
+    return { status, ledger, usageByAction, usageByDay };
   });
 
   fastify.post("/api/auth/account/delete", { preHandler: [fastify.requireAuth] }, async (request, reply) => {

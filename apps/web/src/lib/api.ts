@@ -247,6 +247,7 @@ export interface User {
   ai_active: boolean;
   phone_number: string | null;
   phone_verified: boolean;
+  ai_token_balance: number;
 }
 
 export interface AuthResponse {
@@ -622,6 +623,77 @@ export function updateAdminModel(token: string, model: string) {
     token,
     body: JSON.stringify({ model })
   });
+}
+
+export interface AiProviderMeta {
+  id: "openai" | "anthropic" | "gemini";
+  label: string;
+  chatModels: string[];
+  supportsEmbeddings: boolean;
+  supportsVision: boolean;
+}
+
+export function fetchAdminProvider(token: string) {
+  return apiRequest<{
+    providers: AiProviderMeta[];
+    active: { provider: string; model: string | null; hasApiKey: boolean } | null;
+  }>("/api/admin/provider", { token });
+}
+
+export function updateAdminProvider(
+  token: string,
+  payload: { provider: string; apiKey: string; model?: string }
+) {
+  return apiRequest<{ ok: boolean; provider: string }>("/api/admin/provider", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function clearAdminProvider(token: string) {
+  return apiRequest<{ ok: boolean }>("/api/admin/provider", {
+    method: "DELETE",
+    token
+  });
+}
+
+export interface AiWalletStatus {
+  balance: number;
+  planCode: string;
+  monthlyQuota: number;
+  canUseAiGeneration: boolean;
+  isLow: boolean;
+}
+
+export interface AiLedgerRow {
+  id: string;
+  amount: number;
+  action_type: string;
+  reference_id: string | null;
+  balance_after: number;
+  created_at: string;
+}
+
+export interface AiUsageByAction {
+  action_type: string;
+  tokens_used: number;
+  calls: number;
+}
+
+export interface AiUsageByDay {
+  day: string;
+  tokens_used: number;
+  calls: number;
+}
+
+export function fetchAiWallet(token: string) {
+  return apiRequest<{
+    status: AiWalletStatus;
+    ledger: AiLedgerRow[];
+    usageByAction: AiUsageByAction[];
+    usageByDay: AiUsageByDay[];
+  }>("/api/auth/ai-wallet", { token });
 }
 
 export function fetchMe(token: string) {

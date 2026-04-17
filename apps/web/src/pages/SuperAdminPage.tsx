@@ -14,12 +14,16 @@ import {
   updateAdminPlan,
   updateAdminWorkspaceStatus,
   updateAdminModel,
+  fetchAdminProvider,
+  updateAdminProvider,
+  clearAdminProvider,
   type AdminSubscriptionSummary,
   type AdminOverview,
   type AdminUserUsage,
   type AdminWorkspaceSummary,
   type WorkspacePlanSummary,
-  type UsageAnalyticsResponse
+  type UsageAnalyticsResponse,
+  type AiProviderMeta
 } from "../lib/api";
 import { clearSuperAdminToken, getStoredSuperAdminToken } from "../lib/super-admin-auth";
 
@@ -34,6 +38,11 @@ export function SuperAdminPage() {
   const [currentModel, setCurrentModel] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  // AI Provider
+  const [providerList, setProviderList] = useState<AiProviderMeta[]>([]);
+  const [activeProvider, setActiveProvider] = useState<{ provider: string; model: string | null; hasApiKey: boolean } | null>(null);
+  const [providerDraft, setProviderDraft] = useState<{ provider: string; apiKey: string; model: string }>({ provider: "openai", apiKey: "", model: "" });
+  const [providerSaving, setProviderSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -58,13 +67,14 @@ export function SuperAdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [overviewResponse, usersResponse, modelResponse, subscriptionsResponse, plansResponse, workspacesResponse] = await Promise.all([
+      const [overviewResponse, usersResponse, modelResponse, subscriptionsResponse, plansResponse, workspacesResponse, providerResponse] = await Promise.all([
         fetchAdminOverview(token),
         fetchAdminUsers(token, { limit: 300 }),
         fetchAdminModel(token),
         fetchAdminSubscriptions(token, { limit: 300 }),
         fetchAdminPlans(token, { includeInactive: true }),
-        fetchAdminWorkspaces(token, { limit: 500 })
+        fetchAdminWorkspaces(token, { limit: 500 }),
+        fetchAdminProvider(token)
       ]);
       setOverview(overviewResponse.overview);
       setUsers(usersResponse.users);
@@ -74,6 +84,16 @@ export function SuperAdminPage() {
       setCurrentModel(modelResponse.currentModel);
       setSelectedModel(modelResponse.currentModel);
       setAvailableModels(modelResponse.availableModels);
+      setProviderList(providerResponse.providers);
+      setActiveProvider(providerResponse.active);
+      if (providerResponse.active) {
+        const meta = providerResponse.providers.find(p => p.id === providerResponse.active!.provider);
+        setProviderDraft({
+          provider: providerResponse.active.provider,
+          apiKey: "",
+          model: providerResponse.active.model ?? meta?.chatModels[0] ?? ""
+        });
+      }
       setPlanCreditDrafts(
         plansResponse.plans.reduce<Record<string, string>>((acc, plan) => {
           acc[plan.id] = String(plan.monthlyCredits);
@@ -94,6 +114,45 @@ export function SuperAdminPage() {
   }, [token]);
 
   const totalUsersLabel = useMemo(() => overview?.totalUsers ?? 0, [overview]);
+
+  const handleSaveProvider = async () => {
+    if (!token || !providerDraft.provider || !providerDraft.apiKey.trim()) return;
+    setProviderSaving(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await updateAdminProvider(token, {
+        provider: providerDraft.provider,
+        apiKey: providerDraft.apiKey.trim(),
+        model: providerDraft.model.trim() || undefined
+      });
+      const updated = await fetchAdminProvider(token);
+      setActiveProvider(updated.active);
+      setProviderDraft(d => ({ ...d, apiKey: "" }));
+      setInfo(`AI provider set to ${providerDraft.provider}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProviderSaving(false);
+    }
+  };
+
+  const handleClearProvider = async () => {
+    if (!token) return;
+    setProviderSaving(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await clearAdminProvider(token);
+      setActiveProvider(null);
+      setProviderDraft({ provider: "openai", apiKey: "", model: "" });
+      setInfo("AI provider config cleared — system falls back to OPENAI_API_KEY env var.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProviderSaving(false);
+    }
+  };
 
   const handleSaveModel = async () => {
     if (!token || !selectedModel) {
@@ -253,8 +312,86 @@ export function SuperAdminPage() {
         <article><h3>Total Knowledge Chunks</h3><p>{overview?.totalChunks ?? 0}</p></article>
       </section>
 
+      {/* ── AI Provider Config ──────────────────────────────────────────── */}
       <section className="finance-panel">
-        <h2>Global GPT Model</h2>
+        <h2>AI Provider Config</h2>
+        {activeProvider ? (
+          <p className="tiny-note" style={{ marginBottom: "0.75rem" }}>
+            Active: <strong>{activeProvider.provider}</strong>
+            {activeProvider.model ? ` / ${activeProvider.model}` : ""}
+            {" "}· API key configured ✓
+          </p>
+        ) : (
+          <p className="tiny-note" style={{ marginBottom: "0.75rem" }}>
+            No DB override — using <strong>OPENAI_API_KEY</strong> env var (fallback)
+          </p>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+          <div>
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, marginBottom: "0.3rem" }}>Provider</label>
+            <select
+              value={providerDraft.provider}
+              onChange={(e) => {
+                const pid = e.target.value;
+                const meta = providerList.find(p => p.id === pid);
+                setProviderDraft(d => ({ ...d, provider: pid, model: meta?.chatModels[0] ?? "" }));
+              }}
+              style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ddd" }}
+            >
+              {providerList.map(p => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, marginBottom: "0.3rem" }}>Model</label>
+            <select
+              value={providerDraft.model}
+              onChange={(e) => setProviderDraft(d => ({ ...d, model: e.target.value }))}
+              style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ddd" }}
+            >
+              {(providerList.find(p => p.id === providerDraft.provider)?.chatModels ?? []).map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, marginBottom: "0.3rem" }}>
+              API Key {activeProvider ? "(leave blank to keep existing)" : ""}
+            </label>
+            <input
+              type="password"
+              value={providerDraft.apiKey}
+              onChange={(e) => setProviderDraft(d => ({ ...d, apiKey: e.target.value }))}
+              placeholder={activeProvider ? "••••••••• (unchanged)" : "sk-... or API key"}
+              style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ddd", boxSizing: "border-box" }}
+            />
+          </div>
+        </div>
+        {(providerList.find(p => p.id === providerDraft.provider) && !providerList.find(p => p.id === providerDraft.provider)!.supportsEmbeddings) && (
+          <p className="tiny-note" style={{ color: "#b45309", marginBottom: "0.5rem" }}>
+            ⚠ {providerList.find(p => p.id === providerDraft.provider)!.label} does not support embeddings — a separate OPENAI_API_KEY env var is required for the RAG pipeline.
+          </p>
+        )}
+        <div className="header-actions">
+          <button
+            className="primary-btn"
+            onClick={() => void handleSaveProvider()}
+            disabled={providerSaving || !providerDraft.provider || (!activeProvider && !providerDraft.apiKey.trim())}
+          >
+            {providerSaving ? "Saving…" : "Save Provider"}
+          </button>
+          {activeProvider && (
+            <button className="ghost-btn" onClick={() => void handleClearProvider()} disabled={providerSaving}>
+              Clear (use env)
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* ── Legacy model override (per-model within the active provider) ── */}
+      <section className="finance-panel">
+        <h2>Legacy Model Override</h2>
         <div className="header-actions">
           <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
             {availableModels.map((model) => (
@@ -265,7 +402,7 @@ export function SuperAdminPage() {
             Save Model
           </button>
         </div>
-        <p className="tiny-note">Current model used for all tenant replies: <strong>{currentModel || "Not set"}</strong></p>
+        <p className="tiny-note">Current effective model: <strong>{currentModel || "Not set"}</strong></p>
       </section>
 
       <section className="finance-panel">

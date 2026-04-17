@@ -30,7 +30,8 @@ function toPublicUser(row: UserRow): User {
     custom_personality_prompt: row.custom_personality_prompt,
     ai_active: row.ai_active,
     phone_number: row.phone_number ?? null,
-    phone_verified: row.phone_verified ?? false
+    phone_verified: row.phone_verified ?? false,
+    ai_token_balance: row.ai_token_balance ?? 0
   };
 }
 
@@ -46,7 +47,7 @@ export async function createUser(input: {
   const result = await pool.query<User>(
     `INSERT INTO users (name, email, password_hash, business_type)
      VALUES ($1, $2, $3, $4)
-     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified`,
+     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance`,
     [input.name.trim(), normalizedEmail, passwordHash, input.businessType ?? null]
   );
 
@@ -67,7 +68,7 @@ export async function createUserFromFirebase(input: {
   const result = await pool.query<User>(
     `INSERT INTO users (name, email, password_hash, firebase_uid, business_type)
      VALUES ($1, $2, NULL, $3, $4)
-     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified`,
+     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance`,
     [input.name.trim(), normalizedEmail, input.firebaseUid, input.businessType ?? null]
   );
 
@@ -88,7 +89,7 @@ export async function createUserFromGoogleAuth(input: {
   const result = await pool.query<User>(
     `INSERT INTO users (name, email, password_hash, google_auth_sub, business_type)
      VALUES ($1, $2, NULL, $3, $4)
-     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified`,
+     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance`,
     [input.name.trim(), normalizedEmail, input.googleAuthSub, input.businessType ?? null]
   );
 
@@ -102,7 +103,7 @@ export async function createUserFromGoogleAuth(input: {
 export async function authenticateUser(email: string, password: string): Promise<User | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE email = $1`,
     [normalizedEmail]
@@ -164,7 +165,7 @@ export async function getUserAuthIdentityById(userId: string): Promise<UserAuthI
 
 export async function getUserById(userId: string): Promise<User | null> {
   const result = await pool.query<User>(
-    `SELECT id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified
+    `SELECT id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE id = $1`,
     [userId]
@@ -175,7 +176,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 
 export async function getUserByFirebaseUid(firebaseUid: string): Promise<User | null> {
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE firebase_uid = $1
      LIMIT 1`,
@@ -207,7 +208,7 @@ export async function setUserFirebaseUidAndDisableLegacyPassword(userId: string,
 
 export async function getUserByGoogleAuthSub(googleAuthSub: string): Promise<User | null> {
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified
+    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE google_auth_sub = $1
      LIMIT 1`,
@@ -350,7 +351,7 @@ export async function updateUserDetails(
     `UPDATE users
      SET ${setClauses.join(", ")}
      WHERE id = $${idx}
-     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified`,
+     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance`,
     values
   );
 

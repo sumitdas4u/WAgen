@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getUserById, setAgentActive, updateBusinessBasics, updatePersonality } from "../services/user-service.js";
 import { generateOnboardingDraft } from "../services/onboarding-autofill-service.js";
 import { buildSalesReply } from "../services/ai-reply-service.js";
+import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
 
 const BusinessSchema = z.object({
   companyName: z.string().trim().max(120).optional().default(""),
@@ -72,6 +73,15 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
       const parsed = AutofillSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: "Description must be at least 20 characters" });
+      }
+
+      try {
+        await requireAiCredit(request.authUser.userId, "onboarding_autofill");
+      } catch (e) {
+        if (e instanceof AiTokensDepletedError) {
+          return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });
+        }
+        throw e;
       }
 
       const draft = await generateOnboardingDraft(request.authUser.userId, parsed.data.description);

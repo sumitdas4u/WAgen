@@ -9,6 +9,7 @@ import {
   updateFlow
 } from "../services/flow-service.js";
 import { generateFlowDraft } from "../services/flow-draft-generator-service.js";
+import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
 import { pool } from "../db/pool.js";
 import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
@@ -105,6 +106,15 @@ export async function flowRoutes(app: FastifyInstance) {
       }
       if (channel !== "web" && channel !== "qr" && channel !== "api") {
         return reply.status(400).send({ error: "A valid channel is required." });
+      }
+
+      try {
+        await requireAiCredit(req.authUser.userId, "flow_draft_generate");
+      } catch (e) {
+        if (e instanceof AiTokensDepletedError) {
+          return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });
+        }
+        throw e;
       }
 
       try {

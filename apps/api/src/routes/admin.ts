@@ -21,6 +21,13 @@ import {
   listAvailableChatModels,
   setChatModelOverride
 } from "../services/model-settings-service.js";
+import {
+  getActiveProviderConfig,
+  setActiveProviderConfig,
+  clearActiveProviderConfig,
+  SUPPORTED_PROVIDERS,
+  type SupportedProvider
+} from "../services/ai-service.js";
 
 const AdminLoginSchema = z.object({
   email: z.string().email(),
@@ -29,6 +36,12 @@ const AdminLoginSchema = z.object({
 
 const SetModelSchema = z.object({
   model: z.string().min(2)
+});
+
+const SetProviderSchema = z.object({
+  provider: z.enum(["openai", "anthropic", "gemini"]),
+  apiKey: z.string().min(1),
+  model: z.string().optional()
 });
 
 const UsersQuerySchema = z.object({
@@ -314,5 +327,34 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
 
     await setChatModelOverride(model);
     return { ok: true, model };
+  });
+
+  // ── AI Provider config ─────────────────────────────────────────────────────
+  fastify.get("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const config = await getActiveProviderConfig();
+    return {
+      providers: SUPPORTED_PROVIDERS,
+      active: config
+        ? { provider: config.provider, model: config.model ?? null, hasApiKey: true }
+        : null
+    };
+  });
+
+  fastify.post("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = SetProviderSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid provider payload", details: parsed.error.flatten().fieldErrors });
+    }
+    await setActiveProviderConfig({
+      provider: parsed.data.provider as SupportedProvider,
+      apiKey: parsed.data.apiKey,
+      model: parsed.data.model?.trim() || undefined
+    });
+    return { ok: true, provider: parsed.data.provider };
+  });
+
+  fastify.delete("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    await clearActiveProviderConfig();
+    return { ok: true };
   });
 }

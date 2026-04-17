@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { GeneratedTemplate, TemplateStyle } from "../../../lib/api";
 import { useGenerateTemplateMutation } from "./queries";
+import { AiGate, useAiGate } from "../../../components/ai-gate";
 
 const STYLES: Array<{ value: TemplateStyle; label: string; emoji: string; desc: string }> = [
   { value: "normal", label: "Normal", emoji: "✏️", desc: "Clear and professional" },
@@ -19,6 +20,7 @@ export function AIGeneratorPanel({ token, onClose, onUse }: Props) {
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState<TemplateStyle>("normal");
   const generateMutation = useGenerateTemplateMutation(token);
+  const { blocked } = useAiGate();
 
   return (
     <div
@@ -101,30 +103,32 @@ export function AIGeneratorPanel({ token, onClose, onUse }: Props) {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() =>
-          generateMutation.mutate({ prompt, style }, {
-            onSuccess: (data) => {
-              if (data) onUse(data);
-            }
-          })
-        }
-        disabled={prompt.trim().length < 5 || generateMutation.isPending}
-        style={{
-          padding: "12px",
-          borderRadius: "8px",
-          background: "#25d366",
-          color: "#fff",
-          border: "none",
-          fontWeight: 700,
-          fontSize: "15px",
-          cursor: "pointer",
-          opacity: prompt.trim().length < 5 || generateMutation.isPending ? 0.6 : 1
-        }}
-      >
-        {generateMutation.isPending ? "Generating..." : "Generate Template ✨"}
-      </button>
+      <AiGate message="Upgrade your plan to use the AI Template Generator.">
+        <button
+          type="button"
+          onClick={() =>
+            generateMutation.mutate({ prompt, style }, {
+              onSuccess: (data) => {
+                if (data) onUse(data);
+              }
+            })
+          }
+          disabled={blocked || prompt.trim().length < 5 || generateMutation.isPending}
+          style={{
+            padding: "12px",
+            borderRadius: "8px",
+            background: "#25d366",
+            color: "#fff",
+            border: "none",
+            fontWeight: 700,
+            fontSize: "15px",
+            cursor: "pointer",
+            opacity: blocked || prompt.trim().length < 5 || generateMutation.isPending ? 0.6 : 1
+          }}
+        >
+          {generateMutation.isPending ? "Generating..." : "Generate Template ✨"}
+        </button>
+      </AiGate>
 
       {generateMutation.isError && (
         <div

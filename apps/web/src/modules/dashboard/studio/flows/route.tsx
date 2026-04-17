@@ -20,6 +20,7 @@ import ReactFlow, {
 } from "reactflow";
 import type { DashboardModulePrefetchContext } from "../../../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
+import { useAiGate } from "../../../../components/ai-gate";
 import {
   apiRequest,
   generateFlowDraft as apiGenerateFlowDraftRequest,
@@ -861,6 +862,7 @@ function CreateFlowModal(props: {
   const [name, setName] = useState("Untitled Flow");
   const [aiPrompt, setAiPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const { blocked: aiBlocked } = useAiGate();
   const [error, setError] = useState<string | null>(null);
 
   const handleCreate = () => {
@@ -1020,9 +1022,10 @@ function CreateFlowModal(props: {
                   className="fn-btn fn-btn-primary"
                   style={{ flex: 1 }}
                   onClick={handleGenerateWithAi}
-                  disabled={!aiPrompt.trim() || busy}
+                  disabled={aiBlocked || !aiPrompt.trim() || busy}
+                  title={aiBlocked ? "Upgrade your plan to use AI flow generation" : undefined}
                 >
-                  {busy ? "Generating..." : "Generate Draft"}
+                  {busy ? "Generating..." : aiBlocked ? "Upgrade to Generate" : "Generate Draft"}
                 </button>
               )}
             </div>

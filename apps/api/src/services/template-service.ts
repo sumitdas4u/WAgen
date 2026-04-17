@@ -1,6 +1,6 @@
 import { pool } from "../db/pool.js";
-import { openAIService } from "./openai-service.js";
-import { deductTokens, AI_TOKEN_COSTS } from "./ai-token-service.js";
+import { aiService } from "./ai-service.js";
+import { chargeUser } from "./ai-token-service.js";
 import {
   decryptToken,
   graphDelete,
@@ -1054,8 +1054,8 @@ Rules:
 
   const userPrompt = `Create a WhatsApp message template for: ${payload.prompt}`;
 
-  const raw = await openAIService.generateJson(systemPrompt, userPrompt);
-  void deductTokens(userId, "template_generate", AI_TOKEN_COSTS.template_generate);
+  const raw = await aiService.generateJson(systemPrompt, userPrompt);
+  void chargeUser(userId, "template_generate");
 
   const suggestedName =
     typeof raw.suggestedName === "string"
