@@ -266,7 +266,7 @@ export function Component() {
                     ...current,
                     createChatRow(
                       "system",
-                      "We did not receive a live widget reply in time. This usually means the widget is reconnecting, the agent is paused, or no flow matched this message yet."
+                      "We did not receive a live widget reply in time. This usually means the widget is reconnecting, the agent is paused, or the default reply mode is set to manual."
                     )
                   ]);
                   widgetReplyTimeoutRef.current = null;
@@ -305,6 +305,7 @@ export function Component() {
 
           <div className="dashboard-test-footnote">
             <p>Messages sent here create or update the matching web conversation inside Inbox.</p>
+            <p>Replies follow the Default Reply mode set in Web Channel settings — AI, Flow, or Manual.</p>
             <p>If the widget disconnects, this page reconnects automatically and system notes keep the reason visible.</p>
           </div>
         </div>

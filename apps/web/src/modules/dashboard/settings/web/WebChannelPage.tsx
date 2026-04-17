@@ -2,10 +2,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../../../lib/auth-context";
 import { useNavigate } from "react-router-dom";
+import {
+  fetchPublishedFlows,
+  type ChannelDefaultReplyConfig,
+  type PublishedFlowSummary
+} from "../../../../lib/api";
 import { API_URL } from "../../../../shared/api/client";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
-import { toggleWebsiteAgent } from "../api";
+import { fetchSettingsChannelDefaultReply, saveSettingsChannelDefaultReply, toggleWebsiteAgent } from "../api";
 
 type WidgetSetupDraft = {
   chatbotLogoUrl: string;
@@ -50,6 +55,9 @@ export function WebChannelPage() {
   const [snippetCopied, setSnippetCopied] = useState<"idle" | "copied" | "error">("idle");
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [defaultReplyConfig, setDefaultReplyConfig] = useState<ChannelDefaultReplyConfig | null>(null);
+  const [defaultReplyFlows, setDefaultReplyFlows] = useState<PublishedFlowSummary[]>([]);
+  const [defaultReplySaving, setDefaultReplySaving] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -80,6 +88,50 @@ export function WebChannelPage() {
     }, 40);
     return () => window.clearTimeout(timer);
   }, [draft.previewOpen, draft.initialGreeting, draft.disclaimer]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      fetchSettingsChannelDefaultReply(token, "web"),
+      fetchPublishedFlows(token)
+    ])
+      .then(([configResponse, flowsResponse]) => {
+        if (cancelled) return;
+        setDefaultReplyConfig(configResponse.config);
+        setDefaultReplyFlows(flowsResponse.filter((flow) => flow.channel === "web"));
+      })
+      .catch((err) => {
+        if (!cancelled) console.warn("[WebChannelPage] Failed to load default reply settings", err);
+      });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const defaultReplyMode = defaultReplyConfig?.mode ?? "manual";
+  const defaultReplyFlowId = defaultReplyConfig?.flowId ?? "";
+
+  const handleSaveDefaultReply = async () => {
+    if (!defaultReplyConfig) return;
+    if (defaultReplyConfig.mode === "flow" && !defaultReplyConfig.flowId) {
+      setError("Select a published web flow before saving default reply settings.");
+      setInfo(null);
+      return;
+    }
+    setDefaultReplySaving(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const response = await saveSettingsChannelDefaultReply(token, "web", {
+        mode: defaultReplyConfig.mode,
+        flowId: defaultReplyConfig.mode === "flow" ? defaultReplyConfig.flowId : null
+      });
+      setDefaultReplyConfig(response.config);
+      setInfo("Default reply settings saved.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDefaultReplySaving(false);
+    }
+  };
 
   const themeColor = normalizeHex(draft.backgroundColor);
   const previewSizeClass = draft.chatbotSize === "small" ? "size-small" : draft.chatbotSize === "large" ? "size-large" : "size-medium";
@@ -140,6 +192,92 @@ export function WebChannelPage() {
             </button>
           </div>
         </header>
+
+        <div
+          style={{
+            border: "1px solid #dbe4ee",
+            borderRadius: "16px",
+            padding: "1rem 1.1rem",
+            background: "#f8fafc",
+            marginBottom: "1rem",
+            display: "grid",
+            gap: "0.8rem"
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1rem", color: "#0f172a" }}>Default Reply</h3>
+            <p style={{ margin: "0.25rem 0 0", color: "#475569", fontSize: "0.9rem" }}>
+              Choose what should happen when no web flow matches, or when a flow gets invalid replies twice.
+            </p>
+          </div>
+          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span style={{ fontSize: "0.8rem", color: "#475569", fontWeight: 600 }}>Reply mode</span>
+              <select
+                value={defaultReplyMode}
+                disabled={defaultReplySaving}
+                onChange={(event) =>
+                  setDefaultReplyConfig((current) =>
+                    current
+                      ? {
+                          ...current,
+                          mode: event.target.value as ChannelDefaultReplyConfig["mode"],
+                          flowId: event.target.value === "flow" ? current.flowId : null
+                        }
+                      : current
+                  )
+                }
+                style={{ minHeight: "42px", borderRadius: "10px", border: "1px solid #cbd5e1", padding: "0 0.8rem" }}
+              >
+                <option value="manual">Manual reply</option>
+                <option value="flow">Flow</option>
+                <option value="ai">AI</option>
+              </select>
+            </label>
+
+            {defaultReplyMode === "flow" ? (
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span style={{ fontSize: "0.8rem", color: "#475569", fontWeight: 600 }}>Default flow</span>
+                <select
+                  value={defaultReplyFlowId}
+                  disabled={defaultReplySaving}
+                  onChange={(event) =>
+                    setDefaultReplyConfig((current) =>
+                      current
+                        ? { ...current, flowId: event.target.value || null }
+                        : current
+                    )
+                  }
+                  style={{ minHeight: "42px", borderRadius: "10px", border: "1px solid #cbd5e1", padding: "0 0.8rem" }}
+                >
+                  <option value="">Select published web flow</option>
+                  {defaultReplyFlows.map((flow) => (
+                    <option key={flow.id} value={flow.id}>
+                      {flow.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
+            <p style={{ margin: 0, color: "#64748b", fontSize: "0.82rem" }}>
+              {defaultReplyMode === "manual"
+                ? "Manual means the bot stays silent until a human replies."
+                : defaultReplyMode === "ai"
+                  ? "AI uses your active bot profile for this channel."
+                  : "Flow mode sends the selected published flow as the fallback reply."}
+            </p>
+            <button
+              type="button"
+              className="primary-btn"
+              disabled={defaultReplySaving || (defaultReplyMode === "flow" && !defaultReplyFlowId)}
+              onClick={() => void handleSaveDefaultReply()}
+            >
+              {defaultReplySaving ? "Saving..." : "Save default reply"}
+            </button>
+          </div>
+        </div>
 
         <div className="web-widget-setup-layout">
           <section className="web-widget-form-section">

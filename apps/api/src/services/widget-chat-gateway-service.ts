@@ -83,8 +83,10 @@ function getWidgetSystemMessage(reason: ProcessIncomingMessageResult["reason"]):
       return "This conversation is in manual takeover mode, so the chatbot will not answer until AI is resumed.";
     case "conversation_paused":
       return "AI replies are paused for this conversation. Resume automation and try again.";
+    case "default_reply_manual":
+      return "Manual reply mode is active for this channel. The bot stays silent — a human needs to reply from Inbox.";
     case "no_matching_flow":
-      return "No chatbot flow matched this message. Add a matching flow or a default AI step, then test again.";
+      return "No chatbot flow matched this message, and no default reply is configured. Add a matching flow or set a default reply mode in Web Channel settings.";
     case "flow_error":
       return "The chatbot flow hit an error while processing this test. Review the flow setup and AI Review Center logs.";
     case "external_bot_detected":

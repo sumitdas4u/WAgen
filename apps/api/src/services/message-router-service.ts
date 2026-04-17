@@ -67,7 +67,8 @@ export interface ProcessIncomingMessageResult {
     | "missing_channel_adapter"
     | "insufficient_credits"
     | "flow_error"
-    | "no_matching_flow";
+    | "no_matching_flow"
+    | "default_reply_manual";
 }
 
 function normalizePhoneCandidate(value: string): string | null {
@@ -335,12 +336,22 @@ export async function processIncomingMessage(
 
   if (flowResult.result === "not_matched") {
     // Default: silence. No reply goes out unless a flow (or default reply flow) handled the message.
+    // Distinguish intentional manual mode from genuinely unmatched (no config set / flow missing).
+    let notMatchedReason: ProcessIncomingMessageResult["reason"] = "no_matching_flow";
+    try {
+      const notMatchedConfig = await resolveChannelDefaultReplyConfig(input.userId, input.channelType, { user });
+      if (notMatchedConfig.mode === "manual" && notMatchedConfig.source === "explicit") {
+        notMatchedReason = "default_reply_manual";
+      }
+    } catch {
+      // keep default reason
+    }
     return {
       conversationId: conversation.id,
       stage: latestConversationState.stage,
       score: latestConversationState.score,
       autoReplySent: false,
-      reason: "no_matching_flow"
+      reason: notMatchedReason
     };
   }
 
