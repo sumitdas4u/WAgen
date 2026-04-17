@@ -143,9 +143,12 @@ class AIService {
   }
 
   isConfigured(): boolean {
-    // Synchronous check — true if either env key OR DB config is likely present.
-    // The full check happens lazily on first call.
-    return Boolean(env.OPENAI_API_KEY);
+    // True if the env key is set OR a DB provider config is cached.
+    // The DB config is populated on the first successful AI call, so after
+    // the first request this accurately reflects Anthropic/Gemini setups too.
+    if (env.OPENAI_API_KEY) return true;
+    if (cachedConfig && Date.now() < cacheExpiry) return true;
+    return false;
   }
 
   async embed(text: string): Promise<number[]> {

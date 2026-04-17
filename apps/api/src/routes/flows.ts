@@ -9,7 +9,7 @@ import {
   updateFlow
 } from "../services/flow-service.js";
 import { generateFlowDraft } from "../services/flow-draft-generator-service.js";
-import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
+import { requireAiCredit, AiTokensDepletedError, chargeUser } from "../services/ai-token-service.js";
 import { pool } from "../db/pool.js";
 import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
@@ -118,7 +118,9 @@ export async function flowRoutes(app: FastifyInstance) {
       }
 
       try {
-        const draft = await generateFlowDraft({ prompt, channel, userId: req.authUser.userId });
+        const draft = await generateFlowDraft({ prompt, channel });
+        // Charge after successful generation (route owns billing, not service)
+        void chargeUser(req.authUser.userId, "flow_draft_generate");
         return reply.send(draft);
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message || "Could not generate flow draft." });
