@@ -282,13 +282,17 @@ export async function registerWidgetChatGatewayRoutes(fastify: FastifyInstance):
         const rememberedProfile = widgetLeadProfiles.get(`${wid}::${visitorId}`);
 
         try {
+          // Re-fetch user per message so that ai_active reflects the current channel state.
+          // Using the snapshot from connection time causes stale shouldAutoReply when the
+          // channel is toggled on after the socket was already established.
+          const freshWorkspace = await getUserById(wid);
           const result = await processIncomingMessage({
             userId: wid,
             channelType: "web",
             customerIdentifier: `web:${visitorId}`,
             messageText: inboundText,
             senderName: rememberedProfile?.name,
-            shouldAutoReply: Boolean(workspace.ai_active),
+            shouldAutoReply: Boolean(freshWorkspace?.ai_active),
             sendReply: async ({ text }) => {
               sendEvent(socket, {
                 event: "message",
