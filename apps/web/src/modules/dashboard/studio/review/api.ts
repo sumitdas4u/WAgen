@@ -17,7 +17,7 @@ export async function fetchReviewQueue(token: string, status: "all" | "pending" 
 }
 
 export async function fetchReviewConversation(token: string, conversationId: string): Promise<ConversationMessage[]> {
-  const response = await fetchConversationMessages(token, conversationId);
+  const response = await fetchConversationMessages(token, conversationId, { limit: 50 });
   return response.messages;
 }
 

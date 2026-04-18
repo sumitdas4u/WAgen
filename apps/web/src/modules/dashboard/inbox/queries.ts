@@ -1,40 +1,56 @@
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import {
   fetchInboxApprovedTemplates,
-  fetchInboxConversations,
-  fetchInboxMessages,
+  fetchInboxConversationsPage,
+  fetchInboxMessagesPage,
   fetchInboxNotes,
   fetchInboxPublishedFlows
 } from "./api";
 
-export function buildInboxConversationsQueryOptions(
+const INBOX_CONVERSATION_PAGE_SIZE = 20;
+const INBOX_MESSAGE_PAGE_SIZE = 5;
+
+export function buildInboxConversationsInfiniteQueryOptions(
   token: string,
   filters: { folder: string; search: string }
 ) {
-  return queryOptions({
+  return infiniteQueryOptions({
     queryKey: dashboardQueryKeys.inboxConversations(filters),
-    queryFn: () => fetchInboxConversations(token)
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      fetchInboxConversationsPage(token, {
+        limit: INBOX_CONVERSATION_PAGE_SIZE,
+        cursor: pageParam,
+        search: filters.search
+      }),
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextCursor : undefined)
   });
 }
 
-export function useInboxConversationsQuery(
+export function useInboxConversationsInfiniteQuery(
   token: string,
   filters: { folder: string; search: string }
 ) {
-  return useQuery(buildInboxConversationsQueryOptions(token, filters));
+  return useInfiniteQuery(buildInboxConversationsInfiniteQueryOptions(token, filters));
 }
 
-export function buildInboxMessagesQueryOptions(token: string, conversationId: string | null) {
-  return queryOptions({
+export function buildInboxMessagesInfiniteQueryOptions(token: string, conversationId: string | null) {
+  return infiniteQueryOptions({
     queryKey: dashboardQueryKeys.inboxMessages(conversationId ?? "none"),
-    queryFn: () => fetchInboxMessages(token, conversationId as string),
-    enabled: Boolean(conversationId)
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      fetchInboxMessagesPage(token, conversationId as string, {
+        limit: INBOX_MESSAGE_PAGE_SIZE,
+        before: pageParam
+      }),
+    enabled: Boolean(conversationId),
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextCursor : undefined)
   });
 }
 
-export function useInboxMessagesQuery(token: string, conversationId: string | null) {
-  return useQuery(buildInboxMessagesQueryOptions(token, conversationId));
+export function useInboxMessagesInfiniteQuery(token: string, conversationId: string | null) {
+  return useInfiniteQuery(buildInboxMessagesInfiniteQueryOptions(token, conversationId));
 }
 
 export function buildInboxNotesQueryOptions(token: string, conversationId: string | null) {

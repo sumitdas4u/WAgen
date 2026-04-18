@@ -804,8 +804,89 @@ export async function listConversations(
     }
   >
 > {
-  const paged = await listConversationsPage(userId, { limit: 1000 });
-  return paged.items;
+  const result = await pool.query<
+    Conversation & {
+      contact_name: string | null;
+      contact_phone: string | null;
+      contact_email: string | null;
+      assigned_agent_name: string | null;
+      unread_count: number;
+    }
+  >(
+    `SELECT
+       c.*,
+       COALESCE(ct.contact_type, c.lead_kind) AS lead_kind,
+       ap.name AS assigned_agent_name,
+       COALESCE(crs.unread_count, 0) AS unread_count,
+       COALESCE(
+         ct.display_name,
+         (
+           SELECT cm.sender_name
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.sender_name IS NOT NULL
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         (
+           SELECT (regexp_match(cm.message_text, 'Name=([^,]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
+       ) AS contact_name,
+       COALESCE(
+         ct.phone_number,
+         (
+           SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         c.phone_number
+       ) AS contact_phone,
+       COALESCE(
+         ct.email,
+         (
+           SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
+       ) AS contact_email
+     FROM conversations c
+     LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
+     LEFT JOIN conversation_read_state crs
+       ON crs.user_id = c.user_id
+      AND crs.conversation_id = c.id
+     LEFT JOIN LATERAL (
+       SELECT *
+       FROM contacts ct
+       WHERE ct.user_id = c.user_id
+         AND (ct.linked_conversation_id = c.id OR ct.phone_number = c.phone_number)
+       ORDER BY CASE WHEN ct.linked_conversation_id = c.id THEN 0 ELSE 1 END, ct.updated_at DESC
+       LIMIT 1
+     ) ct ON TRUE
+     WHERE c.user_id = $1
+     ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC`,
+    [userId]
+  );
+
+  return result.rows.map((row) => ({
+    ...row,
+    unread_count: Number(row.unread_count ?? 0),
+    visitor_online: row.channel_type === "web" ? isWidgetVisitorConnected(userId, row.phone_number) : false
+  }));
 }
 
 export async function listConversationsPage(
@@ -830,7 +911,7 @@ export async function listConversationsPage(
   const clampedLimit = Math.max(1, Math.min(100, options?.limit ?? 20));
   const cursor = decodeCursor(options?.cursor);
   const search = options?.search?.trim().toLowerCase() ?? "";
-  const values: Array<string | number> = [userId];
+  const values: Array<string | number | null> = [userId];
   const where: string[] = ["c.user_id = $1"];
 
   if (search) {
@@ -856,10 +937,10 @@ export async function listConversationsPage(
       where.push(`(
         c.last_message_at IS NULL
         OR c.last_message_at < ${timestampParam}::timestamptz
-        OR (c.last_message_at = ${timestampParam}::timestamptz AND c.id::text < ${idParam})
+        OR (c.last_message_at = ${timestampParam}::timestamptz AND c.id < ${idParam}::uuid)
       )`);
     } else {
-      where.push(`c.last_message_at IS NULL AND c.id::text < ${idParam}`);
+      where.push(`c.last_message_at IS NULL AND c.id < ${idParam}::uuid`);
     }
   }
 
@@ -952,7 +1033,6 @@ export async function listConversationsPage(
     visitor_online: row.channel_type === "web" ? isWidgetVisitorConnected(userId, row.phone_number) : false
   }));
   const nextRow = pageRows.at(-1);
-
   return {
     items,
     hasMore,
@@ -1426,7 +1506,7 @@ export async function listConversationMessagesPage(
 ): Promise<PaginatedResult<ConversationMessage>> {
   const clampedLimit = Math.max(1, Math.min(50, options?.limit ?? 5));
   const cursor = decodeCursor(options?.before);
-  const values: Array<string | number> = [conversationId];
+  const values: Array<string | number | null> = [conversationId];
   let beforeClause = "";
 
   if (cursor?.timestamp) {
@@ -1436,7 +1516,7 @@ export async function listConversationMessagesPage(
     const idParam = `$${values.length}`;
     beforeClause = `AND (
       created_at < ${timestampParam}::timestamptz
-      OR (created_at = ${timestampParam}::timestamptz AND id::text < ${idParam})
+      OR (created_at = ${timestampParam}::timestamptz AND id < ${idParam}::uuid)
     )`;
   }
 

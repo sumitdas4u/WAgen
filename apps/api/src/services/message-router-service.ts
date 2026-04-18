@@ -160,6 +160,8 @@ export async function processIncomingMessage(
     phoneNumber: input.customerIdentifier,
     direction: "inbound",
     message: normalizedMessage,
+    createdAt: new Date().toISOString(),
+    affectsListOrder: true,
     score: conversation.score,
     stage: conversation.stage
   });

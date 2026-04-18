@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
 );
 
 CREATE INDEX IF NOT EXISTS conversation_messages_conversation_idx ON conversation_messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS conversation_messages_conversation_cursor_idx ON conversation_messages(conversation_id, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS conversation_read_state (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -130,6 +131,9 @@ CREATE TABLE IF NOT EXISTS conversation_read_state (
 
 CREATE INDEX IF NOT EXISTS conversation_read_state_user_idx
   ON conversation_read_state(user_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS conversations_user_last_message_cursor_idx
+  ON conversations(user_id, last_message_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS lead_summaries (
   conversation_id UUID PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,

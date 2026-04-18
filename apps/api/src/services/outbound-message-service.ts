@@ -484,6 +484,8 @@ async function broadcastConversationUpdate(conversationId: string, summaryText: 
     phoneNumber: conversation.phone_number,
     direction: "outbound",
     message: summaryText,
+    createdAt: new Date().toISOString(),
+    affectsListOrder: true,
     score: conversation.score,
     stage: conversation.stage
   });

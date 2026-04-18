@@ -1,6 +1,7 @@
 import {
   assignFlowToConversation,
   createConversationNote,
+  type CursorPage,
   fetchConversationMessages,
   fetchConversationNotes,
   fetchConversations,
@@ -21,14 +22,36 @@ import {
   API_URL
 } from "../../../lib/api";
 
-export async function fetchInboxConversations(token: string): Promise<Conversation[]> {
-  const response = await fetchConversations(token);
-  return response.conversations;
+export async function fetchInboxConversationsPage(
+  token: string,
+  input: { limit: number; cursor?: string | null; search?: string | null }
+): Promise<CursorPage<Conversation>> {
+  const response = await fetchConversations(token, {
+    limit: input.limit,
+    cursor: input.cursor ?? null,
+    q: input.search ?? null
+  });
+  return {
+    items: response.items ?? response.conversations ?? [],
+    nextCursor: response.nextCursor ?? null,
+    hasMore: Boolean(response.hasMore)
+  };
 }
 
-export async function fetchInboxMessages(token: string, conversationId: string): Promise<ConversationMessage[]> {
-  const response = await fetchConversationMessages(token, conversationId);
-  return response.messages;
+export async function fetchInboxMessagesPage(
+  token: string,
+  conversationId: string,
+  input: { limit: number; before?: string | null }
+): Promise<CursorPage<ConversationMessage>> {
+  const response = await fetchConversationMessages(token, conversationId, {
+    limit: input.limit,
+    before: input.before ?? null
+  });
+  return {
+    items: response.items ?? response.messages,
+    nextCursor: response.nextCursor ?? null,
+    hasMore: Boolean(response.hasMore)
+  };
 }
 
 export function markInboxConversationRead(token: string, conversationId: string) {

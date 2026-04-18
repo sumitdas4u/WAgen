@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Conversation, ConversationMessage, MessageTemplate, ContactRecord } from "../../../lib/api";
@@ -19,9 +19,9 @@ import {
   startOutboundConversation
 } from "./api";
 import {
-  buildInboxConversationsQueryOptions,
-  useInboxConversationsQuery,
-  useInboxMessagesQuery,
+  buildInboxConversationsInfiniteQueryOptions,
+  useInboxConversationsInfiniteQuery,
+  useInboxMessagesInfiniteQuery,
   useInboxNotesQuery,
   useInboxPublishedFlowsQuery,
   useInboxTemplatesQuery
@@ -555,6 +555,7 @@ export function Component() {
   const chatAiMenuRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const pendingHistoryScrollRef = useRef<{ previousHeight: number; previousTop: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
@@ -580,8 +581,8 @@ export function Component() {
   const selectedNewChatConnectionActive = isMetaConnectionActive(selectedNewChatConnection);
 
   // ─── Queries ──────────────────────────────────────────────────────────────
-  const conversationsQuery = useInboxConversationsQuery(token, { folder: "all", search });
-  const messagesQuery = useInboxMessagesQuery(token, selectedConversationId);
+  const conversationsQuery = useInboxConversationsInfiniteQuery(token, { folder: "all", search });
+  const messagesQuery = useInboxMessagesInfiniteQuery(token, selectedConversationId);
   const notesQuery = useInboxNotesQuery(token, selectedConversationId);
   const publishedFlowsQuery = useInboxPublishedFlowsQuery(token);
   const contactQuery = useQuery({
@@ -600,7 +601,10 @@ export function Component() {
   const approvedTemplates = templatesQuery.data ?? [];
 
   // ─── Derived data ─────────────────────────────────────────────────────────
-  const allConversations = useMemo(() => sortConversationsByRecent(conversationsQuery.data ?? []), [conversationsQuery.data]);
+  const allConversations = useMemo(
+    () => sortConversationsByRecent(conversationsQuery.data?.pages.flatMap((page) => page.items) ?? []),
+    [conversationsQuery.data]
+  );
 
   const filteredConversations = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -627,7 +631,10 @@ export function Component() {
     [allConversations, selectedConversationId]
   );
 
-  const selectedConversationMessages = messagesQuery.data ?? [];
+  const selectedConversationMessages = useMemo(
+    () => (messagesQuery.data?.pages ? [...messagesQuery.data.pages].reverse().flatMap((page) => page.items) : []),
+    [messagesQuery.data]
+  );
   const selectedConversationNotes = notesQuery.data ?? [];
   const selectedConversationLabel = selectedConversation ? getConversationDisplayName(selectedConversation) : "Select a conversation";
   const selectedConversationStage = selectedConversation ? normalizeStage(selectedConversation.stage) : "cold";
@@ -951,12 +958,21 @@ export function Component() {
     onMutate: async (conversationId) => {
       const queryKey = dashboardQueryKeys.inboxConversations({ folder: "all", search });
       await queryClient.cancelQueries({ queryKey });
-      const previousConversations = queryClient.getQueryData<Conversation[]>(queryKey);
-      queryClient.setQueryData<Conversation[]>(queryKey, (current) =>
-        (current ?? []).map((conversation) =>
-          conversation.id === conversationId ? { ...conversation, unread_count: 0 } : conversation
-        )
-      );
+      const previousConversations = queryClient.getQueryData<InfiniteData<{ items: Conversation[]; nextCursor: string | null; hasMore: boolean }>>(queryKey);
+      queryClient.setQueryData<InfiniteData<{ items: Conversation[]; nextCursor: string | null; hasMore: boolean }>>(queryKey, (current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            items: page.items.map((conversation) =>
+              conversation.id === conversationId ? { ...conversation, unread_count: 0 } : conversation
+            )
+          }))
+        };
+      });
       return { previousConversations, queryKey };
     },
     onError: (e, _conversationId, context) => {
@@ -966,7 +982,7 @@ export function Component() {
       setError((e as Error).message);
     },
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxConversations({ folder: "all", search }) });
     }
   });
 
@@ -992,7 +1008,7 @@ export function Component() {
       return { paused, durationMinutes };
     },
     onSuccess: async ({ paused, durationMinutes }) => {
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxConversations({ folder: "all", search }) });
       setInfo(paused ? (durationMinutes === null ? "AI turned off." : `AI turned off for ${durationMinutes} minutes.`) : (durationMinutes === null ? "AI turned on." : `AI turned on for ${durationMinutes} minutes.`));
     },
     onError: (e) => setError((e as Error).message)
@@ -1005,7 +1021,7 @@ export function Component() {
     },
     onSuccess: async ({ flowName }) => {
       setFlowMenuOpen(false); setChatAiMenuOpen(false); setManualComposeConversationId(null); setReplyDraftText("");
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxConversations({ folder: "all", search }) });
       if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
       setInfo(`Assigned flow "${flowName}".`);
     },
@@ -1020,7 +1036,7 @@ export function Component() {
     onSuccess: async () => {
       setReplyDraftText("");
       setAttachedFiles([]);
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxConversations({ folder: "all", search }) });
       if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
     },
     onError: (e) => setError((e as Error).message)
@@ -1066,7 +1082,7 @@ export function Component() {
       setTemplateVarsDialog(null);
       setTemplateUploadError(null);
       setTemplateUploadingFieldKey(null);
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxConversations({ folder: "all", search }) });
       if (selectedConversationId) await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(selectedConversationId) });
       setInfo("Template sent.");
     },
@@ -1105,7 +1121,7 @@ export function Component() {
     onSuccess: async (conversationId) => {
       setNewChat(NEW_CHAT_DEFAULT);
       setNewChatContactSearch("");
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxConversations({ folder: "all", search }) });
       navigate({ pathname: `/dashboard/inbox/${conversationId}`, search: searchParamString ? `?${searchParamString}` : "" });
       setInfo("Chat started.");
     },
@@ -1139,13 +1155,39 @@ export function Component() {
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 60;
     setIsScrolledToBottom(atBottom);
-  }, []);
+    if (
+      el.scrollTop <= 80 &&
+      messagesQuery.hasNextPage &&
+      !messagesQuery.isFetchingNextPage &&
+      !messagesQuery.isLoading
+    ) {
+      pendingHistoryScrollRef.current = {
+        previousHeight: el.scrollHeight,
+        previousTop: el.scrollTop
+      };
+      void messagesQuery.fetchNextPage();
+    }
+  }, [messagesQuery]);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesEndRef.current;
     if (el) el.scrollIntoView({ behavior: "smooth" });
     setIsScrolledToBottom(true);
   }, []);
+
+  useEffect(() => {
+    if (messagesQuery.isFetchingNextPage) {
+      return;
+    }
+    const pending = pendingHistoryScrollRef.current;
+    const container = messagesContainerRef.current;
+    if (!pending || !container) {
+      return;
+    }
+    const addedHeight = container.scrollHeight - pending.previousHeight;
+    container.scrollTop = pending.previousTop + Math.max(0, addedHeight);
+    pendingHistoryScrollRef.current = null;
+  }, [messagesQuery.data, messagesQuery.isFetchingNextPage]);
 
   const handleCopyMessage = useCallback((id: string, text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -1590,44 +1632,57 @@ export function Component() {
                     {search.trim() || activeFilterCount > 0 ? "No conversations match the current filters." : "No conversations yet. Send a new inbound message to start chat tracking."}
                   </p>
                 ) : (
-                  filteredConversations.map((c) => {
-                    const label = getConversationDisplayName(c);
-                    const stage = normalizeStage(c.stage);
-                    const scoreBand = getLeadScoreBand(c);
-                    const initials = label.split(" ").map((p) => p[0] ?? "").join("").slice(0, 2).toUpperCase();
-                    const unreadCount = c.unread_count ?? 0;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className={`clone-thread-item inbox-thread-item stage-${stage}${c.id === selectedConversationId ? " active" : ""}${unreadCount > 0 ? " unread" : ""}`}
-                        onClick={() => openConversation(c.id)}
-                      >
-                        <span className="clone-thread-avatar">{initials || "U"}</span>
-                        <div className="inbox-thread-body">
-                          <header>
-                            <div className="clone-thread-title">
-                              <strong>{label}</strong>
-                              <div className="inbox-thread-badges">
-                                <span className={`clone-thread-stage ${stage}`}>{stage}</span>
-                                <span className={`inbox-chip inbox-chip-score ${scoreBand}`}>{getLeadScoreLabel(c)}</span>
-                                {unreadCount > 0 && <span className="inbox-unread-badge">{formatUnreadCount(unreadCount)}</span>}
+                  <>
+                    {filteredConversations.map((c) => {
+                      const label = getConversationDisplayName(c);
+                      const stage = normalizeStage(c.stage);
+                      const scoreBand = getLeadScoreBand(c);
+                      const initials = label.split(" ").map((p) => p[0] ?? "").join("").slice(0, 2).toUpperCase();
+                      const unreadCount = c.unread_count ?? 0;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className={`clone-thread-item inbox-thread-item stage-${stage}${c.id === selectedConversationId ? " active" : ""}${unreadCount > 0 ? " unread" : ""}`}
+                          onClick={() => openConversation(c.id)}
+                        >
+                          <span className="clone-thread-avatar">{initials || "U"}</span>
+                          <div className="inbox-thread-body">
+                            <header>
+                              <div className="clone-thread-title">
+                                <strong>{label}</strong>
+                                <div className="inbox-thread-badges">
+                                  <span className={`clone-thread-stage ${stage}`}>{stage}</span>
+                                  <span className={`inbox-chip inbox-chip-score ${scoreBand}`}>{getLeadScoreLabel(c)}</span>
+                                  {unreadCount > 0 && <span className="inbox-unread-badge">{formatUnreadCount(unreadCount)}</span>}
+                                </div>
                               </div>
+                              <small>{formatRelativeTime(c.last_message_at, clockTick)}</small>
+                            </header>
+                            <p>{getMessagePreview(c.last_message)}</p>
+                            <div className="inbox-thread-meta">
+                              <span className="inbox-chip">{getConversationChannelBadge(c.channel_type)}</span>
+                              <span className={c.ai_paused || c.manual_takeover ? "inbox-chip human" : "inbox-chip live"}>
+                                {c.ai_paused || c.manual_takeover ? "Human" : "AI Live"}
+                              </span>
+                              <span className="inbox-thread-owner">{c.assigned_agent_name || "Unassigned"}</span>
                             </div>
-                            <small>{formatRelativeTime(c.last_message_at, clockTick)}</small>
-                          </header>
-                          <p>{getMessagePreview(c.last_message)}</p>
-                          <div className="inbox-thread-meta">
-                            <span className="inbox-chip">{getConversationChannelBadge(c.channel_type)}</span>
-                            <span className={c.ai_paused || c.manual_takeover ? "inbox-chip human" : "inbox-chip live"}>
-                              {c.ai_paused || c.manual_takeover ? "Human" : "AI Live"}
-                            </span>
-                            <span className="inbox-thread-owner">{c.assigned_agent_name || "Unassigned"}</span>
                           </div>
-                        </div>
+                        </button>
+                      );
+                    })}
+                    {conversationsQuery.hasNextPage && (
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        style={{ margin: "0.8rem 1rem 1rem" }}
+                        disabled={conversationsQuery.isFetchingNextPage}
+                        onClick={() => void conversationsQuery.fetchNextPage()}
+                      >
+                        {conversationsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
                       </button>
-                    );
-                  })
+                    )}
+                  </>
                 )}
               </aside>
             </>
@@ -1722,73 +1777,92 @@ export function Component() {
                   ) : selectedConversationMessages.length === 0 ? (
                     <p className="empty-note">No messages in this chat yet.</p>
                   ) : (
-                    selectedConversationMessages.map((msg, idx) => {
-                      const prevMsg = idx > 0 ? selectedConversationMessages[idx - 1] : null;
-                      const showDate = !prevMsg || !isSameDay(prevMsg.created_at, msg.created_at);
-                      const normalizedMessage = normalizeMessage(msg);
+                    <>
+                      {messagesQuery.hasNextPage && (
+                        <div style={{ display: "flex", justifyContent: "center", paddingBottom: "0.75rem" }}>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            disabled={messagesQuery.isFetchingNextPage}
+                            onClick={() => {
+                              const container = messagesContainerRef.current;
+                              if (container) {
+                                pendingHistoryScrollRef.current = {
+                                  previousHeight: container.scrollHeight,
+                                  previousTop: container.scrollTop
+                                };
+                              }
+                              void messagesQuery.fetchNextPage();
+                            }}
+                          >
+                            {messagesQuery.isFetchingNextPage ? "Loading older..." : "Load older messages"}
+                          </button>
+                        </div>
+                      )}
+                      {selectedConversationMessages.map((msg, idx) => {
+                        const prevMsg = idx > 0 ? selectedConversationMessages[idx - 1] : null;
+                        const showDate = !prevMsg || !isSameDay(prevMsg.created_at, msg.created_at);
+                        const normalizedMessage = normalizeMessage(msg);
 
-                      // Identify sender type:
-                      // - AI: outbound + ai_model is set
-                      // - Manual/agent: outbound + no ai_model + sender_name is set
-                      // - Flow: outbound + no ai_model + no sender_name
-                      const isOutbound = msg.direction === "outbound";
-                      const isAi = isOutbound && Boolean(msg.ai_model);
-                      const isFlow = isOutbound && !isAi && !msg.sender_name;
-                      const isManual = isOutbound && !isAi && Boolean(msg.sender_name);
-                      const isTemplate = normalizedMessage.type === "template";
+                        const isOutbound = msg.direction === "outbound";
+                        const isAi = isOutbound && Boolean(msg.ai_model);
+                        const isFlow = isOutbound && !isAi && !msg.sender_name;
+                        const isManual = isOutbound && !isAi && Boolean(msg.sender_name);
+                        const isTemplate = normalizedMessage.type === "template";
 
-                      const bubbleClass = [
-                        "bubble",
-                        msg.direction,
-                        isAi ? "ai-bubble" : "",
-                        isFlow ? "flow-bubble" : ""
-                      ].filter(Boolean).join(" ");
+                        const bubbleClass = [
+                          "bubble",
+                          msg.direction,
+                          isAi ? "ai-bubble" : "",
+                          isFlow ? "flow-bubble" : ""
+                        ].filter(Boolean).join(" ");
 
-                      return (
-                        <div key={msg.id}>
-                          {showDate && (
-                            <div className="message-date-separator">
-                              <span>{formatDateLabel(msg.created_at)}</span>
-                            </div>
-                          )}
-                          <div className={bubbleClass}>
-                            <div className="bubble-content">
-                              {renderMessage(normalizedMessage)}
-                            </div>
-                            <div className="bubble-meta">
-                              {isAi && <span className="bubble-ai-badge">AI</span>}
-                              {isFlow && <span className="bubble-flow-badge">Flow</span>}
-                              {isTemplate && <span className="bubble-template-badge">Template</span>}
-                              {isManual && msg.sender_name && (
-                                <span className="bubble-sender">{msg.sender_name}</span>
-                              )}
-                              <time title={formatDateTime(msg.created_at)}>{formatMessageTime(msg.created_at)}</time>
-                              {isOutbound && msg.total_tokens ? (
-                                <span className="token-meta">{msg.total_tokens} tokens</span>
-                              ) : null}
-                            </div>
-                            <button
-                              type="button"
-                              className="bubble-copy-btn"
-                              title="Copy message"
-                              onClick={() => handleCopyMessage(msg.id, msg.message_text)}
-                            >
-                              {copiedMessageId === msg.id ? "✓" : "⎘"}
-                            </button>
-                            {isOutbound && (
+                        return (
+                          <div key={msg.id}>
+                            {showDate && (
+                              <div className="message-date-separator">
+                                <span>{formatDateLabel(msg.created_at)}</span>
+                              </div>
+                            )}
+                            <div className={bubbleClass}>
+                              <div className="bubble-content">
+                                {renderMessage(normalizedMessage)}
+                              </div>
+                              <div className="bubble-meta">
+                                {isAi && <span className="bubble-ai-badge">AI</span>}
+                                {isFlow && <span className="bubble-flow-badge">Flow</span>}
+                                {isTemplate && <span className="bubble-template-badge">Template</span>}
+                                {isManual && msg.sender_name && (
+                                  <span className="bubble-sender">{msg.sender_name}</span>
+                                )}
+                                <time title={formatDateTime(msg.created_at)}>{formatMessageTime(msg.created_at)}</time>
+                                {isOutbound && msg.total_tokens ? (
+                                  <span className="token-meta">{msg.total_tokens} tokens</span>
+                                ) : null}
+                              </div>
                               <button
                                 type="button"
-                                className="bubble-info-btn"
-                                title="Message info"
-                                onClick={() => setMsgInfoTarget(msg)}
+                                className="bubble-copy-btn"
+                                title="Copy message"
+                                onClick={() => handleCopyMessage(msg.id, msg.message_text)}
                               >
-                                &#9432;
+                                {copiedMessageId === msg.id ? "✓" : "⎘"}
                               </button>
-                            )}
+                              {isOutbound && (
+                                <button
+                                  type="button"
+                                  className="bubble-info-btn"
+                                  title="Message info"
+                                  onClick={() => setMsgInfoTarget(msg)}
+                                >
+                                  &#9432;
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                    </>
                   )}
                   <div ref={messagesEndRef} />
                 </div>
@@ -2703,5 +2777,5 @@ export function Component() {
 }
 
 export async function prefetchData({ token, queryClient }: DashboardModulePrefetchContext) {
-  await queryClient.prefetchQuery(buildInboxConversationsQueryOptions(token, { folder: "all", search: "" }));
+  await queryClient.prefetchInfiniteQuery(buildInboxConversationsInfiniteQueryOptions(token, { folder: "all", search: "" }));
 }

@@ -118,15 +118,6 @@ export async function evaluateOutboundTemplatePolicy(input: {
     }
   }
 
-  if (contact?.last_outgoing_template_at) {
-    const nextAllowed = nextAllowedAfter24h(contact.last_outgoing_template_at);
-    if (nextAllowed && Date.parse(nextAllowed) > Date.now()) {
-      reasonCodes.push("frequency_cap_24h");
-      nextAllowedAt = nextAllowed;
-      suppressionAction = suppressionAction === "none" ? "skip" : suppressionAction;
-    }
-  }
-
   return {
     allowed: reasonCodes.length === 0,
     category: input.category,

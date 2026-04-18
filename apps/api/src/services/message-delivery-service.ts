@@ -352,6 +352,8 @@ export async function deliverConversationTemplateMessage(input: {
       phoneNumber: conversation.phone_number,
       direction: "outbound",
       message: result.summaryText,
+      createdAt: new Date().toISOString(),
+      affectsListOrder: true,
       score: conversation.score,
       stage: conversation.stage
     });
@@ -500,6 +502,8 @@ export async function deliverCampaignMessage(input: {
       phoneNumber: input.message.phone_number,
       direction: "outbound",
       message: sent.summaryText,
+      createdAt: new Date().toISOString(),
+      affectsListOrder: true,
       score: conversation.score,
       stage: conversation.stage
     });

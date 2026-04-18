@@ -23,7 +23,20 @@ export function DashboardRealtimeProvider({
     useCallback(
       (event) => {
         if (event.event === "conversation.updated") {
-          void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxRoot });
+          const payload = getEventPayload(event.data);
+          const conversationId =
+            payload && typeof payload.conversationId === "string" ? payload.conversationId : null;
+          void queryClient.invalidateQueries({
+            predicate: (query) =>
+              Array.isArray(query.queryKey) &&
+              query.queryKey[0] === dashboardQueryKeys.inboxRoot[0] &&
+              query.queryKey[1] === dashboardQueryKeys.inboxRoot[1] &&
+              query.queryKey[2] === "conversations"
+          });
+          if (conversationId) {
+            void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.inboxMessages(conversationId) });
+            void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactByConversation(conversationId) });
+          }
           void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.contactsRoot });
           void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.reviewRoot });
         }

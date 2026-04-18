@@ -8,8 +8,9 @@ import { requireMetaConnection } from "../services/meta-whatsapp-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
 import {
   listLeadsWithSummary,
-  listConversationMessages,
+  listConversationMessagesPage,
   listConversations,
+  listConversationsPage,
   markConversationRead,
   summarizeLeadConversations,
   setConversationAIPaused,
@@ -55,13 +56,48 @@ const LeadsSummarizeBodySchema = z.object({
   forceAll: z.boolean().optional()
 });
 
+const ConversationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  cursor: z.string().trim().min(1).optional(),
+  q: z.string().trim().max(200).optional()
+});
+
+const ConversationMessagesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  before: z.string().trim().min(1).optional()
+});
+
 export async function conversationRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/api/conversations",
     { preHandler: [fastify.requireAuth] },
-    async (request) => {
-      const conversations = await listConversations(request.authUser.userId);
-      return { conversations };
+    async (request, reply) => {
+      const parsed = ConversationsQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid conversations query" });
+      }
+
+      const usePagination =
+        typeof parsed.data.limit === "number" ||
+        typeof parsed.data.cursor === "string" ||
+        typeof parsed.data.q === "string";
+
+      if (!usePagination) {
+        const conversations = await listConversations(request.authUser.userId);
+        return { conversations };
+      }
+
+      const result = await listConversationsPage(request.authUser.userId, {
+        limit: parsed.data.limit,
+        cursor: parsed.data.cursor,
+        search: parsed.data.q
+      });
+
+      return {
+        items: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore
+      };
     }
   );
 
@@ -106,6 +142,10 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
+      const parsed = ConversationMessagesQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid messages query" });
+      }
       const exists = await pool.query(
         `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
         [params.conversationId, request.authUser.userId]
@@ -115,8 +155,16 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         return reply.status(404).send({ error: "Conversation not found" });
       }
 
-      const messages = await listConversationMessages(params.conversationId);
-      return { messages };
+      const result = await listConversationMessagesPage(params.conversationId, {
+        limit: parsed.data.limit,
+        before: parsed.data.before
+      });
+      return {
+        items: result.items,
+        messages: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore
+      };
     }
   );
 

@@ -1750,8 +1750,29 @@ export interface Conversation {
   visitor_online?: boolean;
 }
 
-export function fetchConversations(token: string) {
-  return apiRequest<{ conversations: Conversation[] }>("/api/conversations", { token });
+export interface CursorPage<T> {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export function fetchConversations(
+  token: string,
+  options?: { limit?: number; cursor?: string | null; q?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (options?.cursor) {
+    params.set("cursor", options.cursor);
+  }
+  if (options?.q?.trim()) {
+    params.set("q", options.q.trim());
+  }
+  const query = params.toString();
+  const path = query ? `/api/conversations?${query}` : "/api/conversations";
+  return apiRequest<{ conversations?: Conversation[]; items?: Conversation[]; nextCursor?: string | null; hasMore?: boolean }>(path, { token });
 }
 
 export function createOutboundConversation(
@@ -2017,8 +2038,28 @@ export interface ConversationMessage {
   created_at: string;
 }
 
-export function fetchConversationMessages(token: string, conversationId: string) {
-  return apiRequest<{ messages: ConversationMessage[] }>(`/api/conversations/${conversationId}/messages`, { token });
+export function fetchConversationMessages(
+  token: string,
+  conversationId: string,
+  options?: { limit?: number; before?: string | null }
+) {
+  const params = new URLSearchParams();
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (options?.before) {
+    params.set("before", options.before);
+  }
+  const query = params.toString();
+  const path = query
+    ? `/api/conversations/${conversationId}/messages?${query}`
+    : `/api/conversations/${conversationId}/messages`;
+  return apiRequest<{
+    messages: ConversationMessage[];
+    items?: ConversationMessage[];
+    nextCursor?: string | null;
+    hasMore?: boolean;
+  }>(path, { token });
 }
 
 export function markConversationRead(token: string, conversationId: string) {
