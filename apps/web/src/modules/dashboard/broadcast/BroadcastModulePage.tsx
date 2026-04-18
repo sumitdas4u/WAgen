@@ -774,7 +774,7 @@ function BroadcastListPage({ token }: { token: string }) {
                       </div>
                     </div>
                   </td>
-                  <td>0<div className="bl-count-pct">0%</div></td>
+                  <td>{(() => { const nd = Math.max(0, broadcast.sent_count - broadcast.delivered_count - broadcast.read_count - broadcast.failed_count - broadcast.skipped_count); return <><div>{nd}</div><div className="bl-count-pct">{pct(nd, broadcast.total_count)}</div></>; })()}</td>
                   <td className="bl-muted-cell">N/A</td>
                   <td className="bl-muted-cell">N/A</td>
                   <td>
@@ -919,7 +919,8 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
     { label: "Delivered", value: report.buckets.delivered, pct: pct(report.buckets.delivered, totalCount) },
     { label: "Read", value: report.buckets.read, pct: pct(report.buckets.read, totalCount) },
     { label: "Failed", value: report.buckets.failed, pct: pct(report.buckets.failed, totalCount) },
-    { label: "Not Delivered", value: report.buckets.skipped, pct: pct(report.buckets.skipped, totalCount) }
+    { label: "Skipped", value: report.buckets.skipped, pct: pct(report.buckets.skipped, totalCount) },
+    { label: "Not Delivered", value: Math.max(0, report.buckets.sent - report.buckets.delivered - report.buckets.read - report.buckets.failed), pct: pct(Math.max(0, report.buckets.sent - report.buckets.delivered - report.buckets.read - report.buckets.failed), totalCount) }
   ];
 
   return (
