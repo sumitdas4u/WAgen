@@ -396,9 +396,7 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   if (template.status !== "APPROVED") {
     throw new Error("Only approved templates can be used for broadcasts.");
   }
-  if (template.category === "MARKETING") {
-    throw new Error("Marketing templates are disabled for proactive outbound. Use approved utility or authentication templates only.");
-  }
+
 
   await pool.query(`DELETE FROM campaign_messages WHERE campaign_id = $1`, [campaignId]);
 
