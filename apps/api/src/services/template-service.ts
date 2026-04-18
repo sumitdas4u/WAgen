@@ -1163,6 +1163,7 @@ export async function sendTestTemplate(
     contact,
     marketingEnabled: true
   });
+  
   if (!policy.allowed) {
     throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
   }
