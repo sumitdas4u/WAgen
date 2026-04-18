@@ -1835,7 +1835,7 @@ export type ContactImportColumnMapping = Record<string, string>;
 
 export function fetchContacts(
   token: string,
-  options?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; limit?: number }
+  options?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; consent?: string; limit?: number }
 ) {
   const params = new URLSearchParams();
   if (options?.q) {
@@ -1849,6 +1849,9 @@ export function fetchContacts(
   }
   if (options?.tag) {
     params.set("tag", options.tag);
+  }
+  if (options?.consent) {
+    params.set("consent", options.consent);
   }
   if (typeof options?.limit === "number") {
     params.set("limit", String(options.limit));

@@ -9,6 +9,7 @@ export function buildContactsQueryOptions(token: string, filters: ContactsFilter
       type: filters.type ?? "all",
       source: filters.source ?? "all",
       tag: filters.tag ?? "",
+      consent: filters.consent ?? "all",
       limit: String(filters.limit ?? 250)
     }),
     queryFn: () => fetchContactsList(token, filters)

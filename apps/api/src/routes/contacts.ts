@@ -20,6 +20,7 @@ const ListContactsQuerySchema = z.object({
   type: ContactTypeSchema.optional(),
   source: ContactSourceSchema.optional(),
   tag: z.string().trim().optional(),
+  consent: MarketingConsentStatusSchema.optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional()
 });
 

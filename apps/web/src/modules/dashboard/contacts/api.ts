@@ -13,11 +13,14 @@ import {
   type ContactType
 } from "../../../lib/api";
 
+export type MarketingConsentFilter = "subscribed" | "unsubscribed" | "unknown" | "revoked";
+
 export interface ContactsFilters {
   q?: string;
   type?: ContactType;
   source?: ContactSourceType;
   tag?: string;
+  consent?: MarketingConsentFilter;
   limit?: number;
 }
 

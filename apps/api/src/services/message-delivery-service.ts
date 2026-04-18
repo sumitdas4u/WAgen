@@ -408,16 +408,19 @@ export async function deliverCampaignMessage(input: {
   const contact = input.message.contact_id
     ? await getContactByPhoneForUser(input.userId, input.message.phone_number)
     : await getContactByPhoneForUser(input.userId, input.message.phone_number);
-  const policy = await evaluateOutboundTemplatePolicy({
-    userId: input.userId,
-    phoneNumber: input.message.phone_number,
-    category: template.category,
-    contact
-  });
-  if (!policy.allowed) {
-    const policyMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
-    await markCampaignMessageFailed(input.message.id, "POLICY_BLOCK", policyMessage, true);
-    return { status: "failed", errorMessage: policyMessage };
+  if (template.category !== "MARKETING" || input.campaign.enforce_marketing_policy) {
+    const policy = await evaluateOutboundTemplatePolicy({
+      userId: input.userId,
+      phoneNumber: input.message.phone_number,
+      category: template.category,
+      contact,
+      marketingEnabled: true
+    });
+    if (!policy.allowed) {
+      const policyMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
+      await markCampaignMessageFailed(input.message.id, "POLICY_BLOCK", policyMessage, true);
+      return { status: "failed", errorMessage: policyMessage };
+    }
   }
 
   if (input.campaign.connection_id) {

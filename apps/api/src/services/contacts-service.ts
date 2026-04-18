@@ -86,6 +86,7 @@ export interface ContactsListFilters {
   type?: ConversationKind;
   source?: ContactSourceType;
   tag?: string;
+  consent?: MarketingConsentStatus;
   limit?: number;
 }
 
@@ -793,9 +794,9 @@ async function upsertContact(
       email: email ?? null,
       contactType,
       tags: tags ?? [],
-      marketingConsentStatus: marketingConsentStatus ?? "unknown",
-      marketingConsentRecordedAt: marketingConsentRecordedAt ?? null,
-      marketingConsentSource: marketingConsentSource ?? null,
+      marketingConsentStatus: marketingConsentStatus ?? "subscribed",
+      marketingConsentRecordedAt: marketingConsentRecordedAt ?? new Date().toISOString(),
+      marketingConsentSource: marketingConsentSource ?? "system",
       marketingConsentText: marketingConsentText ?? null,
       marketingConsentProofRef: marketingConsentProofRef ?? null,
       marketingUnsubscribedAt: marketingUnsubscribedAt ?? null,
@@ -944,6 +945,10 @@ export async function listContacts(userId: string, filters: ContactsListFilters 
     values.push(`%${tagQuery}%`);
     where.push(`EXISTS (SELECT 1 FROM unnest(c.tags) AS tag WHERE tag ILIKE $${values.length})`);
   }
+  if (filters.consent) {
+    values.push(filters.consent);
+    where.push(`c.marketing_consent_status = $${values.length}`);
+  }
 
   const limit = Math.max(1, Math.min(1000, filters.limit ?? 250));
   values.push(limit);
@@ -1056,7 +1061,9 @@ export async function upsertWebhookContact(input: {
         phoneNumber: input.phoneNumber,
         email: input.email ?? undefined,
         tags: input.tags ?? [],
-        marketingConsentStatus: "unknown",
+        marketingConsentStatus: "subscribed",
+        marketingConsentRecordedAt: new Date().toISOString(),
+        marketingConsentSource: "system",
         sourceType: "api",
         sourceId: input.sourceId ?? undefined,
         sourceUrl: input.sourceUrl ?? undefined
@@ -1093,7 +1100,9 @@ export async function syncConversationContact(input: {
       phoneNumber: input.phoneNumber,
       email: input.email ?? undefined,
       contactType: input.contactType ?? "lead",
-      marketingConsentStatus: "unknown",
+      marketingConsentStatus: "subscribed",
+      marketingConsentRecordedAt: new Date().toISOString(),
+      marketingConsentSource: "system",
       sourceType: input.sourceType,
       linkedConversationId: input.linkedConversationId
     })

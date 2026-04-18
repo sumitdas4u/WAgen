@@ -881,17 +881,19 @@ function ContactsTab({
   const typeFilter = (searchParams.get("type") as ContactTypeFilter | null) ?? "all";
   const sourceFilter = (searchParams.get("source") as ContactSourceFilter | null) ?? "all";
   const tagFilter = searchParams.get("tag") ?? "";
+  const consentFilter = (searchParams.get("consent") as "all" | "subscribed" | "unsubscribed" | "unknown" | "revoked" | null) ?? "all";
 
   const contactsQuery = useContactsQuery(token, {
     q: search || undefined,
     type: typeFilter === "all" ? undefined : typeFilter,
     source: sourceFilter === "all" ? undefined : sourceFilter,
     tag: tagFilter || undefined,
+    consent: consentFilter === "all" ? undefined : consentFilter,
     limit: 1000
   });
 
   const contacts = contactsQuery.data ?? [];
-  const activeFilterCount = [search.trim(), typeFilter !== "all", sourceFilter !== "all", tagFilter.trim()].filter(Boolean).length;
+  const activeFilterCount = [search.trim(), typeFilter !== "all", sourceFilter !== "all", tagFilter.trim(), consentFilter !== "all"].filter(Boolean).length;
   const selectedCount = selectedIds.length;
   const allVisibleSelected = contacts.length > 0 && selectedCount === contacts.length;
   const someVisibleSelected = selectedCount > 0 && selectedCount < contacts.length;
@@ -900,7 +902,7 @@ function ContactsTab({
   const totalPages = Math.max(1, Math.ceil(contacts.length / pageSize));
   const pagedContacts = contacts.slice(page * pageSize, (page + 1) * pageSize);
 
-  useEffect(() => { setPage(0); }, [contacts.length, search, typeFilter, sourceFilter, tagFilter]);
+  useEffect(() => { setPage(0); }, [contacts.length, search, typeFilter, sourceFilter, tagFilter, consentFilter]);
 
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = someVisibleSelected;
@@ -1049,6 +1051,7 @@ function ContactsTab({
                 type: typeFilter === "all" ? undefined : typeFilter,
                 source: sourceFilter === "all" ? undefined : sourceFilter,
                 tag: tagFilter || undefined,
+                consent: consentFilter === "all" ? undefined : consentFilter,
                 limit: 1000
               },
               columns: exportColumns
@@ -1150,6 +1153,19 @@ function ContactsTab({
             {CONTACT_SOURCE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
+          </select>
+
+          {/* Marketing opt-in filter */}
+          <select
+            className="ct-filter-select"
+            value={consentFilter}
+            onChange={(e) => updateSearchParam("consent", e.target.value)}
+          >
+            <option value="all">All consent</option>
+            <option value="subscribed">Marketing opted in</option>
+            <option value="unsubscribed">Unsubscribed</option>
+            <option value="unknown">Unknown</option>
+            <option value="revoked">Revoked</option>
           </select>
 
           <div className="ct-tag-filter-wrap">
