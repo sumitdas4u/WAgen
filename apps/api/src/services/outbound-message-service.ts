@@ -440,6 +440,7 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
     read_count: row.read_count,
     failed_count: row.failed_count,
     skipped_count: row.skipped_count,
+    enforce_marketing_policy: row.enforce_marketing_policy ?? true,
     created_at: row.campaign_created_at,
     updated_at: row.campaign_updated_at
   };
