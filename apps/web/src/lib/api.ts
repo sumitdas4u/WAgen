@@ -2006,6 +2006,14 @@ export interface ConversationMessage {
   media_url: string | null;
   message_type: string;
   message_content: Record<string, unknown> | null;
+  wamid: string | null;
+  delivery_status: "sent" | "delivered" | "read" | "failed" | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  source_type: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
   created_at: string;
 }
 

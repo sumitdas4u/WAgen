@@ -472,6 +472,22 @@ function getConversationTags(c: Conversation): string[] {
   return tags;
 }
 
+const META_ERROR_SOLUTIONS: Record<string, string> = {
+  "131026": "The contact may not have WhatsApp or has blocked your number. Verify the phone number is valid and active on WhatsApp.",
+  "131047": "You can only send free-form messages within 24 hours of the contact's last message. Use an approved template instead.",
+  "131049": "Meta did not deliver this message to maintain ecosystem health (spam/quality signal). Improve template quality and reduce frequency.",
+  "131051": "Template not found or not approved. Check that the template exists and is approved in Meta Business Manager.",
+  "131052": "Template was paused or disabled by Meta due to low quality. Review and fix the template before resending.",
+  "131053": "Media could not be downloaded — the URL expired or returned 403. Re-upload the media or use a permanently accessible URL.",
+  "131056": "Too many messages sent to this contact in a short time. Wait before sending again.",
+  "131057": "This contact has not opted in to receive messages from your business. Get explicit consent first.",
+  "130429": "Rate limit hit on your WhatsApp Business Account. Slow down message sending or upgrade your tier.",
+  "131031": "Business account is locked. Check your Meta Business Manager for policy violations or account issues.",
+  "131000": "Message undeliverable — generic failure from Meta. Check the contact's number and account status.",
+  "131008": "Required parameter missing in template. Ensure all template variables are filled.",
+  "131009": "Parameter value invalid. Check the format of template variable values.",
+};
+
 function buildTimeline(c: Conversation, msgs: ConversationMessage[]): Array<{ label: string; detail: string; at: string | null }> {
   const inbound = msgs.filter((m) => m.direction === "inbound");
   const outbound = msgs.filter((m) => m.direction === "outbound");
@@ -508,6 +524,7 @@ export function Component() {
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [msgInfoTarget, setMsgInfoTarget] = useState<import("../../../lib/api").ConversationMessage | null>(null);
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
   const [composeTab, setComposeTab] = useState<"reply" | "notes">("reply");
   const [showAiAssistPopup, setShowAiAssistPopup] = useState(false);
@@ -1758,6 +1775,16 @@ export function Component() {
                             >
                               {copiedMessageId === msg.id ? "✓" : "⎘"}
                             </button>
+                            {isOutbound && (
+                              <button
+                                type="button"
+                                className="bubble-info-btn"
+                                title="Message info"
+                                onClick={() => setMsgInfoTarget(msg)}
+                              >
+                                &#9432;
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -2583,6 +2610,91 @@ export function Component() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {msgInfoTarget && (
+        <div className="tmpl-dialog-overlay" onClick={() => setMsgInfoTarget(null)}>
+          <div className="tmpl-dialog msg-info-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="tmpl-dialog-head">
+              <span>Message Info</span>
+              <button type="button" className="tmpl-dialog-close" onClick={() => setMsgInfoTarget(null)}>✕</button>
+            </div>
+            <div className="tmpl-dialog-body" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+                <tbody>
+                  <tr>
+                    <td style={{ color: "#5f6f86", paddingBottom: "0.5rem", width: 140 }}>Message Source</td>
+                    <td style={{ fontWeight: 500, paddingBottom: "0.5rem" }}>
+                      <span style={{
+                        display: "inline-block", padding: "2px 8px", borderRadius: 4,
+                        background: msgInfoTarget.source_type === "broadcast" ? "#dbeafe" : msgInfoTarget.source_type === "sequence" ? "#fef3c7" : msgInfoTarget.source_type === "bot" ? "#d1fae5" : "#f1f5f9",
+                        color: msgInfoTarget.source_type === "broadcast" ? "#1d4ed8" : msgInfoTarget.source_type === "sequence" ? "#b45309" : msgInfoTarget.source_type === "bot" ? "#065f46" : "#475569",
+                        textTransform: "capitalize"
+                      }}>
+                        {msgInfoTarget.source_type ?? "manual"}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ color: "#5f6f86", paddingBottom: "0.5rem" }}>Message Status</td>
+                    <td style={{ fontWeight: 500, paddingBottom: "0.5rem" }}>
+                      <span style={{
+                        display: "inline-block", padding: "2px 8px", borderRadius: 4,
+                        background: msgInfoTarget.delivery_status === "read" ? "#d1fae5" : msgInfoTarget.delivery_status === "delivered" ? "#dbeafe" : msgInfoTarget.delivery_status === "failed" ? "#fee2e2" : "#f1f5f9",
+                        color: msgInfoTarget.delivery_status === "read" ? "#065f46" : msgInfoTarget.delivery_status === "delivered" ? "#1d4ed8" : msgInfoTarget.delivery_status === "failed" ? "#b91c1c" : "#475569",
+                        textTransform: "capitalize"
+                      }}>
+                        {msgInfoTarget.delivery_status ?? "sent"}
+                      </span>
+                    </td>
+                  </tr>
+                  {msgInfoTarget.sent_at && (
+                    <tr>
+                      <td style={{ color: "#5f6f86", paddingBottom: "0.5rem" }}>Send Time</td>
+                      <td style={{ paddingBottom: "0.5rem" }}>{formatDateTime(msgInfoTarget.sent_at)}</td>
+                    </tr>
+                  )}
+                  {msgInfoTarget.delivered_at && (
+                    <tr>
+                      <td style={{ color: "#5f6f86", paddingBottom: "0.5rem" }}>Delivered Time</td>
+                      <td style={{ paddingBottom: "0.5rem" }}>{formatDateTime(msgInfoTarget.delivered_at)}</td>
+                    </tr>
+                  )}
+                  {msgInfoTarget.read_at && (
+                    <tr>
+                      <td style={{ color: "#5f6f86", paddingBottom: "0.5rem" }}>Read Time</td>
+                      <td style={{ paddingBottom: "0.5rem" }}>{formatDateTime(msgInfoTarget.read_at)}</td>
+                    </tr>
+                  )}
+                  {msgInfoTarget.sender_name && (
+                    <tr>
+                      <td style={{ color: "#5f6f86", paddingBottom: "0.5rem" }}>Sent By</td>
+                      <td style={{ paddingBottom: "0.5rem" }}>{msgInfoTarget.sender_name}</td>
+                    </tr>
+                  )}
+                  {msgInfoTarget.wamid && (
+                    <tr>
+                      <td style={{ color: "#5f6f86", paddingBottom: "0.5rem" }}>Message ID</td>
+                      <td style={{ paddingBottom: "0.5rem", fontSize: "0.75rem", wordBreak: "break-all", color: "#94a3b8" }}>{msgInfoTarget.wamid}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+              {msgInfoTarget.delivery_status === "failed" && msgInfoTarget.error_code && (
+                <div style={{ background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 6, padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  <div style={{ fontWeight: 600, color: "#b91c1c", fontSize: "0.85rem" }}>
+                    &#9888; Meta Error {msgInfoTarget.error_code}
+                  </div>
+                  <div style={{ fontSize: "0.82rem", color: "#374151" }}>{msgInfoTarget.error_message}</div>
+                  {META_ERROR_SOLUTIONS[msgInfoTarget.error_code] && (
+                    <div style={{ marginTop: "0.3rem", fontSize: "0.82rem", color: "#1d4ed8" }}>
+                      <strong>How to fix:</strong> {META_ERROR_SOLUTIONS[msgInfoTarget.error_code]}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

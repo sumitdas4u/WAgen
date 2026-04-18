@@ -488,7 +488,7 @@ export async function deliverCampaignMessage(input: {
     await trackOutboundMessage(
       conversation.id,
       sent.summaryText,
-      { senderName: input.senderName },
+      { senderName: input.senderName, sourceType: "broadcast" },
       sent.messagePayload.headerMediaUrl ?? null,
       sent.messagePayload,
       sent.messageId ?? null

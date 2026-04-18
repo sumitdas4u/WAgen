@@ -629,6 +629,7 @@ export async function trackOutboundMessage(
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
     senderName?: string | null;
+    sourceType?: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
   },
   mediaUrl?: string | null,
   payload?: FlowMessagePayload | null,
@@ -655,9 +656,10 @@ export async function trackOutboundMessage(
          message_type,
          message_content,
          wamid,
-         sent_at
+         sent_at,
+         source_type
        )
-       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW())`,
+       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13)`,
       [
         conversationId,
         usage?.senderName ?? null,
@@ -670,7 +672,8 @@ export async function trackOutboundMessage(
         mediaUrl ?? null,
         msgType,
         msgContent,
-        wamid ?? null
+        wamid ?? null,
+        usage?.sourceType ?? "manual"
       ]
     );
   } catch {
@@ -1183,6 +1186,14 @@ export interface ConversationMessage {
   media_url: string | null;
   message_type: string;
   message_content: Record<string, unknown> | null;
+  wamid: string | null;
+  delivery_status: "sent" | "delivered" | "read" | "failed" | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  source_type: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
   created_at: string;
 }
 
@@ -1226,6 +1237,14 @@ export async function listConversationMessages(conversationId: string): Promise<
          media_url,
          message_type,
          message_content,
+         wamid,
+         delivery_status,
+         sent_at,
+         delivered_at,
+         read_at,
+         error_code,
+         error_message,
+         COALESCE(source_type, 'manual') AS source_type,
          created_at
        FROM conversation_messages
        WHERE conversation_id = $1
