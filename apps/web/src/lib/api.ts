@@ -3501,33 +3501,132 @@ export function updateNotificationSettings(
 
 export type DailyReportSnapshot = {
   date: string;
+  range: {
+    dateLabel: string;
+    startAt: string;
+    endAt: string;
+  };
   overview: {
     totalConversations: number;
     leads: number;
     complaints: number;
     feedback: number;
+    responseRate: number | null;
+    avgResponseTimeMinutes: number | null;
+    aiHandled: {
+      count: number;
+      percent: number | null;
+    };
+    humanTakeover: {
+      count: number;
+      percent: number | null;
+    };
+  };
+  priority: {
+    staleLeads: Array<{
+      conversationId: string;
+      contactLabel: string;
+      phoneNumber: string;
+      lastMessage: string;
+      lastActivityAt: string | null;
+      reason: string;
+      suggestedAction: string;
+      suggestedActionTag: string;
+    }>;
+    stuckConversations: Array<{
+      conversationId: string;
+      contactLabel: string;
+      phoneNumber: string;
+      lastMessage: string;
+      lastActivityAt: string | null;
+      reason: string;
+      suggestedAction: string;
+      suggestedActionTag: string;
+    }>;
+    lowConfidenceChats: Array<{
+      conversationId: string | null;
+      contactLabel: string;
+      phoneNumber: string;
+      question: string;
+      confidenceScore: number;
+      createdAt: string;
+      kbSuggestion: string;
+    }>;
   };
   topLeads: {
     conversationId: string;
+    displayName: string | null;
     phoneNumber: string;
+    contactLabel: string;
     summary: string;
     score: number;
     status: string;
+    lastMessage: string;
+    lastActivityAt: string | null;
+    suggestedAction: string;
+    suggestedActionTag: string;
   }[];
   topComplaints: {
     conversationId: string;
+    displayName: string | null;
     phoneNumber: string;
+    contactLabel: string;
     summary: string;
     sentiment: string | null;
     score: number;
     status: string;
+    lastMessage: string;
+    lastActivityAt: string | null;
+    comparisonNote: string;
   }[];
   topFeedback: {
     conversationId: string;
+    displayName: string | null;
     phoneNumber: string;
+    contactLabel: string;
     summary: string;
+    sentiment: string | null;
     status: string;
+    lastActivityAt: string | null;
+    insight: string;
+    repeatCount: number;
   }[];
+  aiPerformance: {
+    aiHandled: {
+      count: number;
+      percent: number | null;
+    };
+    humanTakeover: {
+      count: number;
+      percent: number | null;
+    };
+    failedResponses: number;
+    unansweredQuestions: Array<{
+      conversationId: string | null;
+      contactLabel: string;
+      phoneNumber: string;
+      question: string;
+      confidenceScore: number;
+      createdAt: string;
+      kbSuggestion: string;
+    }>;
+    kbSuggestions: string[];
+  };
+  insights: string[];
+  improvements: string[];
+  timeline: Array<{
+    time: string;
+    contactLabel: string;
+    eventType: "inbound" | "outbound" | "ai_alert";
+    description: string;
+  }>;
+  comparisons: {
+    leadsDelta: number;
+    complaintsDelta: number;
+    feedbackDelta: number;
+    responseRateDelta: number | null;
+    summary: string[];
+  };
   broadcasts: { sent: number; delivered: number; failed: number };
   automation: { sequencesCompleted: number; flowsCompleted: number };
   alerts: string[];
