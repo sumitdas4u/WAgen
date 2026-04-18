@@ -1158,7 +1158,9 @@ export async function sendTestTemplate(
     userId,
     phoneNumber: payload.to,
     category: template.category,
-    contact
+    contact,
+    marketingEnabled: true
+  });
   });
   if (!policy.allowed) {
     throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
