@@ -120,6 +120,7 @@ interface CampaignExecutionRow {
   read_count: number;
   failed_count: number;
   skipped_count: number;
+  enforce_marketing_policy: boolean;
   campaign_created_at: string;
   campaign_updated_at: string;
   sender_name: string | null;
@@ -404,6 +405,7 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
        c.read_count,
        c.failed_count,
        c.skipped_count,
+       c.enforce_marketing_policy,
        c.created_at AS campaign_created_at,
        c.updated_at AS campaign_updated_at,
        u.name AS sender_name
