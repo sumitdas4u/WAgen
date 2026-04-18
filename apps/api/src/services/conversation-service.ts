@@ -753,6 +753,43 @@ export async function trackOutboundMessage(
   );
 }
 
+interface CursorStamp {
+  timestamp: string | null;
+  id: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+function encodeCursor(value: CursorStamp): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+function decodeCursor(cursor: string | null | undefined): CursorStamp | null {
+  if (!cursor) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as Partial<CursorStamp>;
+    if (typeof parsed?.id !== "string" || !parsed.id.trim()) {
+      return null;
+    }
+    if (parsed.timestamp !== null && typeof parsed.timestamp !== "string") {
+      return null;
+    }
+    return {
+      timestamp: parsed.timestamp ?? null,
+      id: parsed.id.trim()
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function listConversations(
   userId: string
 ): Promise<
@@ -767,6 +804,67 @@ export async function listConversations(
     }
   >
 > {
+  const paged = await listConversationsPage(userId, { limit: 1000 });
+  return paged.items;
+}
+
+export async function listConversationsPage(
+  userId: string,
+  options?: {
+    limit?: number;
+    cursor?: string | null;
+    search?: string | null;
+  }
+): Promise<
+  PaginatedResult<
+    Conversation & {
+      contact_name: string | null;
+      contact_phone: string | null;
+      contact_email: string | null;
+      assigned_agent_name: string | null;
+      unread_count: number;
+      visitor_online: boolean;
+    }
+  >
+> {
+  const clampedLimit = Math.max(1, Math.min(100, options?.limit ?? 20));
+  const cursor = decodeCursor(options?.cursor);
+  const search = options?.search?.trim().toLowerCase() ?? "";
+  const values: Array<string | number> = [userId];
+  const where: string[] = ["c.user_id = $1"];
+
+  if (search) {
+    values.push(`%${search}%`);
+    const searchParam = `$${values.length}`;
+    where.push(`(
+      LOWER(COALESCE(c.phone_number, '')) LIKE ${searchParam}
+      OR LOWER(COALESCE(c.last_message, '')) LIKE ${searchParam}
+      OR LOWER(COALESCE(ap.name, '')) LIKE ${searchParam}
+      OR LOWER(COALESCE(c.channel_type, '')) LIKE ${searchParam}
+      OR LOWER(COALESCE(COALESCE(ct.contact_type, c.lead_kind)::text, '')) LIKE ${searchParam}
+      OR LOWER(COALESCE(ct.display_name, '')) LIKE ${searchParam}
+      OR LOWER(COALESCE(ct.email, '')) LIKE ${searchParam}
+    )`);
+  }
+
+  if (cursor) {
+    values.push(cursor.timestamp);
+    const timestampParam = `$${values.length}`;
+    values.push(cursor.id);
+    const idParam = `$${values.length}`;
+    if (cursor.timestamp) {
+      where.push(`(
+        c.last_message_at IS NULL
+        OR c.last_message_at < ${timestampParam}::timestamptz
+        OR (c.last_message_at = ${timestampParam}::timestamptz AND c.id::text < ${idParam})
+      )`);
+    } else {
+      where.push(`c.last_message_at IS NULL AND c.id::text < ${idParam}`);
+    }
+  }
+
+  values.push(clampedLimit + 1);
+  const limitParam = `$${values.length}`;
   const result = await pool.query<
     Conversation & {
       contact_name: string | null;
@@ -840,16 +938,31 @@ export async function listConversations(
        ORDER BY CASE WHEN ct.linked_conversation_id = c.id THEN 0 ELSE 1 END, ct.updated_at DESC
        LIMIT 1
      ) ct ON TRUE
-     WHERE c.user_id = $1
-     ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC`,
-    [userId]
+     WHERE ${where.join(" AND ")}
+     ORDER BY c.last_message_at DESC NULLS LAST, c.id DESC
+     LIMIT ${limitParam}`,
+    values
   );
 
-  return result.rows.map((row) => ({
+  const hasMore = result.rows.length > clampedLimit;
+  const pageRows = hasMore ? result.rows.slice(0, clampedLimit) : result.rows;
+  const items = pageRows.map((row) => ({
     ...row,
     unread_count: Number(row.unread_count ?? 0),
     visitor_online: row.channel_type === "web" ? isWidgetVisitorConnected(userId, row.phone_number) : false
   }));
+  const nextRow = pageRows.at(-1);
+
+  return {
+    items,
+    hasMore,
+    nextCursor: hasMore && nextRow
+      ? encodeCursor({
+          timestamp: nextRow.last_message_at ?? null,
+          id: nextRow.id
+        })
+      : null
+  };
 }
 
 export interface LeadConversation extends Conversation {
@@ -1186,14 +1299,14 @@ export interface ConversationMessage {
   media_url: string | null;
   message_type: string;
   message_content: Record<string, unknown> | null;
-  wamid: string | null;
-  delivery_status: "sent" | "delivered" | "read" | "failed" | null;
-  sent_at: string | null;
-  delivered_at: string | null;
-  read_at: string | null;
-  error_code: string | null;
-  error_message: string | null;
-  source_type: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
+  wamid?: string | null;
+  delivery_status?: "sent" | "delivered" | "read" | "failed" | null;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  read_at?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  source_type?: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
   created_at: string;
 }
 
@@ -1300,6 +1413,169 @@ export async function listConversationMessages(conversationId: string): Promise<
         [conversationId]
       );
       return result.rows;
+    }
+  }
+}
+
+export async function listConversationMessagesPage(
+  conversationId: string,
+  options?: {
+    limit?: number;
+    before?: string | null;
+  }
+): Promise<PaginatedResult<ConversationMessage>> {
+  const clampedLimit = Math.max(1, Math.min(50, options?.limit ?? 5));
+  const cursor = decodeCursor(options?.before);
+  const values: Array<string | number> = [conversationId];
+  let beforeClause = "";
+
+  if (cursor?.timestamp) {
+    values.push(cursor.timestamp);
+    const timestampParam = `$${values.length}`;
+    values.push(cursor.id);
+    const idParam = `$${values.length}`;
+    beforeClause = `AND (
+      created_at < ${timestampParam}::timestamptz
+      OR (created_at = ${timestampParam}::timestamptz AND id::text < ${idParam})
+    )`;
+  }
+
+  values.push(clampedLimit + 1);
+  const limitParam = `$${values.length}`;
+
+  try {
+    const result = await pool.query<ConversationMessage>(
+      `SELECT
+         id,
+         direction,
+         sender_name,
+         message_text,
+         prompt_tokens,
+         completion_tokens,
+         total_tokens,
+         ai_model,
+         retrieval_chunks,
+         media_url,
+         message_type,
+         message_content,
+         wamid,
+         delivery_status,
+         sent_at,
+         delivered_at,
+         read_at,
+         error_code,
+         error_message,
+         COALESCE(source_type, 'manual') AS source_type,
+         created_at
+       FROM conversation_messages
+       WHERE conversation_id = $1
+       ${beforeClause}
+       ORDER BY created_at DESC, id DESC
+       LIMIT ${limitParam}`,
+      values
+    );
+    const hasMore = result.rows.length > clampedLimit;
+    const rowsDesc = hasMore ? result.rows.slice(0, clampedLimit) : result.rows;
+    const oldestRow = rowsDesc.at(-1);
+    return {
+      items: [...rowsDesc].reverse(),
+      hasMore,
+      nextCursor: hasMore && oldestRow
+        ? encodeCursor({
+            timestamp: oldestRow.created_at,
+            id: oldestRow.id
+          })
+        : null
+    };
+  } catch {
+    try {
+      const result = await pool.query<ConversationMessage>(
+        `SELECT
+           id,
+           direction,
+           sender_name,
+           message_text,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           ai_model,
+           retrieval_chunks,
+           media_url,
+           'text'::text AS message_type,
+           NULL::jsonb AS message_content,
+           NULL::text AS wamid,
+           NULL::text AS delivery_status,
+           NULL::timestamptz AS sent_at,
+           NULL::timestamptz AS delivered_at,
+           NULL::timestamptz AS read_at,
+           NULL::text AS error_code,
+           NULL::text AS error_message,
+           'manual'::text AS source_type,
+           created_at
+         FROM conversation_messages
+         WHERE conversation_id = $1
+         ${beforeClause}
+         ORDER BY created_at DESC, id DESC
+         LIMIT ${limitParam}`,
+        values
+      );
+      const hasMore = result.rows.length > clampedLimit;
+      const rowsDesc = hasMore ? result.rows.slice(0, clampedLimit) : result.rows;
+      const oldestRow = rowsDesc.at(-1);
+      return {
+        items: [...rowsDesc].reverse(),
+        hasMore,
+        nextCursor: hasMore && oldestRow
+          ? encodeCursor({
+              timestamp: oldestRow.created_at,
+              id: oldestRow.id
+            })
+          : null
+      };
+    } catch {
+      const result = await pool.query<ConversationMessage>(
+        `SELECT
+           id,
+           direction,
+           sender_name,
+           message_text,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           ai_model,
+           retrieval_chunks,
+           NULL::text AS media_url,
+           'text'::text AS message_type,
+           NULL::jsonb AS message_content,
+           NULL::text AS wamid,
+           NULL::text AS delivery_status,
+           NULL::timestamptz AS sent_at,
+           NULL::timestamptz AS delivered_at,
+           NULL::timestamptz AS read_at,
+           NULL::text AS error_code,
+           NULL::text AS error_message,
+           'manual'::text AS source_type,
+           created_at
+         FROM conversation_messages
+         WHERE conversation_id = $1
+         ${beforeClause}
+         ORDER BY created_at DESC, id DESC
+         LIMIT ${limitParam}`,
+        values
+      );
+      const hasMore = result.rows.length > clampedLimit;
+      const rowsDesc = hasMore ? result.rows.slice(0, clampedLimit) : result.rows;
+      const oldestRow = rowsDesc.at(-1);
+      return {
+        items: [...rowsDesc].reverse(),
+        hasMore,
+        nextCursor: hasMore && oldestRow
+          ? encodeCursor({
+              timestamp: oldestRow.created_at,
+              id: oldestRow.id
+            })
+          : null
+      };
     }
   }
 }
