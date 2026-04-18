@@ -2,6 +2,7 @@ import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import type { Conversation } from "../types/models.js";
 import {
+  deferCampaignMessageToNextDay,
   markCampaignMessageFailed,
   markCampaignMessageSent,
   type Campaign,
@@ -46,6 +47,39 @@ const rateLimitLocks = new Map<string, number>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function tierDailyCap(tier: string | null | undefined): number {
+  switch (tier) {
+    case "TIER_1K":   return 1_000;
+    case "TIER_10K":  return 10_000;
+    case "TIER_100K": return 100_000;
+    case "TIER_250":
+    default:          return 250;
+  }
+}
+
+async function countTodayTemplateSentForConnection(connectionId: string): Promise<number> {
+  const result = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+     FROM campaign_messages cm
+     JOIN campaigns c ON c.id = cm.campaign_id
+     WHERE c.connection_id = $1
+       AND cm.sent_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')
+       AND cm.status IN ('sent', 'delivered', 'read')`,
+    [connectionId]
+  );
+  return parseInt(result.rows[0]?.count ?? "0", 10);
+}
+
+async function getConnectionTier(connectionId: string): Promise<string | null> {
+  const result = await pool.query<{ tier: string | null }>(
+    `SELECT metadata_json->'metaHealth'->>'messagingLimitTier' AS tier
+     FROM whatsapp_business_connections
+     WHERE id = $1`,
+    [connectionId]
+  );
+  return result.rows[0]?.tier ?? null;
 }
 
 function buildRateLimitKey(input: {
@@ -385,6 +419,17 @@ export async function deliverCampaignMessage(input: {
     await markCampaignMessageFailed(input.message.id, "POLICY_BLOCK", policyMessage, true);
     return { status: "failed", errorMessage: policyMessage };
   }
+
+  if (input.campaign.connection_id) {
+    const tier = await getConnectionTier(input.campaign.connection_id);
+    const cap = tierDailyCap(tier);
+    const sentToday = await countTodayTemplateSentForConnection(input.campaign.connection_id);
+    if (sentToday >= cap) {
+      await deferCampaignMessageToNextDay(input.message.id);
+      return { status: "retrying", errorMessage: `Daily tier limit (${cap}) reached. Deferred to next day.` };
+    }
+  }
+
   const attempt = await recordDeliveryAttemptStart({
     userId: input.userId,
     campaignId: input.campaign.id,

@@ -711,6 +711,21 @@ export async function markCampaignMessageFailed(
   });
 }
 
+export async function deferCampaignMessageToNextDay(campaignMessageId: string): Promise<void> {
+  const nextDayUtc = new Date();
+  nextDayUtc.setUTCHours(24, 0, 0, Math.floor(Math.random() * 60_000));
+  await pool.query(
+    `UPDATE campaign_messages
+     SET status = 'queued',
+         retry_count = retry_count + 1,
+         next_retry_at = $2,
+         error_code = 'DAILY_TIER_LIMIT',
+         error_message = 'Daily messaging tier limit reached. Deferred to next day.'
+     WHERE id = $1`,
+    [campaignMessageId, nextDayUtc.toISOString()]
+  );
+}
+
 export async function updateCampaignMessageDelivery(
   wamid: string,
   status: "delivered" | "read" | "failed",
