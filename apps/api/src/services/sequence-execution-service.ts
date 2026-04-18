@@ -388,7 +388,8 @@ export async function executeSequenceOutboundMessage(input: {
       userId: contact.user_id,
       phoneNumber: contact.phone_number,
       category: template.category,
-      contact: await getContactByPhoneForUser(contact.user_id, contact.phone_number)
+      contact: await getContactByPhoneForUser(contact.user_id, contact.phone_number),
+      marketingEnabled: true
     });
     if (!policy.allowed) {
       const policyMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
