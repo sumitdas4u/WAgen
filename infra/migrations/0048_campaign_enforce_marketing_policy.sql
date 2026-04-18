@@ -1,0 +1,1 @@
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS enforce_marketing_policy BOOLEAN NOT NULL DEFAULT TRUE;

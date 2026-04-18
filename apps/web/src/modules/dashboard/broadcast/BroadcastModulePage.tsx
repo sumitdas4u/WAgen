@@ -1297,7 +1297,8 @@ function BroadcastWizardPage({
                 }
               },
         mediaOverrides,
-        scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null
+        scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        enforceMarketingPolicy: policyEnabled
       });
 
       if (!launchNow) {

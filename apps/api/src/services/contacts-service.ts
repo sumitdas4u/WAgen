@@ -1908,6 +1908,34 @@ export async function unsubscribeContactMarketingByPhone(input: {
   });
 }
 
+export const DEFAULT_RESUBSCRIBE_KEYWORDS = ["start", "subscribe", "yes"] as const;
+
+export function detectMarketingResubscribe(text: string): string | null {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) {
+    return null;
+  }
+  return DEFAULT_RESUBSCRIBE_KEYWORDS.find((keyword) => normalized === keyword) ?? null;
+}
+
+export async function resubscribeContactMarketingByPhone(input: {
+  userId: string;
+  phoneNumber: string;
+  source: string;
+}): Promise<Contact | null> {
+  const contact = await getContactByPhoneForUser(input.userId, input.phoneNumber);
+  if (!contact) {
+    return null;
+  }
+  return updateContactCompliance(input.userId, contact.id, {
+    marketingConsentStatus: "subscribed",
+    marketingConsentRecordedAt: new Date().toISOString(),
+    marketingConsentSource: input.source,
+    marketingUnsubscribedAt: null,
+    marketingUnsubscribeSource: null
+  });
+}
+
 export function extractCapturedProfileDetails(message: string): { displayName: string | null; phoneNumber: string | null; email: string | null } {
   const displayName = message.match(/Name=([^,]+)/)?.[1]?.trim() ?? null;
   const phoneNumber = normalizePhoneNumber(message.match(/Phone=([0-9]{8,15})/)?.[1] ?? null);

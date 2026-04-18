@@ -585,6 +585,18 @@ export async function upsertRecipientSuppression(input: {
   );
 }
 
+export async function removeOptOutSuppression(userId: string, phoneNumber: string): Promise<void> {
+  const digits = phoneNumber.replace(/\D/g, "");
+  if (!digits) {
+    return;
+  }
+  await pool.query(
+    `DELETE FROM contact_delivery_suppressions
+     WHERE user_id = $1 AND phone_number = $2 AND reason_code = 'opt_out'`,
+    [userId, digits]
+  );
+}
+
 async function openOrRefreshAlert(input: {
   userId: string;
   alertType: DeliveryAlertType;

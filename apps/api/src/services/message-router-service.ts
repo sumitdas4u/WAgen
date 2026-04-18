@@ -22,13 +22,15 @@ import {
 } from "./conversation-service.js";
 import {
   detectMarketingUnsubscribe,
+  detectMarketingResubscribe,
   markContactInboundActivity,
-  unsubscribeContactMarketingByPhone
+  unsubscribeContactMarketingByPhone,
+  resubscribeContactMarketingByPhone
 } from "./contacts-service.js";
 import { detectExternalBotLoop } from "./external-bot-detector-service.js";
 import { sendConversationFlowMessage } from "./channel-outbound-service.js";
 import { getActiveFlowSession } from "./flow-service.js";
-import { upsertRecipientSuppression } from "./message-delivery-data-service.js";
+import { upsertRecipientSuppression, removeOptOutSuppression } from "./message-delivery-data-service.js";
 import type { FlowMessagePayload } from "./outbound-message-types.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
@@ -137,6 +139,20 @@ export async function processIncomingMessage(
         keyword: unsubscribeKeyword
       }
     });
+    await input.sendReply?.({ text: "You have been unsubscribed from marketing messages. Reply START to re-subscribe." });
+  }
+
+  const resubscribeKeyword = detectMarketingResubscribe(normalizedMessage);
+  if (resubscribeKeyword && !unsubscribeKeyword) {
+    const resubscribedContact = await resubscribeContactMarketingByPhone({
+      userId: input.userId,
+      phoneNumber: input.customerIdentifier,
+      source: `inbound:${resubscribeKeyword}`
+    });
+    await removeOptOutSuppression(input.userId, input.customerIdentifier);
+    if (resubscribedContact) {
+      await input.sendReply?.({ text: "You have been re-subscribed to marketing messages. Reply STOP to unsubscribe." });
+    }
   }
 
   realtimeHub.broadcast(input.userId, "conversation.updated", {

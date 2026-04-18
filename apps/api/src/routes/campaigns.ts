@@ -60,7 +60,8 @@ const CreateCampaignBodySchema = z.object({
   retargetStatus: z.enum(["sent", "delivered", "read", "failed", "skipped"] as [RetargetStatus, ...RetargetStatus[]]).optional().nullable(),
   audienceSource: z.record(z.string(), z.unknown()).optional(),
   mediaOverrides: z.record(z.string(), z.string()).optional(),
-  scheduledAt: z.string().datetime({ offset: true }).optional().nullable()
+  scheduledAt: z.string().datetime({ offset: true }).optional().nullable(),
+  enforceMarketingPolicy: z.boolean().optional()
 });
 
 const UpdateCampaignBodySchema = CreateCampaignBodySchema.partial();

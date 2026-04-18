@@ -2659,6 +2659,7 @@ export function createCampaignDraft(
     audienceSource?: CampaignAudienceSource;
     mediaOverrides?: CampaignMediaOverrides;
     scheduledAt?: string | null;
+    enforceMarketingPolicy?: boolean;
   }
 ) {
   return apiRequest<{ campaign: Campaign }>("/api/campaigns", {
@@ -2683,6 +2684,7 @@ export function updateCampaignDraft(
     audienceSource: CampaignAudienceSource;
     mediaOverrides: CampaignMediaOverrides;
     scheduledAt: string | null;
+    enforceMarketingPolicy: boolean;
   }>
 ) {
   return apiRequest<{ campaign: Campaign }>(`/api/campaigns/${campaignId}`, {

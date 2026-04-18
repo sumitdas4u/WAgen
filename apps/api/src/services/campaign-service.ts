@@ -50,6 +50,7 @@ export interface Campaign {
   read_count: number;
   failed_count: number;
   skipped_count: number;
+  enforce_marketing_policy: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +86,7 @@ export interface CreateCampaignInput {
   audienceSource?: CampaignAudienceSource;
   mediaOverrides?: CampaignMediaOverrides;
   scheduledAt?: string | null;
+  enforceMarketingPolicy?: boolean;
 }
 
 export interface CampaignLaunchPreview {
@@ -269,9 +271,10 @@ export async function createCampaign(userId: string, input: CreateCampaignInput)
        retarget_status,
        audience_source_json,
        media_overrides_json,
-       scheduled_at
+       scheduled_at,
+       enforce_marketing_policy
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12::jsonb, $13)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)
      RETURNING *`,
     [
       userId,
@@ -286,7 +289,8 @@ export async function createCampaign(userId: string, input: CreateCampaignInput)
       input.retargetStatus ?? null,
       JSON.stringify(input.audienceSource ?? {}),
       JSON.stringify(input.mediaOverrides ?? {}),
-      input.scheduledAt ?? null
+      input.scheduledAt ?? null,
+      input.enforceMarketingPolicy ?? true
     ]
   );
   return result.rows[0]!;
@@ -311,7 +315,7 @@ export async function getCampaign(userId: string, campaignId: string): Promise<C
 export async function updateCampaign(
   userId: string,
   campaignId: string,
-  patch: Partial<Pick<CreateCampaignInput, "name" | "broadcastType" | "connectionId" | "templateId" | "templateVariables" | "targetSegmentId" | "sourceCampaignId" | "retargetStatus" | "audienceSource" | "mediaOverrides" | "scheduledAt">>
+  patch: Partial<Pick<CreateCampaignInput, "name" | "broadcastType" | "connectionId" | "templateId" | "templateVariables" | "targetSegmentId" | "sourceCampaignId" | "retargetStatus" | "audienceSource" | "mediaOverrides" | "scheduledAt" | "enforceMarketingPolicy">>
 ): Promise<Campaign | null> {
   const current = await getCampaign(userId, campaignId);
   if (!current || (current.status !== "draft" && current.status !== "scheduled")) {
@@ -338,7 +342,8 @@ export async function updateCampaign(
            WHEN COALESCE($13, scheduled_at) IS NOT NULL THEN 'scheduled'
            ELSE 'draft'
          END,
-         scheduled_at = COALESCE($13, scheduled_at)
+         scheduled_at = COALESCE($13, scheduled_at),
+         enforce_marketing_policy = COALESCE($14, enforce_marketing_policy)
      WHERE user_id = $1
        AND id = $2
      RETURNING *`,
@@ -355,7 +360,8 @@ export async function updateCampaign(
       patch.retargetStatus ?? null,
       patch.audienceSource != null ? JSON.stringify(patch.audienceSource) : null,
       patch.mediaOverrides != null ? JSON.stringify(patch.mediaOverrides) : null,
-      patch.scheduledAt ?? null
+      patch.scheduledAt ?? null,
+      patch.enforceMarketingPolicy ?? null
     ]
   );
   return result.rows[0] ?? null;
@@ -422,13 +428,14 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
       errorMessage = `Recipient suppressed: ${suppression.reason_label}`;
     }
 
-    if (status === "queued") {
+    if (status === "queued" && (template.category !== "MARKETING" || campaign.enforce_marketing_policy)) {
       const policy = await evaluateOutboundTemplatePolicy({
         userId,
         phoneNumber,
         category: template.category,
         contact,
-        suppression
+        suppression,
+        marketingEnabled: true
       });
       if (!policy.allowed) {
         status = "skipped";
@@ -520,12 +527,17 @@ export async function previewCampaignLaunch(userId: string, campaignId: string):
   const sampleBlockedContacts: CampaignLaunchPreview["sampleBlockedContacts"] = [];
 
   for (const contact of contacts) {
+    if (template.category === "MARKETING" && !campaign.enforce_marketing_policy) {
+      eligibleCount += 1;
+      continue;
+    }
     const policy = await evaluateOutboundTemplatePolicy({
       userId,
       phoneNumber: contact.phone_number,
       category: template.category,
       contact,
-      suppression: suppressedRecipients.get(contact.phone_number)
+      suppression: suppressedRecipients.get(contact.phone_number),
+      marketingEnabled: true
     });
     if (policy.allowed) {
       eligibleCount += 1;
