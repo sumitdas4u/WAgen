@@ -6,6 +6,7 @@ import {
   graphDelete,
   graphGet,
   graphPost,
+  graphPostMedia,
   graphStartUploadSession,
   graphUploadFileHandle,
   sendMetaTemplateDirect,
@@ -1096,6 +1097,40 @@ export async function uploadTemplateMedia(
   return { handle: result.h };
 }
 
+async function rewriteUrlComponentsToMediaId(
+  components: Array<Record<string, unknown>>,
+  phoneNumberId: string,
+  accessToken: string
+): Promise<Array<Record<string, unknown>>> {
+  return Promise.all(
+    components.map(async (component) => {
+      if (component.type !== "header") return component;
+      const params = component.parameters as Array<Record<string, unknown>> | undefined;
+      if (!params?.length) return component;
+      const param = params[0];
+      const mediaTypes = ["image", "video", "document"] as const;
+      for (const mt of mediaTypes) {
+        const media = param[mt] as Record<string, unknown> | undefined;
+        if (!media || !media.link || typeof media.link !== "string") continue;
+        try {
+          const dlRes = await fetch(media.link as string);
+          if (!dlRes.ok) break;
+          const contentType = dlRes.headers.get("content-type") ?? "application/octet-stream";
+          const buffer = Buffer.from(await dlRes.arrayBuffer());
+          const uploaded = await graphPostMedia(phoneNumberId, accessToken, buffer, contentType);
+          return {
+            ...component,
+            parameters: [{ ...param, [mt]: { id: uploaded.id } }]
+          };
+        } catch {
+          // keep link as-is if upload fails
+        }
+      }
+      return component;
+    })
+  );
+}
+
 export async function dispatchTemplateMessage(
   userId: string,
   payload: {
@@ -1126,13 +1161,19 @@ export async function dispatchTemplateMessage(
   }
 
   const builtPayload = resolveTemplatePayload(template, payload.variableValues);
+  const accessToken = decryptToken(connection.access_token_encrypted);
+  const components = await rewriteUrlComponentsToMediaId(
+    builtPayload.components,
+    connection.phone_number_id,
+    accessToken
+  );
   const sent = await sendMetaTemplateDirect({
     userId,
     to,
     phoneNumberId: connection.phone_number_id,
     templateName: template.name,
     language: template.language,
-    components: builtPayload.components
+    components
   });
 
   return {

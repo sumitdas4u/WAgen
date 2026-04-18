@@ -131,7 +131,7 @@ function resolveHeaderMediaReference(
     "header_preview_url"
   ]);
   const example = component.example as { header_handle?: string[]; header_url?: string[] } | undefined;
-  const fallback = explicitId ?? explicitUrl ?? example?.header_url?.[0] ?? example?.header_handle?.[0] ?? null;
+  const fallback = explicitId ?? explicitUrl ?? example?.header_handle?.[0] ?? example?.header_url?.[0] ?? null;
 
   if (!fallback?.trim()) {
     missing.add("headerMedia");
