@@ -75,9 +75,13 @@ export async function evaluateOutboundTemplatePolicy(input: {
   contact?: Contact | null;
   suppression?: ContactDeliverySuppression | null;
   marketingEnabled?: boolean;
+  enforceConsentPolicy?: boolean;
 }): Promise<OutboundPolicyResult> {
   const normalizedPhone = normalizePhoneDigits(input.phoneNumber);
   const marketingEnabled = input.marketingEnabled ?? false;
+  // enforceConsentPolicy=true → also check consent/subscription status.
+  // false → only hard blocks (suppression, global opt-out, frequency cap) are checked.
+  const enforceConsentPolicy = input.enforceConsentPolicy ?? true;
   const contact = input.contact ?? null;
   const suppression =
     input.suppression ??
@@ -94,6 +98,7 @@ export async function evaluateOutboundTemplatePolicy(input: {
     suppressionAction = "block";
   }
 
+  // Hard blocks — always enforced regardless of enforceConsentPolicy.
   const suppressionCode = classifySuppression(suppression ?? undefined, input.category);
   if (suppressionCode) {
     reasonCodes.push(suppressionCode);
@@ -106,16 +111,22 @@ export async function evaluateOutboundTemplatePolicy(input: {
   }
 
   if (isMarketingCategory(input.category)) {
-    if (!contact) {
-      reasonCodes.push("missing_contact");
-      suppressionAction = "block";
-    } else if (contact.marketing_consent_status === "unsubscribed" || contact.marketing_consent_status === "revoked") {
-      reasonCodes.push("marketing_unsubscribed");
-      suppressionAction = "block";
-    } else if (!hasValidMarketingConsent(contact.marketing_consent_status)) {
-      reasonCodes.push("missing_marketing_consent");
-      suppressionAction = "block";
-    } else if (contact.last_outgoing_marketing_at) {
+    // Consent checks — only when enforceConsentPolicy is true.
+    if (enforceConsentPolicy) {
+      if (!contact) {
+        reasonCodes.push("missing_contact");
+        suppressionAction = "block";
+      } else if (contact.marketing_consent_status === "unsubscribed" || contact.marketing_consent_status === "revoked") {
+        reasonCodes.push("marketing_unsubscribed");
+        suppressionAction = "block";
+      } else if (!hasValidMarketingConsent(contact.marketing_consent_status)) {
+        reasonCodes.push("missing_marketing_consent");
+        suppressionAction = "block";
+      }
+    }
+
+    // 24h frequency cap — always enforced when contact is known.
+    if (contact?.last_outgoing_marketing_at) {
       const lastSentMs = Date.parse(contact.last_outgoing_marketing_at);
       if (Number.isFinite(lastSentMs) && Date.now() - lastSentMs < 24 * 60 * 60_000) {
         reasonCodes.push("frequency_cap_24h");

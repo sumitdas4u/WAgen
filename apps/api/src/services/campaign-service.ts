@@ -428,14 +428,15 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
       errorMessage = `Recipient suppressed: ${suppression.reason_label}`;
     }
 
-    if (status === "queued" && (template.category !== "MARKETING" || campaign.enforce_marketing_policy)) {
+    if (status === "queued") {
       const policy = await evaluateOutboundTemplatePolicy({
         userId,
         phoneNumber,
         category: template.category,
         contact,
         suppression,
-        marketingEnabled: true
+        marketingEnabled: true,
+        enforceConsentPolicy: campaign.enforce_marketing_policy
       });
       if (!policy.allowed) {
         status = "skipped";
@@ -527,17 +528,14 @@ export async function previewCampaignLaunch(userId: string, campaignId: string):
   const sampleBlockedContacts: CampaignLaunchPreview["sampleBlockedContacts"] = [];
 
   for (const contact of contacts) {
-    if (template.category === "MARKETING" && !campaign.enforce_marketing_policy) {
-      eligibleCount += 1;
-      continue;
-    }
     const policy = await evaluateOutboundTemplatePolicy({
       userId,
       phoneNumber: contact.phone_number,
       category: template.category,
       contact,
       suppression: suppressedRecipients.get(contact.phone_number),
-      marketingEnabled: true
+      marketingEnabled: true,
+      enforceConsentPolicy: campaign.enforce_marketing_policy
     });
     if (policy.allowed) {
       eligibleCount += 1;
