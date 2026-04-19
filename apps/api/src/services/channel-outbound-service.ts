@@ -69,9 +69,21 @@ export async function sendConversationFlowMessage(input: {
       usage: input.usage
     });
 
-    // Broadcast optimistically from the API server process so the dashboard
-    // WebSocket sees the reply immediately — the outbound queue worker runs in
-    // a separate process and its realtimeHub has no dashboard connections.
+    // Pre-track to conversation_messages immediately so the dashboard can
+    // show the reply at once. The outbound worker sets track:false to avoid
+    // a duplicate insert. wamid is unknown until delivery; LEFT JOINs on it
+    // are optional so null is safe.
+    await trackOutboundMessage(
+      conversation.id,
+      queued.summaryText,
+      { ...input.usage, senderName: input.senderName ?? null },
+      input.mediaUrl ?? null,
+      deliveryPayload,
+      null
+    );
+
+    // Broadcast from the API server process — the worker process has its own
+    // isolated realtimeHub with no dashboard WebSocket connections.
     realtimeHub.broadcast(input.userId, "conversation.updated", {
       conversationId: conversation.id,
       phoneNumber: conversation.phone_number,

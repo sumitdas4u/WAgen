@@ -523,6 +523,8 @@ async function processConversationApi(row: OutboundMessageRow): Promise<void> {
     throw new Error("Message text is required.");
   }
 
+  // Message was already pre-tracked to conversation_messages by the API server
+  // process at queue time (channel-outbound-service). Skip re-inserting.
   const result = await sendTrackedApiConversationFlowMessage({
     userId: row.user_id,
     conversation,
@@ -530,7 +532,8 @@ async function processConversationApi(row: OutboundMessageRow): Promise<void> {
     summaryText,
     mediaUrl: row.media_url ?? getPayloadMediaUrl(payload) ?? null,
     senderName: row.sender_name ?? null,
-    usage: parseUsage(row)
+    usage: parseUsage(row),
+    track: false
   });
   await updateOutboundMessageState({
     id: row.id,
