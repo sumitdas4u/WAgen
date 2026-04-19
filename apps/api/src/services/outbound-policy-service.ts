@@ -115,6 +115,13 @@ export async function evaluateOutboundTemplatePolicy(input: {
     } else if (!hasValidMarketingConsent(contact.marketing_consent_status)) {
       reasonCodes.push("missing_marketing_consent");
       suppressionAction = "block";
+    } else if (contact.last_outgoing_marketing_at) {
+      const lastSentMs = Date.parse(contact.last_outgoing_marketing_at);
+      if (Number.isFinite(lastSentMs) && Date.now() - lastSentMs < 24 * 60 * 60_000) {
+        reasonCodes.push("frequency_cap_24h");
+        nextAllowedAt = nextAllowedAfter24h(contact.last_outgoing_marketing_at);
+        suppressionAction = "block";
+      }
     }
   }
 
