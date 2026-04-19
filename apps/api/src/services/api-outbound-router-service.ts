@@ -36,11 +36,6 @@ function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function addHumanDelay(summaryText: string): string {
-  const words = summaryText.trim().split(/\s+/).filter(Boolean).length;
-  const delayMs = Math.min(6000, Math.max(600, words * 300));
-  return new Date(Date.now() + delayMs).toISOString();
-}
 
 async function isDuplicateConversationContent(input: {
   conversationId: string;
@@ -156,7 +151,7 @@ export async function queueApiConversationSend(input: {
         templateId: explicitTemplateId,
         variableValues: {},
         senderName: input.senderName ?? null,
-        scheduledAt: mode === "session" ? addHumanDelay(canonicalPayload.previewText ?? canonicalPayload.templateName) : undefined
+        scheduledAt: undefined
       });
       return {
         queuedMessageId: queuedTemplate.queuedMessageId,
@@ -192,8 +187,7 @@ export async function queueApiConversationSend(input: {
       payload: canonicalPayload,
       displayText: summaryText,
       senderName: input.senderName ?? null,
-      usage: input.usage,
-      scheduledAt: addHumanDelay(summaryText)
+      usage: input.usage
     });
 
     return {
@@ -235,7 +229,7 @@ export async function queueApiConversationSend(input: {
     templateId: explicitTemplateId,
     variableValues,
     senderName: input.senderName ?? null,
-    scheduledAt: mode === "session" ? addHumanDelay(template.name.replace(/_/g, " ")) : undefined
+    scheduledAt: undefined
   });
 
   return {

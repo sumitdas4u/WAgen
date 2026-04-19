@@ -1,6 +1,7 @@
 import { getConversationById, setConversationManualAndPaused, trackOutboundMessage } from "./conversation-service.js";
 import { queueApiConversationSend } from "./api-outbound-router-service.js";
 import { queueConversationOutboundMessage } from "./outbound-message-service.js";
+import { realtimeHub } from "./realtime-hub.js";
 import {
   adaptPayloadForChannel,
   getPayloadMediaUrl,
@@ -66,6 +67,20 @@ export async function sendConversationFlowMessage(input: {
       payload: deliveryPayload,
       senderName: input.senderName ?? null,
       usage: input.usage
+    });
+
+    // Broadcast optimistically from the API server process so the dashboard
+    // WebSocket sees the reply immediately — the outbound queue worker runs in
+    // a separate process and its realtimeHub has no dashboard connections.
+    realtimeHub.broadcast(input.userId, "conversation.updated", {
+      conversationId: conversation.id,
+      phoneNumber: conversation.phone_number,
+      direction: "outbound",
+      message: queued.summaryText,
+      createdAt: new Date().toISOString(),
+      affectsListOrder: true,
+      score: conversation.score,
+      stage: conversation.stage
     });
 
     return {

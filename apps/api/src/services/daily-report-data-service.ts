@@ -137,8 +137,8 @@ type ConversationRow = {
   score: number;
   manual_takeover: boolean;
   last_ai_reply_at: string | null;
-  last_message: string | null;
   last_message_at: string | null;
+  last_inbound_message: string | null;
   insight_type: string | null;
   insight_summary: string | null;
   insight_sentiment: string | null;
@@ -374,8 +374,8 @@ async function queryConversationsWindow(userId: string, start: Date, end: Date):
        c.score,
        c.manual_takeover,
        c.last_ai_reply_at::text,
-       c.last_message,
        c.last_message_at::text,
+       inbound_msg.message_text AS last_inbound_message,
        ci.type AS insight_type,
        ci.summary AS insight_summary,
        ci.sentiment AS insight_sentiment,
@@ -391,11 +391,25 @@ async function queryConversationsWindow(userId: string, start: Date, end: Date):
        ORDER BY CASE WHEN ct.linked_conversation_id = c.id THEN 0 ELSE 1 END, ct.updated_at DESC
        LIMIT 1
      ) ct ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT message_text
+       FROM conversation_messages
+       WHERE conversation_id = c.id
+         AND direction = 'inbound'
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) inbound_msg ON TRUE
      LEFT JOIN conversation_insights ci ON ci.conversation_id = c.id
      LEFT JOIN lead_summaries ls ON ls.conversation_id = c.id
      WHERE c.user_id = $1
-       AND c.last_message_at >= $2
-       AND c.last_message_at < $3
+       AND EXISTS (
+         SELECT 1
+         FROM conversation_messages cm
+         WHERE cm.conversation_id = c.id
+           AND cm.direction = 'inbound'
+           AND cm.created_at >= $2
+           AND cm.created_at < $3
+       )
      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC`,
     [userId, start, end]
   );
@@ -406,7 +420,7 @@ async function queryConversationsWindow(userId: string, start: Date, end: Date):
     const summary =
       row.lead_summary?.trim() ||
       row.insight_summary?.trim() ||
-      row.last_message?.trim() ||
+      row.last_inbound_message?.trim() ||
       "No summary available";
 
     return {
@@ -419,7 +433,7 @@ async function queryConversationsWindow(userId: string, start: Date, end: Date):
       score: row.score,
       manualTakeover: row.manual_takeover,
       lastAiReplyAt: row.last_ai_reply_at,
-      lastMessage: row.last_message?.trim() || "",
+      lastMessage: row.last_inbound_message?.trim() || "",
       lastMessageAt: row.last_message_at,
       summary,
       sentiment: row.insight_sentiment,
@@ -455,6 +469,7 @@ async function queryMessagesWindow(
      WHERE c.user_id = $1
        AND cm.created_at >= $2
        AND cm.created_at < $3
+       AND cm.source_type NOT IN ('broadcast', 'sequence', 'system')
      ORDER BY cm.created_at ASC`,
     [userId, start, end]
   );
