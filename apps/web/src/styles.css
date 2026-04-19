@@ -1490,6 +1490,53 @@
   color: #2563eb;
 }
 
+.tmpl-dialog-media-hint {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0.15rem 0 0;
+  font-style: italic;
+}
+
+.bubble-info-btn--error {
+  display: block !important;
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.bubble-info-btn--error:hover {
+  background: #fecaca;
+  color: #b91c1c;
+}
+
+.bubble-error-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.3rem 0.5rem;
+  background: #fff1f2;
+  border-top: 1px solid #fecdd3;
+  border-radius: 0 0 8px 8px;
+  font-size: 0.72rem;
+  color: #b91c1c;
+  line-height: 1.4;
+}
+
+.bubble-error-hint-icon {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  margin-top: 0.05rem;
+}
+
+.bubble-error-hint-text {
+  word-break: break-word;
+}
+
+.bubble--failed .bubble-content {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 /* Rich message content */
 .message-rich-image {
   display: block;

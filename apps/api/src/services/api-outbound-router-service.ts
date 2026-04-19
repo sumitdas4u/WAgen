@@ -160,7 +160,8 @@ export async function queueApiConversationSend(input: {
         userId: input.userId,
         phoneNumber: conversation.phone_number,
         category: template.category,
-        contact
+        contact,
+        marketingEnabled: true
       });
       if (!policy.allowed) {
         throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
@@ -244,7 +245,8 @@ export async function queueApiConversationSend(input: {
     userId: input.userId,
     phoneNumber: conversation.phone_number,
     category: template.category,
-    contact
+    contact,
+    marketingEnabled: true
   });
   if (!policy.allowed) {
     throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));

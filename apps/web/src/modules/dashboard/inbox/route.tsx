@@ -537,6 +537,7 @@ export function Component() {
   const [templateVarsDialog, setTemplateVarsDialog] = useState<TemplateVarsDialogState | null>(null);
   const [templateUploadError, setTemplateUploadError] = useState<string | null>(null);
   const [templateUploadingFieldKey, setTemplateUploadingFieldKey] = useState<string | null>(null);
+  const [newChatUploadingFieldKey, setNewChatUploadingFieldKey] = useState<string | null>(null);
 
   // New Chat dialog
   const NEW_CHAT_DEFAULT: NewChatState = { open: false, step: "contact", contact: null, channelType: "qr", connectionId: "", qrMode: null, qrFlowId: null, messageText: "", template: null, templateVars: null };
@@ -1424,7 +1425,7 @@ export function Component() {
     uploadMutation.isPending ||
     (!replyDraftText.trim() && attachedFiles.length === 0);
   const isNoteSendDisabled = saveNoteMutation.isPending || !noteDraftText.trim();
-  const isTemplateDialogReady = templateVarsDialog ? templateVarsDialog.fields.every((field) => Boolean(templateVarsDialog.values[field.key]?.trim())) : false;
+  const isTemplateDialogReady = templateVarsDialog ? templateVarsDialog.fields.every((field) => field.kind === "media" || Boolean(templateVarsDialog.values[field.key]?.trim())) : false;
 
   const closeTemplateDialog = () => {
     setTemplateVarsDialog(null);
@@ -1476,6 +1477,46 @@ export function Component() {
       setTemplateUploadError((err as Error).message);
     } finally {
       setTemplateUploadingFieldKey(null);
+    }
+  };
+
+  const handleNewChatFieldFileSelect = async (
+    field: Extract<TemplateDialogField, { kind: "media" }>,
+    file: File | null | undefined
+  ) => {
+    if (!file) return;
+    const validationError = validateTemplateMediaFile(field.mediaType, file);
+    if (validationError) {
+      setTemplateUploadError(validationError);
+      return;
+    }
+    setTemplateUploadError(null);
+    setNewChatUploadingFieldKey(field.key);
+    try {
+      const uploaded = await templateUploadMutation.mutateAsync(file);
+      setNewChat((prev) =>
+        prev.templateVars
+          ? {
+              ...prev,
+              templateVars: {
+                ...prev.templateVars,
+                values: { ...prev.templateVars.values, [field.key]: uploaded.url },
+                uploads: {
+                  ...prev.templateVars.uploads,
+                  [field.key]: {
+                    fileName: uploaded.fileName ?? file.name,
+                    mimeType: file.type,
+                    previewUrl: field.mediaType === "IMAGE" ? uploaded.url : null
+                  }
+                }
+              }
+            }
+          : prev
+      );
+    } catch (err) {
+      setTemplateUploadError((err as Error).message);
+    } finally {
+      setNewChatUploadingFieldKey(null);
     }
   };
 
@@ -1810,11 +1851,14 @@ export function Component() {
                         const isManual = isOutbound && !isAi && Boolean(msg.sender_name);
                         const isTemplate = normalizedMessage.type === "template";
 
+                        const isFailed = msg.delivery_status === "failed";
+
                         const bubbleClass = [
                           "bubble",
                           msg.direction,
                           isAi ? "ai-bubble" : "",
-                          isFlow ? "flow-bubble" : ""
+                          isFlow ? "flow-bubble" : "",
+                          isFailed ? "bubble--failed" : ""
                         ].filter(Boolean).join(" ");
 
                         return (
@@ -1840,6 +1884,15 @@ export function Component() {
                                   <span className="token-meta">{msg.total_tokens} tokens</span>
                                 ) : null}
                               </div>
+                              {isFailed && (
+                                <div className="bubble-error-hint">
+                                  <span className="bubble-error-hint-icon">&#9888;</span>
+                                  <span className="bubble-error-hint-text">
+                                    {msg.error_code ? `Error ${msg.error_code}: ` : ""}
+                                    {msg.error_message ?? "Message delivery failed"}
+                                  </span>
+                                </div>
+                              )}
                               <button
                                 type="button"
                                 className="bubble-copy-btn"
@@ -1851,8 +1904,8 @@ export function Component() {
                               {isOutbound && (
                                 <button
                                   type="button"
-                                  className="bubble-info-btn"
-                                  title="Message info"
+                                  className={`bubble-info-btn${isFailed ? " bubble-info-btn--error" : ""}`}
+                                  title={isFailed ? "Delivery failed – click for details" : "Message info"}
                                   onClick={() => setMsgInfoTarget(msg)}
                                 >
                                   &#9432;
@@ -2265,8 +2318,8 @@ export function Component() {
                             <div className={`tmpl-dialog-upload${templateVarsDialog.values[field.key] ? " uploaded" : ""}`}>
                               <div className="tmpl-dialog-upload-main">
                                 <div>
-                                  <strong>{TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].label} upload</strong>
-                                  <p>{field.description}</p>
+                                  <strong>{TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].label} header</strong>
+                                  <p className="tmpl-dialog-media-hint">Optional — leaves empty to use template&apos;s approved sample media.</p>
                                 </div>
                                 <label className="tmpl-dialog-upload-btn">
                                   <input
@@ -2278,7 +2331,7 @@ export function Component() {
                                       e.target.value = "";
                                     }}
                                   />
-                                  {templateUploadingFieldKey === field.key ? "Uploading..." : templateVarsDialog.values[field.key] ? "Replace file" : "Upload file"}
+                                  {templateUploadingFieldKey === field.key ? "Uploading..." : templateVarsDialog.uploads[field.key] ? "Replace file" : `Upload ${TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].label.toLowerCase()}`}
                                 </label>
                               </div>
                               {templateVarsDialog.uploads[field.key] && (
@@ -2653,7 +2706,42 @@ export function Component() {
                                 onChange={(e) => setNewChat((p) => p.templateVars ? { ...p, templateVars: { ...p.templateVars, values: { ...p.templateVars.values, [field.key]: e.target.value } } } : p)}
                               />
                             ) : (
-                              <p className="empty-note" style={{ fontSize: 12 }}>Media upload for new chats: provide a URL in the variable field.</p>
+                              <div className={`tmpl-dialog-upload${newChat.templateVars?.values[field.key] ? " uploaded" : ""}`}>
+                                <div className="tmpl-dialog-upload-main">
+                                  <div>
+                                    <strong>{TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].label} header</strong>
+                                    <p className="tmpl-dialog-media-hint">Optional — leaves empty to use template&apos;s approved sample media.</p>
+                                  </div>
+                                  <label className="tmpl-dialog-upload-btn">
+                                    <input
+                                      type="file"
+                                      accept={TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].accept}
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        void handleNewChatFieldFileSelect(field, file);
+                                        e.target.value = "";
+                                      }}
+                                    />
+                                    {newChatUploadingFieldKey === field.key ? "Uploading..." : newChat.templateVars?.uploads[field.key] ? "Replace file" : `Upload ${TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].label.toLowerCase()}`}
+                                  </label>
+                                </div>
+                                {newChat.templateVars?.uploads[field.key] && (
+                                  <div className="tmpl-dialog-upload-meta">
+                                    {newChat.templateVars.uploads[field.key]?.previewUrl ? (
+                                      <img
+                                        src={newChat.templateVars.uploads[field.key]?.previewUrl ?? ""}
+                                        alt={newChat.templateVars.uploads[field.key]?.fileName}
+                                        className="tmpl-dialog-upload-preview"
+                                      />
+                                    ) : (
+                                      <div className="tmpl-dialog-upload-file">{newChat.templateVars.uploads[field.key]?.fileName}</div>
+                                    )}
+                                    <div className="tmpl-dialog-upload-caption">
+                                      Ready to send: {newChat.templateVars.uploads[field.key]?.fileName}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </label>
                         ))}
@@ -2675,7 +2763,7 @@ export function Component() {
                       (newChat.channelType === "qr" && !newChat.qrMode) ||
                       (newChat.channelType === "qr" && newChat.qrMode === "manual" && !newChat.messageText.trim()) ||
                       (newChat.channelType === "qr" && newChat.qrMode === "flow" && !newChat.qrFlowId) ||
-                      (newChat.channelType === "api" && (!newChat.connectionId || !selectedNewChatConnectionActive || !newChat.templateVars || (newChat.templateVars.fields.length > 0 && !newChat.templateVars.fields.every((f) => Boolean(newChat.templateVars?.values[f.key]?.trim())))))
+                      (newChat.channelType === "api" && (!newChat.connectionId || !selectedNewChatConnectionActive || !newChat.templateVars || (newChat.templateVars.fields.length > 0 && !newChat.templateVars.fields.every((f) => f.kind === "media" || Boolean(newChat.templateVars?.values[f.key]?.trim())))))
                     }
                     onClick={() => newChatMutation.mutate()}
                   >
