@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { TemplatePreviewPanel } from "../../templates/TemplatePreviewPanel";
 import {
   createGenericWebhookIntegration,
   createGenericWebhookWorkflow,
@@ -33,6 +34,17 @@ type ActiveTab = "overview" | "configuration" | "workflows" | "logs";
 function extractPlaceholders(template: MessageTemplate | null): string[] {
   if (!template) return [];
   return Array.from(new Set([...JSON.stringify(template.components).matchAll(/\{\{[^}]+\}\}/g)].map((match) => match[0])));
+}
+
+function buildWebhookPreviewComponents(template: MessageTemplate | null, fallbackValues: Record<string, string>) {
+  if (!template) return [];
+  return template.components.map((component) => {
+    if (!component.text) return component;
+    return {
+      ...component,
+      text: component.text.replace(/\{\{[^}]+\}\}/g, (match) => fallbackValues[match]?.trim() || match)
+    };
+  });
 }
 
 function emptyCondition(): GenericWebhookCondition {
@@ -744,27 +756,57 @@ export function GenericWebhooksPage() {
                   </div>
                 </div>
 
-                {channelMode === "api" && (
+                {channelMode === "api" && templatePlaceholders.length > 0 && (
                   <div>
-                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Template variable mappings</div>
-                    <div style={{ display: "grid", gap: "0.75rem" }}>
-                      {templatePlaceholders.length === 0 && <p style={{ color: "#6b7280", margin: 0 }}>Selected template has no variables.</p>}
+                    <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                      <div style={{ background: "#f8fafc", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", fontWeight: 600, color: "#475569", letterSpacing: "0.03em" }}>
+                        TEMPLATE VARIABLE MAPPINGS
+                      </div>
+                      <datalist id="webhook-payload-keys">
+                        {sampleKeys.map((key) => <option key={key} value={key} />)}
+                      </datalist>
                       {templatePlaceholders.map((placeholder) => (
-                        <div key={placeholder} style={{ display: "grid", gridTemplateColumns: "180px 1fr 1fr", gap: "0.5rem", alignItems: "end" }}>
-                          <div style={{ fontFamily: "monospace", fontSize: "0.9rem", paddingBottom: 10 }}>{placeholder}</div>
-                          <label>
-                            <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Payload path</div>
-                            <select value={variableMappings[placeholder] ?? ""} onChange={(event) => setVariableMappings((current) => ({ ...current, [placeholder]: event.target.value }))}>
-                              <option value="">Select path</option>
-                              {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
-                            </select>
-                          </label>
-                          <label>
-                            <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Fallback</div>
-                            <input value={fallbackValues[placeholder] ?? ""} onChange={(event) => setFallbackValues((current) => ({ ...current, [placeholder]: event.target.value }))} placeholder="Optional fallback" />
-                          </label>
+                        <div key={placeholder} style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: "8px" }}>
+                          <span style={{ display: "inline-flex", alignSelf: "flex-start", padding: "2px 8px", borderRadius: 5, background: "#e0f2fe", color: "#0369a1", fontFamily: "monospace", fontSize: "12px", fontWeight: 700 }}>
+                            {placeholder}
+                          </span>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                            <label>
+                              <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Payload path</div>
+                              <input
+                                list="webhook-payload-keys"
+                                value={variableMappings[placeholder] ?? ""}
+                                onChange={(event) => setVariableMappings((current) => ({ ...current, [placeholder]: event.target.value }))}
+                                placeholder={sampleKeys.length ? "Select or type path" : "e.g. customer.name"}
+                              />
+                            </label>
+                            <label>
+                              <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Fallback (when path empty)</div>
+                              <input value={fallbackValues[placeholder] ?? ""} onChange={(event) => setFallbackValues((current) => ({ ...current, [placeholder]: event.target.value }))} placeholder="Optional fallback" />
+                            </label>
+                          </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {channelMode === "api" && selectedTemplate && (
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", flexWrap: "wrap", gap: "0.5rem" }}>
+                      <div>
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>Live template preview</div>
+                        <div style={{ fontSize: "12px", color: "#64748b", marginTop: 2 }}>
+                          {templatePlaceholders.length > 0 ? "Variables show fallback values in preview." : "No variables in this template."}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>{selectedTemplate.name}</div>
+                    </div>
+                    <div style={{ padding: "12px" }}>
+                      <TemplatePreviewPanel
+                        components={buildWebhookPreviewComponents(selectedTemplate, fallbackValues)}
+                        businessName={selectedTemplate.name}
+                      />
                     </div>
                   </div>
                 )}
