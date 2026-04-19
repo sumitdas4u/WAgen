@@ -63,22 +63,6 @@ async function isDuplicateConversationContent(input: {
   return Number(result.rows[0]?.recent_match ?? 0) > 0;
 }
 
-async function isDuplicateTemplateSend(input: {
-  conversationId: string;
-  templateId: string;
-  variableValues: Record<string, string>;
-}): Promise<boolean> {
-  const result = await pool.query<{ recent_match: string }>(
-    `SELECT COUNT(*)::text AS recent_match
-     FROM outbound_messages
-     WHERE conversation_id = $1
-       AND template_id = $2
-       AND variable_values_json = $3::jsonb
-       AND created_at >= NOW() - ($4::text || ' minutes')::interval`,
-    [input.conversationId, input.templateId, JSON.stringify(input.variableValues ?? {}), String(RECENT_DUPLICATE_WINDOW_MINUTES)]
-  );
-  return Number(result.rows[0]?.recent_match ?? 0) > 0;
-}
 
 function resolveMappedTemplateId(intent: string | null | undefined): string | null {
   if (!intent) {
@@ -166,15 +150,6 @@ export async function queueApiConversationSend(input: {
       if (!policy.allowed) {
         throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
       }
-      const duplicateTemplatePayload = await isDuplicateTemplateSend({
-        conversationId: conversation.id,
-        templateId: explicitTemplateId,
-        variableValues: {}
-      });
-      if (duplicateTemplatePayload) {
-        throw new Error("Duplicate template send blocked for this conversation.");
-      }
-
       const queuedTemplate = await queueConversationTemplateMessage({
         userId: input.userId,
         conversationId: conversation.id,
@@ -253,14 +228,6 @@ export async function queueApiConversationSend(input: {
   }
 
   const variableValues = input.variableValues ?? {};
-  const duplicateBlocked = await isDuplicateTemplateSend({
-    conversationId: conversation.id,
-    templateId: explicitTemplateId,
-    variableValues
-  });
-  if (duplicateBlocked) {
-    throw new Error("Duplicate template send blocked for this conversation.");
-  }
 
   const queued = await queueConversationTemplateMessage({
     userId: input.userId,

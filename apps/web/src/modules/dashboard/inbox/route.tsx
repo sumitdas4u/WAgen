@@ -2373,6 +2373,7 @@ export function Component() {
                             return;
                           }
                           if (!selectedConversation) return;
+                          setTemplateUploadError(null);
                           sendTemplateMutation.mutate({
                             conversationId: selectedConversation.id,
                             templateId: templateVarsDialog.template.id,
