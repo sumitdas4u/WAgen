@@ -11,6 +11,7 @@ export type DeliverySuppressionReason = "blocked" | "opt_out" | "invalid_number"
 export type DeliveryMessageKind =
   | "campaign_template"
   | "conversation_template"
+  | "sequence_template"
   | "conversation_flow"
   | "conversation_text"
   | "direct_text"

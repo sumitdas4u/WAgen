@@ -1,5 +1,10 @@
 import { pool } from "../db/pool.js";
-import { classifyDeliveryFailure } from "./message-delivery-data-service.js";
+import {
+  classifyDeliveryFailure,
+  markDeliveryAttemptFailure,
+  markDeliveryAttemptSuccess,
+  recordDeliveryAttemptStart
+} from "./message-delivery-data-service.js";
 import { getContactByPhoneForUser, markContactTemplateOutboundActivity } from "./contacts-service.js";
 import { evaluateOutboundTemplatePolicy, summarizeOutboundPolicyReasons } from "./outbound-policy-service.js";
 import { queueSequenceOutboundMessage } from "./outbound-message-service.js";
@@ -18,6 +23,7 @@ import {
   resolveSequenceEnrollmentQueueKind,
   type SequenceEnrollmentQueueKind
 } from "./sequence-queue-service.js";
+import { checkConnectionDailyCap, waitForRateLimit } from "./message-delivery-service.js";
 import { dispatchTemplateMessage, getMessageTemplate } from "./template-service.js";
 
 const MAX_MESSAGES_PER_CONTACT_PER_DAY = 20;
@@ -382,13 +388,20 @@ export async function executeSequenceOutboundMessage(input: {
     return { status: "noop" };
   }
 
+  let deliveryAttemptId: string | null = null;
+  let deliveryConnectionId: string | null = null;
+  let deliveryLinkedNumber: string | null = null;
+
   try {
     const template = await getMessageTemplate(contact.user_id, step.message_template_id);
+    deliveryConnectionId = template.connectionId ?? null;
+    deliveryLinkedNumber = template.linkedNumber ?? null;
+    const freshContact = await getContactByPhoneForUser(contact.user_id, contact.phone_number);
     const policy = await evaluateOutboundTemplatePolicy({
       userId: contact.user_id,
       phoneNumber: contact.phone_number,
       category: template.category,
-      contact: await getContactByPhoneForUser(contact.user_id, contact.phone_number),
+      contact: freshContact,
       marketingEnabled: true
     });
     if (!policy.allowed) {
@@ -409,11 +422,66 @@ export async function executeSequenceOutboundMessage(input: {
       return { status: "failed", errorMessage: policyMessage };
     }
 
+    if (template.connectionId) {
+      const dailyCap = await checkConnectionDailyCap(template.connectionId);
+      if (dailyCap.exceeded) {
+        const capMessage = `Daily tier limit (${dailyCap.cap}) reached. Sequence step deferred.`;
+        const nextRetryAt = new Date(Date.now() + 60 * 60_000).toISOString();
+        await updateSequenceEnrollment(enrollment.id, {
+          status: "active",
+          nextRunAt: nextRetryAt,
+          lastExecutedAt: now.toISOString(),
+          retryCount: enrollment.retry_count + 1,
+          retryStartedAt: enrollment.retry_started_at ?? now.toISOString(),
+          lastDeliveryStatus: "failed"
+        });
+        await appendSequenceLog({
+          enrollmentId: enrollment.id,
+          sequenceId: sequence.id,
+          stepId: step.id,
+          status: "failed",
+          errorMessage: capMessage
+        });
+        await enqueueSequenceEnrollment({ enrollmentId: enrollment.id, nextRunAt: nextRetryAt, kind: "run" });
+        return { status: "retrying", errorMessage: capMessage };
+      }
+    }
+
+    await waitForRateLimit({
+      userId: contact.user_id,
+      connectionId: template.connectionId,
+      linkedNumber: template.linkedNumber
+    });
+
     const variableValues = resolveSequenceStepVariables(contact, step);
+    const attempt = await recordDeliveryAttemptStart({
+      userId: contact.user_id,
+      phoneNumber: contact.phone_number,
+      connectionId: template.connectionId,
+      linkedNumber: template.linkedNumber,
+      messageKind: "sequence_template",
+      attemptNumber: enrollment.retry_count + 1,
+      payload: {
+        templateId: template.id,
+        templateName: template.name,
+        language: template.language
+      }
+    });
+    deliveryAttemptId = attempt.id;
+
     const sent = await dispatchTemplateMessage(contact.user_id, {
       templateId: step.message_template_id,
       to: contact.phone_number,
       variableValues
+    });
+
+    await markDeliveryAttemptSuccess({
+      attemptId: attempt.id,
+      userId: contact.user_id,
+      providerMessageId: sent.messageId ?? null,
+      connectionId: sent.connection.id,
+      linkedNumber: sent.connection.linkedNumber,
+      phoneNumberId: sent.connection.phoneNumberId
     });
     await markContactTemplateOutboundActivity(contact.user_id, contact.phone_number, template.category);
 
@@ -451,6 +519,16 @@ export async function executeSequenceOutboundMessage(input: {
     return { status: "sent" };
   } catch (error) {
     const classification = classifyDeliveryFailure(error);
+    if (deliveryAttemptId) {
+      await markDeliveryAttemptFailure({
+        attemptId: deliveryAttemptId,
+        userId: contact.user_id,
+        classification,
+        connectionId: deliveryConnectionId,
+        linkedNumber: deliveryLinkedNumber,
+        response: { errorMessage: classification.errorMessage }
+      });
+    }
     const firstRetryStartedAt = enrollment.retry_started_at ? new Date(enrollment.retry_started_at) : now;
     const elapsedMs = now.getTime() - firstRetryStartedAt.getTime();
     const retryWindowMs = sequence.retry_window_hours * 60 * 60_000;

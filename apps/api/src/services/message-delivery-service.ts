@@ -59,14 +59,13 @@ function tierDailyCap(tier: string | null | undefined): number {
   }
 }
 
-async function countTodayTemplateSentForConnection(connectionId: string): Promise<number> {
+async function countTodayOutboundSentForConnection(connectionId: string): Promise<number> {
   const result = await pool.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
-     FROM campaign_messages cm
-     JOIN campaigns c ON c.id = cm.campaign_id
-     WHERE c.connection_id = $1
-       AND cm.sent_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')
-       AND cm.status IN ('sent', 'delivered', 'read')`,
+     FROM message_delivery_attempts
+     WHERE connection_id = $1
+       AND status = 'sent'
+       AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`,
     [connectionId]
   );
   return parseInt(result.rows[0]?.count ?? "0", 10);
@@ -96,7 +95,18 @@ function buildRateLimitKey(input: {
   ].join(":");
 }
 
-async function waitForRateLimit(input: {
+export async function checkConnectionDailyCap(connectionId: string): Promise<{
+  exceeded: boolean;
+  cap: number;
+  sentToday: number;
+}> {
+  const tier = await getConnectionTier(connectionId);
+  const cap = tierDailyCap(tier);
+  const sentToday = await countTodayOutboundSentForConnection(connectionId);
+  return { exceeded: sentToday >= cap, cap, sentToday };
+}
+
+export async function waitForRateLimit(input: {
   userId: string;
   connectionId?: string | null;
   linkedNumber?: string | null;
@@ -293,6 +303,14 @@ export async function deliverConversationTemplateMessage(input: {
   if (!policy.allowed) {
     throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
   }
+
+  if (template.connectionId) {
+    const dailyCap = await checkConnectionDailyCap(template.connectionId);
+    if (dailyCap.exceeded) {
+      throw new Error(`Daily tier limit (${dailyCap.cap}) reached for this connection.`);
+    }
+  }
+
   const attempt = await recordDeliveryAttemptStart({
     userId: input.userId,
     conversationId: conversation.id,
@@ -411,28 +429,25 @@ export async function deliverCampaignMessage(input: {
   const contact = input.message.contact_id
     ? await getContactByPhoneForUser(input.userId, input.message.phone_number)
     : await getContactByPhoneForUser(input.userId, input.message.phone_number);
-  if (template.category !== "MARKETING" || input.campaign.enforce_marketing_policy) {
-    const policy = await evaluateOutboundTemplatePolicy({
-      userId: input.userId,
-      phoneNumber: input.message.phone_number,
-      category: template.category,
-      contact,
-      marketingEnabled: true
-    });
-    if (!policy.allowed) {
-      const policyMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
-      await markCampaignMessageFailed(input.message.id, "POLICY_BLOCK", policyMessage, true);
-      return { status: "failed", errorMessage: policyMessage };
-    }
+  const policy = await evaluateOutboundTemplatePolicy({
+    userId: input.userId,
+    phoneNumber: input.message.phone_number,
+    category: template.category,
+    contact,
+    marketingEnabled: true,
+    enforceConsentPolicy: input.campaign.enforce_marketing_policy
+  });
+  if (!policy.allowed) {
+    const policyMessage = summarizeOutboundPolicyReasons(policy.reasonCodes).join(" ");
+    await markCampaignMessageFailed(input.message.id, "POLICY_BLOCK", policyMessage, true);
+    return { status: "failed", errorMessage: policyMessage };
   }
 
   if (input.campaign.connection_id) {
-    const tier = await getConnectionTier(input.campaign.connection_id);
-    const cap = tierDailyCap(tier);
-    const sentToday = await countTodayTemplateSentForConnection(input.campaign.connection_id);
-    if (sentToday >= cap) {
+    const dailyCap = await checkConnectionDailyCap(input.campaign.connection_id);
+    if (dailyCap.exceeded) {
       await deferCampaignMessageToNextDay(input.message.id);
-      return { status: "retrying", errorMessage: `Daily tier limit (${cap}) reached. Deferred to next day.` };
+      return { status: "retrying", errorMessage: `Daily tier limit (${dailyCap.cap}) reached. Deferred to next day.` };
     }
   }
 
