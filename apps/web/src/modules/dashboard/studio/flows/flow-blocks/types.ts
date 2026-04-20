@@ -16,6 +16,12 @@ export interface Trigger {
   value: string;
 }
 
+export interface RouteConfig {
+  id: string;
+  label: string;
+  triggers: Trigger[];
+}
+
 export interface Btn {
   id: string;
   label: string;
@@ -42,7 +48,8 @@ export interface ListSection {
 export interface FlowStartData {
   kind: "flowStart";
   label: string;
-  triggers: Trigger[];
+  triggers: Trigger[];       // legacy — kept for backward compat
+  routes: RouteConfig[];     // new
   welcomeMessage: string;
   fallbackUseAi?: boolean;
 }

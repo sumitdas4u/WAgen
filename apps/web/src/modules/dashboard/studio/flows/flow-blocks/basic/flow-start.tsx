@@ -102,6 +102,7 @@ export const flowStartStudioBlock: StudioFlowBlockDefinition<FlowStartData> = {
       kind: "flowStart",
       label: "Flow Start",
       triggers: [],
+      routes: [],
       welcomeMessage: ""
     };
   },
