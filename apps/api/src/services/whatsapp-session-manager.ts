@@ -16,6 +16,7 @@ import {
   getOrCreateWhatsAppSession,
   getWhatsAppStatus,
   resetWhatsAppAuthState,
+  saveWhatsAppDegradedReason,
   setWhatsAppChannelEnabled,
   updateWhatsAppStatus
 } from "./whatsapp-session-store.js";
@@ -587,6 +588,8 @@ class WhatsAppSessionManager {
       phoneNumber: string | null;
       hasQr: boolean;
       qr: string | null;
+      lastDegradedReason?: string | null;
+      lastDegradedAt?: Date | null;
     }
   ): {
     enabled: boolean;
@@ -596,13 +599,17 @@ class WhatsAppSessionManager {
     qr: string | null;
     needsRelink: boolean;
     statusMessage: string | null;
+    lastDegradedReason: string | null;
+    lastDegradedAt: Date | null;
   } {
     const degraded = this.degradedSessions.get(userId);
     if (!degraded) {
       return {
         ...base,
         needsRelink: false,
-        statusMessage: null
+        statusMessage: null,
+        lastDegradedReason: base.lastDegradedReason ?? null,
+        lastDegradedAt: base.lastDegradedAt ?? null
       };
     }
 
@@ -613,7 +620,9 @@ class WhatsAppSessionManager {
       hasQr: false,
       qr: null,
       needsRelink: true,
-      statusMessage: degraded.message
+      statusMessage: degraded.message,
+      lastDegradedReason: degraded.reason,
+      lastDegradedAt: base.lastDegradedAt ?? null
     };
   }
 
@@ -673,6 +682,7 @@ class WhatsAppSessionManager {
     this.clearRecentOutboundMessages(userId);
     clearAuthStateCache(userId);
     await resetWhatsAppAuthState(userId);
+    await saveWhatsAppDegradedReason(userId, evaluation.reason);
     await updateWhatsAppStatus(userId, "disconnected");
 
     realtimeHub.broadcast(
@@ -929,6 +939,8 @@ class WhatsAppSessionManager {
     qr: string | null;
     needsRelink: boolean;
     statusMessage: string | null;
+    lastDegradedReason: string | null;
+    lastDegradedAt: Date | null;
   }> {
     const dbStatus = await getWhatsAppStatus(userId);
     const runtime = this.sessions.get(userId);
@@ -940,7 +952,9 @@ class WhatsAppSessionManager {
         status: "degraded",
         phoneNumber: degradedStatus.phoneNumber ?? dbStatus.phoneNumber,
         hasQr: false,
-        qr: null
+        qr: null,
+        lastDegradedReason: dbStatus.lastDegradedReason,
+        lastDegradedAt: dbStatus.lastDegradedAt
       });
     }
 
@@ -955,7 +969,9 @@ class WhatsAppSessionManager {
         status: "connecting",
         phoneNumber: dbStatus.phoneNumber,
         hasQr: false,
-        qr: null
+        qr: null,
+        lastDegradedReason: dbStatus.lastDegradedReason,
+        lastDegradedAt: dbStatus.lastDegradedAt
       });
     }
 
@@ -964,7 +980,9 @@ class WhatsAppSessionManager {
       status: (runtime?.status ?? dbStatus.status) as QrChannelStatus,
       phoneNumber: dbStatus.phoneNumber,
       hasQr: Boolean(runtime?.qr),
-      qr: runtime?.qr ?? null
+      qr: runtime?.qr ?? null,
+      lastDegradedReason: dbStatus.lastDegradedReason,
+      lastDegradedAt: dbStatus.lastDegradedAt
     });
   }
 

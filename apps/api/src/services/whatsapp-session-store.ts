@@ -133,17 +133,34 @@ export async function disconnectSessionsByPhoneNumber(
   return result.rows.map((row) => row.user_id);
 }
 
+export async function saveWhatsAppDegradedReason(
+  userId: string,
+  reason: string
+): Promise<void> {
+  await pool.query(
+    `UPDATE whatsapp_sessions
+     SET last_degraded_reason = $1,
+         last_degraded_at = NOW()
+     WHERE user_id = $2`,
+    [reason, userId]
+  );
+}
+
 export async function getWhatsAppStatus(userId: string): Promise<{
   enabled: boolean;
   status: string;
   phoneNumber: string | null;
+  lastDegradedReason: string | null;
+  lastDegradedAt: Date | null;
 }> {
   const result = await pool.query<{
     enabled: boolean;
     status: string;
     phone_number: string | null;
+    last_degraded_reason: string | null;
+    last_degraded_at: Date | null;
   }>(
-    `SELECT enabled, status, phone_number
+    `SELECT enabled, status, phone_number, last_degraded_reason, last_degraded_at
      FROM whatsapp_sessions
      WHERE user_id = $1`,
     [userId]
@@ -152,6 +169,8 @@ export async function getWhatsAppStatus(userId: string): Promise<{
   return {
     enabled: result.rows[0]?.enabled ?? true,
     status: result.rows[0]?.status ?? "disconnected",
-    phoneNumber: result.rows[0]?.phone_number ?? null
+    phoneNumber: result.rows[0]?.phone_number ?? null,
+    lastDegradedReason: result.rows[0]?.last_degraded_reason ?? null,
+    lastDegradedAt: result.rows[0]?.last_degraded_at ?? null
   };
 }
