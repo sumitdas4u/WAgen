@@ -41,7 +41,8 @@ const DEFAULT_DASHBOARD_BOOTSTRAP: DashboardBootstrapResponse = {
       hasQr: false,
       qr: null,
       needsRelink: false,
-      statusMessage: null
+      statusMessage: null,
+      lastDegradedReason: null
     },
     metaApi: {
       connected: false,

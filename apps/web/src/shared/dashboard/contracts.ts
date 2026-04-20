@@ -21,6 +21,7 @@ export interface DashboardChannelSummary {
     qr: string | null;
     needsRelink?: boolean;
     statusMessage?: string | null;
+    lastDegradedReason?: string | null;
   };
   metaApi: MetaBusinessStatus;
   anyConnected: boolean;

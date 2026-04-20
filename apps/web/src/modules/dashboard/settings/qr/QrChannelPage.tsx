@@ -48,6 +48,7 @@ export function QrChannelPage() {
   const qrHasQr = Boolean(bootstrap?.channelSummary?.whatsapp?.hasQr);
   const qrNeedsRelink = Boolean(bootstrap?.channelSummary?.whatsapp?.needsRelink);
   const qrStatusMessage = bootstrap?.channelSummary?.whatsapp?.statusMessage ?? null;
+  const qrLastDegradedReason = bootstrap?.channelSummary?.whatsapp?.lastDegradedReason ?? null;
   const qrConnectionLabel = formatQrConnectionStatus(qrStatus, qrHasQr);
   const canDisconnect = qrConnected || qrStatus === "connecting" || qrHasQr || Boolean(qrPhoneNumber);
   const defaultReplyMode = defaultReplyConfig?.mode ?? "manual";
@@ -181,6 +182,9 @@ export function QrChannelPage() {
       {qrNeedsRelink && qrStatusMessage ? (
         <article className="finance-panel">
           <p className="error-text">{qrStatusMessage}</p>
+          {qrLastDegradedReason ? (
+            <p className="tiny-note" style={{ fontFamily: "monospace", color: "#64748b" }}>Reason: {qrLastDegradedReason}</p>
+          ) : null}
           <p className="tiny-note">Keep the main phone online, remove the stale linked device in WhatsApp, then reconnect and scan a fresh QR.</p>
         </article>
       ) : null}
