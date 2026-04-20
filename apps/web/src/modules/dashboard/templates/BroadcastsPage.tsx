@@ -77,9 +77,42 @@ function resolveContactFieldValue(contact: ContactRecord | null, field: string |
   );
 }
 
-function computeDateOffsetPreview(offset: CampaignTemplateVariableBinding["dateOffset"]): string {
+function parseSampleDate(raw: string): Date | null {
+  if (!raw?.trim()) return null;
+  const s = raw.trim();
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}(T.*)?$/.test(s)) {
+    const d = new Date(s.replace(/\//g, "-"));
+    if (!isNaN(d.getTime())) return d;
+  }
+  const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmy) {
+    const day = Number(dmy[1]), month = Number(dmy[2]), year = Number(dmy[3]);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      const d = new Date(year, month - 1, day);
+      if (!isNaN(d.getTime()) && d.getDate() === day) return d;
+    }
+  }
+  const dmmmY = s.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (dmmmY) {
+    const d = new Date(`${dmmmY[2]} ${dmmmY[1]}, ${dmmmY[3]}`);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (/^[A-Za-z]/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (/^\d{13}$/.test(s)) {
+    const d = new Date(Number(s));
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function computeDateOffsetPreview(offset: CampaignTemplateVariableBinding["dateOffset"], baseDateStr?: string): string {
   if (!offset) return "";
-  const d = new Date();
+  const base = baseDateStr ? parseSampleDate(baseDateStr) : new Date();
+  if (!base) return "";
+  const d = new Date(base);
   const n = offset.direction === "subtract" ? -offset.value : offset.value;
   if (offset.unit === "days")   d.setDate(d.getDate() + n);
   if (offset.unit === "weeks")  d.setDate(d.getDate() + n * 7);
@@ -178,6 +211,7 @@ export function BroadcastsPage({ token, metaStatus }: Props) {
   const [selectedSegmentId, setSelectedSegmentId] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [bindings, setBindings] = useState<CampaignTemplateVariables>({});
+  const [sampleDates, setSampleDates] = useState<Record<string, string>>({});
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -464,6 +498,22 @@ export function BroadcastsPage({ token, metaStatus }: Props) {
                                 → {computeDateOffsetPreview(binding.dateOffset)}
                               </span>
                             )}
+                          </>
+                        )}
+                        {binding.source === "contact" && binding.dateOffset && (
+                          <>
+                            <input
+                              placeholder="Test: DD/MM/YYYY"
+                              value={sampleDates[placeholder] ?? ""}
+                              onChange={(e) => setSampleDates((s) => ({ ...s, [placeholder]: e.target.value }))}
+                              style={{ width: "150px", border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
+                            />
+                            {sampleDates[placeholder] && (() => {
+                              const result = computeDateOffsetPreview(binding.dateOffset, sampleDates[placeholder]);
+                              return result
+                                ? <span style={{ color: "#16a34a", fontSize: "13px", fontWeight: 600 }}>→ {result}</span>
+                                : <span style={{ color: "#dc2626", fontSize: "12px" }}>Not a valid date — fallback used</span>;
+                            })()}
                           </>
                         )}
                       </div>

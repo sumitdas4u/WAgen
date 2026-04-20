@@ -75,9 +75,42 @@ type WebhookVarBinding =
   | { source: "static"; value: string }
   | { source: "now"; dateOffset: DateOffset; fallback: string };
 
-function computeDateOffsetPreview(offset: DateOffset | undefined): string {
+function parseSampleDate(raw: string): Date | null {
+  if (!raw?.trim()) return null;
+  const s = raw.trim();
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}(T.*)?$/.test(s)) {
+    const d = new Date(s.replace(/\//g, "-"));
+    if (!isNaN(d.getTime())) return d;
+  }
+  const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmy) {
+    const day = Number(dmy[1]), month = Number(dmy[2]), year = Number(dmy[3]);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      const d = new Date(year, month - 1, day);
+      if (!isNaN(d.getTime()) && d.getDate() === day) return d;
+    }
+  }
+  const dmmmY = s.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (dmmmY) {
+    const d = new Date(`${dmmmY[2]} ${dmmmY[1]}, ${dmmmY[3]}`);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (/^[A-Za-z]/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (/^\d{13}$/.test(s)) {
+    const d = new Date(Number(s));
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function computeDateOffsetPreview(offset: DateOffset | undefined, baseDateStr?: string): string {
   if (!offset) return "";
-  const d = new Date();
+  const base = baseDateStr ? parseSampleDate(baseDateStr) : new Date();
+  if (!base) return "";
+  const d = new Date(base);
   const n = offset.direction === "subtract" ? -offset.value : offset.value;
   if (offset.unit === "days")   d.setDate(d.getDate() + n);
   if (offset.unit === "weeks")  d.setDate(d.getDate() + n * 7);
@@ -124,6 +157,7 @@ export function GenericWebhooksPage() {
   const [tagsText, setTagsText] = useState("");
   const [fieldMappings, setFieldMappings] = useState<Array<{ contactFieldName: string; payloadPath: string }>>([]);
   const [variableBindings, setVariableBindings] = useState<Record<string, WebhookVarBinding>>({});
+  const [sampleDates, setSampleDates] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -902,8 +936,21 @@ export function GenericWebhooksPage() {
                                     <option value="months">Months</option>
                                     <option value="years">Years</option>
                                   </select>
-                                  <span style={{ color: "#16a34a", fontSize: "12px", fontWeight: 600 }}>→ {computeDateOffsetPreview(binding.dateOffset)}</span>
+                                  {(() => {
+                                    const result = computeDateOffsetPreview(binding.dateOffset, sampleDates[placeholder]);
+                                    return result
+                                      ? <span style={{ color: "#16a34a", fontSize: "12px", fontWeight: 600 }}>→ {result}</span>
+                                      : sampleDates[placeholder] ? <span style={{ color: "#dc2626", fontSize: "11px" }}>Not a valid date — fallback used</span> : null;
+                                  })()}
                                 </>
+                              )}
+                              {binding.dateOffset && (
+                                <input
+                                  placeholder="Test date"
+                                  value={sampleDates[placeholder] ?? ""}
+                                  onChange={(e) => setSampleDates((s) => ({ ...s, [placeholder]: e.target.value }))}
+                                  style={{ width: "130px", fontSize: "12px" }}
+                                />
                               )}
                             </div>
                           )}

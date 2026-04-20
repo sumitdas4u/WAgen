@@ -245,6 +245,7 @@ function resolveCampaignVariablesForContact(
       if (binding.dateOffset && resolved) {
         const parsed = parseDateString(resolved);
         if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+        else resolved = null;
       }
     }
 

@@ -1089,18 +1089,21 @@ export async function handleIncomingGenericWebhook(input: {
             if (binding.dateOffset && resolved) {
               const parsed = parseDateString(resolved);
               if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+              else resolved = null;
             }
           } else if (binding.source === "contact") {
             resolved = resolveContactField(contact, binding.field);
             if (binding.dateOffset && resolved) {
               const parsed = parseDateString(resolved);
               if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+              else resolved = null;
             }
           } else if (binding.source === "static") {
             resolved = trimToNull(binding.value);
             if (binding.dateOffset && resolved) {
               const parsed = parseDateString(resolved);
               if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+              else resolved = null;
             }
           }
           const value = resolved ?? trimToNull(templateAction.fallbackValues?.[key]);

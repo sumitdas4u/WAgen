@@ -216,6 +216,7 @@ function resolveSequenceStepVariables(
       if (binding.dateOffset && value) {
         const parsed = parseDateString(value);
         if (parsed) value = applyDateOffset(parsed, binding.dateOffset);
+        else value = null;
       }
     }
 
