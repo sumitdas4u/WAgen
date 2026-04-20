@@ -10,6 +10,7 @@ import {
   listContactFields,
   listContactSegments,
   type Campaign,
+  type CampaignTemplateVariableBinding,
   type CampaignTemplateVariables,
   type ContactField,
   type ContactRecord,

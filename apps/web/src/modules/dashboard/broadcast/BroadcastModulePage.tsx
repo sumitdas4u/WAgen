@@ -22,6 +22,7 @@ import {
   type ContactImportColumnMapping,
   type ContactImportPreview,
   type CampaignMediaOverrides,
+  type CampaignTemplateVariableBinding,
   type CampaignTemplateVariables,
   type ContactField,
   type ContactRecord,
