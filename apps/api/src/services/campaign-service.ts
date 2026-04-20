@@ -9,10 +9,11 @@ import {
   type OutboundPolicyReasonCode
 } from "./outbound-policy-service.js";
 import { getMessageTemplate, resolveTemplatePayload } from "./template-service.js";
+import { applyDateOffset, parseDateString, type DateOffset } from "../utils/date-offset.js";
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
 export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
-export type CampaignTemplateVariableSource = "contact" | "static";
+export type CampaignTemplateVariableSource = "contact" | "static" | "now";
 export type BroadcastType = "standard" | "retarget";
 export type RetargetStatus = Extract<CampaignMessageStatus, "sent" | "delivered" | "read" | "failed" | "skipped">;
 
@@ -21,6 +22,7 @@ export interface CampaignTemplateVariableBinding {
   field?: string;
   value?: string;
   fallback?: string;
+  dateOffset?: DateOffset;
 }
 
 export type CampaignTemplateVariables = Record<string, CampaignTemplateVariableBinding>;
@@ -236,8 +238,14 @@ function resolveCampaignVariablesForContact(
     let resolved: string | null = null;
     if (binding.source === "static") {
       resolved = trimToNull(binding.value);
+    } else if (binding.source === "now" && binding.dateOffset) {
+      resolved = applyDateOffset(new Date(), binding.dateOffset);
     } else if (binding.source === "contact" && binding.field) {
       resolved = getContactFieldValue(contact, binding.field);
+      if (binding.dateOffset && resolved) {
+        const parsed = parseDateString(resolved);
+        if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+      }
     }
 
     resolved = resolved ?? trimToNull(binding.fallback);

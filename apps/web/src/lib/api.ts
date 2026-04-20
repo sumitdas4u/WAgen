@@ -2456,15 +2456,22 @@ export function sendTestTemplateMessage(
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
 export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
-export type CampaignTemplateVariableSource = "contact" | "static";
+export type CampaignTemplateVariableSource = "contact" | "static" | "now";
 export type BroadcastType = "standard" | "retarget";
 export type RetargetStatus = "sent" | "delivered" | "read" | "failed" | "skipped";
+
+export interface DateOffset {
+  direction: "add" | "subtract";
+  value: number;
+  unit: "days" | "weeks" | "months" | "years";
+}
 
 export interface CampaignTemplateVariableBinding {
   source: CampaignTemplateVariableSource;
   field?: string;
   value?: string;
   fallback?: string;
+  dateOffset?: DateOffset;
 }
 
 export type CampaignTemplateVariables = Record<string, CampaignTemplateVariableBinding>;
@@ -3376,7 +3383,7 @@ export interface GenericWebhookTemplateAction {
   templateId: string;
   recipientNamePath: string;
   recipientPhonePath: string;
-  variableMappings: Record<string, { source: "payload"; path: string } | { source: "contact"; field: string } | { source: "static"; value: string }>;
+  variableMappings: Record<string, { source: "payload"; path: string; dateOffset?: DateOffset } | { source: "contact"; field: string; dateOffset?: DateOffset } | { source: "static"; value: string; dateOffset?: DateOffset } | { source: "now"; dateOffset: DateOffset }>;
   fallbackValues?: Record<string, string>;
 }
 

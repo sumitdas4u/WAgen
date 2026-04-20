@@ -45,6 +45,7 @@ function buildWebhookPreviewComponents(template: MessageTemplate | null, binding
       text: component.text.replace(/\{\{[^}]+\}\}/g, (match) => {
         const binding = bindings[match];
         if (!binding) return match;
+        if (binding.source === "now") return computeDateOffsetPreview(binding.dateOffset) || match;
         if (binding.source === "static") return binding.value?.trim() || match;
         const fallback = (binding as { fallback?: string }).fallback?.trim();
         return fallback || match;
@@ -66,10 +67,24 @@ function tagsToString(tags?: string[]): string {
 }
 
 
+type DateOffset = { direction: "add" | "subtract"; value: number; unit: "days" | "weeks" | "months" | "years" };
+
 type WebhookVarBinding =
   | { source: "payload"; path: string; fallback: string }
   | { source: "contact"; field: string; fallback: string }
-  | { source: "static"; value: string };
+  | { source: "static"; value: string }
+  | { source: "now"; dateOffset: DateOffset; fallback: string };
+
+function computeDateOffsetPreview(offset: DateOffset | undefined): string {
+  if (!offset) return "";
+  const d = new Date();
+  const n = offset.direction === "subtract" ? -offset.value : offset.value;
+  if (offset.unit === "days")   d.setDate(d.getDate() + n);
+  if (offset.unit === "weeks")  d.setDate(d.getDate() + n * 7);
+  if (offset.unit === "months") d.setMonth(d.getMonth() + n);
+  if (offset.unit === "years")  d.setFullYear(d.getFullYear() + n);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
 
 const CONTACT_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "display_name", label: "Contact name" },
@@ -218,6 +233,7 @@ export function GenericWebhooksPage() {
       Object.fromEntries(
         Object.entries(workflow.templateAction?.variableMappings ?? {}).map(([key, binding]) => {
           const fallback = workflow.templateAction?.fallbackValues?.[key] ?? "";
+          if (binding.source === "now") return [key, { source: "now" as const, dateOffset: binding.dateOffset, fallback }];
           if (binding.source === "contact") return [key, { source: "contact" as const, field: binding.field, fallback }];
           if (binding.source === "static") return [key, { source: "static" as const, value: binding.value }];
           return [key, { source: "payload" as const, path: binding.path, fallback }];
@@ -271,6 +287,7 @@ export function GenericWebhooksPage() {
             recipientPhonePath,
             variableMappings: Object.fromEntries(
               (Object.entries(variableBindings) as Array<[string, WebhookVarBinding]>).flatMap(([key, binding]): Array<[string, GenericWebhookTemplateAction["variableMappings"][string]]> => {
+                if (binding.source === "now" && binding.dateOffset) return [[key, { source: "now", dateOffset: binding.dateOffset }]];
                 if (binding.source === "payload" && binding.path.trim()) return [[key, { source: "payload", path: binding.path }]];
                 if (binding.source === "contact" && binding.field.trim()) return [[key, { source: "contact", field: binding.field }]];
                 if (binding.source === "static" && binding.value.trim()) return [[key, { source: "static", value: binding.value }]];
@@ -813,8 +830,9 @@ export function GenericWebhooksPage() {
                               <select
                                 value={binding.source}
                                 onChange={(event) => {
-                                  const src = event.target.value as "payload" | "contact" | "static";
-                                  if (src === "payload") setBinding({ source: "payload", path: "", fallback: "" } as WebhookVarBinding);
+                                  const src = event.target.value as "payload" | "contact" | "static" | "now";
+                                  if (src === "now") setBinding({ source: "now", dateOffset: { direction: "add", value: 1, unit: "days" }, fallback: "" } as WebhookVarBinding);
+                                  else if (src === "payload") setBinding({ source: "payload", path: "", fallback: "" } as WebhookVarBinding);
                                   else if (src === "contact") setBinding({ source: "contact", field: CONTACT_FIELD_OPTIONS[0].value, fallback: "" } as WebhookVarBinding);
                                   else setBinding({ source: "static", value: "" } as WebhookVarBinding);
                                 }}
@@ -822,29 +840,62 @@ export function GenericWebhooksPage() {
                                 <option value="payload">Payload path</option>
                                 <option value="contact">Contact field</option>
                                 <option value="static">Static value</option>
+                                <option value="now">📅 Today&apos;s date</option>
                               </select>
                             </div>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>
-                                {binding.source === "payload" ? "Path" : binding.source === "contact" ? "Field" : "Value"}
-                              </span>
-                              {binding.source === "payload" && (
-                                <select value={binding.path} onChange={(event) => setBinding({ path: event.target.value })}>
-                                  <option value="">Select path</option>
-                                  {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
-                                </select>
-                              )}
-                              {binding.source === "contact" && (
-                                <select value={binding.field} onChange={(event) => setBinding({ field: event.target.value })}>
-                                  {contactFieldOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                </select>
-                              )}
-                              {binding.source === "static" && (
-                                <input value={binding.value} onChange={(event) => setBinding({ value: event.target.value })} placeholder="Static text" />
-                              )}
-                            </div>
+                            {binding.source !== "now" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>
+                                  {binding.source === "payload" ? "Path" : binding.source === "contact" ? "Field" : "Value"}
+                                </span>
+                                {binding.source === "payload" && (
+                                  <select value={binding.path} onChange={(event) => setBinding({ path: event.target.value })}>
+                                    <option value="">Select path</option>
+                                    {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                                  </select>
+                                )}
+                                {binding.source === "contact" && (
+                                  <select value={binding.field} onChange={(event) => setBinding({ field: event.target.value })}>
+                                    {contactFieldOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                  </select>
+                                )}
+                                {binding.source === "static" && (
+                                  <input value={binding.value} onChange={(event) => setBinding({ value: event.target.value })} placeholder="Static text" />
+                                )}
+                              </div>
+                            )}
                           </div>
-                          {binding.source !== "static" && (
+                          {binding.source === "now" && (
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500, width: "50px" }}>Offset</span>
+                              <select
+                                value={binding.dateOffset?.direction ?? "add"}
+                                onChange={(e) => setBinding({ dateOffset: { ...(binding.dateOffset ?? { value: 1, unit: "days" as const }), direction: e.target.value as "add" | "subtract" } } as Partial<WebhookVarBinding>)}
+                                style={{ fontSize: "12px" }}
+                              >
+                                <option value="add">+ Add</option>
+                                <option value="subtract">− Subtract</option>
+                              </select>
+                              <input
+                                type="number" min={1} max={999}
+                                value={binding.dateOffset?.value ?? 1}
+                                onChange={(e) => setBinding({ dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, unit: "days" as const }), value: Math.max(1, Number(e.target.value)) } } as Partial<WebhookVarBinding>)}
+                                style={{ width: "55px", fontSize: "12px" }}
+                              />
+                              <select
+                                value={binding.dateOffset?.unit ?? "days"}
+                                onChange={(e) => setBinding({ dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, value: 1 }), unit: e.target.value as "days" | "weeks" | "months" | "years" } } as Partial<WebhookVarBinding>)}
+                                style={{ fontSize: "12px" }}
+                              >
+                                <option value="days">Days</option>
+                                <option value="weeks">Weeks</option>
+                                <option value="months">Months</option>
+                                <option value="years">Years</option>
+                              </select>
+                              <span style={{ color: "#16a34a", fontSize: "12px", fontWeight: 600 }}>→ {computeDateOffsetPreview(binding.dateOffset)}</span>
+                            </div>
+                          )}
+                          {binding.source !== "static" && binding.source !== "now" && (
                             <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                               <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Fallback (when empty)</span>
                               <input value={(binding as { fallback: string }).fallback ?? ""} onChange={(event) => setBinding({ fallback: event.target.value } as Partial<WebhookVarBinding>)} placeholder="e.g. there" />

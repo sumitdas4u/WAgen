@@ -1,4 +1,5 @@
 import { pool } from "../db/pool.js";
+import { applyDateOffset, parseDateString } from "../utils/date-offset.js";
 import {
   classifyDeliveryFailure,
   markDeliveryAttemptFailure,
@@ -193,7 +194,7 @@ function resolveSequenceStepVariables(
     custom_fields: Record<string, string | null>;
   },
   step: {
-    template_variables_json?: Record<string, { source: "contact" | "static"; field?: string; value?: string; fallback?: string }>;
+    template_variables_json?: Record<string, { source: "contact" | "static" | "now"; field?: string; value?: string; fallback?: string; dateOffset?: { direction: "add" | "subtract"; value: number; unit: "days" | "weeks" | "months" | "years" } }>;
     media_overrides_json?: Record<string, string>;
   }
 ): Record<string, string> {
@@ -208,8 +209,14 @@ function resolveSequenceStepVariables(
     let value: string | null = null;
     if (binding.source === "static") {
       value = trimToNull(binding.value);
+    } else if (binding.source === "now" && binding.dateOffset) {
+      value = applyDateOffset(new Date(), binding.dateOffset);
     } else if (binding.source === "contact") {
       value = resolveSequenceContactFieldValue(contact, binding.field);
+      if (binding.dateOffset && value) {
+        const parsed = parseDateString(value);
+        if (parsed) value = applyDateOffset(parsed, binding.dateOffset);
+      }
     }
 
     value = value ?? trimToNull(binding.fallback);

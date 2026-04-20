@@ -76,6 +76,17 @@ function resolveContactFieldValue(contact: ContactRecord | null, field: string |
   );
 }
 
+function computeDateOffsetPreview(offset: CampaignTemplateVariableBinding["dateOffset"]): string {
+  if (!offset) return "";
+  const d = new Date();
+  const n = offset.direction === "subtract" ? -offset.value : offset.value;
+  if (offset.unit === "days")   d.setDate(d.getDate() + n);
+  if (offset.unit === "weeks")  d.setDate(d.getDate() + n * 7);
+  if (offset.unit === "months") d.setMonth(d.getMonth() + n);
+  if (offset.unit === "years")  d.setFullYear(d.getFullYear() + n);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
 function resolveBindingPreviewValue(
   placeholder: string,
   bindings: CampaignTemplateVariables,
@@ -84,6 +95,10 @@ function resolveBindingPreviewValue(
   const binding = bindings[placeholder];
   if (!binding) {
     return placeholder;
+  }
+
+  if (binding.source === "now") {
+    return computeDateOffsetPreview(binding.dateOffset) || placeholder;
   }
 
   if (binding.source === "static") {
@@ -350,77 +365,90 @@ export function BroadcastsPage({ token, metaStatus }: Props) {
               placeholders.map((placeholder) => {
                 const binding = bindings[placeholder] ?? { source: "contact", field: "display_name", fallback: "" };
                 return (
-                  <div key={placeholder} style={{ display: "grid", gap: "10px", gridTemplateColumns: "140px 120px minmax(0, 1fr) minmax(0, 1fr)", alignItems: "center", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 14px" }}>
-                    <strong style={{ fontSize: "13px", color: "#0f172a" }}>{placeholder}</strong>
+                  <div key={placeholder} style={{ display: "flex", flexDirection: "column", gap: "10px", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 14px" }}>
+                    <div style={{ display: "grid", gap: "10px", gridTemplateColumns: "140px 160px minmax(0, 1fr) minmax(0, 1fr)", alignItems: "center" }}>
+                      <strong style={{ fontSize: "13px", color: "#0f172a" }}>{placeholder}</strong>
 
-                    <select
-                      value={binding.source}
-                      onChange={(event) =>
-                        setBindings((current) => ({
-                          ...current,
-                          [placeholder]: {
-                            ...binding,
-                            source: event.target.value as "contact" | "static"
-                          }
-                        }))
-                      }
-                      style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}
-                    >
-                      <option value="contact">Contact field</option>
-                      <option value="static">Static value</option>
-                    </select>
-
-                    {binding.source === "contact" ? (
                       <select
-                        value={binding.field ?? "display_name"}
-                        onChange={(event) =>
-                          setBindings((current) => ({
-                            ...current,
-                            [placeholder]: {
-                              ...binding,
-                              field: event.target.value
-                            }
-                          }))
-                        }
+                        value={binding.source}
+                        onChange={(event) => {
+                          const src = event.target.value as "contact" | "static" | "now";
+                          if (src === "now") {
+                            setBindings((current) => ({ ...current, [placeholder]: { source: "now", dateOffset: { direction: "add", value: 1, unit: "days" } } }));
+                          } else {
+                            setBindings((current) => ({ ...current, [placeholder]: { ...binding, source: src, dateOffset: undefined } }));
+                          }
+                        }}
                         style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}
                       >
-                        {fieldOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
+                        <option value="contact">Contact field</option>
+                        <option value="static">Static value</option>
+                        <option value="now">📅 Today&apos;s date</option>
                       </select>
-                    ) : (
-                      <input
-                        value={binding.value ?? ""}
-                        onChange={(event) =>
-                          setBindings((current) => ({
-                            ...current,
-                            [placeholder]: {
-                              ...binding,
-                              value: event.target.value
-                            }
-                          }))
-                        }
-                        placeholder="Static replacement"
-                        style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}
-                      />
-                    )}
 
-                    <input
-                      value={binding.fallback ?? ""}
-                      onChange={(event) =>
-                        setBindings((current) => ({
-                          ...current,
-                          [placeholder]: {
-                            ...binding,
-                            fallback: event.target.value
-                          }
-                        }))
-                      }
-                      placeholder="Fallback if empty"
-                      style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}
-                    />
+                      {binding.source === "contact" && (
+                        <select
+                          value={binding.field ?? "display_name"}
+                          onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, field: event.target.value } }))}
+                          style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}
+                        >
+                          {fieldOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      )}
+                      {binding.source === "static" && (
+                        <input
+                          value={binding.value ?? ""}
+                          onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, value: event.target.value } }))}
+                          placeholder="Static replacement"
+                          style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}
+                        />
+                      )}
+                      {binding.source === "now" && <span />}
+
+                      {binding.source !== "now" && (
+                        <input
+                          value={binding.fallback ?? ""}
+                          onChange={(event) => setBindings((current) => ({ ...current, [placeholder]: { ...binding, fallback: event.target.value } }))}
+                          placeholder="Fallback if empty"
+                          style={{ border: "1px solid #d1d5db", borderRadius: "10px", padding: "9px 10px" }}
+                        />
+                      )}
+                    </div>
+
+                    {binding.source === "now" && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "12px", color: "#64748b", width: "80px" }}>Offset</span>
+                        <select
+                          value={binding.dateOffset?.direction ?? "add"}
+                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { value: 1, unit: "days" as const }), direction: e.target.value as "add" | "subtract" } } }))}
+                          style={{ border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
+                        >
+                          <option value="add">+ Add</option>
+                          <option value="subtract">− Subtract</option>
+                        </select>
+                        <input
+                          type="number" min={1} max={999}
+                          value={binding.dateOffset?.value ?? 1}
+                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, unit: "days" as const }), value: Math.max(1, Number(e.target.value)) } } }))}
+                          style={{ width: "60px", border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
+                        />
+                        <select
+                          value={binding.dateOffset?.unit ?? "days"}
+                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, value: 1 }), unit: e.target.value as "days" | "weeks" | "months" | "years" } } }))}
+                          style={{ border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
+                        >
+                          <option value="days">Days</option>
+                          <option value="weeks">Weeks</option>
+                          <option value="months">Months</option>
+                          <option value="years">Years</option>
+                        </select>
+                        <span style={{ color: "#16a34a", fontSize: "13px", fontWeight: 600 }}>
+                          → {computeDateOffsetPreview(binding.dateOffset)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })

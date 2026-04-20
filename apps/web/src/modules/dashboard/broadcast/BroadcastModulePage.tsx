@@ -158,6 +158,17 @@ function resolveContactFieldValue(contact: ContactRecord | null, field: string |
   );
 }
 
+function computeDateOffsetPreview(offset: CampaignTemplateVariableBinding["dateOffset"]): string {
+  if (!offset) return "";
+  const d = new Date();
+  const n = offset.direction === "subtract" ? -offset.value : offset.value;
+  if (offset.unit === "days")   d.setDate(d.getDate() + n);
+  if (offset.unit === "weeks")  d.setDate(d.getDate() + n * 7);
+  if (offset.unit === "months") d.setMonth(d.getMonth() + n);
+  if (offset.unit === "years")  d.setFullYear(d.getFullYear() + n);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
 function resolveBindingPreviewValue(
   placeholder: string,
   bindings: CampaignTemplateVariables,
@@ -166,6 +177,10 @@ function resolveBindingPreviewValue(
   const binding = bindings[placeholder];
   if (!binding) {
     return placeholder;
+  }
+
+  if (binding.source === "now") {
+    return computeDateOffsetPreview(binding.dateOffset) || placeholder;
   }
 
   if (binding.source === "static") {
@@ -2713,44 +2728,99 @@ function VariableMappingStep({
                       <select
                         className="sch-select"
                         value={binding.source}
-                        onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, source: e.target.value as "contact" | "static" } }))}
+                        onChange={(e) => {
+                          const src = e.target.value as "contact" | "static" | "now";
+                          if (src === "now") {
+                            setBindings((c) => ({ ...c, [placeholder]: { source: "now", dateOffset: { direction: "add", value: 1, unit: "days" } } }));
+                          } else {
+                            setBindings((c) => ({ ...c, [placeholder]: { ...binding, source: src, dateOffset: undefined } }));
+                          }
+                        }}
                       >
                         <option value="contact">Contact field</option>
                         <option value="static">Static value</option>
+                        <option value="now">📅 Today&apos;s date</option>
                       </select>
                     </div>
 
-                    <div className="sch-field-row">
-                      <span className="sch-field-label">{binding.source === "contact" ? "Field" : "Value"}</span>
-                      {binding.source === "contact" ? (
-                        <select
-                          className="sch-select"
-                          value={binding.field ?? "display_name"}
-                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, field: e.target.value } }))}
-                        >
-                          {fieldOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
-                      ) : (
+                    {binding.source !== "now" && (
+                      <div className="sch-field-row">
+                        <span className="sch-field-label">{binding.source === "contact" ? "Field" : "Value"}</span>
+                        {binding.source === "contact" ? (
+                          <select
+                            className="sch-select"
+                            value={binding.field ?? "display_name"}
+                            onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, field: e.target.value } }))}
+                          >
+                            {fieldOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="sch-input"
+                            value={binding.value ?? ""}
+                            onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, value: e.target.value } }))}
+                            placeholder="Static replacement value"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {binding.source === "now" && (
+                      <>
+                        <div className="sch-field-row">
+                          <span className="sch-field-label">Offset</span>
+                          <select
+                            className="sch-select"
+                            style={{ width: "auto" }}
+                            value={binding.dateOffset?.direction ?? "add"}
+                            onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { value: 1, unit: "days" as const }), direction: e.target.value as "add" | "subtract" } } }))}
+                          >
+                            <option value="add">+ Add</option>
+                            <option value="subtract">− Subtract</option>
+                          </select>
+                          <input
+                            type="number"
+                            className="sch-input"
+                            style={{ width: "60px" }}
+                            min={1}
+                            max={999}
+                            value={binding.dateOffset?.value ?? 1}
+                            onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, unit: "days" as const }), value: Math.max(1, Number(e.target.value)) } } }))}
+                          />
+                          <select
+                            className="sch-select"
+                            style={{ width: "auto" }}
+                            value={binding.dateOffset?.unit ?? "days"}
+                            onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, value: 1 }), unit: e.target.value as "days" | "weeks" | "months" | "years" } } }))}
+                          >
+                            <option value="days">Days</option>
+                            <option value="weeks">Weeks</option>
+                            <option value="months">Months</option>
+                            <option value="years">Years</option>
+                          </select>
+                        </div>
+                        <div className="sch-field-row">
+                          <span className="sch-field-label">Preview</span>
+                          <span style={{ color: "#16a34a", fontSize: "13px" }}>
+                            {computeDateOffsetPreview(binding.dateOffset)}
+                          </span>
+                        </div>
+                      </>
+                    )}
+
+                    {binding.source !== "now" && (
+                      <div className="sch-field-row">
+                        <span className="sch-field-label">Fallback</span>
                         <input
                           className="sch-input"
-                          value={binding.value ?? ""}
-                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, value: e.target.value } }))}
-                          placeholder="Static replacement value"
+                          value={binding.fallback ?? ""}
+                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, fallback: e.target.value } }))}
+                          placeholder="Used when field is empty"
                         />
-                      )}
-                    </div>
-
-                    <div className="sch-field-row">
-                      <span className="sch-field-label">Fallback</span>
-                      <input
-                        className="sch-input"
-                        value={binding.fallback ?? ""}
-                        onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, fallback: e.target.value } }))}
-                        placeholder="Used when field is empty"
-                      />
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })

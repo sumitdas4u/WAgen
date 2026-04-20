@@ -10,6 +10,7 @@ import { getFlow } from "./flow-service.js";
 import { queueGenericWebhookOutboundMessage } from "./outbound-message-service.js";
 import { getMessageTemplate } from "./template-service.js";
 import { whatsappSessionManager } from "./whatsapp-session-manager.js";
+import { applyDateOffset, parseDateString, type DateOffset } from "../utils/date-offset.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -47,7 +48,7 @@ export interface GenericWebhookTemplateAction {
   templateId: string;
   recipientNamePath: string;
   recipientPhonePath: string;
-  variableMappings: Record<string, { source: "payload"; path: string } | { source: "contact"; field: string } | { source: "static"; value: string }>;
+  variableMappings: Record<string, { source: "payload"; path: string; dateOffset?: DateOffset } | { source: "contact"; field: string; dateOffset?: DateOffset } | { source: "static"; value: string; dateOffset?: DateOffset } | { source: "now"; dateOffset: DateOffset }>;
   fallbackValues?: Record<string, string>;
 }
 
@@ -1081,12 +1082,26 @@ export async function handleIncomingGenericWebhook(input: {
         }
         for (const [key, binding] of Object.entries(templateAction.variableMappings ?? {})) {
           let resolved: string | null = null;
-          if (binding.source === "payload") {
+          if (binding.source === "now" && binding.dateOffset) {
+            resolved = applyDateOffset(new Date(), binding.dateOffset);
+          } else if (binding.source === "payload") {
             resolved = getPayloadValue(flatPayload, binding.path);
+            if (binding.dateOffset && resolved) {
+              const parsed = parseDateString(resolved);
+              if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+            }
           } else if (binding.source === "contact") {
             resolved = resolveContactField(contact, binding.field);
+            if (binding.dateOffset && resolved) {
+              const parsed = parseDateString(resolved);
+              if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+            }
           } else if (binding.source === "static") {
             resolved = trimToNull(binding.value);
+            if (binding.dateOffset && resolved) {
+              const parsed = parseDateString(resolved);
+              if (parsed) resolved = applyDateOffset(parsed, binding.dateOffset);
+            }
           }
           const value = resolved ?? trimToNull(templateAction.fallbackValues?.[key]);
           if (value) variableValues[key] = value;

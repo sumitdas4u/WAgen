@@ -136,6 +136,17 @@ function resolveSequenceContactFieldValue(contact: ContactRecord | null, field: 
   );
 }
 
+function computeDateOffsetPreview(offset: CampaignTemplateVariableBinding["dateOffset"]): string {
+  if (!offset) return "";
+  const d = new Date();
+  const n = offset.direction === "subtract" ? -offset.value : offset.value;
+  if (offset.unit === "days")   d.setDate(d.getDate() + n);
+  if (offset.unit === "weeks")  d.setDate(d.getDate() + n * 7);
+  if (offset.unit === "months") d.setMonth(d.getMonth() + n);
+  if (offset.unit === "years")  d.setFullYear(d.getFullYear() + n);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
 function resolveSequenceBindingPreviewValue(
   placeholder: string,
   bindings: CampaignTemplateVariables,
@@ -144,6 +155,10 @@ function resolveSequenceBindingPreviewValue(
   const binding = bindings[placeholder];
   if (!binding) {
     return placeholder;
+  }
+
+  if (binding.source === "now") {
+    return computeDateOffsetPreview(binding.dateOffset) || placeholder;
   }
 
   if (binding.source === "static") {
@@ -1805,47 +1820,88 @@ function StepsEditor({
                                     <select
                                       className="seq-select"
                                       value={binding.source}
-                                      onChange={(e) => setBinding({
-                                        source: e.target.value as "contact" | "static",
-                                        field: variableFieldOptions[0]?.value ?? "display_name",
-                                        value: ""
-                                      })}
+                                      onChange={(e) => {
+                                        const src = e.target.value as "contact" | "static" | "now";
+                                        if (src === "now") {
+                                          updateStep(idx, { templateVariables: { ...bindings, [ph]: { source: "now", dateOffset: { direction: "add", value: 1, unit: "days" } } } });
+                                        } else {
+                                          setBinding({ source: src, field: variableFieldOptions[0]?.value ?? "display_name", value: "", dateOffset: undefined });
+                                        }
+                                      }}
                                     >
                                       <option value="contact">Contact field</option>
                                       <option value="static">Static value</option>
+                                      <option value="now">📅 Today&apos;s date</option>
                                     </select>
                                   </div>
-                                  <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>{binding.source === "contact" ? "Field" : "Value"}</span>
-                                    {binding.source === "contact" ? (
-                                      <select
-                                        className="seq-select"
-                                        value={binding.field ?? variableFieldOptions[0]?.value ?? "display_name"}
-                                        onChange={(e) => setBinding({ field: e.target.value })}
-                                      >
-                                        {variableFieldOptions.map((option) => (
-                                          <option key={option.value} value={option.value}>{option.label}</option>
-                                        ))}
-                                      </select>
-                                    ) : (
-                                      <input
-                                        className="seq-input"
-                                        value={binding.value ?? ""}
-                                        onChange={(e) => setBinding({ value: e.target.value })}
-                                        placeholder="Static text"
-                                      />
-                                    )}
+                                  {binding.source !== "now" && (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>{binding.source === "contact" ? "Field" : "Value"}</span>
+                                      {binding.source === "contact" ? (
+                                        <select
+                                          className="seq-select"
+                                          value={binding.field ?? variableFieldOptions[0]?.value ?? "display_name"}
+                                          onChange={(e) => setBinding({ field: e.target.value })}
+                                        >
+                                          {variableFieldOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <input
+                                          className="seq-input"
+                                          value={binding.value ?? ""}
+                                          onChange={(e) => setBinding({ value: e.target.value })}
+                                          placeholder="Static text"
+                                        />
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                {binding.source === "now" && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500, width: "60px" }}>Offset</span>
+                                    <select
+                                      className="seq-select"
+                                      style={{ width: "auto" }}
+                                      value={binding.dateOffset?.direction ?? "add"}
+                                      onChange={(e) => setBinding({ dateOffset: { ...(binding.dateOffset ?? { value: 1, unit: "days" as const }), direction: e.target.value as "add" | "subtract" } })}
+                                    >
+                                      <option value="add">+ Add</option>
+                                      <option value="subtract">− Subtract</option>
+                                    </select>
+                                    <input
+                                      type="number" min={1} max={999}
+                                      className="seq-input"
+                                      style={{ width: "55px" }}
+                                      value={binding.dateOffset?.value ?? 1}
+                                      onChange={(e) => setBinding({ dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, unit: "days" as const }), value: Math.max(1, Number(e.target.value)) } })}
+                                    />
+                                    <select
+                                      className="seq-select"
+                                      style={{ width: "auto" }}
+                                      value={binding.dateOffset?.unit ?? "days"}
+                                      onChange={(e) => setBinding({ dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, value: 1 }), unit: e.target.value as "days" | "weeks" | "months" | "years" } })}
+                                    >
+                                      <option value="days">Days</option>
+                                      <option value="weeks">Weeks</option>
+                                      <option value="months">Months</option>
+                                      <option value="years">Years</option>
+                                    </select>
+                                    <span style={{ color: "#16a34a", fontSize: "12px", fontWeight: 600 }}>→ {computeDateOffsetPreview(binding.dateOffset)}</span>
                                   </div>
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Fallback (when field is empty)</span>
-                                  <input
-                                    className="seq-input"
-                                    value={binding.fallback ?? ""}
-                                    onChange={(e) => setBinding({ fallback: e.target.value })}
-                                    placeholder="e.g. there"
-                                  />
-                                </div>
+                                )}
+                                {binding.source !== "now" && (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Fallback (when field is empty)</span>
+                                    <input
+                                      className="seq-input"
+                                      value={binding.fallback ?? ""}
+                                      onChange={(e) => setBinding({ fallback: e.target.value })}
+                                      placeholder="e.g. there"
+                                    />
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

@@ -6,6 +6,7 @@ import type {
   SequenceConditionOperator,
   SequenceConditionType
 } from "./sequence-condition-service.js";
+import type { DateOffset } from "../utils/date-offset.js";
 
 export type SequenceStatus = "draft" | "published" | "paused";
 export type SequenceTriggerType = "create" | "update" | "both";
@@ -14,13 +15,14 @@ export type SequenceBaseType = "contact";
 export type SequenceTimeMode = "any_time" | "window";
 export type SequenceDelayUnit = "minutes" | "hours" | "days";
 export type SequenceEnrollmentStatus = "active" | "sending" | "completed" | "failed" | "stopped";
-export type CampaignTemplateVariableSource = "contact" | "static";
+export type CampaignTemplateVariableSource = "contact" | "static" | "now";
 
 export interface CampaignTemplateVariableBinding {
   source: CampaignTemplateVariableSource;
   field?: string;
   value?: string;
   fallback?: string;
+  dateOffset?: DateOffset;
 }
 
 export type CampaignTemplateVariables = Record<string, CampaignTemplateVariableBinding>;
