@@ -3376,7 +3376,7 @@ export interface GenericWebhookTemplateAction {
   templateId: string;
   recipientNamePath: string;
   recipientPhonePath: string;
-  variableMappings: Record<string, { source: "payload"; path: string }>;
+  variableMappings: Record<string, { source: "payload"; path: string } | { source: "contact"; field: string } | { source: "static"; value: string }>;
   fallbackValues?: Record<string, string>;
 }
 

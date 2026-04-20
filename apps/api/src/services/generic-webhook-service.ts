@@ -47,7 +47,7 @@ export interface GenericWebhookTemplateAction {
   templateId: string;
   recipientNamePath: string;
   recipientPhonePath: string;
-  variableMappings: Record<string, { source: "payload"; path: string }>;
+  variableMappings: Record<string, { source: "payload"; path: string } | { source: "contact"; field: string } | { source: "static"; value: string }>;
   fallbackValues?: Record<string, string>;
 }
 
@@ -263,6 +263,24 @@ function flattenPayload(input: unknown, prefix = ""): Record<string, string> {
 
 function getPayloadValue(flatPayload: Record<string, string>, path: string): string | null {
   return trimToNull(flatPayload[path.trim()] ?? null);
+}
+
+function resolveContactField(contact: import("../types/models.js").Contact, field: string): string | null {
+  switch (field) {
+    case "display_name": return trimToNull(contact.display_name);
+    case "phone_number": return trimToNull(contact.phone_number);
+    case "email": return trimToNull(contact.email);
+    case "tags": return trimToNull(contact.tags.join(", "));
+    case "contact_type": return trimToNull(contact.contact_type);
+    case "source_type": return trimToNull(contact.source_type);
+    case "source_id": return trimToNull(contact.source_id);
+    case "source_url": return trimToNull(contact.source_url);
+    default: {
+      if (!field.startsWith("custom:")) return null;
+      const name = field.slice("custom:".length).trim().toLowerCase();
+      return trimToNull(contact.custom_field_values.find((v) => v.field_name.toLowerCase() === name)?.value ?? null);
+    }
+  }
 }
 
 function calculateScheduledAt(delayValue: number, delayUnit: GenericWebhookDelayUnit | null, now = new Date()): string | null {
@@ -1062,7 +1080,15 @@ export async function handleIncomingGenericWebhook(input: {
           throw new Error("Template action is missing.");
         }
         for (const [key, binding] of Object.entries(templateAction.variableMappings ?? {})) {
-          const value = getPayloadValue(flatPayload, binding.path) ?? trimToNull(templateAction.fallbackValues?.[key]);
+          let resolved: string | null = null;
+          if (binding.source === "payload") {
+            resolved = getPayloadValue(flatPayload, binding.path);
+          } else if (binding.source === "contact") {
+            resolved = resolveContactField(contact, binding.field);
+          } else if (binding.source === "static") {
+            resolved = trimToNull(binding.value);
+          }
+          const value = resolved ?? trimToNull(templateAction.fallbackValues?.[key]);
           if (value) variableValues[key] = value;
         }
       }

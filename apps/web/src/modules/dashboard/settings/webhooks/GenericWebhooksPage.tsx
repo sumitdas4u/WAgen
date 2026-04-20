@@ -36,13 +36,19 @@ function extractPlaceholders(template: MessageTemplate | null): string[] {
   return Array.from(new Set([...JSON.stringify(template.components).matchAll(/\{\{[^}]+\}\}/g)].map((match) => match[0])));
 }
 
-function buildWebhookPreviewComponents(template: MessageTemplate | null, fallbackValues: Record<string, string>) {
+function buildWebhookPreviewComponents(template: MessageTemplate | null, bindings: Record<string, WebhookVarBinding>) {
   if (!template) return [];
   return template.components.map((component) => {
     if (!component.text) return component;
     return {
       ...component,
-      text: component.text.replace(/\{\{[^}]+\}\}/g, (match) => fallbackValues[match]?.trim() || match)
+      text: component.text.replace(/\{\{[^}]+\}\}/g, (match) => {
+        const binding = bindings[match];
+        if (!binding) return match;
+        if (binding.source === "static") return binding.value?.trim() || match;
+        const fallback = (binding as { fallback?: string }).fallback?.trim();
+        return fallback || match;
+      })
     };
   });
 }
@@ -59,6 +65,22 @@ function tagsToString(tags?: string[]): string {
   return (tags ?? []).join(", ");
 }
 
+
+type WebhookVarBinding =
+  | { source: "payload"; path: string; fallback: string }
+  | { source: "contact"; field: string; fallback: string }
+  | { source: "static"; value: string };
+
+const CONTACT_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "display_name", label: "Contact name" },
+  { value: "phone_number", label: "Phone number" },
+  { value: "email", label: "Email" },
+  { value: "tags", label: "Tags" },
+  { value: "contact_type", label: "Contact type" },
+  { value: "source_type", label: "Source type" },
+  { value: "source_id", label: "Source ID" },
+  { value: "source_url", label: "Source URL" }
+];
 
 export function GenericWebhooksPage() {
   const { token } = useDashboardShell();
@@ -86,8 +108,7 @@ export function GenericWebhooksPage() {
   const [tagOperation, setTagOperation] = useState<"append" | "replace" | "add_if_empty">("append");
   const [tagsText, setTagsText] = useState("");
   const [fieldMappings, setFieldMappings] = useState<Array<{ contactFieldName: string; payloadPath: string }>>([]);
-  const [variableMappings, setVariableMappings] = useState<Record<string, string>>({});
-  const [fallbackValues, setFallbackValues] = useState<Record<string, string>>({});
+  const [variableBindings, setVariableBindings] = useState<Record<string, WebhookVarBinding>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -193,10 +214,16 @@ export function GenericWebhooksPage() {
     setTagOperation(workflow.contactAction.tagOperation ?? "append");
     setTagsText(tagsToString(workflow.contactAction.tags));
     setFieldMappings(workflow.contactAction.fieldMappings ?? []);
-    setVariableMappings(
-      Object.fromEntries(Object.entries(workflow.templateAction?.variableMappings ?? {}).map(([key, binding]) => [key, binding.path]))
+    setVariableBindings(
+      Object.fromEntries(
+        Object.entries(workflow.templateAction?.variableMappings ?? {}).map(([key, binding]) => {
+          const fallback = workflow.templateAction?.fallbackValues?.[key] ?? "";
+          if (binding.source === "contact") return [key, { source: "contact" as const, field: binding.field, fallback }];
+          if (binding.source === "static") return [key, { source: "static" as const, value: binding.value }];
+          return [key, { source: "payload" as const, path: binding.path, fallback }];
+        })
+      )
     );
-    setFallbackValues(workflow.templateAction?.fallbackValues ?? {});
   }, [workflowsQuery.data]);
 
   const invalidate = async () => {
@@ -243,12 +270,17 @@ export function GenericWebhooksPage() {
             recipientNamePath,
             recipientPhonePath,
             variableMappings: Object.fromEntries(
-              Object.entries(variableMappings)
-                .filter(([, path]) => path.trim())
-                .map(([key, path]) => [key, { source: "payload" as const, path }])
+              (Object.entries(variableBindings) as Array<[string, WebhookVarBinding]>).flatMap(([key, binding]): Array<[string, GenericWebhookTemplateAction["variableMappings"][string]]> => {
+                if (binding.source === "payload" && binding.path.trim()) return [[key, { source: "payload", path: binding.path }]];
+                if (binding.source === "contact" && binding.field.trim()) return [[key, { source: "contact", field: binding.field }]];
+                if (binding.source === "static" && binding.value.trim()) return [[key, { source: "static", value: binding.value }]];
+                return [];
+              })
             ),
             fallbackValues: Object.fromEntries(
-              Object.entries(fallbackValues).filter(([, value]) => value.trim())
+              Object.entries(variableBindings)
+                .filter(([, b]) => b.source !== "static" && (b as { fallback: string }).fallback?.trim())
+                .map(([key, b]) => [key, (b as { fallback: string }).fallback])
             )
           }
         : null;
@@ -349,8 +381,7 @@ export function GenericWebhooksPage() {
     setTagOperation("append");
     setTagsText("");
     setFieldMappings([]);
-    setVariableMappings({});
-    setFallbackValues({});
+    setVariableBindings({});
   }
 
   return (
@@ -728,66 +759,100 @@ export function GenericWebhooksPage() {
                   </label>
                 </div>
 
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <div style={{ fontWeight: 600 }}>Contact field mappings</div>
-                    <button type="button" className="ghost-btn" onClick={() => setFieldMappings((current) => [...current, { contactFieldName: "", payloadPath: "" }])}>Add field mapping</button>
+                {(fieldsQuery.data ?? []).length > 0 && (
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ background: "#f8fafc", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", fontWeight: 600, color: "#475569", letterSpacing: "0.03em" }}>
+                      CONTACT FIELD MAPPINGS
+                    </div>
+                    {(fieldsQuery.data ?? []).map((field) => {
+                      const currentPath = fieldMappings.find((m) => m.contactFieldName === field.name)?.payloadPath ?? "";
+                      const setPath = (path: string) => setFieldMappings((current) => {
+                        const exists = current.some((m) => m.contactFieldName === field.name);
+                        if (exists) return current.map((m) => m.contactFieldName === field.name ? { ...m, payloadPath: path } : m);
+                        return [...current, { contactFieldName: field.name, payloadPath: path }];
+                      });
+                      return (
+                        <div key={field.id} style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: "8px" }}>
+                          <span style={{ display: "inline-flex", alignSelf: "flex-start", padding: "2px 8px", borderRadius: 5, background: "#f0fdf4", color: "#15803d", fontFamily: "monospace", fontSize: "12px", fontWeight: 700 }}>
+                            {field.label}
+                          </span>
+                          <label>
+                            <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Payload path</div>
+                            <select value={currentPath} onChange={(event) => setPath(event.target.value)}>
+                              <option value="">Select path</option>
+                              {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                            </select>
+                          </label>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div style={{ display: "grid", gap: "0.75rem" }}>
-                    {fieldMappings.map((mapping, index) => (
-                      <div key={`${mapping.contactFieldName}-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.5rem", alignItems: "end" }}>
-                        <label>
-                          <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Contact field</div>
-                          <select value={mapping.contactFieldName} onChange={(event) => setFieldMappings((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, contactFieldName: event.target.value } : item))}>
-                            <option value="">Select field</option>
-                            {(fieldsQuery.data ?? []).map((field) => <option key={field.id} value={field.name}>{field.label}</option>)}
-                          </select>
-                        </label>
-                        <label>
-                          <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Payload path</div>
-                          <select value={mapping.payloadPath} onChange={(event) => setFieldMappings((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, payloadPath: event.target.value } : item))}>
-                            <option value="">Select path</option>
-                            {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
-                          </select>
-                        </label>
-                        <button type="button" className="ghost-btn" onClick={() => setFieldMappings((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                )}
 
                 {channelMode === "api" && templatePlaceholders.length > 0 && (
-                  <div>
-                    <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
-                      <div style={{ background: "#f8fafc", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", fontWeight: 600, color: "#475569", letterSpacing: "0.03em" }}>
-                        TEMPLATE VARIABLE MAPPINGS
-                      </div>
-                      <datalist id="webhook-payload-keys">
-                        {sampleKeys.map((key) => <option key={key} value={key} />)}
-                      </datalist>
-                      {templatePlaceholders.map((placeholder) => (
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ background: "#f8fafc", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", fontWeight: 600, color: "#475569", letterSpacing: "0.03em" }}>
+                      TEMPLATE VARIABLE MAPPINGS
+                    </div>
+                    {templatePlaceholders.map((placeholder) => {
+                      const binding: WebhookVarBinding = variableBindings[placeholder] ?? { source: "payload", path: "", fallback: "" };
+                      const setBinding = (patch: Partial<WebhookVarBinding>) =>
+                        setVariableBindings((current) => ({ ...current, [placeholder]: { ...binding, ...patch } as WebhookVarBinding }));
+                      const contactFieldOptions = [
+                        ...CONTACT_FIELD_OPTIONS,
+                        ...(fieldsQuery.data ?? []).map((f) => ({ value: `custom:${f.name}`, label: f.label }))
+                      ];
+                      return (
                         <div key={placeholder} style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: "8px" }}>
                           <span style={{ display: "inline-flex", alignSelf: "flex-start", padding: "2px 8px", borderRadius: 5, background: "#e0f2fe", color: "#0369a1", fontFamily: "monospace", fontSize: "12px", fontWeight: 700 }}>
                             {placeholder}
                           </span>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-                            <label>
-                              <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Payload path</div>
-                              <input
-                                list="webhook-payload-keys"
-                                value={variableMappings[placeholder] ?? ""}
-                                onChange={(event) => setVariableMappings((current) => ({ ...current, [placeholder]: event.target.value }))}
-                                placeholder={sampleKeys.length ? "Select or type path" : "e.g. customer.name"}
-                              />
-                            </label>
-                            <label>
-                              <div style={{ fontSize: "0.85rem", marginBottom: 4 }}>Fallback (when path empty)</div>
-                              <input value={fallbackValues[placeholder] ?? ""} onChange={(event) => setFallbackValues((current) => ({ ...current, [placeholder]: event.target.value }))} placeholder="Optional fallback" />
-                            </label>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Source</span>
+                              <select
+                                value={binding.source}
+                                onChange={(event) => {
+                                  const src = event.target.value as "payload" | "contact" | "static";
+                                  if (src === "payload") setBinding({ source: "payload", path: "", fallback: "" } as WebhookVarBinding);
+                                  else if (src === "contact") setBinding({ source: "contact", field: CONTACT_FIELD_OPTIONS[0].value, fallback: "" } as WebhookVarBinding);
+                                  else setBinding({ source: "static", value: "" } as WebhookVarBinding);
+                                }}
+                              >
+                                <option value="payload">Payload path</option>
+                                <option value="contact">Contact field</option>
+                                <option value="static">Static value</option>
+                              </select>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>
+                                {binding.source === "payload" ? "Path" : binding.source === "contact" ? "Field" : "Value"}
+                              </span>
+                              {binding.source === "payload" && (
+                                <select value={binding.path} onChange={(event) => setBinding({ path: event.target.value })}>
+                                  <option value="">Select path</option>
+                                  {sampleKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                                </select>
+                              )}
+                              {binding.source === "contact" && (
+                                <select value={binding.field} onChange={(event) => setBinding({ field: event.target.value })}>
+                                  {contactFieldOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                </select>
+                              )}
+                              {binding.source === "static" && (
+                                <input value={binding.value} onChange={(event) => setBinding({ value: event.target.value })} placeholder="Static text" />
+                              )}
+                            </div>
                           </div>
+                          {binding.source !== "static" && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Fallback (when empty)</span>
+                              <input value={(binding as { fallback: string }).fallback ?? ""} onChange={(event) => setBinding({ fallback: event.target.value } as Partial<WebhookVarBinding>)} placeholder="e.g. there" />
+                            </div>
+                          )}
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -797,14 +862,14 @@ export function GenericWebhooksPage() {
                       <div>
                         <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>Live template preview</div>
                         <div style={{ fontSize: "12px", color: "#64748b", marginTop: 2 }}>
-                          {templatePlaceholders.length > 0 ? "Variables show fallback values in preview." : "No variables in this template."}
+                          {templatePlaceholders.length > 0 ? "Static values show in preview; contact/payload fields show fallback." : "No variables in this template."}
                         </div>
                       </div>
                       <div style={{ fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>{selectedTemplate.name}</div>
                     </div>
                     <div style={{ padding: "12px" }}>
                       <TemplatePreviewPanel
-                        components={buildWebhookPreviewComponents(selectedTemplate, fallbackValues)}
+                        components={buildWebhookPreviewComponents(selectedTemplate, variableBindings)}
                         businessName={selectedTemplate.name}
                       />
                     </div>
