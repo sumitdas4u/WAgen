@@ -1858,6 +1858,44 @@ function StepsEditor({
                                     </div>
                                   )}
                                 </div>
+                                {binding.source === "contact" && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500, width: "60px" }}>Date offset</span>
+                                    <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", cursor: "pointer" }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={!!binding.dateOffset}
+                                        onChange={(e) => setBinding({ dateOffset: e.target.checked ? { direction: "add" as const, value: 1, unit: "days" as const } : undefined })}
+                                      />
+                                      Shift this date
+                                    </label>
+                                    {binding.dateOffset && (
+                                      <>
+                                        <select className="seq-select" style={{ width: "auto" }}
+                                          value={binding.dateOffset.direction}
+                                          onChange={(e) => setBinding({ dateOffset: { ...binding.dateOffset!, direction: e.target.value as "add" | "subtract" } })}
+                                        >
+                                          <option value="add">+ Add</option>
+                                          <option value="subtract">− Subtract</option>
+                                        </select>
+                                        <input type="number" min={1} max={999} className="seq-input" style={{ width: "55px" }}
+                                          value={binding.dateOffset.value}
+                                          onChange={(e) => setBinding({ dateOffset: { ...binding.dateOffset!, value: Math.max(1, Number(e.target.value)) } })}
+                                        />
+                                        <select className="seq-select" style={{ width: "auto" }}
+                                          value={binding.dateOffset.unit}
+                                          onChange={(e) => setBinding({ dateOffset: { ...binding.dateOffset!, unit: e.target.value as "days" | "weeks" | "months" | "years" } })}
+                                        >
+                                          <option value="days">Days</option>
+                                          <option value="weeks">Weeks</option>
+                                          <option value="months">Months</option>
+                                          <option value="years">Years</option>
+                                        </select>
+                                        <span style={{ color: "#16a34a", fontSize: "12px", fontWeight: 600 }}>→ {computeDateOffsetPreview(binding.dateOffset)}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
                                 {binding.source === "now" && (
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                                     <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500, width: "60px" }}>Offset</span>

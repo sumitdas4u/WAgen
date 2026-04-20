@@ -71,7 +71,7 @@ type DateOffset = { direction: "add" | "subtract"; value: number; unit: "days" |
 
 type WebhookVarBinding =
   | { source: "payload"; path: string; fallback: string }
-  | { source: "contact"; field: string; fallback: string }
+  | { source: "contact"; field: string; fallback: string; dateOffset?: DateOffset }
   | { source: "static"; value: string }
   | { source: "now"; dateOffset: DateOffset; fallback: string };
 
@@ -234,7 +234,7 @@ export function GenericWebhooksPage() {
         Object.entries(workflow.templateAction?.variableMappings ?? {}).map(([key, binding]) => {
           const fallback = workflow.templateAction?.fallbackValues?.[key] ?? "";
           if (binding.source === "now") return [key, { source: "now" as const, dateOffset: binding.dateOffset, fallback }];
-          if (binding.source === "contact") return [key, { source: "contact" as const, field: binding.field, fallback }];
+          if (binding.source === "contact") return [key, { source: "contact" as const, field: binding.field, fallback, dateOffset: binding.dateOffset }];
           if (binding.source === "static") return [key, { source: "static" as const, value: binding.value }];
           return [key, { source: "payload" as const, path: binding.path, fallback }];
         })
@@ -289,7 +289,7 @@ export function GenericWebhooksPage() {
               (Object.entries(variableBindings) as Array<[string, WebhookVarBinding]>).flatMap(([key, binding]): Array<[string, GenericWebhookTemplateAction["variableMappings"][string]]> => {
                 if (binding.source === "now" && binding.dateOffset) return [[key, { source: "now", dateOffset: binding.dateOffset }]];
                 if (binding.source === "payload" && binding.path.trim()) return [[key, { source: "payload", path: binding.path }]];
-                if (binding.source === "contact" && binding.field.trim()) return [[key, { source: "contact", field: binding.field }]];
+                if (binding.source === "contact" && binding.field.trim()) return [[key, { source: "contact", field: binding.field, ...(binding.dateOffset ? { dateOffset: binding.dateOffset } : {}) }]];
                 if (binding.source === "static" && binding.value.trim()) return [[key, { source: "static", value: binding.value }]];
                 return [];
               })
@@ -865,6 +865,48 @@ export function GenericWebhooksPage() {
                               </div>
                             )}
                           </div>
+                          {binding.source === "contact" && (
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500, width: "70px" }}>Date offset</span>
+                              <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", cursor: "pointer" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!binding.dateOffset}
+                                  onChange={(e) => setBinding({ dateOffset: e.target.checked ? { direction: "add" as const, value: 1, unit: "days" as const } : undefined } as Partial<WebhookVarBinding>)}
+                                />
+                                Shift this date
+                              </label>
+                              {binding.dateOffset && (
+                                <>
+                                  <select
+                                    value={binding.dateOffset.direction}
+                                    onChange={(e) => setBinding({ dateOffset: { ...binding.dateOffset!, direction: e.target.value as "add" | "subtract" } } as Partial<WebhookVarBinding>)}
+                                    style={{ fontSize: "12px" }}
+                                  >
+                                    <option value="add">+ Add</option>
+                                    <option value="subtract">− Subtract</option>
+                                  </select>
+                                  <input
+                                    type="number" min={1} max={999}
+                                    value={binding.dateOffset.value}
+                                    onChange={(e) => setBinding({ dateOffset: { ...binding.dateOffset!, value: Math.max(1, Number(e.target.value)) } } as Partial<WebhookVarBinding>)}
+                                    style={{ width: "55px", fontSize: "12px" }}
+                                  />
+                                  <select
+                                    value={binding.dateOffset.unit}
+                                    onChange={(e) => setBinding({ dateOffset: { ...binding.dateOffset!, unit: e.target.value as "days" | "weeks" | "months" | "years" } } as Partial<WebhookVarBinding>)}
+                                    style={{ fontSize: "12px" }}
+                                  >
+                                    <option value="days">Days</option>
+                                    <option value="weeks">Weeks</option>
+                                    <option value="months">Months</option>
+                                    <option value="years">Years</option>
+                                  </select>
+                                  <span style={{ color: "#16a34a", fontSize: "12px", fontWeight: 600 }}>→ {computeDateOffsetPreview(binding.dateOffset)}</span>
+                                </>
+                              )}
+                            </div>
+                          )}
                           {binding.source === "now" && (
                             <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                               <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500, width: "50px" }}>Offset</span>

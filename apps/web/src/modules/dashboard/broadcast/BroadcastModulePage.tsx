@@ -2811,6 +2811,52 @@ function VariableMappingStep({
                       </>
                     )}
 
+                    {binding.source === "contact" && (
+                      <div className="sch-field-row">
+                        <span className="sch-field-label">Date offset</span>
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!binding.dateOffset}
+                            onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: e.target.checked ? { direction: "add" as const, value: 1, unit: "days" as const } : undefined } }))}
+                          />
+                          Shift this date field
+                        </label>
+                        {binding.dateOffset && (
+                          <>
+                            <select
+                              className="sch-select"
+                              style={{ width: "auto" }}
+                              value={binding.dateOffset.direction}
+                              onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { value: 1, unit: "days" as const }), direction: e.target.value as "add" | "subtract" } } }))}
+                            >
+                              <option value="add">+ Add</option>
+                              <option value="subtract">− Subtract</option>
+                            </select>
+                            <input
+                              type="number"
+                              className="sch-input"
+                              style={{ width: "60px" }}
+                              min={1} max={999}
+                              value={binding.dateOffset.value}
+                              onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, unit: "days" as const }), value: Math.max(1, Number(e.target.value)) } } }))}
+                            />
+                            <select
+                              className="sch-select"
+                              style={{ width: "auto" }}
+                              value={binding.dateOffset.unit}
+                              onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, value: 1 }), unit: e.target.value as "days" | "weeks" | "months" | "years" } } }))}
+                            >
+                              <option value="days">Days</option>
+                              <option value="weeks">Weeks</option>
+                              <option value="months">Months</option>
+                              <option value="years">Years</option>
+                            </select>
+                          </>
+                        )}
+                      </div>
+                    )}
+
                     {binding.source !== "now" && (
                       <div className="sch-field-row">
                         <span className="sch-field-label">Fallback</span>

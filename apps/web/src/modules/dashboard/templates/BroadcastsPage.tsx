@@ -418,36 +418,54 @@ export function BroadcastsPage({ token, metaStatus }: Props) {
                       )}
                     </div>
 
-                    {binding.source === "now" && (
+                    {(binding.source === "now" || binding.source === "contact") && (
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                        <span style={{ fontSize: "12px", color: "#64748b", width: "80px" }}>Offset</span>
-                        <select
-                          value={binding.dateOffset?.direction ?? "add"}
-                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { value: 1, unit: "days" as const }), direction: e.target.value as "add" | "subtract" } } }))}
-                          style={{ border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
-                        >
-                          <option value="add">+ Add</option>
-                          <option value="subtract">− Subtract</option>
-                        </select>
-                        <input
-                          type="number" min={1} max={999}
-                          value={binding.dateOffset?.value ?? 1}
-                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, unit: "days" as const }), value: Math.max(1, Number(e.target.value)) } } }))}
-                          style={{ width: "60px", border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
-                        />
-                        <select
-                          value={binding.dateOffset?.unit ?? "days"}
-                          onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, value: 1 }), unit: e.target.value as "days" | "weeks" | "months" | "years" } } }))}
-                          style={{ border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
-                        >
-                          <option value="days">Days</option>
-                          <option value="weeks">Weeks</option>
-                          <option value="months">Months</option>
-                          <option value="years">Years</option>
-                        </select>
-                        <span style={{ color: "#16a34a", fontSize: "13px", fontWeight: 600 }}>
-                          → {computeDateOffsetPreview(binding.dateOffset)}
+                        <span style={{ fontSize: "12px", color: "#64748b", width: "80px" }}>
+                          {binding.source === "contact" ? "Date offset" : "Offset"}
                         </span>
+                        {binding.source === "contact" && (
+                          <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "13px", cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={!!binding.dateOffset}
+                              onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: e.target.checked ? { direction: "add" as const, value: 1, unit: "days" as const } : undefined } }))}
+                            />
+                            Shift this date
+                          </label>
+                        )}
+                        {(binding.source === "now" || binding.dateOffset) && (
+                          <>
+                            <select
+                              value={binding.dateOffset?.direction ?? "add"}
+                              onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { value: 1, unit: "days" as const }), direction: e.target.value as "add" | "subtract" } } }))}
+                              style={{ border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
+                            >
+                              <option value="add">+ Add</option>
+                              <option value="subtract">− Subtract</option>
+                            </select>
+                            <input
+                              type="number" min={1} max={999}
+                              value={binding.dateOffset?.value ?? 1}
+                              onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, unit: "days" as const }), value: Math.max(1, Number(e.target.value)) } } }))}
+                              style={{ width: "60px", border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
+                            />
+                            <select
+                              value={binding.dateOffset?.unit ?? "days"}
+                              onChange={(e) => setBindings((c) => ({ ...c, [placeholder]: { ...binding, dateOffset: { ...(binding.dateOffset ?? { direction: "add" as const, value: 1 }), unit: e.target.value as "days" | "weeks" | "months" | "years" } } }))}
+                              style={{ border: "1px solid #d1d5db", borderRadius: "8px", padding: "6px 8px", fontSize: "13px" }}
+                            >
+                              <option value="days">Days</option>
+                              <option value="weeks">Weeks</option>
+                              <option value="months">Months</option>
+                              <option value="years">Years</option>
+                            </select>
+                            {binding.source === "now" && (
+                              <span style={{ color: "#16a34a", fontSize: "13px", fontWeight: 600 }}>
+                                → {computeDateOffsetPreview(binding.dateOffset)}
+                              </span>
+                            )}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
