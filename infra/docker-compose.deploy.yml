@@ -5,6 +5,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: typo
+      TZ: Asia/Kolkata
+      PGTZ: Asia/Kolkata
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,6 +29,7 @@ services:
       - ../apps/api/.env
     environment:
       NODE_ENV: production
+      TZ: Asia/Kolkata
       PORT: 4000
       APP_BASE_URL: ${APP_BASE_URL:-https://wagenai.com}
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/typo
@@ -66,6 +69,7 @@ services:
       - ../apps/api/.env
     environment:
       NODE_ENV: production
+      TZ: Asia/Kolkata
       API_WORKERS_ENABLED: "true"
       APP_BASE_URL: ${APP_BASE_URL:-https://wagenai.com}
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/typo
