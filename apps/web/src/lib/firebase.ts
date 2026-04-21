@@ -1,5 +1,5 @@
 import { getApps, initializeApp, type FirebaseOptions } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, type Auth } from "firebase/auth";
 import { API_URL } from "./api";
 
 type FirebaseWebConfig = {
@@ -47,22 +47,24 @@ async function loadFirebaseConfig(): Promise<FirebaseWebConfig> {
   return payload.firebase ?? {};
 }
 
-const firebaseConfig = await loadFirebaseConfig();
-const invalidFirebaseConfig = getInvalidFirebaseConfig(firebaseConfig);
-if (invalidFirebaseConfig.length > 0) {
-  throw new Error(`Firebase web config from API env is missing or still using placeholder values: ${invalidFirebaseConfig.join(", ")}`);
-}
+export let firebaseAuth: Auth;
 
-const firebaseOptions: FirebaseOptions = {
-  apiKey: firebaseConfig.apiKey ?? undefined,
-  authDomain: firebaseConfig.authDomain ?? undefined,
-  projectId: firebaseConfig.projectId ?? undefined,
-  storageBucket: firebaseConfig.storageBucket ?? undefined,
-  messagingSenderId: firebaseConfig.messagingSenderId ?? undefined,
-  appId: firebaseConfig.appId ?? undefined,
-  measurementId: firebaseConfig.measurementId ?? undefined
-};
+export const firebaseReady = loadFirebaseConfig().then((firebaseConfig) => {
+  const invalidFirebaseConfig = getInvalidFirebaseConfig(firebaseConfig);
+  if (invalidFirebaseConfig.length > 0) {
+    throw new Error(`Firebase web config from API env is missing or still using placeholder values: ${invalidFirebaseConfig.join(", ")}`);
+  }
 
-const firebaseApp = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseOptions);
+  const firebaseOptions: FirebaseOptions = {
+    apiKey: firebaseConfig.apiKey ?? undefined,
+    authDomain: firebaseConfig.authDomain ?? undefined,
+    projectId: firebaseConfig.projectId ?? undefined,
+    storageBucket: firebaseConfig.storageBucket ?? undefined,
+    messagingSenderId: firebaseConfig.messagingSenderId ?? undefined,
+    appId: firebaseConfig.appId ?? undefined,
+    measurementId: firebaseConfig.measurementId ?? undefined
+  };
 
-export const firebaseAuth = getAuth(firebaseApp);
+  const firebaseApp = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseOptions);
+  firebaseAuth = getAuth(firebaseApp);
+});
