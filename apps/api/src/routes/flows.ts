@@ -320,9 +320,10 @@ export async function flowRoutes(app: FastifyInstance) {
         return false;
       }
 
+      let addresses: { address: string; family: number }[];
       try {
         const lookupResult = await dns.promises.lookup(parsedUrl.hostname, { all: true });
-        const addresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
+        addresses = Array.isArray(lookupResult) ? lookupResult : [lookupResult];
         for (const entry of addresses) {
           if (isPrivateOrLoopbackIp(entry.address)) {
             return reply
