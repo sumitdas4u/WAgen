@@ -120,7 +120,10 @@ export function QrConnectPage() {
     setLoading(true);
     setError(null);
     try {
-      await connectWhatsApp(token);
+      await connectWhatsApp(token, { resetAuth: status === "degraded" });
+      setQrText(null);
+      setQrImage(null);
+      setStatusMessage(null);
       setStatus("connecting");
     } catch (connectError) {
       setError((connectError as Error).message);
@@ -147,7 +150,7 @@ export function QrConnectPage() {
 
         <div className="journey-actions center">
           <button type="button" className="primary-btn" disabled={loading} onClick={() => void handleGenerateQr()}>
-            {loading ? "Generating..." : "Generate QR"}
+            {loading ? "Generating..." : status === "degraded" ? "Generate Fresh QR" : "Generate QR"}
           </button>
           <button type="button" className="ghost-btn" onClick={() => void refresh()}>
             Refresh status

@@ -34,12 +34,12 @@ export interface QrSessionHealthEvaluation {
 }
 
 export const QR_SESSION_HEALTH_WINDOW_MS = 10 * 60 * 1000;
-export const QR_SESSION_DECRYPT_FAILURE_THRESHOLD = 5;
-export const QR_SESSION_RECONNECT_THRESHOLD = 3;
+export const QR_SESSION_DECRYPT_FAILURE_THRESHOLD = 8;
+export const QR_SESSION_RECONNECT_THRESHOLD = 4;
 export const QR_SESSION_RECOVERY_COOLDOWN_MS = 15 * 60 * 1000;
 // After a reconnect, WA delivers queued offline messages whose Signal keys may
 // be out of sync. Decrypt failures during this window are noise, not corruption.
-export const QR_SESSION_RECONNECT_GRACE_MS = 60 * 1000;
+export const QR_SESSION_RECONNECT_GRACE_MS = 3 * 60 * 1000;
 
 function pruneTimestamps(values: number[], now: number, windowMs = QR_SESSION_HEALTH_WINDOW_MS): number[] {
   return values.filter((value) => now - value <= windowMs);
