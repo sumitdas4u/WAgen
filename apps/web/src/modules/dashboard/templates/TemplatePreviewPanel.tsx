@@ -2,7 +2,15 @@ import type { TemplateComponent } from "../../../lib/api";
 
 function safeMediaUrl(url: string | null): string {
   if (!url) return "";
-  return /^https?:\/\//i.test(url) || url.startsWith("blob:") ? url : "";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:" && parsed.protocol !== "blob:") {
+      return "";
+    }
+    return parsed.href;
+  } catch {
+    return "";
+  }
 }
 
 function highlightVariables(text: string): React.ReactNode {

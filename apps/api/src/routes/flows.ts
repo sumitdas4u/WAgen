@@ -362,7 +362,6 @@ export async function flowRoutes(app: FastifyInstance) {
       const MAX_RESPONSE_BYTES = 1024 * 1024;
 
       const startedAt = Date.now();
-      const timer = setTimeout(() => undefined, safeTimeout);
       try {
         const responseData = await new Promise<{ status: number; statusText: string; headers: Record<string, string>; rawBody: string }>((resolve, reject) => {
           const options: https.RequestOptions = {
@@ -400,7 +399,6 @@ export async function flowRoutes(app: FastifyInstance) {
           if (hasBody && body?.trim()) req.write(body.trim());
           req.end();
         });
-        clearTimeout(timer);
 
         let parsedBody: unknown = responseData.rawBody;
         try { parsedBody = JSON.parse(responseData.rawBody); } catch { /* leave as string */ }
@@ -415,7 +413,6 @@ export async function flowRoutes(app: FastifyInstance) {
           rawBody: responseData.rawBody
         });
       } catch (error) {
-        clearTimeout(timer);
         return reply.status(502).send({
           error: (error as Error).message
         });
