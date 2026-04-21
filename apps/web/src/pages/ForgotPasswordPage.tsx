@@ -39,20 +39,20 @@ export function ForgotPasswordPage() {
   };
 
   return (
-    <main className="auth-shell firebase-auth-shell">
-      <section className="auth-card firebase-auth-card">
-        <div className="firebase-auth-brand">
-          <span className="firebase-auth-brand-mark">w</span>
+    <main className="auth-shell local-auth-shell">
+      <section className="auth-card local-auth-card">
+        <div className="local-auth-brand">
+          <span className="local-auth-brand-mark">w</span>
           <strong>WAgen AI</strong>
         </div>
 
-        <h1 className="firebase-auth-title">Reset your password</h1>
+        <h1 className="local-auth-title">Reset your password</h1>
         <p className="tiny-note" style={{ textAlign: "center", marginTop: "-0.1rem" }}>
           Enter your account email to receive a reset link.
         </p>
 
-        <form onSubmit={handleSubmit} className="stack-form firebase-auth-form" style={{ marginTop: "0.5rem" }}>
-          <label className="firebase-auth-field">
+        <form onSubmit={handleSubmit} className="stack-form local-auth-form" style={{ marginTop: "0.5rem" }}>
+          <label className="local-auth-field">
             <span>
               Email ID <em>*</em>
             </span>
@@ -69,16 +69,16 @@ export function ForgotPasswordPage() {
           {error && <p className="error-text">{error}</p>}
           {info && <p className="info-text">{info}</p>}
 
-          <button className="primary-btn firebase-auth-submit" disabled={loading} type="submit">
+          <button className="primary-btn local-auth-submit" disabled={loading} type="submit">
             {loading ? "Please wait..." : "Send reset link"}
           </button>
         </form>
 
-        <p className="firebase-auth-switch">
-          Remembered your password? <Link to="/signup" className="firebase-auth-switch-btn">Login</Link>
+        <p className="local-auth-switch">
+          Remembered your password? <Link to="/signup" className="local-auth-switch-btn">Login</Link>
         </p>
 
-        <p className="tiny-note firebase-auth-back-link">
+        <p className="tiny-note local-auth-back-link">
           <Link to="/">Back to landing</Link>
         </p>
       </section>

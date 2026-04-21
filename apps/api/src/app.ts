@@ -230,18 +230,6 @@ export async function buildApp() {
   await registerRealtimeRoutes(app);
   await registerWidgetChatGatewayRoutes(app);
 
-  app.get("/api/public/config", async () => ({
-    firebase: {
-      apiKey: env.VITE_FIREBASE_API_KEY ?? null,
-      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN ?? null,
-      projectId: env.VITE_FIREBASE_PROJECT_ID ?? env.FIREBASE_PROJECT_ID ?? null,
-      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET ?? null,
-      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? null,
-      appId: env.VITE_FIREBASE_APP_ID ?? null,
-      measurementId: env.VITE_FIREBASE_MEASUREMENT_ID ?? null
-    }
-  }));
-
   app.get("/api/health", async () => ({ ok: true }));
 
   app.setErrorHandler((error, _, reply) => {

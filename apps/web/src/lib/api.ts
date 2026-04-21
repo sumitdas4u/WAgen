@@ -255,12 +255,6 @@ export interface AuthResponse {
   user: User;
 }
 
-export interface FirebaseSessionPayload {
-  idToken: string;
-  name?: string;
-  businessType?: string;
-}
-
 export interface GoogleAuthPopupPayload {
   type?: string;
   status?: "success" | "error";
@@ -288,8 +282,23 @@ export function login(payload: { email: string; password: string }) {
   });
 }
 
-export function createFirebaseSession(payload: FirebaseSessionPayload) {
-  return apiRequest<AuthResponse>("/api/auth/firebase/session", {
+export function changePassword(token: string, payload: { currentPassword: string; newPassword: string }) {
+  return apiRequest<{ ok: boolean }>("/api/auth/password/change", {
+    token,
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function requestPasswordReset(payload: { email: string }) {
+  return apiRequest<{ ok: boolean }>("/api/auth/password/forgot", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function resetPassword(payload: { token: string; password: string }) {
+  return apiRequest<{ ok: boolean }>("/api/auth/password/reset", {
     method: "POST",
     body: JSON.stringify(payload)
   });

@@ -172,13 +172,13 @@ Expected response starts with `HTTP/1.1 101 Switching Protocols`.
   - **RAG & AI**: `openai` (embeddings + chat), `cheerio` (HTML scraping), `pdf-parse` (PDF ingestion)
   - **Data layer**: `pg` (PostgreSQL), `pgvector` extension, Redis (`ioredis`)
   - **Billing**: `razorpay` SDK
-  - **Auth**: JWT, optional `firebase-admin` for migrated auth
+  - **Auth**: Local email/password with bcrypt, JWT sessions, and native Google OAuth
 
 - **Dashboard Web App (`apps/web`)**:
   - **Runtime**: React 18 + Vite
   - **Routing**: `react-router-dom`
   - **Realtime**: Browser WebSocket client to `/ws?token=<jwt>`
-  - **Misc**: `firebase` SDK (for analytics / auth migration), `qrcode` for QR rendering
+  - **Misc**: `qrcode` for QR rendering
 
 - **Marketing / Landing Site (`apps/landing`)**:
   - **Runtime**: Next.js App Router (port 8080 inside container)
@@ -276,7 +276,7 @@ Key tables defined in `infra/schema.sql`:
 
 - **`users`**:
   - Core SaaS account record.
-  - Fields for name, email, `password_hash` or `firebase_uid`, `subscription_plan`.
+  - Fields for name, email, `password_hash`, `google_auth_sub`, and `subscription_plan`.
   - `business_basics` JSON (company name, what you sell, target audience).
   - `personality`, `custom_personality_prompt`, `ai_active`.
 
@@ -418,7 +418,6 @@ If confidence is low or triggers fire (e.g., specific phrases), the entry can be
 
 - **Web env (`apps/web/.env`)**:
   - `VITE_API_URL` pointing at the API base URL (e.g. `http://localhost:4000` or your HTTPS domain).
-  - Firebase config keys if using Firebase-based auth or analytics.
 
 Refer to `.env.example` files in both `apps/api` and `apps/web` for the full list of supported variables.
 

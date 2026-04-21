@@ -1,7 +1,6 @@
 import { deleteUserById, getUserAuthIdentityById } from "./user-service.js";
 import { disconnectMetaBusinessConnection } from "./meta-whatsapp-service.js";
 import { whatsappSessionManager } from "./whatsapp-session-manager.js";
-import { deleteFirebaseUserByUid } from "./firebase-admin.js";
 
 export async function deleteAccountWithAssociatedData(userId: string): Promise<boolean> {
   const identity = await getUserAuthIdentityById(userId);
@@ -24,16 +23,6 @@ export async function deleteAccountWithAssociatedData(userId: string): Promise<b
   const deleted = await deleteUserById(userId);
   if (!deleted) {
     return false;
-  }
-
-  if (identity.firebase_uid) {
-    try {
-      await deleteFirebaseUserByUid(identity.firebase_uid);
-    } catch (error) {
-      console.warn(
-        `[AccountDeletion] Firebase user cleanup failed user=${userId} uid=${identity.firebase_uid}: ${(error as Error).message}`
-      );
-    }
   }
 
   return true;

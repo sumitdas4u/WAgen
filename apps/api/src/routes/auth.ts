@@ -3,30 +3,24 @@ import { z } from "zod";
 import {
   authenticateUser,
   createUser,
-  createUserFromFirebase,
   createUserFromGoogleAuth,
+  createPasswordResetToken,
   getUserAuthIdentityByEmail,
   getUserByGoogleAuthSub,
-  getUserByFirebaseUid,
   getUserById,
-  setUserFirebaseUid,
   setUserGoogleAuthSub,
-  setUserFirebaseUidAndDisableLegacyPassword,
+  resetUserPasswordWithToken,
+  updateUserPassword,
   updateUserDetails,
   userEmailExists
 } from "../services/user-service.js";
-import {
-  createFirebaseEmailUser,
-  getFirebaseUserByEmail,
-  updateFirebaseEmailUser,
-  verifyFirebaseIdToken
-} from "../services/firebase-admin.js";
 import {
   buildGoogleAuthConnectUrl,
   completeGoogleAuthCallback,
   renderGoogleAuthPopupPage
 } from "../services/google-auth-service.js";
 import { deleteAccountWithAssociatedData } from "../services/account-deletion-service.js";
+import { sendTransactionalEmail } from "../services/email-service.js";
 import {
   creditSignupTokens,
   getTokenStatus,
@@ -48,17 +42,6 @@ const LoginSchema = z.object({
   password: z.string().min(8)
 });
 
-const FirebaseSessionSchema = z.object({
-  idToken: z.string().min(1),
-  name: z.string().min(2).optional(),
-  businessType: z.string().min(2).optional()
-});
-
-const LegacyMigrateSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8)
-});
-
 const UpdateMeSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   businessType: z.string().max(100).optional(),
@@ -67,6 +50,20 @@ const UpdateMeSchema = z.object({
   supportEmail: z.string().max(200).optional(),
   phoneNumber: z.string().max(30).optional(),
   phoneVerified: z.boolean().optional()
+});
+
+const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(8),
+  newPassword: z.string().min(8)
+});
+
+const ForgotPasswordSchema = z.object({
+  email: z.string().email()
+});
+
+const ResetPasswordSchema = z.object({
+  token: z.string().min(32),
+  password: z.string().min(8)
 });
 
 const DeleteAccountSchema = z.object({
@@ -108,6 +105,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
     return null;
   };
+  const getAppBaseUrl = (request: FastifyRequest) => {
+    const origin = getRequestOrigin(request);
+    return origin ?? env.APP_BASE_URL.replace(/\/$/, "");
+  };
 
   fastify.post("/api/auth/signup", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = SignupSchema.safeParse(request.body);
@@ -147,74 +148,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     const token = issueToken(user.id, user.email);
     return reply.send({ token, user });
-  });
-
-  fastify.post("/api/auth/firebase/session", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
-    const parsed = FirebaseSessionSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "Invalid Firebase auth payload" });
-    }
-
-    try {
-      const decodedToken = await verifyFirebaseIdToken(parsed.data.idToken);
-      const email = decodedToken.email?.trim().toLowerCase();
-
-      if (!email) {
-        return reply.status(400).send({ error: "Firebase token is missing an email address" });
-      }
-
-      if (!decodedToken.email_verified) {
-        return reply.status(403).send({ error: "Email not verified. Please verify your email before login." });
-      }
-
-      let user = await getUserByFirebaseUid(decodedToken.uid);
-      if (!user) {
-        const existingByEmail = await getUserAuthIdentityByEmail(email);
-
-        if (existingByEmail) {
-          if (existingByEmail.firebase_uid && existingByEmail.firebase_uid !== decodedToken.uid) {
-            return reply
-              .status(409)
-              .send({ error: "This email is linked to another Firebase account. Contact support." });
-          }
-
-          await setUserFirebaseUid(existingByEmail.id, decodedToken.uid);
-          user = await getUserById(existingByEmail.id);
-        } else {
-          const fallbackName =
-            parsed.data.name?.trim() ||
-            (typeof decodedToken.name === "string" && decodedToken.name.trim().length >= 2
-              ? decodedToken.name.trim()
-              : email.split("@")[0]);
-
-          user = await createUserFromFirebase({
-            name: fallbackName,
-            email,
-            firebaseUid: decodedToken.uid,
-            businessType: parsed.data.businessType
-          });
-          if (user) void creditSignupTokens(user.id);
-        }
-      }
-
-      if (!user) {
-        return reply.status(500).send({ error: "Unable to load user profile" });
-      }
-
-      const token = issueToken(user.id, user.email);
-      return reply.send({ token, user });
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (
-        code === "auth/id-token-expired" ||
-        code === "auth/id-token-revoked" ||
-        code === "auth/invalid-id-token" ||
-        code === "auth/argument-error"
-      ) {
-        return reply.status(401).send({ error: "Invalid or expired Firebase session. Please log in again." });
-      }
-      throw error;
-    }
   });
 
   fastify.get("/api/auth/google/start", {
@@ -391,52 +324,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.post("/api/auth/legacy/migrate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
-    const parsed = LegacyMigrateSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "Invalid migration payload" });
-    }
-
-    const user = await authenticateUser(parsed.data.email, parsed.data.password);
-    if (!user) {
-      return reply.status(401).send({ error: "Invalid credentials" });
-    }
-
-    const identity = await getUserAuthIdentityByEmail(parsed.data.email);
-    if (!identity) {
-      return reply.status(404).send({ error: "User not found" });
-    }
-
-    if (!identity.password_hash) {
-      return reply.send({ ok: true, migrated: true });
-    }
-
-    try {
-      const existingFirebaseUser = await getFirebaseUserByEmail(identity.email);
-      const firebaseUser = existingFirebaseUser
-        ? await updateFirebaseEmailUser(existingFirebaseUser.uid, {
-            password: parsed.data.password,
-            displayName: identity.name,
-            emailVerified: true
-          })
-        : await createFirebaseEmailUser({
-            email: identity.email,
-            password: parsed.data.password,
-            displayName: identity.name,
-            emailVerified: true
-          });
-
-      await setUserFirebaseUidAndDisableLegacyPassword(identity.id, firebaseUser.uid);
-      return reply.send({ ok: true, migrated: true });
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (code === "23505") {
-        return reply.status(409).send({ error: "Firebase account is already linked to another user" });
-      }
-      throw error;
-    }
-  });
-
   fastify.get("/api/auth/me", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
     const user = await getUserById(request.authUser.userId);
     if (!user) {
@@ -458,6 +345,81 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     return reply.send({ user });
+  });
+
+  fastify.post(
+    "/api/auth/password/change",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = ChangePasswordSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid password change payload" });
+      }
+
+      const result = await updateUserPassword({
+        userId: request.authUser.userId,
+        currentPassword: parsed.data.currentPassword,
+        newPassword: parsed.data.newPassword
+      });
+
+      if (result === "not_found") {
+        return reply.status(404).send({ error: "User not found" });
+      }
+      if (result === "missing_password") {
+        return reply.status(409).send({ error: "Password login is not enabled for this account." });
+      }
+      if (result === "invalid_current_password") {
+        return reply.status(401).send({ error: "Current password is incorrect." });
+      }
+
+      return reply.send({ ok: true });
+    }
+  );
+
+  fastify.post("/api/auth/password/forgot", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request) => {
+    const parsed = ForgotPasswordSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return { ok: true };
+    }
+
+    const reset = await createPasswordResetToken(parsed.data.email);
+    if (reset) {
+      const resetUrl = `${getAppBaseUrl(request).replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(reset.token)}`;
+      await sendTransactionalEmail({
+        to: reset.email,
+        subject: "Reset your WAgen AI password",
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#0f172a">
+            <h1 style="font-size:22px;margin:0 0 12px">Reset your password</h1>
+            <p style="font-size:14px;line-height:1.6;color:#475569">Hi ${reset.name}, use the button below to set a new password. This link expires in 1 hour.</p>
+            <p style="margin:24px 0">
+              <a href="${resetUrl}" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;display:inline-block;font-weight:700">Reset password</a>
+            </p>
+            <p style="font-size:12px;line-height:1.6;color:#64748b">If you did not request this, you can safely ignore this email.</p>
+          </div>
+        `
+      });
+    }
+
+    return { ok: true };
+  });
+
+  fastify.post("/api/auth/password/reset", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const parsed = ResetPasswordSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid password reset payload" });
+    }
+
+    const result = await resetUserPasswordWithToken({
+      token: parsed.data.token,
+      newPassword: parsed.data.password
+    });
+
+    if (result === "invalid_or_expired") {
+      return reply.status(400).send({ error: "Password reset link is invalid or expired." });
+    }
+
+    return { ok: true };
   });
 
   fastify.get("/api/auth/ai-wallet", { preHandler: [fastify.requireAuth] }, async (request) => {

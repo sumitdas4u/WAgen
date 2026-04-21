@@ -4586,7 +4586,7 @@ main.home-shell {
   padding: 0 0.5rem;
 }
 
-.firebase-auth-shell {
+.local-auth-shell {
   width: 100%;
   min-height: 100vh;
   padding: 1.2rem;
@@ -4598,8 +4598,8 @@ main.home-shell {
   overflow: hidden;
 }
 
-.firebase-auth-shell::before,
-.firebase-auth-shell::after {
+.local-auth-shell::before,
+.local-auth-shell::after {
   content: "";
   position: absolute;
   inset: auto;
@@ -4608,7 +4608,7 @@ main.home-shell {
   pointer-events: none;
 }
 
-.firebase-auth-shell::before {
+.local-auth-shell::before {
   width: 300px;
   height: 300px;
   top: -140px;
@@ -4616,7 +4616,7 @@ main.home-shell {
   transform: rotate(-14deg);
 }
 
-.firebase-auth-shell::after {
+.local-auth-shell::after {
   width: 340px;
   height: 340px;
   right: -90px;
@@ -4624,7 +4624,7 @@ main.home-shell {
   transform: rotate(15deg);
 }
 
-.firebase-auth-card {
+.local-auth-card {
   width: min(500px, 100%);
   padding: 2rem 2rem 1.4rem;
   border-radius: 18px;
@@ -4635,7 +4635,7 @@ main.home-shell {
   z-index: 2;
 }
 
-.firebase-auth-brand {
+.local-auth-brand {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4646,7 +4646,7 @@ main.home-shell {
   color: #29364b;
 }
 
-.firebase-auth-brand-mark {
+.local-auth-brand-mark {
   width: 1.72rem;
   height: 1.72rem;
   border-radius: 8px;
@@ -4658,7 +4658,7 @@ main.home-shell {
   background: linear-gradient(130deg, #2f73e9, #5f7cf2);
 }
 
-.firebase-auth-title {
+.local-auth-title {
   text-align: center;
   font-family: "Manrope", "Segoe UI", sans-serif;
   font-size: 1.55rem;
@@ -4667,14 +4667,14 @@ main.home-shell {
   margin-top: 0.4rem;
 }
 
-.firebase-auth-social-row {
+.local-auth-social-row {
   display: flex;
   justify-content: center;
   gap: 0.58rem;
   margin-top: 0.25rem;
 }
 
-.firebase-auth-social-btn {
+.local-auth-social-btn {
   border: 1px solid #d7e0ea;
   border-radius: 10px;
   background: #ffffff;
@@ -4691,16 +4691,16 @@ main.home-shell {
   width: 170px;
 }
 
-.firebase-auth-social-btn:hover {
+.local-auth-social-btn:hover {
   border-color: #91b5e4;
   background: #f4f9ff;
 }
 
-.firebase-auth-social-btn.is-muted {
+.local-auth-social-btn.is-muted {
   color: #6f8199;
 }
 
-.firebase-auth-social-icon {
+.local-auth-social-icon {
   width: 1.7rem;
   height: 1.7rem;
   border-radius: 8px;
@@ -4712,15 +4712,15 @@ main.home-shell {
   background: #f7fbff;
 }
 
-.firebase-auth-social-btn:nth-child(1) .firebase-auth-social-icon {
+.local-auth-social-btn:nth-child(1) .local-auth-social-icon {
   color: #db4437;
 }
 
-.firebase-auth-social-btn.google-only .firebase-auth-social-icon {
+.local-auth-social-btn.google-only .local-auth-social-icon {
   color: #db4437;
 }
 
-.firebase-auth-divider {
+.local-auth-divider {
   margin-top: 0.3rem;
   display: grid;
   place-items: center;
@@ -4729,7 +4729,7 @@ main.home-shell {
   position: relative;
 }
 
-.firebase-auth-divider::before {
+.local-auth-divider::before {
   content: "";
   width: 100%;
   border-top: 1px solid #d7e1ec;
@@ -4738,49 +4738,49 @@ main.home-shell {
   left: 0;
 }
 
-.firebase-auth-divider span {
+.local-auth-divider span {
   position: relative;
   background: #ffffff;
   padding: 0 0.55rem;
   z-index: 1;
 }
 
-.firebase-auth-form {
+.local-auth-form {
   margin-top: 0.2rem;
 }
 
-.firebase-auth-field {
+.local-auth-field {
   gap: 0.4rem;
   font-family: "Manrope", "Segoe UI", sans-serif;
   font-size: 0.95rem;
   color: #2b4565;
 }
 
-.firebase-auth-field span {
+.local-auth-field span {
   font-weight: 600;
 }
 
-.firebase-auth-field em {
+.local-auth-field em {
   color: #d63d4f;
   font-style: normal;
 }
 
-.firebase-auth-field input,
-.firebase-auth-field select {
+.local-auth-field input,
+.local-auth-field select {
   border: 1px solid #d2dbe8;
   border-radius: 8px;
   min-height: 2.7rem;
   background: #f3f7fd;
 }
 
-.firebase-auth-field input:focus,
-.firebase-auth-field select:focus {
+.local-auth-field input:focus,
+.local-auth-field select:focus {
   border-color: #6f9fdf;
   box-shadow: 0 0 0 3px rgba(111, 159, 223, 0.2);
   outline: none;
 }
 
-.firebase-auth-password-wrap {
+.local-auth-password-wrap {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   border: 1px solid #d2dbe8;
@@ -4789,13 +4789,13 @@ main.home-shell {
   background: #f3f7fd;
 }
 
-.firebase-auth-password-wrap input {
+.local-auth-password-wrap input {
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.firebase-auth-password-toggle {
+.local-auth-password-toggle {
   border: 0;
   background: #e8eef8;
   color: #34567f;
@@ -4806,31 +4806,31 @@ main.home-shell {
   cursor: pointer;
 }
 
-.firebase-auth-forgot {
+.local-auth-forgot {
   justify-self: end;
   margin-top: -0.15rem;
 }
 
-.firebase-auth-submit {
+.local-auth-submit {
   width: 100%;
   border-radius: 8px;
   background: linear-gradient(130deg, #1a7de9, #0d6ed6);
   box-shadow: none;
 }
 
-.firebase-auth-submit:hover {
+.local-auth-submit:hover {
   transform: none;
   filter: brightness(1.04);
 }
 
-.firebase-auth-switch {
+.local-auth-switch {
   margin-top: 0.2rem;
   text-align: center;
   color: #2f4668;
   font-size: 0.98rem;
 }
 
-.firebase-auth-switch-btn {
+.local-auth-switch-btn {
   border: 0;
   background: transparent;
   color: #0b69d3;
@@ -4840,39 +4840,39 @@ main.home-shell {
   padding: 0;
 }
 
-.firebase-auth-back-link {
+.local-auth-back-link {
   text-align: center;
   margin-top: -0.45rem;
 }
 
-.firebase-auth-back-link a {
+.local-auth-back-link a {
   color: #5278a5;
 }
 
-.firebase-auth-card .error-text,
-.firebase-auth-card .info-text {
+.local-auth-card .error-text,
+.local-auth-card .info-text {
   margin: 0;
 }
 
 @media (max-width: 620px) {
-  .firebase-auth-shell {
+  .local-auth-shell {
     padding: 0.8rem;
   }
 
-  .firebase-auth-card {
+  .local-auth-card {
     padding: 1.2rem 1rem 1rem;
     border-radius: 14px;
   }
 
-  .firebase-auth-social-row {
+  .local-auth-social-row {
     justify-content: stretch;
   }
 
-  .firebase-auth-social-btn {
+  .local-auth-social-btn {
     width: 100%;
   }
 
-  .firebase-auth-title {
+  .local-auth-title {
     font-size: 1.3rem;
   }
 }
@@ -7999,43 +7999,43 @@ select:focus {
   color: #16834b;
 }
 
-.firebase-auth-shell {
+.local-auth-shell {
   background:
     radial-gradient(circle at 8% 88%, rgba(130, 202, 160, 0.26), transparent 44%),
     radial-gradient(circle at 92% 18%, rgba(203, 237, 218, 0.52), transparent 40%),
     linear-gradient(180deg, #eff8f2 0%, #e3f3ea 100%);
 }
 
-.firebase-auth-shell::before,
-.firebase-auth-shell::after {
+.local-auth-shell::before,
+.local-auth-shell::after {
   border-color: rgba(95, 170, 128, 0.35);
 }
 
-.firebase-auth-brand-mark {
+.local-auth-brand-mark {
   background: linear-gradient(135deg, var(--brand), var(--brand-dark));
 }
 
-.firebase-auth-title {
+.local-auth-title {
   color: #1f3f31;
 }
 
-.firebase-auth-field input,
-.firebase-auth-field select,
-.firebase-auth-password-wrap {
+.local-auth-field input,
+.local-auth-field select,
+.local-auth-password-wrap {
   background: #f8fcf9;
   border-color: #d3e4d9;
 }
 
-.firebase-auth-password-toggle {
+.local-auth-password-toggle {
   background: #edf6ef;
   color: #2f5f45;
 }
 
-.firebase-auth-submit {
+.local-auth-submit {
   background: linear-gradient(130deg, var(--brand), var(--brand-dark));
 }
 
-.firebase-auth-switch-btn,
+.local-auth-switch-btn,
 .auth-inline-btn {
   color: #0f8b49;
 }

@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { dashboardModules } from "./dashboardModules";
 
-vi.mock("../lib/firebase", () => ({
-  firebaseAuth: {}
-}));
-
 describe("dashboard module registry", () => {
   it("provides a prefetch hook for every code+data module", async () => {
     const loadedModules = await Promise.all(

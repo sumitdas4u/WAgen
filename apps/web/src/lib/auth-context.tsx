@@ -7,25 +7,15 @@ import {
   type PropsWithChildren
 } from "react";
 import {
-  createUserWithEmailAndPassword,
-  sendEmailVerification,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile
-} from "firebase/auth";
-import {
   buildGoogleAuthStartUrl,
-  createFirebaseSession,
   fetchMe,
-  migrateLegacyPasswordUser,
+  login,
+  requestPasswordReset as requestLocalPasswordReset,
+  signup,
   type AuthResponse,
   type GoogleAuthPopupPayload,
   type User
 } from "./api";
-import { firebaseAuth } from "./firebase";
-
-const PENDING_SIGNUP_BUSINESS_TYPE_KEY = "typo_signup_business_type";
 
 interface AuthContextValue {
   token: string | null;
@@ -149,43 +139,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
       }
 
-      const currentFirebaseUser = firebaseAuth.currentUser;
-      if (!currentFirebaseUser) {
-        if (isActive) {
-          setUser(null);
-          setLoading(false);
-        }
-        return;
-      }
-
-      try {
-        await currentFirebaseUser.reload();
-        if (!currentFirebaseUser.emailVerified) {
-          await signOut(firebaseAuth);
-          if (isActive) {
-            setLoading(false);
-          }
-          return;
-        }
-
-        const idToken = await currentFirebaseUser.getIdToken();
-        const pendingBusinessType = localStorage.getItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY) ?? undefined;
-        const response = await createFirebaseSession({ idToken, businessType: pendingBusinessType });
-        if (isActive) {
-          setAuthenticatedState(response);
-          localStorage.removeItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY);
-        }
-      } catch {
-        await signOut(firebaseAuth).catch(() => undefined);
-        if (isActive) {
-          localStorage.removeItem(TOKEN_KEY);
-          setToken(null);
-          setUser(null);
-        }
-      } finally {
-        if (isActive) {
-          setLoading(false);
-        }
+      if (isActive) {
+        setUser(null);
+        setLoading(false);
       }
     };
 
@@ -201,60 +157,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user,
       loading,
       signupAndLogin: async (payload) => {
-        const credentials = await createUserWithEmailAndPassword(
-          firebaseAuth,
-          payload.email.trim().toLowerCase(),
-          payload.password
-        );
-        await updateProfile(credentials.user, { displayName: payload.name.trim() });
-        localStorage.setItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY, payload.businessType);
-        await sendEmailVerification(credentials.user, {
-          url: `${window.location.origin}/signup`
-        });
-        await signOut(firebaseAuth);
-        return { emailVerificationRequired: true };
+        const response = await signup(payload);
+        setAuthenticatedState(response);
+        return { emailVerificationRequired: false };
       },
       loginWithPassword: async (payload) => {
-        const normalizedEmail = payload.email.trim().toLowerCase();
-        const password = payload.password;
-
-        let credentials;
-        try {
-          credentials = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password);
-        } catch (error) {
-          const code = (error as { code?: string }).code;
-          if (
-            code !== "auth/user-not-found" &&
-            code !== "auth/wrong-password" &&
-            code !== "auth/invalid-credential"
-          ) {
-            throw error;
-          }
-
-          await migrateLegacyPasswordUser({ email: normalizedEmail, password });
-          credentials = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password);
-        }
-
-        await credentials.user.reload();
-        if (!credentials.user.emailVerified) {
-          await sendEmailVerification(credentials.user).catch(() => undefined);
-          await signOut(firebaseAuth);
-          throw new Error("Email not verified. Check your inbox and verify your email before logging in.");
-        }
-
-        const idToken = await credentials.user.getIdToken();
-        const pendingBusinessType = localStorage.getItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY) ?? undefined;
-        const response = await createFirebaseSession({ idToken, businessType: pendingBusinessType });
+        const response = await login({
+          email: payload.email.trim().toLowerCase(),
+          password: payload.password
+        });
         setAuthenticatedState(response);
-        localStorage.removeItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY);
       },
       loginWithGoogle: async (payload) => {
         const response = await runGoogleAuthPopup(payload);
         setAuthenticatedState(response);
-        localStorage.removeItem(PENDING_SIGNUP_BUSINESS_TYPE_KEY);
       },
       requestPasswordReset: async (email: string) => {
-        await sendPasswordResetEmail(firebaseAuth, email.trim().toLowerCase());
+        await requestLocalPasswordReset({ email: email.trim().toLowerCase() });
       },
       refreshUser: async () => {
         if (!token) {
@@ -264,7 +183,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setUser(response.user);
       },
       logout: async () => {
-        await signOut(firebaseAuth).catch(() => undefined);
         localStorage.removeItem(TOKEN_KEY);
         setToken(null);
         setUser(null);

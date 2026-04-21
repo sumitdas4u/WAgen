@@ -108,29 +108,29 @@ export function SignupPage() {
   };
 
   return (
-    <main className="auth-shell firebase-auth-shell">
-      <section className="auth-card firebase-auth-card">
-        <div className="firebase-auth-brand">
-          <span className="firebase-auth-brand-mark">w</span>
+    <main className="auth-shell local-auth-shell">
+      <section className="auth-card local-auth-card">
+        <div className="local-auth-brand">
+          <span className="local-auth-brand-mark">w</span>
           <strong>WAgen AI</strong>
         </div>
 
-        <h1 className="firebase-auth-title">{mode === "signup" ? "Create your account" : "Login to your account"}</h1>
+        <h1 className="local-auth-title">{mode === "signup" ? "Create your account" : "Login to your account"}</h1>
 
-        <div className="firebase-auth-social-row">
-          <button type="button" className="firebase-auth-social-btn google-only" onClick={handleGoogleLogin} disabled={loading}>
-            <span className="firebase-auth-social-icon">G</span>
+        <div className="local-auth-social-row">
+          <button type="button" className="local-auth-social-btn google-only" onClick={handleGoogleLogin} disabled={loading}>
+            <span className="local-auth-social-icon">G</span>
             <span>Google</span>
           </button>
         </div>
 
-        <div className="firebase-auth-divider">
+        <div className="local-auth-divider">
           <span>or {mode === "signup" ? "sign up" : "login"} with</span>
         </div>
 
-        <form onSubmit={handleSubmit} className="stack-form firebase-auth-form">
+        <form onSubmit={handleSubmit} className="stack-form local-auth-form">
           {mode === "signup" && (
-            <label className="firebase-auth-field">
+            <label className="local-auth-field">
               <span>
                 Full Name <em>*</em>
               </span>
@@ -145,7 +145,7 @@ export function SignupPage() {
             </label>
           )}
 
-          <label className="firebase-auth-field">
+          <label className="local-auth-field">
             <span>
               Email ID <em>*</em>
             </span>
@@ -159,11 +159,11 @@ export function SignupPage() {
             />
           </label>
 
-          <label className="firebase-auth-field">
+          <label className="local-auth-field">
             <span>
               Password <em>*</em>
             </span>
-            <div className="firebase-auth-password-wrap">
+            <div className="local-auth-password-wrap">
               <input
                 name="password"
                 type={showPassword ? "text" : "password"}
@@ -175,7 +175,7 @@ export function SignupPage() {
               />
               <button
                 type="button"
-                className="firebase-auth-password-toggle"
+                className="local-auth-password-toggle"
                 onClick={() => setShowPassword((previous) => !previous)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
@@ -185,7 +185,7 @@ export function SignupPage() {
           </label>
 
           {mode === "signup" && (
-            <label className="firebase-auth-field">
+            <label className="local-auth-field">
               <span>Business Type</span>
               <select
                 name="businessType"
@@ -202,7 +202,7 @@ export function SignupPage() {
           )}
 
           {mode === "login" && (
-            <Link to="/forgot-password" className="auth-inline-btn firebase-auth-forgot">
+            <Link to="/forgot-password" className="auth-inline-btn local-auth-forgot">
               Forgot Password?
             </Link>
           )}
@@ -210,16 +210,16 @@ export function SignupPage() {
           {error && <p className="error-text">{error}</p>}
           {info && <p className="info-text">{info}</p>}
 
-          <button className="primary-btn firebase-auth-submit" disabled={loading} type="submit">
+          <button className="primary-btn local-auth-submit" disabled={loading} type="submit">
             {loading ? "Please wait..." : mode === "signup" ? "Create Account" : "Login"}
           </button>
         </form>
 
-        <p className="firebase-auth-switch">
+        <p className="local-auth-switch">
           {mode === "signup" ? "Already have an account?" : "Don't have an account?"}{" "}
           <button
             type="button"
-            className="firebase-auth-switch-btn"
+            className="local-auth-switch-btn"
             onClick={() => {
               setMode((previous) => (previous === "signup" ? "login" : "signup"));
               setError(null);
@@ -230,7 +230,7 @@ export function SignupPage() {
           </button>
         </p>
 
-        <p className="tiny-note firebase-auth-back-link">
+        <p className="tiny-note local-auth-back-link">
           <Link to="/">Back to landing</Link>
         </p>
       </section>

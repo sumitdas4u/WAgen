@@ -1,11 +1,11 @@
 import bcrypt from "bcryptjs";
+import { createHash, randomBytes } from "node:crypto";
 import { pool } from "../db/pool.js";
 import type { PersonalityOption, User } from "../types/models.js";
 import { ensureWorkspaceForUser } from "./workspace-billing-service.js";
 
 interface UserRow extends User {
   password_hash: string | null;
-  firebase_uid: string | null;
   google_auth_sub: string | null;
 }
 
@@ -14,7 +14,6 @@ export interface UserAuthIdentity {
   name: string;
   email: string;
   password_hash: string | null;
-  firebase_uid: string | null;
   google_auth_sub: string | null;
 }
 
@@ -58,27 +57,6 @@ export async function createUser(input: {
   return user;
 }
 
-export async function createUserFromFirebase(input: {
-  name: string;
-  email: string;
-  firebaseUid: string;
-  businessType?: string;
-}): Promise<User> {
-  const normalizedEmail = input.email.trim().toLowerCase();
-  const result = await pool.query<User>(
-    `INSERT INTO users (name, email, password_hash, firebase_uid, business_type)
-     VALUES ($1, $2, NULL, $3, $4)
-     RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance`,
-    [input.name.trim(), normalizedEmail, input.firebaseUid, input.businessType ?? null]
-  );
-
-  const user = result.rows[0];
-  if (user) {
-    await ensureWorkspaceForUser(user.id);
-  }
-  return user;
-}
-
 export async function createUserFromGoogleAuth(input: {
   name: string;
   email: string;
@@ -103,7 +81,7 @@ export async function createUserFromGoogleAuth(input: {
 export async function authenticateUser(email: string, password: string): Promise<User | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
+    `SELECT id, name, email, password_hash, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE email = $1`,
     [normalizedEmail]
@@ -125,6 +103,128 @@ export async function authenticateUser(email: string, password: string): Promise
   return toPublicUser(row);
 }
 
+function hashResetToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export async function updateUserPassword(input: {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+}): Promise<"updated" | "missing_password" | "invalid_current_password" | "not_found"> {
+  const result = await pool.query<{ password_hash: string | null }>(
+    `SELECT password_hash
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [input.userId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return "not_found";
+  }
+
+  if (!row.password_hash) {
+    return "missing_password";
+  }
+
+  const isValid = await bcrypt.compare(input.currentPassword, row.password_hash);
+  if (!isValid) {
+    return "invalid_current_password";
+  }
+
+  const passwordHash = await bcrypt.hash(input.newPassword, 10);
+  await pool.query(
+    `UPDATE users
+     SET password_hash = $1
+     WHERE id = $2`,
+    [passwordHash, input.userId]
+  );
+
+  return "updated";
+}
+
+export async function createPasswordResetToken(email: string): Promise<{
+  email: string;
+  name: string;
+  token: string;
+} | null> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const userResult = await pool.query<{ id: string; name: string; email: string }>(
+    `SELECT id, name, email
+     FROM users
+     WHERE email = $1
+     LIMIT 1`,
+    [normalizedEmail]
+  );
+
+  const user = userResult.rows[0];
+  if (!user) {
+    return null;
+  }
+
+  const token = randomBytes(32).toString("base64url");
+  await pool.query(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+    [user.id, hashResetToken(token)]
+  );
+
+  return { email: user.email, name: user.name, token };
+}
+
+export async function resetUserPasswordWithToken(input: {
+  token: string;
+  newPassword: string;
+}): Promise<"updated" | "invalid_or_expired"> {
+  const tokenHash = hashResetToken(input.token);
+  const passwordHash = await bcrypt.hash(input.newPassword, 10);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const tokenResult = await client.query<{ id: string; user_id: string }>(
+      `SELECT id, user_id
+       FROM password_reset_tokens
+       WHERE token_hash = $1
+         AND used_at IS NULL
+         AND expires_at > NOW()
+       FOR UPDATE`,
+      [tokenHash]
+    );
+
+    const resetToken = tokenResult.rows[0];
+    if (!resetToken) {
+      await client.query("ROLLBACK");
+      return "invalid_or_expired";
+    }
+
+    await client.query(
+      `UPDATE users
+       SET password_hash = $1
+       WHERE id = $2`,
+      [passwordHash, resetToken.user_id]
+    );
+
+    await client.query(
+      `UPDATE password_reset_tokens
+       SET used_at = NOW()
+       WHERE id = $1`,
+      [resetToken.id]
+    );
+
+    await client.query("COMMIT");
+    return "updated";
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function userEmailExists(email: string): Promise<boolean> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<{ id: string }>(
@@ -141,7 +241,7 @@ export async function userEmailExists(email: string): Promise<boolean> {
 export async function getUserAuthIdentityByEmail(email: string): Promise<UserAuthIdentity | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<UserAuthIdentity>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub
+    `SELECT id, name, email, password_hash, google_auth_sub
      FROM users
      WHERE email = $1
      LIMIT 1`,
@@ -153,7 +253,7 @@ export async function getUserAuthIdentityByEmail(email: string): Promise<UserAut
 
 export async function getUserAuthIdentityById(userId: string): Promise<UserAuthIdentity | null> {
   const result = await pool.query<UserAuthIdentity>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub
+    `SELECT id, name, email, password_hash, google_auth_sub
      FROM users
      WHERE id = $1
      LIMIT 1`,
@@ -174,41 +274,9 @@ export async function getUserById(userId: string): Promise<User | null> {
   return result.rows[0] ?? null;
 }
 
-export async function getUserByFirebaseUid(firebaseUid: string): Promise<User | null> {
-  const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
-     FROM users
-     WHERE firebase_uid = $1
-     LIMIT 1`,
-    [firebaseUid]
-  );
-
-  const row = result.rows[0];
-  return row ? toPublicUser(row) : null;
-}
-
-export async function setUserFirebaseUid(userId: string, firebaseUid: string): Promise<void> {
-  await pool.query(
-    `UPDATE users
-     SET firebase_uid = $1
-     WHERE id = $2`,
-    [firebaseUid, userId]
-  );
-}
-
-export async function setUserFirebaseUidAndDisableLegacyPassword(userId: string, firebaseUid: string): Promise<void> {
-  await pool.query(
-    `UPDATE users
-     SET firebase_uid = $1,
-         password_hash = NULL
-     WHERE id = $2`,
-    [firebaseUid, userId]
-  );
-}
-
 export async function getUserByGoogleAuthSub(googleAuthSub: string): Promise<User | null> {
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, firebase_uid, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
+    `SELECT id, name, email, password_hash, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE google_auth_sub = $1
      LIMIT 1`,

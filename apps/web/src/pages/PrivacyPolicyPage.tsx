@@ -40,7 +40,7 @@ export function PrivacyPolicyPage() {
               <li>Business name</li>
               <li>Billing information</li>
             </ul>
-            <p>Authentication may be handled via third-party services such as Firebase Authentication.</p>
+            <p>Authentication is handled by WAgen AI local account sessions and Google OAuth where selected.</p>
 
             <h3>1.2 WhatsApp Data</h3>
             <p>

@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT,
-  firebase_uid TEXT UNIQUE,
   google_auth_sub TEXT UNIQUE,
   business_type TEXT,
   subscription_plan TEXT NOT NULL DEFAULT 'trial',
@@ -41,7 +40,6 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
 
 CREATE INDEX IF NOT EXISTS knowledge_user_id_idx ON knowledge_base(user_id);
 CREATE INDEX IF NOT EXISTS knowledge_embedding_idx ON knowledge_base USING ivfflat (embedding_vector vector_cosine_ops) WITH (lists = 100);
-CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique_idx ON users(firebase_uid) WHERE firebase_uid IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_google_auth_sub_unique_idx ON users(google_auth_sub) WHERE google_auth_sub IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS conversations (

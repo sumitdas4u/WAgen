@@ -132,6 +132,10 @@ export const appRoutes: RouteObject[] = [
         lazy: lazyComponent(() => import("../pages/ForgotPasswordPage"), "ForgotPasswordPage")
       },
       {
+        path: "/reset-password",
+        lazy: lazyComponent(() => import("../pages/ResetPasswordPage"), "ResetPasswordPage")
+      },
+      {
         path: "/signup",
         lazy: lazyComponent(() => import("../pages/SignupPage"), "SignupPage")
       },
