@@ -52,6 +52,7 @@ interface FlowExecutionOptions {
 
 const MAX_STEPS = 20;
 const FLOW_META_KEY = "__flow";
+const __FLOW_TRIGGER_ID_KEY = "__flow_trigger_id";
 
 interface ConversationVariableContextRow {
   id: string;
@@ -161,16 +162,22 @@ function getFlowGraph(flow: FlowRow): {
   };
 }
 
-function getEffectiveTriggers(flow: FlowRow): { type: string; value: string }[] {
+function getEffectiveTriggers(flow: FlowRow): { id?: string; type: string; value: string }[] {
   const flowLevel = Array.isArray(flow.triggers) ? flow.triggers : [];
   const { nodes } = getFlowGraph(flow);
   const startNode = nodes.find((node) => node.type === "flowStart");
+
   const nodeTriggers = Array.isArray(startNode?.data?.triggers)
     ? (startNode.data.triggers as Array<{ id?: string; type: string; value: string }>)
     : [];
 
+  const routeTriggers = Array.isArray(startNode?.data?.routes)
+    ? (startNode.data.routes as Array<{ triggers?: Array<{ id?: string; type: string; value: string }> }>)
+        .flatMap((route) => route.triggers ?? [])
+    : [];
+
   const merged = [...flowLevel];
-  for (const trigger of nodeTriggers) {
+  for (const trigger of [...nodeTriggers, ...routeTriggers]) {
     if (
       !merged.some(
         (candidate) =>
@@ -346,6 +353,56 @@ function matchingFlow(params: {
   }
 
   return flows.find((flow) => getEffectiveTriggers(flow).length === 0) ?? null;
+}
+
+function findMatchedTrigger(params: {
+  message: string;
+  flows: FlowRow[];
+  channelType: FlowChannelType;
+  isFirstInboundMessage: boolean;
+}): { flow: FlowRow; triggerId: string } | null {
+  const { message, flows, channelType, isFirstInboundMessage } = params;
+  const lower = message.toLowerCase().trim();
+
+  for (const flow of flows) {
+    const triggers = getEffectiveTriggers(flow);
+    const matched = triggers.find(
+      (t) => t.type === "keyword" && t.value && lower.includes(t.value.toLowerCase())
+    );
+    if (matched) return { flow, triggerId: matched.id ?? matched.type };
+  }
+
+  for (const flow of flows) {
+    const triggers = getEffectiveTriggers(flow);
+    const matched = triggers.find(
+      (t) => t.type === "template_reply" && matchesTemplateReply(message, t.value)
+    );
+    if (matched) return { flow, triggerId: matched.id ?? matched.type };
+  }
+
+  for (const flow of flows) {
+    const triggers = getEffectiveTriggers(flow);
+    const matched = triggers.find(
+      (t) =>
+        (t.type === "qr_start" || t.type === "website_start") &&
+        matchesChannelStartTrigger({
+          channelType,
+          isFirstInboundMessage,
+          lowerMessage: lower,
+          trigger: t
+        })
+    );
+    if (matched) return { flow, triggerId: matched.id ?? matched.type };
+  }
+
+  for (const flow of flows) {
+    const triggers = getEffectiveTriggers(flow);
+    const matched = triggers.find((t) => t.type === "any_message");
+    if (matched) return { flow, triggerId: matched.id ?? matched.type };
+  }
+
+  const fallback = flows.find((flow) => getEffectiveTriggers(flow).length === 0);
+  return fallback ? { flow: fallback, triggerId: "" } : null;
 }
 
 async function executeFlowNode(params: {
@@ -957,12 +1014,14 @@ export async function handleFlowMessage(input: {
       ? flows.filter((flow) => flow.id !== selectedDefaultReplyFlow.id)
       : flows;
 
-    const matchedFlow = matchingFlow({
+    const matchResult = findMatchedTrigger({
       message,
       flows: nonDefaultFlows,
       channelType,
       isFirstInboundMessage: firstInbound
     });
+    const matchedFlow = matchResult?.flow ?? null;
+    const matchedTriggerId = matchResult?.triggerId ?? "";
 
     // any_message and no-trigger flows are generic catches — same concept as default reply.
     // If a dedicated default reply flow exists, it takes priority over these generic flows.
@@ -1052,10 +1111,10 @@ export async function handleFlowMessage(input: {
       return { result: "not_matched" };
     }
 
-    const initialVars = await buildConversationFlowVariables({
-      userId,
-      conversationId
-    });
+    const initialVars = {
+      ...await buildConversationFlowVariables({ userId, conversationId }),
+      [__FLOW_TRIGGER_ID_KEY]: matchedTriggerId
+    };
     const session = await createFlowSession(matchedFlow.id, conversationId, initialVars);
     sessionIdToFail = session.id;
 
