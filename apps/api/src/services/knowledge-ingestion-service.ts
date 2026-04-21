@@ -1,7 +1,7 @@
 import { load } from "cheerio";
 import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import WordExtractor from "word-extractor";
 import { env } from "../config/env.js";
 import { semanticChunkText, type SemanticChunk } from "../utils/semantic-chunk.js";
@@ -713,30 +713,25 @@ async function extractWordDocumentText(fileBuffer: Buffer): Promise<string> {
   return normalizeText(textVariants.join("\n\n"));
 }
 
-function extractSpreadsheetText(fileBuffer: Buffer): string {
-  const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true });
+async function extractSpreadsheetText(fileBuffer: Buffer): Promise<string> {
+  const wb = new ExcelJS.Workbook();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await wb.xlsx.load(fileBuffer as any);
   const sheetTexts: string[] = [];
 
-  for (const sheetName of workbook.SheetNames) {
-    const worksheet = workbook.Sheets[sheetName];
-    if (!worksheet) {
-      continue;
-    }
-    const rows = XLSX.utils.sheet_to_json<Array<unknown>>(worksheet, {
-      header: 1,
-      blankrows: false,
-      defval: ""
+  for (const worksheet of wb.worksheets) {
+    const rowLines: string[] = [];
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      const cells = (row.values as unknown[]).slice(1)
+        .map((cell) => stringifySpreadsheetCell(cell).trim())
+        .filter(Boolean);
+      if (cells.length > 0) {
+        rowLines.push(cells.join(" | "));
+      }
     });
-    if (rows.length === 0) {
-      continue;
+    if (rowLines.length > 0) {
+      sheetTexts.push(`Sheet: ${worksheet.name}\n${rowLines.join("\n")}`);
     }
-    const rowLines = rows
-      .map((row) => row.map((cell) => stringifySpreadsheetCell(cell).trim()).filter(Boolean).join(" | "))
-      .filter(Boolean);
-    if (rowLines.length === 0) {
-      continue;
-    }
-    sheetTexts.push(`Sheet: ${sheetName}\n${rowLines.join("\n")}`);
   }
 
   return normalizeText(sheetTexts.join("\n\n"));
@@ -766,7 +761,7 @@ async function extractUploadedFileText(
     return extractDocxText(fileBuffer);
   }
   if (kind === "xls" || kind === "xlsx") {
-    return extractSpreadsheetText(fileBuffer);
+    return await extractSpreadsheetText(fileBuffer);
   }
   throw new Error(`Unsupported file type for extraction: ${fileName}`);
 }

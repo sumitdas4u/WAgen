@@ -1,0 +1,103 @@
+<h2>3 approaches to keyword routing</h2>
+<p class="subtitle">All three keep backward compatibility with existing flows</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="routes-nested" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="font-family:sans-serif;font-size:11px;padding:8px">
+        <div style="background:#fff;border:2px solid #0d9488;border-radius:10px;padding:10px 14px;width:200px;position:relative">
+          <div style="font-weight:700;color:#0d9488;margin-bottom:8px">▶ Flow Start</div>
+          <!-- Route A -->
+          <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:6px 8px;margin-bottom:6px">
+            <div style="color:#166534;font-weight:600;margin-bottom:4px">Route: "Greeting"</div>
+            <div style="background:#fff;border-radius:4px;padding:3px 6px;margin-bottom:3px">🔑 hello</div>
+            <div style="background:#fff;border-radius:4px;padding:3px 6px">🔑 hi</div>
+            <div style="position:absolute;right:-8px;width:12px;height:12px;background:#0d9488;border-radius:50%;margin-top:-8px"></div>
+          </div>
+          <!-- Route B -->
+          <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;padding:6px 8px;margin-bottom:6px">
+            <div style="color:#1e40af;font-weight:600;margin-bottom:4px">Route: "Orders"</div>
+            <div style="background:#fff;border-radius:4px;padding:3px 6px">🔑 order</div>
+            <div style="position:absolute;right:-8px;width:12px;height:12px;background:#3b82f6;border-radius:50%;margin-top:-8px"></div>
+          </div>
+          <!-- Default -->
+          <div style="background:#fef9c3;border:1px dashed #ca8a04;border-radius:6px;padding:5px 8px;display:flex;justify-content:space-between;align-items:center">
+            <span style="color:#92400e">Default (no match)</span>
+            <div style="width:10px;height:10px;background:#eab308;border-radius:50%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Routes with nested triggers ✦ recommended</h3>
+      <p>Add <code>routes[]</code> to FlowStartData. Each route has a label, its own triggers list, and one output handle. A separate "Default" handle catches unmatched messages.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Clean data model</li><li>Clear UI grouping</li><li>Scales to many routes</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Bigger refactor — engine must track which trigger matched</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="route-id-on-trigger" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="font-family:sans-serif;font-size:11px;padding:8px">
+        <div style="background:#fff;border:2px solid #0d9488;border-radius:10px;padding:10px 14px;width:200px">
+          <div style="font-weight:700;color:#0d9488;margin-bottom:8px">▶ Flow Start</div>
+          <div style="background:#f9fafb;border-radius:5px;padding:5px 7px;margin-bottom:4px;display:flex;gap:4px;align-items:center">
+            <span style="background:#86efac;border-radius:3px;padding:1px 5px;color:#166534">Greeting</span>
+            <span>🔑 hello</span>
+          </div>
+          <div style="background:#f9fafb;border-radius:5px;padding:5px 7px;margin-bottom:4px;display:flex;gap:4px;align-items:center">
+            <span style="background:#86efac;border-radius:3px;padding:1px 5px;color:#166534">Greeting</span>
+            <span>🔑 hi</span>
+          </div>
+          <div style="background:#f9fafb;border-radius:5px;padding:5px 7px;margin-bottom:4px;display:flex;gap:4px;align-items:center">
+            <span style="background:#bfdbfe;border-radius:3px;padding:1px 5px;color:#1e40af">Orders</span>
+            <span>🔑 order</span>
+          </div>
+          <div style="background:#fef9c3;border-radius:5px;padding:5px 7px;color:#92400e">Default ↓</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Route tag on each trigger</h3>
+      <p>Keep flat <code>triggers[]</code>, add a <code>routeId</code> field per trigger, plus a separate <code>routes[]</code> name registry. Less structural change.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Smaller change to existing data shape</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Harder to see groupings at a glance</li><li>Two arrays to keep in sync</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="condition-after" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="font-family:sans-serif;font-size:11px;padding:8px;display:flex;gap:10px;align-items:center">
+        <div style="background:#fff;border:2px solid #0d9488;border-radius:8px;padding:8px 10px">
+          <div style="font-weight:700;color:#0d9488;margin-bottom:4px">▶ Flow Start</div>
+          <div style="background:#f0fdf4;border-radius:4px;padding:3px 7px;margin-bottom:3px">🔑 hello</div>
+          <div style="background:#f0fdf4;border-radius:4px;padding:3px 7px;margin-bottom:3px">🔑 order</div>
+          <div style="background:#f0fdf4;border-radius:4px;padding:3px 7px">🔑 cancel</div>
+        </div>
+        <div style="color:#64748b">→</div>
+        <div style="background:#fff;border:2px solid #f59e0b;border-radius:8px;padding:8px 10px">
+          <div style="font-weight:700;color:#b45309;margin-bottom:4px">⚡ Condition</div>
+          <div style="font-size:10px;color:#6b7280">{{trigger}} = "hello"</div>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <span style="color:#16a34a">✓ yes</span>
+            <span style="color:#dc2626">✗ no</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Save matched keyword as variable</h3>
+      <p>FlowStart saves the matched keyword into <code>{{matched_trigger}}</code>. Users chain Condition nodes to branch. No UI change to Flow Start.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Minimal code change</li><li>Reuses existing Condition node</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Verbose — need N condition nodes for N routes</li><li>Not visual from start node</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>

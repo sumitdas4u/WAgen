@@ -1,0 +1,252 @@
+<style>
+.rp { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; color: #122033; display: grid; gap: 12px; }
+.rp-header { background:#fff; border:1px solid #e2eaf4; border-radius:12px; padding:14px 18px; display:flex; justify-content:space-between; align-items:flex-start; }
+.rp-back { font-size:12px; color:#2563eb; font-weight:600; margin-bottom:4px; }
+.rp-title { font-size:18px; font-weight:800; margin:0 0 4px; letter-spacing:-0.02em; color:#122033; }
+.rp-meta { display:flex; gap:8px; align-items:center; font-size:11px; }
+.pill { border-radius:999px; padding:2px 8px; font-size:10px; font-weight:700; }
+.pill-green { background:#dcfce7; color:#16a34a; }
+.pill-blue { background:#dbeafe; color:#2563eb; }
+.pill-amber { background:#fef3c7; color:#d97706; }
+.pill-rose { background:#ffe4e6; color:#be123c; }
+.pill-gray { background:#f1f5f9; color:#475569; }
+.pill-purple { background:#f3e8ff; color:#7c3aed; }
+.rp-actions { display:flex; gap:6px; }
+.rp-btn { background:#f8fafc; border:1px solid #e2eaf4; border-radius:7px; padding:5px 12px; font-size:11px; font-weight:600; color:#334155; cursor:pointer; }
+.rp-btn-primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+
+.stats-row { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+.stat-card { background:#fff; border:1px solid #e2eaf4; border-radius:10px; padding:12px 14px; }
+.stat-label { font-size:10px; font-weight:700; color:#5f6f86; text-transform:uppercase; letter-spacing:.06em; margin:0 0 4px; }
+.stat-val { font-size:22px; font-weight:800; margin:0; line-height:1; }
+.stat-pct { font-size:10px; font-weight:600; color:#5f6f86; margin-top:2px; }
+.blue { color:#2563eb; } .green { color:#059669; } .teal { color:#0d9488; } .rose { color:#be123c; } .purple { color:#7c3aed; }
+
+.funnel-card { background:#fff; border:1px solid #e2eaf4; border-radius:12px; padding:14px 18px; }
+.funnel-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.section-title { font-size:13px; font-weight:800; color:#122033; margin:0; }
+.section-sub { font-size:11px; color:#5f6f86; margin:0; }
+.step-row { display:grid; grid-template-columns:24px 1fr 200px 80px; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid #f1f5f9; }
+.step-row:last-child { border-bottom:none; }
+.step-num { width:22px; height:22px; background:#dbeafe; color:#2563eb; border-radius:50%; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.step-info { display:grid; gap:1px; }
+.step-name { font-size:12px; font-weight:700; color:#122033; }
+.step-meta { font-size:10px; color:#5f6f86; }
+.step-bar-wrap { display:flex; align-items:center; gap:6px; }
+.step-bar { height:6px; background:#e2eaf4; border-radius:3px; flex:1; overflow:hidden; }
+.step-bar-fill { height:100%; border-radius:3px; background:#2563eb; }
+.step-count { font-size:11px; font-weight:700; color:#122033; text-align:right; min-width:36px; }
+
+.table-card { background:#fff; border:1px solid #e2eaf4; border-radius:12px; overflow:hidden; }
+.table-toolbar { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid #f1f5f9; }
+.filter-pills { display:flex; gap:6px; }
+.fpill { border:1px solid #e2eaf4; border-radius:999px; padding:3px 10px; font-size:11px; font-weight:600; color:#5f6f86; cursor:pointer; }
+.fpill.active { background:#dbeafe; color:#2563eb; border-color:#bfdbfe; }
+table { width:100%; border-collapse:collapse; }
+thead th { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#5f6f86; padding:8px 14px; text-align:left; border-bottom:1px solid #f1f5f9; background:#fafbfc; }
+tbody tr { border-bottom:1px solid #f8fafc; cursor:pointer; transition:background .1s; }
+tbody tr:hover { background:#f0f4ff; }
+tbody tr.selected { background:#eff6ff; }
+tbody td { padding:9px 14px; font-size:12px; color:#334155; vertical-align:middle; }
+.contact-cell { font-weight:700; color:#2563eb; display:flex; align-items:center; gap:5px; }
+.contact-name { font-size:11px; color:#5f6f86; font-weight:400; }
+
+.logs-panel { background:#fff; border:1px solid #e2eaf4; border-radius:12px; overflow:hidden; }
+.logs-head { padding:12px 16px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center; }
+.log-row { display:flex; align-items:flex-start; gap:10px; padding:9px 16px; border-bottom:1px solid #f8fafc; }
+.log-row:last-child { border-bottom:none; }
+.log-dot { width:8px; height:8px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+.dot-pending { background:#94a3b8; }
+.dot-sent { background:#2563eb; }
+.dot-delivered { background:#0d9488; }
+.dot-read { background:#059669; }
+.dot-failed { background:#be123c; }
+.dot-retrying { background:#d97706; }
+.dot-stopped { background:#7c3aed; }
+.dot-completed { background:#059669; }
+.log-info { flex:1; display:grid; gap:1px; }
+.log-status { font-size:11px; font-weight:700; text-transform:capitalize; }
+.log-time { font-size:10px; color:#5f6f86; }
+.log-meta { font-size:10px; color:#5f6f86; }
+.log-err { font-size:10px; color:#be123c; margin-top:2px; }
+</style>
+
+<div class="rp">
+
+  <!-- HEADER -->
+  <div class="rp-header">
+    <div>
+      <div class="rp-back">← Sequences</div>
+      <h2 class="rp-title">moktail reminder</h2>
+      <div class="rp-meta">
+        <span class="pill pill-green">Published</span>
+        <span style="color:#5f6f86">1 step · WhatsApp · Trigger: contact created</span>
+        <span class="pill pill-gray">Contacts</span>
+      </div>
+    </div>
+    <div class="rp-actions">
+      <button class="rp-btn">⟳ Refresh</button>
+      <button class="rp-btn">✏ Edit Sequence</button>
+      <button class="rp-btn">⏸ Pause</button>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <p class="stat-label">Enrolled</p>
+      <p class="stat-val blue">24</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Active</p>
+      <p class="stat-val teal">8</p>
+      <p class="stat-pct">33%</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Completed</p>
+      <p class="stat-val green">14</p>
+      <p class="stat-pct">58%</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Failed</p>
+      <p class="stat-val rose">1</p>
+      <p class="stat-pct">4%</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Stopped</p>
+      <p class="stat-val purple">1</p>
+      <p class="stat-pct">4%</p>
+    </div>
+  </div>
+
+  <!-- STEP FUNNEL -->
+  <div class="funnel-card">
+    <div class="funnel-head">
+      <div>
+        <p class="section-title">Step Funnel</p>
+        <p class="section-sub">How many contacts are at or have passed each step</p>
+      </div>
+    </div>
+    <div class="step-row">
+      <div class="step-num">1</div>
+      <div class="step-info">
+        <span class="step-name">moktail reminder</span>
+        <span class="step-meta">⏱ 1 day from enrollment · restaurant_promotion</span>
+      </div>
+      <div class="step-bar-wrap">
+        <div class="step-bar"><div class="step-bar-fill" style="width:92%"></div></div>
+      </div>
+      <div class="step-count">22 / 24</div>
+    </div>
+    <!-- example with 2 steps to show the funnel concept -->
+    <div class="step-row" style="opacity:0.4">
+      <div class="step-num" style="background:#f1f5f9;color:#94a3b8">2</div>
+      <div class="step-info">
+        <span class="step-name">Follow-up</span>
+        <span class="step-meta">⏱ 3 days from step 1 · followup_template</span>
+      </div>
+      <div class="step-bar-wrap">
+        <div class="step-bar"><div class="step-bar-fill" style="width:58%;background:#0d9488"></div></div>
+      </div>
+      <div class="step-count">14 / 24</div>
+    </div>
+  </div>
+
+  <!-- ENROLLMENTS TABLE -->
+  <div class="table-card">
+    <div class="table-toolbar">
+      <div>
+        <span class="section-title">Enrollments</span>
+        <span style="font-size:11px;color:#5f6f86;margin-left:8px">24 total</span>
+      </div>
+      <div class="filter-pills">
+        <span class="fpill active">All</span>
+        <span class="fpill">Active</span>
+        <span class="fpill">Completed</span>
+        <span class="fpill">Failed</span>
+        <span class="fpill">Stopped</span>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Contact</th>
+          <th>Status</th>
+          <th>Current Step</th>
+          <th>Delivery</th>
+          <th>Enrolled</th>
+          <th>Next Run</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="selected">
+          <td>
+            <div class="contact-cell">+60123456789 <span style="font-size:9px;opacity:0.5">▶</span></div>
+            <div class="contact-name">Ahmad Razif</div>
+          </td>
+          <td><span class="pill pill-rose">failed</span></td>
+          <td>Step 1</td>
+          <td><span style="color:#be123c;font-size:11px">failed</span></td>
+          <td style="color:#5f6f86">09 Apr, 23:28</td>
+          <td style="color:#94a3b8">—</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="contact-cell">+60198765432</div>
+            <div class="contact-name">Siti Noor</div>
+          </td>
+          <td><span class="pill pill-green">completed</span></td>
+          <td>Step 1 ✓</td>
+          <td><span style="color:#059669;font-size:11px">delivered</span></td>
+          <td style="color:#5f6f86">09 Apr, 23:42</td>
+          <td style="color:#94a3b8">—</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="contact-cell">+60112233445</div>
+            <div class="contact-name">Lim Wei</div>
+          </td>
+          <td><span class="pill pill-blue">active</span></td>
+          <td>Step 1</td>
+          <td><span style="color:#2563eb;font-size:11px">sent</span></td>
+          <td style="color:#5f6f86">09 Apr, 23:50</td>
+          <td style="color:#5f6f86">10 Apr, 23:50</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- LOGS PANEL (appears when row is clicked) -->
+  <div class="logs-panel">
+    <div class="logs-head">
+      <div>
+        <span class="section-title">Enrollment Log</span>
+        <span style="font-size:11px;color:#5f6f86;margin-left:8px">+60123456789 · Ahmad Razif</span>
+      </div>
+      <span class="pill pill-rose">failed</span>
+    </div>
+
+    <div class="log-row">
+      <div class="log-dot dot-pending"></div>
+      <div class="log-info">
+        <span class="log-status" style="color:#475569">Pending</span>
+        <span class="log-time">09 Apr 2026, 23:28</span>
+        <span class="log-meta">Contact enrolled — queued for first step</span>
+      </div>
+    </div>
+
+    <div class="log-row">
+      <div class="log-dot dot-failed"></div>
+      <div class="log-info">
+        <span class="log-status" style="color:#be123c">Failed</span>
+        <span class="log-time">09 Apr 2026, 23:28</span>
+        <span class="log-meta">Step 1 · moktail reminder · restaurant_promotion</span>
+        <span class="log-err">Template not approved. Contact WhatsApp Business support.</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:8px">This is the full report page design — separate route, per-step funnel, enrollment table with status filters, and a log panel that opens when you click a row. Does this look right?</p>

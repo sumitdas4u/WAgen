@@ -74,7 +74,7 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const buffer = await file.toBuffer();
-        const preview = previewContactsWorkbookImport(buffer);
+        const preview = await previewContactsWorkbookImport(buffer);
         return { ok: true, preview };
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message });
@@ -163,7 +163,7 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
     "/api/contacts/template",
     { preHandler: [fastify.requireAuth] },
     async (_, reply) => {
-      const { filename, content } = generateContactsTemplateWorkbook();
+      const { filename, content } = await generateContactsTemplateWorkbook();
       reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       reply.header("Content-Disposition", `attachment; filename="${filename}"`);
       return reply.send(content);

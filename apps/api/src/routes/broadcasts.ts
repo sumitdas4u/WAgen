@@ -36,7 +36,7 @@ export async function broadcastRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const buffer = await file.toBuffer();
-        const preview = previewBroadcastAudienceWorkbookImport(buffer);
+        const preview = await previewBroadcastAudienceWorkbookImport(buffer);
         return { ok: true, preview };
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message });

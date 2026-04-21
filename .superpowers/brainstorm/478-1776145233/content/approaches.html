@@ -1,0 +1,42 @@
+<h2>How should the daily report backend be structured?</h2>
+<p class="subtitle">Three approaches — pick the one that fits best</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Plug into existing worker.ts + queue-service.ts ✅ Recommended</h3>
+      <p>Add a <strong>daily-report</strong> BullMQ queue to the existing queue infrastructure. The cron fires inside <code>worker.ts</code> at 11:59 PM and enqueues one job per enabled user. A new <code>daily-report-worker-service.ts</code> processes them and sends via Brevo. The <code>daily_report_enabled</code> boolean column is added to the <code>users</code> table.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Reuses existing Redis + BullMQ infra</li><li>One process to deploy and monitor</li><li>Consistent with campaign/sequence pattern already in codebase</li><li>Retry logic already configured</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>worker.ts gets one more responsibility</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Separate standalone Node.js process</h3>
+      <p>A completely separate <code>/src</code> directory (as in your code snippet) that runs independently — its own Redis connection, its own cron, its own worker. Deployed as a separate container or process alongside the main API.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Fully isolated — can be deployed/scaled independently</li><li>Matches the code you already wrote</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Duplicates Redis connection setup</li><li>Needs its own DB connection to query users + conversations</li><li>More infra to maintain and deploy</li><li>Two processes to monitor</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Simple cron-only inside the API (no queue)</h3>
+      <p>A cron job that runs at 11:59 PM inside <code>app.ts</code>, loops through all enabled users, generates + sends each email inline — no BullMQ involved.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Simplest possible implementation</li><li>No queue infrastructure needed</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>No retry on email failure</li><li>Blocks if many users — will slow down as you scale</li><li>Not consistent with existing patterns</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>

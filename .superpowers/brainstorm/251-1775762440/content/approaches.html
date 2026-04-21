@@ -1,0 +1,139 @@
+<h2>Sequence Report — 3 Layout Approaches</h2>
+<p class="subtitle">Each approach handles the enrollments table, per-enrollment logs, metrics, and status filtering differently. Pick the one that feels right.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Separate Report Page <span style="font-size:0.72rem;background:#dcfce7;color:#16a34a;padding:0.15rem 0.5rem;border-radius:999px;margin-left:0.4rem;font-weight:700;">Recommended</span></h3>
+      <p>New route <code>/dashboard/sequence/:id/report</code> — exactly like the broadcast report page. Builder stays for editing; report is its own full-width page.</p>
+      <div class="mockup" style="margin-top:0.75rem">
+        <div class="mockup-header">Sequence Report — /dashboard/sequence/abc/report</div>
+        <div class="mockup-body" style="padding:0.75rem;font-size:0.78rem;display:grid;gap:0.5rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="color:#2563eb;font-weight:700">← Sequences</span>
+            <strong>moktail reminder</strong>
+            <span style="background:#dcfce7;color:#16a34a;border-radius:999px;padding:0.1rem 0.5rem;font-size:0.7rem">Published</span>
+            <div style="margin-left:auto;display:flex;gap:0.4rem">
+              <span class="mock-button" style="font-size:0.7rem">⟳ Refresh</span>
+              <span class="mock-button" style="font-size:0.7rem">Edit Sequence</span>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.4rem">
+            <div style="background:#f0f4ff;border:1px solid #dbeafe;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem;color:#5f6f86">Enrolled</div><div style="font-size:1.1rem;font-weight:700;color:#2563eb">24</div></div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem;color:#5f6f86">Active</div><div style="font-size:1.1rem;font-weight:700;color:#16a34a">8</div></div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem;color:#5f6f86">Completed</div><div style="font-size:1.1rem;font-weight:700;color:#059669">14</div></div>
+            <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem;color:#5f6f86">Failed</div><div style="font-size:1.1rem;font-weight:700;color:#ea580c">1</div></div>
+            <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem;color:#5f6f86">Stopped</div><div style="font-size:1.1rem;font-weight:700;color:#7c3aed">1</div></div>
+          </div>
+          <div style="background:#f8fafc;border:1px solid #e2eaf4;border-radius:8px;padding:0.5rem 0.75rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
+              <strong style="font-size:0.8rem">All Enrollments</strong>
+              <div style="display:flex;gap:0.3rem;font-size:0.7rem">
+                <span style="background:#dbeafe;color:#2563eb;border-radius:999px;padding:0.1rem 0.5rem">All</span>
+                <span style="border:1px solid #e2eaf4;border-radius:999px;padding:0.1rem 0.5rem">Active</span>
+                <span style="border:1px solid #e2eaf4;border-radius:999px;padding:0.1rem 0.5rem">Completed</span>
+                <span style="border:1px solid #e2eaf4;border-radius:999px;padding:0.1rem 0.5rem">Failed</span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;font-size:0.7rem;font-weight:700;color:#5f6f86;border-bottom:1px solid #e2eaf4;padding-bottom:0.25rem">
+              <span>Contact</span><span>Status</span><span>Current Step</span><span>Enrolled</span><span>Next Run</span>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;font-size:0.72rem;padding:0.25rem 0;border-bottom:1px solid #f1f5f9">
+              <span style="color:#2563eb;font-weight:600;cursor:pointer">+60123456789 →</span>
+              <span><span style="background:#dcfce7;color:#16a34a;border-radius:4px;padding:0.1rem 0.35rem;font-size:0.65rem">completed</span></span>
+              <span>Step 1</span><span style="color:#5f6f86">09 Apr 23:28</span><span style="color:#94a3b8">—</span>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;font-size:0.72rem;padding:0.25rem 0">
+              <span style="color:#2563eb;font-weight:600;cursor:pointer">+60198765432 →</span>
+              <span><span style="background:#dbeafe;color:#2563eb;border-radius:4px;padding:0.1rem 0.35rem;font-size:0.65rem">active</span></span>
+              <span>Step 1</span><span style="color:#5f6f86">09 Apr 23:42</span><span style="color:#5f6f86">10 Apr 23:42</span>
+            </div>
+          </div>
+          <div style="background:#f8fafc;border:1px solid #e2eaf4;border-radius:8px;padding:0.5rem 0.75rem;font-size:0.72rem">
+            <strong style="font-size:0.8rem">Enrollment Logs</strong> <span style="color:#5f6f86">— click a contact above to view</span>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:0.5rem">
+        <div class="pros"><ul><li>Full page — room for tables, search, filters</li><li>Matches broadcast UX pattern</li><li>Clean: editing vs monitoring separated</li></ul></div>
+        <div class="cons"><ul><li>New route to navigate to</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Report Tab in Builder</h3>
+      <p>Add a "Report" tab next to Triggers / Delivery / Steps in the existing builder page. No new route needed.</p>
+      <div class="mockup" style="margin-top:0.75rem">
+        <div class="mockup-header">Builder Page — Report tab selected</div>
+        <div class="mockup-body" style="padding:0.75rem;font-size:0.78rem;display:grid;gap:0.5rem">
+          <div style="display:flex;gap:0;border-bottom:2px solid #e2eaf4">
+            <span style="padding:0.35rem 0.75rem;font-size:0.75rem;color:#5f6f86">Triggers</span>
+            <span style="padding:0.35rem 0.75rem;font-size:0.75rem;color:#5f6f86">Delivery</span>
+            <span style="padding:0.35rem 0.75rem;font-size:0.75rem;color:#5f6f86">Steps</span>
+            <span style="padding:0.35rem 0.75rem;font-size:0.75rem;color:#2563eb;border-bottom:2px solid #2563eb;font-weight:700;margin-bottom:-2px">Report</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.4rem">
+            <div style="background:#f0f4ff;border:1px solid #dbeafe;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem">Enrolled</div><div style="font-size:1rem;font-weight:700;color:#2563eb">24</div></div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem">Active</div><div style="font-size:1rem;font-weight:700;color:#16a34a">8</div></div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem">Completed</div><div style="font-size:1rem;font-weight:700;color:#059669">14</div></div>
+            <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:0.4rem 0.6rem"><div style="font-size:0.65rem">Failed</div><div style="font-size:1rem;font-weight:700;color:#ea580c">1</div></div>
+          </div>
+          <div style="background:#f8fafc;border:1px solid #e2eaf4;border-radius:8px;padding:0.4rem;font-size:0.71rem">
+            <div style="font-weight:700;margin-bottom:0.3rem">Recent Enrollments</div>
+            <div style="color:#5f6f86;font-size:0.68rem">Compact table — limited vertical space due to builder chrome above</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:0.5rem">
+        <div class="pros"><ul><li>No new route</li><li>Always in context of the sequence config</li></ul></div>
+        <div class="cons"><ul><li>Cramped — builder header takes ~200px of vertical space</li><li>Builder gets even more complex</li><li>Doesn't match broadcast pattern</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Enhanced Activity Panel (in-page)</h3>
+      <p>Expand the existing Activity Panel at the bottom of the builder with real tabs (Enrollments | Logs), status filter pills, and click-to-expand log detail inline.</p>
+      <div class="mockup" style="margin-top:0.75rem">
+        <div class="mockup-header">Builder Page — Activity Panel (expanded)</div>
+        <div class="mockup-body" style="padding:0.75rem;font-size:0.78rem;display:grid;gap:0.5rem">
+          <div style="display:flex;gap:0.4rem;align-items:center;border-bottom:1px solid #e2eaf4;padding-bottom:0.4rem">
+            <strong>Activity</strong>
+            <span style="background:#dbeafe;color:#2563eb;border-radius:999px;padding:0.1rem 0.5rem;font-size:0.7rem">Enrollments</span>
+            <span style="border:1px solid #e2eaf4;border-radius:999px;padding:0.1rem 0.5rem;font-size:0.7rem">Logs</span>
+            <div style="margin-left:auto;display:flex;gap:0.25rem;font-size:0.68rem">
+              <span style="background:#dbeafe;color:#2563eb;border-radius:999px;padding:0.1rem 0.4rem">All</span>
+              <span style="border:1px solid #e2eaf4;border-radius:999px;padding:0.1rem 0.4rem">Active</span>
+              <span style="border:1px solid #e2eaf4;border-radius:999px;padding:0.1rem 0.4rem">Done</span>
+            </div>
+          </div>
+          <div style="font-size:0.7rem;display:grid;gap:0.25rem">
+            <div style="padding:0.3rem 0.5rem;background:#f8fafc;border-radius:6px;display:flex;justify-content:space-between">
+              <span style="color:#2563eb">+60123456789</span>
+              <span style="background:#dcfce7;color:#16a34a;border-radius:4px;padding:0.05rem 0.3rem;font-size:0.65rem">completed</span>
+              <span style="color:#5f6f86">Step 1 · 09 Apr</span>
+              <span style="color:#2563eb;cursor:pointer">▼ Logs</span>
+            </div>
+            <div style="padding:0.3rem 0.5rem 0.5rem;background:#f0f4ff;border-radius:6px;margin-left:1rem;font-size:0.68rem;color:#5f6f86">
+              ● Pending 23:42 &nbsp; ● Sent 23:42
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:0.5rem">
+        <div class="pros"><ul><li>No new route</li><li>Log drill-down stays in context</li></ul></div>
+        <div class="cons"><ul><li>Still embedded in a busy builder page</li><li>Hard to paginate or filter deeply</li><li>Complex inline expand/collapse state</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Click your preferred approach, or let me know in the terminal.</p>

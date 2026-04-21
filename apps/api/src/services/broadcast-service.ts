@@ -208,7 +208,7 @@ export async function importBroadcastAudienceWorkbook(
   };
 }
 
-export function previewBroadcastAudienceWorkbookImport(fileBuffer: Buffer): ContactImportPreview {
+export async function previewBroadcastAudienceWorkbookImport(fileBuffer: Buffer): Promise<ContactImportPreview> {
   return previewContactsWorkbookImport(fileBuffer);
 }
 

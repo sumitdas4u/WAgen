@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { pool, withTransaction } from "../db/pool.js";
 import type {
   Contact,
@@ -224,21 +224,22 @@ function getContactImportAliases(): Record<string, string[]> {
   };
 }
 
-function readContactsWorkbookSheet(fileBuffer: Buffer): {
+async function readContactsWorkbookSheet(fileBuffer: Buffer): Promise<{
   columns: string[];
   rows: Array<Record<string, unknown>>;
   sampleRows: Array<Record<string, string>>;
-} {
-  const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true });
-  const sheetName = workbook.Sheets.Contacts ? "Contacts" : workbook.SheetNames[0];
-  const worksheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+}> {
+  const wb = new ExcelJS.Workbook();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await wb.xlsx.load(fileBuffer as any);
+  const worksheet = wb.getWorksheet("Contacts") ?? wb.worksheets[0];
   if (!worksheet) {
     throw new Error("Workbook does not contain a Contacts sheet.");
   }
 
-  const matrix = XLSX.utils.sheet_to_json<(string | number | Date | null)[]>(worksheet, {
-    header: 1,
-    defval: ""
+  const matrix: (string | number | Date | null)[][] = [];
+  worksheet.eachRow({ includeEmpty: false }, (row) => {
+    matrix.push((row.values as (string | number | Date | null)[]).slice(1));
   });
 
   const headerRow = (matrix[0] ?? []).map((cell) => String(cell ?? "").trim());
@@ -247,9 +248,14 @@ function readContactsWorkbookSheet(fileBuffer: Buffer): {
     throw new Error("Workbook must include a header row with column names.");
   }
 
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-    defval: ""
+  const rows: Record<string, unknown>[] = matrix.slice(1).map((row) => {
+    const obj: Record<string, unknown> = {};
+    for (let i = 0; i < columns.length; i++) {
+      obj[columns[i]] = row[i] ?? "";
+    }
+    return obj;
   });
+
   const sampleRows = rows.slice(0, 5).map((row) =>
     Object.fromEntries(
       columns.map((column) => {
@@ -294,8 +300,8 @@ function getMappedWorkbookValue(
   return row[column];
 }
 
-export function previewContactsWorkbookImport(fileBuffer: Buffer): ContactImportPreview {
-  const { columns, sampleRows } = readContactsWorkbookSheet(fileBuffer);
+export async function previewContactsWorkbookImport(fileBuffer: Buffer): Promise<ContactImportPreview> {
+  const { columns, sampleRows } = await readContactsWorkbookSheet(fileBuffer);
   return {
     columns,
     sampleRows,
@@ -1448,7 +1454,7 @@ export async function importContactsWorkbook(
   fileBuffer: Buffer,
   options?: ContactImportWorkbookOptions
 ): Promise<ContactImportResult> {
-  const { columns, rows } = readContactsWorkbookSheet(fileBuffer);
+  const { columns, rows } = await readContactsWorkbookSheet(fileBuffer);
   const defaultMapping = buildSuggestedContactImportMapping(columns);
   const mapping = {
     ...defaultMapping,
@@ -1599,21 +1605,22 @@ export async function importContactsWorkbook(
   return { created, updated, skipped, errors };
 }
 
-function buildWorkbook(headers: readonly string[], rows: Array<Record<string, string>>): Buffer {
-  const worksheet =
-    rows.length > 0
-      ? XLSX.utils.json_to_sheet(rows, { header: [...headers] })
-      : XLSX.utils.aoa_to_sheet([Array.from(headers)]);
-  worksheet["!cols"] = headers.map((header) => ({
-    wch: Math.max(header.length + 2, 18)
+async function buildWorkbook(headers: readonly string[], rows: Array<Record<string, string>>): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Contacts");
+  ws.columns = Array.from(headers).map((h) => ({
+    header: h,
+    key: h,
+    width: Math.max(h.length + 2, 18)
   }));
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Contacts");
-  return XLSX.write(workbook, { bookType: "xlsx", type: "buffer" });
+  for (const row of rows) {
+    ws.addRow(row);
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-export function generateContactsTemplateWorkbook(): { filename: string; content: Buffer } {
-  const content = buildWorkbook(CONTACT_TEMPLATE_HEADERS, []);
+export async function generateContactsTemplateWorkbook(): Promise<{ filename: string; content: Buffer }> {
+  const content = await buildWorkbook(CONTACT_TEMPLATE_HEADERS, []);
   return {
     filename: "contacts-template.xlsx",
     content
@@ -1721,7 +1728,7 @@ export async function generateContactsExportWorkbook(input: {
     )
   );
 
-  const content = buildWorkbook(headers, exportRows);
+  const content = await buildWorkbook(headers, exportRows);
   const stamp = new Date().toISOString().slice(0, 10);
 
   return {
