@@ -376,6 +376,19 @@ export async function processIncomingMessage(
   // ── AI gate — only runs when a flow explicitly requests it via use_ai ────────
   // Any other result (not_matched, handled, failed) returns before reaching here.
   // Manual-takeover / ai_paused → agent is handling; skip AI.
+  // Channel explicit "manual" mode → also skip AI even when flow requests it.
+  const channelExplicit = (user.business_basics as Record<string, unknown> | null | undefined)
+    ?.channelDefaultReplySettings as Record<string, unknown> | null | undefined;
+  if ((channelExplicit?.[input.channelType] as Record<string, unknown> | null | undefined)?.mode === "manual") {
+    return {
+      conversationId: conversation.id,
+      stage: conversation.stage,
+      score: conversation.score,
+      autoReplySent: false,
+      reason: "default_reply_manual"
+    };
+  }
+
   if (conversation.manual_takeover) {
     console.log(`[Router] Manual takeover — skipping AI reply (conversation=${conversation.id})`);
     return {
