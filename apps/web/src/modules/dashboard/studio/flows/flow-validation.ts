@@ -149,7 +149,7 @@ function getHandleLabel(node: FlowNode, handleId: string): string | null {
     }
     case "flowStart": {
       if (handleId === "default") return "Default";
-      if (handleId === "out") return "Next";
+      if (handleId === "out") return "Any Message";
       const route = Array.isArray(node.data.routes)
         ? (node.data.routes as Array<{ id: string; label: string }>).find((r) => r.id === handleId)
         : undefined;

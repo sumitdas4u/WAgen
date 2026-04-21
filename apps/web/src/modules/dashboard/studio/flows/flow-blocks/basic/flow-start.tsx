@@ -173,7 +173,9 @@ function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
             marginTop: 4
           }}
         >
-          <div className="fn-node-label" style={{ marginBottom: 6 }}>DEFAULT (no match)</div>
+          <div className="fn-node-label" style={{ marginBottom: 6 }}>
+            {usesRoutes ? "DEFAULT (no route matched)" : "ANY MESSAGE (default)"}
+          </div>
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11 }}>
             <input
               type="checkbox"
@@ -181,7 +183,7 @@ function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
               checked={!!data.fallbackUseAi}
               onChange={(e) => patch({ fallbackUseAi: e.target.checked })}
             />
-            Use AI when no route matches
+            {usesRoutes ? "Use AI when no route matches" : "Use AI to handle messages"}
           </label>
 
           {usesRoutes ? (
