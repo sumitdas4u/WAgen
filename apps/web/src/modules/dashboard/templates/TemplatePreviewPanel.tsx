@@ -1,5 +1,10 @@
 import type { TemplateComponent } from "../../../lib/api";
 
+function safeMediaUrl(url: string | null): string {
+  if (!url) return "";
+  return /^https?:\/\//i.test(url) || url.startsWith("blob:") ? url : "";
+}
+
 function highlightVariables(text: string): React.ReactNode {
   const parts = text.split(/(\{\{[^}]+\}\})/g);
   return parts.map((part, i) =>
@@ -69,7 +74,7 @@ function getHeaderMediaPreview(
   if (format === "IMAGE") {
     return url ? (
       <img
-        src={url}
+        src={safeMediaUrl(url)}
         alt="Header"
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
@@ -81,7 +86,7 @@ function getHeaderMediaPreview(
   if (format === "VIDEO") {
     return url ? (
       <video
-        src={url}
+        src={safeMediaUrl(url)}
         controls
         muted
         playsInline
@@ -111,7 +116,7 @@ function getHeaderMediaPreview(
         <span style={{ fontSize: "13px", color: "#475467", fontWeight: 600 }}>Document header</span>
         {url ? (
           <a
-            href={url}
+            href={safeMediaUrl(url)}
             target="_blank"
             rel="noreferrer"
             style={{ color: "#128c7e", fontSize: "12px", wordBreak: "break-all" }}

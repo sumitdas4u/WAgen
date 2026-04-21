@@ -277,7 +277,7 @@ export function ApiChannelPage() {
       const redirectUri = config.redirectUri || `${window.location.origin}/meta-callback`;
       const messageListener = (event: MessageEvent) => {
         const originHost = (() => { try { return new URL(event.origin).hostname; } catch { return ""; } })();
-        if (!originHost.endsWith("facebook.com") && !originHost.endsWith("fbcdn.net")) return;
+        if (originHost !== "facebook.com" && !originHost.endsWith(".facebook.com") && originHost !== "fbcdn.net" && !originHost.endsWith(".fbcdn.net")) return;
         const details = parseEmbeddedSignupEventData(event.data);
         if (details) Object.assign(captured, details);
       };

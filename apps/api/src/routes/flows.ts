@@ -15,6 +15,8 @@ import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
 import * as net from "net";
 import * as dns from "dns";
+import * as http from "http";
+import * as https from "https";
 
 function isBlockedHostname(hostname: string): boolean {
   const lowerHost = hostname.toLowerCase();
@@ -211,7 +213,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string }; Body: { conversationId: string } }>(
     "/api/flows/:id/assign",
-    { preHandler: app.requireAuth },
+    { preHandler: app.requireAuth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const { conversationId } = req.body ?? {};
@@ -352,40 +354,69 @@ export async function flowRoutes(app: FastifyInstance) {
         reqHeaders.set("content-type", "application/json");
       }
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), safeTimeout);
+      const resolvedIp = addresses[0].address;
+      const resolvedFamily = addresses[0].family === 6 ? 6 : 4;
+      const reqLib = parsedUrl.protocol === "https:" ? https : http;
+      const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : (parsedUrl.protocol === "https:" ? 443 : 80);
+      const MAX_RESPONSE_BYTES = 1024 * 1024;
 
       const startedAt = Date.now();
+      const timer = setTimeout(() => undefined, safeTimeout);
       try {
-        const response = await fetch(parsedUrl.toString(), {
-          method: safeMethod,
-          headers: reqHeaders,
-          body: hasBody ? body?.trim() : undefined,
-          signal: controller.signal
+        const responseData = await new Promise<{ status: number; statusText: string; headers: Record<string, string>; rawBody: string }>((resolve, reject) => {
+          const options: https.RequestOptions = {
+            hostname: parsedUrl.hostname,
+            port,
+            path: (parsedUrl.pathname || "/") + parsedUrl.search,
+            method: safeMethod,
+            headers: Object.fromEntries(reqHeaders.entries()),
+            lookup: (_h: string, _o: dns.LookupOptions, cb: (e: NodeJS.ErrnoException | null, a: string, f: number) => void) => {
+              cb(null, resolvedIp, resolvedFamily);
+            },
+            timeout: safeTimeout
+          };
+
+          const req = reqLib.request(options, (res) => {
+            const responseHeaders: Record<string, string> = {};
+            for (const [k, v] of Object.entries(res.headers)) {
+              responseHeaders[k] = Array.isArray(v) ? v.join(", ") : (v ?? "");
+            }
+            const chunks: Buffer[] = [];
+            let totalSize = 0;
+            res.on("data", (chunk: Buffer) => {
+              totalSize += chunk.length;
+              if (totalSize > MAX_RESPONSE_BYTES) {
+                req.destroy(new Error("Response body too large (> 1 MB)"));
+                return;
+              }
+              chunks.push(chunk);
+            });
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, statusText: res.statusMessage ?? "", headers: responseHeaders, rawBody: Buffer.concat(chunks).toString("utf8") }));
+            res.on("error", reject);
+          });
+          req.on("error", reject);
+          req.on("timeout", () => req.destroy(new Error(`Timed out after ${safeTimeout}ms`)));
+          if (hasBody && body?.trim()) req.write(body.trim());
+          req.end();
         });
         clearTimeout(timer);
 
-        const rawBody = await response.text();
-        let parsedBody: unknown = rawBody;
-        try { parsedBody = JSON.parse(rawBody); } catch { /* leave as string */ }
-
-        const responseHeaders: Record<string, string> = {};
-        response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+        let parsedBody: unknown = responseData.rawBody;
+        try { parsedBody = JSON.parse(responseData.rawBody); } catch { /* leave as string */ }
 
         return reply.send({
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText,
+          ok: responseData.status >= 200 && responseData.status < 300,
+          status: responseData.status,
+          statusText: responseData.statusText,
           durationMs: Date.now() - startedAt,
-          headers: responseHeaders,
+          headers: responseData.headers,
           body: parsedBody,
-          rawBody
+          rawBody: responseData.rawBody
         });
       } catch (error) {
         clearTimeout(timer);
-        const isTimeout = (error as Error).name === "AbortError";
         return reply.status(502).send({
-          error: isTimeout ? `Timed out after ${safeTimeout}ms` : (error as Error).message
+          error: (error as Error).message
         });
       }
     }

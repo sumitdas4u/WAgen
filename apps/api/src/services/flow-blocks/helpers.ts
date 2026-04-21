@@ -234,7 +234,7 @@ export function matchChoiceByMessage(
     return null;
   }
 
-  const numericPrefixMatch = normalizedMessage.match(/^(\d+)(?:$|[\s\)\].,:-]+.*$)/);
+  const numericPrefixMatch = normalizedMessage.match(/^(\d{1,9})(?:[)\].,:\s-]|$)/);
   if (numericPrefixMatch) {
     const index = Number(numericPrefixMatch[1]) - 1;
     if (index >= 0 && index < options.length) {

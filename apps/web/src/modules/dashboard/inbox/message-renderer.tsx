@@ -480,10 +480,11 @@ export function renderFormattedText(text: string, keyPrefix = "fmt"): ReactNode[
       }
 
       const url = match[0];
+      const safeUrl = /^https?:\/\//i.test(url) ? url : "";
       if (IMAGE_EXT.test(url)) {
-        parts.push(<img key={`img-${li}-${match.index}`} className="msg-inline-image" src={url} alt="Image" loading="lazy" />);
+        parts.push(<img key={`img-${li}-${match.index}`} className="msg-inline-image" src={safeUrl} alt="Image" loading="lazy" />);
       } else {
-        parts.push(<a key={`a-${li}-${match.index}`} className="msg-link" href={url} target="_blank" rel="noopener noreferrer">{url}</a>);
+        parts.push(<a key={`a-${li}-${match.index}`} className="msg-link" href={safeUrl} target="_blank" rel="noopener noreferrer">{url}</a>);
       }
       last = match.index + match[0].length;
     }

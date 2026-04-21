@@ -232,7 +232,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/meta/business/profile/logo",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request: import("fastify").FastifyRequest, reply) => {
       const parsed = BusinessProfileQuerySchema.safeParse(request.query ?? {});
       if (!parsed.success) {
@@ -352,7 +352,8 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   const webhookRouteOptions = {
     config: {
-      rawBody: true
+      rawBody: true,
+      rateLimit: { max: 500, timeWindow: "1 minute" }
     }
   } as const;
 

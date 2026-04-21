@@ -139,7 +139,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.get(
     "/api/conversations/:conversationId/messages",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const parsed = ConversationMessagesQuerySchema.safeParse(request.query);
@@ -170,7 +170,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     "/api/conversations/:conversationId/read",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const exists = await pool.query(
@@ -219,7 +219,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.patch(
     "/api/conversations/:conversationId/assign-agent",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const parsed = AssignAgentSchema.safeParse(request.body ?? {});
@@ -266,7 +266,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.get(
     "/api/conversations/:conversationId/notes",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const exists = await pool.query(
@@ -285,7 +285,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     "/api/conversations/:conversationId/notes",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const parsed = ConversationNoteSchema.safeParse(request.body ?? {});
@@ -320,7 +320,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     "/api/conversations/:conversationId/messages",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const parsed = ManualMessageSchema.safeParse(request.body);
@@ -371,7 +371,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     "/api/conversations/:conversationId/send-template",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const parsed = SendTemplateSchema.safeParse(request.body);
@@ -425,7 +425,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     "/api/conversations/:conversationId/upload",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { conversationId: string };
       const exists = await pool.query(
@@ -473,7 +473,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     "/api/conversations/outbound",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const parsed = OutboundConversationSchema.safeParse(request.body);
       if (!parsed.success) return reply.status(400).send({ error: "Invalid payload" });
@@ -515,7 +515,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.post(
     "/api/ai-assist/text",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const parsed = AiAssistSchema.safeParse(request.body);
       if (!parsed.success) return reply.status(400).send({ error: "Invalid input" });
@@ -532,6 +532,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
 
   fastify.get(
     "/api/media/:mediaId",
+    { config: { rateLimit: { max: 200, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const params = request.params as { mediaId: string };
       const result = await pool.query<{ mime_type: string; filename: string | null; data: string }>(

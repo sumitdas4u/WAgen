@@ -511,7 +511,7 @@ export function SettingsPage({ submenu }: { submenu: SettingsSubmenu }) {
             return "";
           }
         })();
-        if (!originHost.endsWith("facebook.com") && !originHost.endsWith("fbcdn.net")) {
+        if (originHost !== "facebook.com" && !originHost.endsWith(".facebook.com") && originHost !== "fbcdn.net" && !originHost.endsWith(".fbcdn.net")) {
           return;
         }
         const details = parseEmbeddedSignupEventData(event.data);

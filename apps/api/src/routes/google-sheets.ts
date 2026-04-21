@@ -54,7 +54,7 @@ export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
     })
   );
 
-  app.get("/api/google/sheets/connect/callback", async (request, reply) => {
+  app.get("/api/google/sheets/connect/callback", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = CallbackQuerySchema.safeParse(request.query ?? {});
     if (!parsed.success) {
       return reply

@@ -61,7 +61,7 @@ export const realtimeHub = new RealtimeHub();
 export async function registerRealtimeRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/ws",
-    { websocket: true },
+    { websocket: true, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (socket, req) => {
       const token = (req.query as Record<string, string | undefined>).token;
       if (!token) {

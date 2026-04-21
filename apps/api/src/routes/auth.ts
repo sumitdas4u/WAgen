@@ -109,7 +109,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     return null;
   };
 
-  fastify.post("/api/auth/signup", async (request, reply) => {
+  fastify.post("/api/auth/signup", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = SignupSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid signup payload" });
@@ -134,7 +134,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.post("/api/auth/login", async (request, reply) => {
+  fastify.post("/api/auth/login", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = LoginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid login payload" });
@@ -149,7 +149,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.send({ token, user });
   });
 
-  fastify.post("/api/auth/firebase/session", async (request, reply) => {
+  fastify.post("/api/auth/firebase/session", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = FirebaseSessionSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid Firebase auth payload" });
@@ -264,7 +264,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.get("/api/auth/google/callback", async (request, reply) => {
+  fastify.get("/api/auth/google/callback", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = GoogleAuthCallbackSchema.safeParse(request.query ?? {});
     if (!parsed.success) {
       return reply
@@ -391,7 +391,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.post("/api/auth/legacy/migrate", async (request, reply) => {
+  fastify.post("/api/auth/legacy/migrate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = LegacyMigrateSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid migration payload" });

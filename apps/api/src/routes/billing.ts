@@ -118,7 +118,8 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
     "/api/billing/razorpay-webhook",
     {
       config: {
-        rawBody: true
+        rawBody: true,
+        rateLimit: { max: 500, timeWindow: "1 minute" }
       }
     },
     async (request, reply) => {

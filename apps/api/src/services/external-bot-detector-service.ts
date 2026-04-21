@@ -38,7 +38,7 @@ function getDetectionKeywords(): string[] {
 
 function hasTemplatePattern(text: string): boolean {
   const directOptionPattern = /(^|\n|\r)\s*\d{1,2}[.)]\s+\S+/i;
-  const promptPattern = /\b(press|reply(?:\s+with)?|choose|select)\s+\d{1,2}\b/i;
+  const promptPattern = /\b(press|reply(?:\s{1,10}with)?|choose|select)\s{1,10}\d{1,2}\b/i;
   return directOptionPattern.test(text) || promptPattern.test(text);
 }
 

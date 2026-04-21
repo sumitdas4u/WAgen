@@ -238,7 +238,7 @@ async function creditTokensInternal(
     return { balanceAfter };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
-    console.warn(`[AiTokens] credit failed user=${userId} action=${action}:`, err);
+    console.warn("[AiTokens] credit failed", { userId, action }, err);
     return { balanceAfter: amount };
   } finally {
     client.release();

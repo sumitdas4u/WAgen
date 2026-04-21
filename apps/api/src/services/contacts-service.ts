@@ -334,7 +334,7 @@ function normalizeEmail(value: string | null | undefined): string | null {
   if (!normalized) {
     return null;
   }
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized.slice(0, 160) : null;
+  return /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{1,63}$/.test(normalized) ? normalized.slice(0, 160) : null;
 }
 
 function normalizeContactType(value: string | null | undefined): ConversationKind | null {

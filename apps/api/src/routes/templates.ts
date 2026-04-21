@@ -155,7 +155,7 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /api/meta/templates/upload-media — upload sample media and return a template header handle
   fastify.post(
     "/api/meta/templates/upload-media",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const query = request.query as Record<string, string | undefined>;
       const connectionId = query.connectionId;

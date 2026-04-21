@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
+import rateLimit from "@fastify/rate-limit";
 import fastifyRawBody from "fastify-raw-body";
 import { randomUUID } from "node:crypto";
 import { env } from "./config/env.js";
@@ -121,6 +122,13 @@ export async function buildApp() {
     global: false,
     encoding: "utf8",
     runFirst: true
+  });
+  await app.register(rateLimit, {
+    global: true,
+    max: 200,
+    timeWindow: "1 minute",
+    keyGenerator: (req) =>
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip
   });
   await app.register(websocket);
 

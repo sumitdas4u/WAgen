@@ -154,9 +154,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
     }
   };
 
-  fastify.post("/api/knowledge/ingest/files", { preHandler: [fastify.requireAuth] }, ingestFilesHandler);
+  fastify.post("/api/knowledge/ingest/files", { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, ingestFilesHandler);
   // Backward-compatible alias for older clients that still call /ingest/pdf.
-  fastify.post("/api/knowledge/ingest/pdf", { preHandler: [fastify.requireAuth] }, ingestFilesHandler);
+  fastify.post("/api/knowledge/ingest/pdf", { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, ingestFilesHandler);
 
   fastify.get(
     "/api/knowledge/ingest/jobs",

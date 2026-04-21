@@ -9,7 +9,7 @@ const UpdateNotificationSettingsSchema = z.object({
 export async function notificationsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/api/notifications/settings",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request) => {
       const result = await pool.query<{ daily_report_enabled: boolean }>(
         "SELECT daily_report_enabled FROM users WHERE id = $1",
@@ -22,7 +22,7 @@ export async function notificationsRoutes(fastify: FastifyInstance): Promise<voi
 
   fastify.patch(
     "/api/notifications/settings",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const parsed = UpdateNotificationSettingsSchema.safeParse(request.body);
       if (!parsed.success) {

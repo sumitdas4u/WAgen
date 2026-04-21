@@ -104,7 +104,7 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
       >
         {preview ? (
           <img
-            src={preview}
+            src={/^blob:/.test(preview) ? preview : ""}
             alt="Header preview"
             style={{ maxHeight: "120px", borderRadius: "6px", objectFit: "contain" }}
           />

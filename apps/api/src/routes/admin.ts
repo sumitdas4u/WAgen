@@ -118,7 +118,7 @@ const AdminResetWalletSchema = z.object({
 });
 
 export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.post("/api/admin/login", async (request, reply) => {
+  fastify.post("/api/admin/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = AdminLoginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid admin login payload" });
@@ -145,7 +145,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     return { token, role: "super_admin" };
   });
 
-  fastify.get("/api/admin/overview", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+  fastify.get("/api/admin/overview", { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async () => {
     const overview = await getAdminOverview();
     return { overview };
   });
@@ -306,7 +306,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  fastify.get("/api/admin/model", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+  fastify.get("/api/admin/model", { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async () => {
     return {
       currentModel: await getEffectiveChatModel(),
       overrideModel: await getChatModelOverride(),
@@ -331,7 +331,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // ── AI Provider config ─────────────────────────────────────────────────────
-  fastify.get("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+  fastify.get("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async () => {
     const config = await getActiveProviderConfig();
     return {
       providers: SUPPORTED_PROVIDERS,
@@ -354,7 +354,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     return { ok: true, provider: parsed.data.provider };
   });
 
-  fastify.delete("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+  fastify.delete("/api/admin/provider", { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async () => {
     await clearActiveProviderConfig();
     return { ok: true };
   });

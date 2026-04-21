@@ -11,7 +11,7 @@ interface DailyReportRow {
 export async function reportsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/api/reports/daily/today",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request) => {
       const start = new Date();
       start.setHours(0, 0, 0, 0);
@@ -21,7 +21,7 @@ export async function reportsRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.get(
     "/api/reports/daily",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request) => {
       const result = await pool.query<DailyReportRow>(
         `SELECT id, report_date, snapshot

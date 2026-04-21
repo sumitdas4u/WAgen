@@ -192,7 +192,7 @@ function parseProviderErrorMetadata(errorMessage: string | null | undefined): {
   const metaCode = trimmedMessage.match(/\bcode=(\d{1,10})\b/i)?.[1] ?? null;
   const subcode = trimmedMessage.match(/\bsubcode=(\d{1,16})\b/i)?.[1] ?? null;
   const statusCode = trimmedMessage.match(/\bstatus=(\d{3})\b/i)?.[1] ?? null;
-  const bracketDetails = /\s*\[[^\]]*\]\s*$/i;
+  const bracketDetails = /\s*\[[^\]]{0,200}\]\s*$/i;
   const baseMessage = trimToNull(trimmedMessage.replace(bracketDetails, "")) ?? trimmedMessage;
 
   return {
