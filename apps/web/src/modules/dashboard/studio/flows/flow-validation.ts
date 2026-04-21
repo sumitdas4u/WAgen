@@ -70,6 +70,12 @@ function toSpec(source: string[], target: string[]): NodeHandleSpec {
 
 function getDynamicSourceHandles(data: AnyNodeData): string[] {
   switch (data.kind) {
+    case "flowStart": {
+      if (!Array.isArray(data.routes) || data.routes.length === 0) {
+        return ["out"];
+      }
+      return [...data.routes.map((r) => r.id), "default"];
+    }
     case "sendTextMenu":
     case "sendImageMenu":
       return data.options.map((option) => option.id);
@@ -86,7 +92,7 @@ function getDynamicSourceHandles(data: AnyNodeData): string[] {
 function getNodeHandleSpec(nodeType: string, data: AnyNodeData): NodeHandleSpec {
   switch (data.kind) {
     case "flowStart":
-      return toSpec(["out"], []);
+      return toSpec(getDynamicSourceHandles(data), []);
     case "condition":
       return toSpec(["true", "false"], ["in"]);
     case "whatsappPay":
@@ -116,9 +122,6 @@ function getNodeHandleSpec(nodeType: string, data: AnyNodeData): NodeHandleSpec 
     case "list":
       return toSpec(getDynamicSourceHandles(data), ["in"]);
     default:
-      if (nodeType === "flowStart") {
-        return toSpec(["out"], []);
-      }
       return toSpec(["out"], ["in"]);
   }
 }
@@ -143,6 +146,14 @@ function getHandleLabel(node: FlowNode, handleId: string): string | null {
         }
       }
       return null;
+    }
+    case "flowStart": {
+      if (handleId === "default") return "Default";
+      if (handleId === "out") return "Next";
+      const route = Array.isArray(node.data.routes)
+        ? (node.data.routes as Array<{ id: string; label: string }>).find((r) => r.id === handleId)
+        : undefined;
+      return route?.label?.trim() || null;
     }
     case "condition":
       return handleId === "true" ? "True" : handleId === "false" ? "False" : null;
