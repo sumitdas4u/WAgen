@@ -405,6 +405,23 @@ function findMatchedTrigger(params: {
   return fallback ? { flow: fallback, triggerId: "" } : null;
 }
 
+function isSpecificTriggerMatch(matchResult: { flow: FlowRow; triggerId: string } | null): boolean {
+  if (!matchResult || !matchResult.triggerId) {
+    return false;
+  }
+
+  const matchedTrigger = getEffectiveTriggers(matchResult.flow).find(
+    (trigger) => (trigger.id ?? trigger.type) === matchResult.triggerId
+  );
+
+  return (
+    matchedTrigger?.type === "keyword" ||
+    matchedTrigger?.type === "template_reply" ||
+    matchedTrigger?.type === "qr_start" ||
+    matchedTrigger?.type === "website_start"
+  );
+}
+
 async function executeFlowNode(params: {
   node: FlowNode;
   nodes: FlowNode[];
@@ -942,6 +959,36 @@ export async function handleFlowMessage(input: {
       defaultReplyConfig.mode === "flow" && defaultReplyConfig.flowId
         ? flows.find((flow) => flow.id === defaultReplyConfig.flowId) ?? null
         : null;
+    const nonDefaultFlows = selectedDefaultReplyFlow
+      ? flows.filter((flow) => flow.id !== selectedDefaultReplyFlow.id)
+      : flows;
+    const startMatchedFlow = async (matchedFlow: FlowRow, matchedTriggerId: string): Promise<FlowHandleResult> => {
+      const { nodes, edges, startNode } = getFlowGraph(matchedFlow);
+      if (!startNode) {
+        return { result: "not_matched" };
+      }
+
+      const initialVars = {
+        ...await buildConversationFlowVariables({ userId, conversationId }),
+        [__FLOW_TRIGGER_ID_KEY]: matchedTriggerId
+      };
+      const session = await createFlowSession(matchedFlow.id, conversationId, initialVars);
+      sessionIdToFail = session.id;
+
+      try {
+        return await runChain(startNode, nodes, edges, session, initialVars, sendReply, {
+          userId,
+          channelType
+        });
+      } catch (error) {
+        await markFlowSessionFailed(session.id);
+        console.warn(
+          `[FlowEngine] New session failed conversation=${conversationId} session=${session.id}:`,
+          error
+        );
+        return { result: "failed" };
+      }
+    };
 
     const existingSession = await getActiveFlowSession(conversationId);
     if (existingSession) {
@@ -965,7 +1012,23 @@ export async function handleFlowMessage(input: {
 
       try {
         if (existingSession.status === "ai_mode") {
-          return { result: "use_ai" };
+          const aiModeMatch = findMatchedTrigger({
+            message,
+            flows: nonDefaultFlows,
+            channelType,
+            isFirstInboundMessage: await isFirstInboundMessage(conversationId)
+          });
+          if (!aiModeMatch || !isSpecificTriggerMatch(aiModeMatch)) {
+            return { result: "use_ai" };
+          }
+
+          await updateFlowSession(existingSession.id, {
+            status: "completed",
+            waiting_for: null,
+            waiting_node_id: null
+          });
+          sessionIdToFail = null;
+          return startMatchedFlow(aiModeMatch.flow, aiModeMatch.triggerId);
         }
 
         if (existingSession.status === "waiting" && existingSession.waiting_node_id) {
@@ -1008,11 +1071,6 @@ export async function handleFlowMessage(input: {
     }
 
     const firstInbound = await isFirstInboundMessage(conversationId);
-
-    // Exclude default reply flow from trigger matching — it is handled explicitly below
-    const nonDefaultFlows = selectedDefaultReplyFlow
-      ? flows.filter((flow) => flow.id !== selectedDefaultReplyFlow.id)
-      : flows;
 
     const matchResult = findMatchedTrigger({
       message,
@@ -1106,31 +1164,7 @@ export async function handleFlowMessage(input: {
       return { result: "not_matched" };
     }
 
-    const { nodes, edges, startNode } = getFlowGraph(matchedFlow);
-    if (!startNode) {
-      return { result: "not_matched" };
-    }
-
-    const initialVars = {
-      ...await buildConversationFlowVariables({ userId, conversationId }),
-      [__FLOW_TRIGGER_ID_KEY]: matchedTriggerId
-    };
-    const session = await createFlowSession(matchedFlow.id, conversationId, initialVars);
-    sessionIdToFail = session.id;
-
-    try {
-      return await runChain(startNode, nodes, edges, session, initialVars, sendReply, {
-        userId,
-        channelType
-      });
-    } catch (error) {
-      await markFlowSessionFailed(session.id);
-      console.warn(
-        `[FlowEngine] New session failed conversation=${conversationId} session=${session.id}:`,
-        error
-      );
-      return { result: "failed" };
-    }
+    return startMatchedFlow(matchedFlow, matchedTriggerId);
   } catch (error) {
     await markFlowSessionFailed(sessionIdToFail);
     console.warn("[FlowEngine] Unhandled error:", error);
