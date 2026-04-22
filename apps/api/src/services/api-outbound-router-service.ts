@@ -91,6 +91,7 @@ export async function queueApiConversationSend(input: {
   source: ApiOutboundSource;
   payload?: FlowMessagePayload;
   templateId?: string | null;
+  genericWebhookLogId?: string | null;
   intent?: string | null;
   variableValues?: Record<string, string>;
   senderName?: string | null;
@@ -150,6 +151,7 @@ export async function queueApiConversationSend(input: {
         conversationId: conversation.id,
         templateId: explicitTemplateId,
         variableValues: {},
+        genericWebhookLogId: input.genericWebhookLogId ?? null,
         senderName: input.senderName ?? null,
         scheduledAt: undefined
       });
@@ -228,6 +230,7 @@ export async function queueApiConversationSend(input: {
     conversationId: conversation.id,
     templateId: explicitTemplateId,
     variableValues,
+    genericWebhookLogId: input.genericWebhookLogId ?? null,
     senderName: input.senderName ?? null,
     scheduledAt: undefined
   });

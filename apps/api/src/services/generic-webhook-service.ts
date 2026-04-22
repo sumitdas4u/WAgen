@@ -155,6 +155,7 @@ interface GenericWebhookLogRow {
 }
 
 interface PreparedGenericWebhookExecution {
+  logId?: string;
   userId: string;
   requestId: string;
   integrationId: string;
@@ -844,6 +845,7 @@ export async function listGenericWebhookLogs(userId: string, integrationId: stri
 }
 
 async function executePreparedGenericWebhookExecution(input: PreparedGenericWebhookExecution): Promise<{
+  logStatus: GenericWebhookLogStatus;
   providerMessageId: string | null;
   resultJson: JsonRecord;
 }> {
@@ -863,11 +865,13 @@ async function executePreparedGenericWebhookExecution(input: PreparedGenericWebh
       conversationId: apiConversation.id,
       source: "manual",
       templateId: input.templateId,
+      genericWebhookLogId: input.logId ?? null,
       variableValues: input.variableValues,
       senderName: await getUserDisplayName(input.userId)
     });
 
     return {
+      logStatus: "queued",
       providerMessageId: null,
       resultJson: {
         workflowName: input.workflowName,
@@ -910,6 +914,7 @@ async function executePreparedGenericWebhookExecution(input: PreparedGenericWebh
 
   const selectedFlow = await getFlow(input.userId, input.flowId);
   return {
+    logStatus: "completed",
     providerMessageId: null,
     resultJson: {
       workflowName: input.workflowName,
@@ -946,12 +951,13 @@ export async function executeQueuedGenericWebhookLog(logId: string): Promise<voi
 
   try {
     const executionResult = await executePreparedGenericWebhookExecution({
+      logId,
       ...prepared,
       variableValues: row.variable_values_json ?? prepared.variableValues ?? {}
     });
     await updateGenericWebhookLog({
       logId,
-      status: "completed",
+      status: executionResult.logStatus,
       contactId: prepared.contactId || null,
       providerMessageId: executionResult.providerMessageId,
       errorMessage: null,

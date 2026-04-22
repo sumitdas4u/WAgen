@@ -296,13 +296,20 @@ async function updateOutboundMessageState(input: {
   errorMessage?: string | null;
   attemptCount?: number;
 }): Promise<void> {
-  await pool.query(
+  const result = await pool.query<{
+    type: OutboundMessageType;
+    generic_webhook_log_id: string | null;
+    status: OutboundMessageStatus;
+    provider_message_id: string | null;
+    error_message: string | null;
+  }>(
     `UPDATE outbound_messages
      SET status = COALESCE($2, status),
          provider_message_id = COALESCE($3, provider_message_id),
          error_message = $4,
          attempt_count = COALESCE($5, attempt_count)
-     WHERE id = $1`,
+     WHERE id = $1
+     RETURNING type, generic_webhook_log_id, status, provider_message_id, error_message`,
     [
       input.id,
       input.status ?? null,
@@ -311,6 +318,27 @@ async function updateOutboundMessageState(input: {
       input.attemptCount ?? null
     ]
   );
+
+  const row = result.rows[0];
+  if (!row?.generic_webhook_log_id || row.type !== "template_api") {
+    return;
+  }
+
+  if (row.status === "completed" || row.status === "failed") {
+    await pool.query(
+      `UPDATE generic_webhook_logs
+       SET status = $2,
+           provider_message_id = COALESCE($3, provider_message_id),
+           error_message = $4
+       WHERE id = $1`,
+      [
+        row.generic_webhook_log_id,
+        row.status,
+        row.provider_message_id,
+        row.error_message
+      ]
+    );
+  }
 }
 
 async function enqueueOutboundJob(payload: OutboundJobPayload, jobKey: string, scheduledAt?: string | null): Promise<void> {
@@ -847,6 +875,7 @@ export async function queueConversationTemplateMessage(input: {
   conversationId: string;
   templateId: string;
   variableValues: Record<string, string>;
+  genericWebhookLogId?: string | null;
   senderName?: string | null;
   scheduledAt?: string | null;
 }): Promise<{ queuedMessageId: string; channelType: "api" }> {
@@ -867,6 +896,7 @@ export async function queueConversationTemplateMessage(input: {
     jobKey: buildOutboundJobKey("api", messageId),
     conversationId: conversation.id,
     templateId: input.templateId,
+    genericWebhookLogId: input.genericWebhookLogId ?? null,
     groupingKey: conversation.id,
     senderName: input.senderName ?? null,
     variableValues: input.variableValues,
