@@ -36,7 +36,11 @@ function extractPlaceholders(template: MessageTemplate | null): string[] {
   return Array.from(new Set([...JSON.stringify(template.components).matchAll(/\{\{[^}]+\}\}/g)].map((match) => match[0])));
 }
 
-function buildWebhookPreviewComponents(template: MessageTemplate | null, bindings: Record<string, WebhookVarBinding>) {
+function buildWebhookPreviewComponents(
+  template: MessageTemplate | null,
+  bindings: Record<string, WebhookVarBinding>,
+  payloadValues: Record<string, string>
+) {
   if (!template) return [];
   return template.components.map((component) => {
     if (!component.text) return component;
@@ -47,6 +51,10 @@ function buildWebhookPreviewComponents(template: MessageTemplate | null, binding
         if (!binding) return match;
         if (binding.source === "now") return computeDateOffsetPreview(binding.dateOffset) || match;
         if (binding.source === "static") return binding.value?.trim() || match;
+        if (binding.source === "payload") {
+          const payloadValue = payloadValues[binding.path]?.trim();
+          if (payloadValue) return payloadValue;
+        }
         const fallback = (binding as { fallback?: string }).fallback?.trim();
         return fallback || match;
       })
@@ -234,10 +242,19 @@ export function GenericWebhooksPage() {
   const templatePlaceholders = useMemo(() => extractPlaceholders(selectedTemplate), [selectedTemplate]);
   const endpointUrl = integration ? `${window.location.origin}${integration.endpointUrlPath}/incoming` : "";
 
-  useEffect(() => {
-    const data = workflowsQuery.data;
-    if (!data || data.length === 0 || editingWorkflowId) return;
-    const workflow = data[0];
+  function loadWorkflowIntoForm(workflow: {
+    id: string;
+    enabled: boolean;
+    channelMode: GenericWebhookChannelMode;
+    matchMode: "all" | "any";
+    defaultCountryCode?: string;
+    delayValue?: number;
+    delayUnit?: GenericWebhookDelayUnit;
+    conditions: GenericWebhookCondition[];
+    templateAction: GenericWebhookTemplateAction | null;
+    qrFlowAction: GenericWebhookQrFlowAction | null;
+    contactAction: GenericWebhookContactAction;
+  }) {
     setEditingWorkflowId(workflow.id);
     setEnabled(workflow.enabled);
     setChannelMode(workflow.channelMode);
@@ -274,6 +291,12 @@ export function GenericWebhooksPage() {
         })
       )
     );
+  }
+
+  useEffect(() => {
+    const data = workflowsQuery.data;
+    if (!data || data.length === 0 || editingWorkflowId) return;
+    loadWorkflowIntoForm(data[0]);
   }, [workflowsQuery.data]);
 
   const invalidate = async () => {
@@ -360,9 +383,9 @@ export function GenericWebhooksPage() {
       }
       return createGenericWebhookWorkflow(token, selectedIntegrationId, payload).then((response) => response.workflow);
     },
-    onSuccess: async () => {
+    onSuccess: async (workflow) => {
       await invalidate();
-      resetForm();
+      loadWorkflowIntoForm(workflow);
       setMessage(editingWorkflowId ? "Workflow updated." : "Workflow created.");
       setError(null);
       setActiveTab("workflows");
@@ -1009,7 +1032,7 @@ export function GenericWebhooksPage() {
                     </div>
                     <div style={{ padding: "12px" }}>
                       <TemplatePreviewPanel
-                        components={buildWebhookPreviewComponents(selectedTemplate, variableBindings)}
+                        components={buildWebhookPreviewComponents(selectedTemplate, variableBindings, integration?.lastPayloadFlatJson ?? {})}
                         businessName={selectedTemplate.name}
                       />
                     </div>

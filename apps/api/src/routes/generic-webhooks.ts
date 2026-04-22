@@ -55,14 +55,39 @@ const ContactActionSchema = z.object({
   fieldMappings: z.array(ContactFieldMappingSchema).max(32).optional()
 }).optional();
 
+const DateOffsetSchema = z.object({
+  direction: z.enum(["add", "subtract"]),
+  value: z.number().int().min(1).max(999),
+  unit: z.enum(["days", "weeks", "months", "years"])
+});
+
+const VariableBindingSchema = z.union([
+  z.object({
+    source: z.literal("payload"),
+    path: z.string().trim().min(1).max(200),
+    dateOffset: DateOffsetSchema.optional()
+  }),
+  z.object({
+    source: z.literal("contact"),
+    field: z.string().trim().min(1).max(200),
+    dateOffset: DateOffsetSchema.optional()
+  }),
+  z.object({
+    source: z.literal("static"),
+    value: z.string().trim().min(1).max(2000),
+    dateOffset: DateOffsetSchema.optional()
+  }),
+  z.object({
+    source: z.literal("now"),
+    dateOffset: DateOffsetSchema
+  })
+]);
+
 const TemplateActionSchema = z.object({
   templateId: z.string().uuid(),
   recipientNamePath: z.string().trim().min(1).max(200),
   recipientPhonePath: z.string().trim().min(1).max(200),
-  variableMappings: z.record(z.object({
-    source: z.literal("payload"),
-    path: z.string().trim().min(1).max(200)
-  })),
+  variableMappings: z.record(VariableBindingSchema),
   fallbackValues: z.record(z.string()).optional()
 });
 
