@@ -1,6 +1,6 @@
 import { pool } from "../db/pool.js";
 
-export type SequenceLogStatus = "pending" | "sent" | "failed" | "stopped" | "skipped" | "retrying";
+export type SequenceLogStatus = "pending" | "sent" | "failed" | "stopped" | "skipped" | "retrying" | "completed";
 
 export interface SequenceLog {
   id: string;

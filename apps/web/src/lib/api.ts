@@ -2906,7 +2906,7 @@ export type SequenceTriggerType = "create" | "update" | "both";
 export type SequenceDelayUnit = "minutes" | "hours" | "days";
 export type SequenceConditionType = "start" | "stop_success" | "stop_failure";
 export type SequenceConditionOperator = "eq" | "neq" | "gt" | "lt" | "contains";
-export type SequenceEnrollmentStatus = "active" | "completed" | "failed" | "stopped";
+export type SequenceEnrollmentStatus = "active" | "sending" | "completed" | "failed" | "stopped";
 
 export interface SequenceStep {
   id: string;
@@ -2998,7 +2998,7 @@ export interface SequenceLog {
   enrollment_id: string;
   sequence_id: string;
   step_id: string | null;
-  status: "pending" | "sent" | "failed" | "stopped" | "skipped" | "retrying";
+  status: "pending" | "sent" | "failed" | "stopped" | "skipped" | "retrying" | "completed";
   response_id: string | null;
   error_message: string | null;
   meta_json: Record<string, unknown>;

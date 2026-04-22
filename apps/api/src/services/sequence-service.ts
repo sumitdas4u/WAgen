@@ -654,6 +654,11 @@ export async function listSequenceEnrollments(
   sequenceId: string,
   status?: SequenceEnrollmentStatus
 ): Promise<(SequenceEnrollment & { contact_phone: string; contact_name: string | null })[]> {
+  const statusSql = status
+    ? status === "active"
+      ? `AND se.status IN ('active', 'sending')`
+      : `AND se.status = $3`
+    : "";
   const result = await pool.query<SequenceEnrollment & { contact_phone: string; contact_name: string | null }>(
     `SELECT se.*,
             c.phone_number AS contact_phone,
@@ -663,9 +668,9 @@ export async function listSequenceEnrollments(
      JOIN contacts c ON c.id = se.contact_id
      WHERE se.sequence_id = $1
        AND s.user_id = $2
-       ${status ? "AND se.status = $3" : ""}
+       ${statusSql}
      ORDER BY se.entered_at DESC`,
-    status ? [sequenceId, userId, status] : [sequenceId, userId]
+    status && status !== "active" ? [sequenceId, userId, status] : [sequenceId, userId]
   );
   return result.rows;
 }

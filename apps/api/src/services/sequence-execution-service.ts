@@ -7,6 +7,7 @@ import {
   recordDeliveryAttemptStart
 } from "./message-delivery-data-service.js";
 import { getContactByPhoneForUser, markContactTemplateOutboundActivity } from "./contacts-service.js";
+import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
 import { evaluateOutboundTemplatePolicy, summarizeOutboundPolicyReasons } from "./outbound-policy-service.js";
 import { queueSequenceOutboundMessage } from "./outbound-message-service.js";
 import { evaluateSequenceConditions } from "./sequence-condition-service.js";
@@ -25,6 +26,7 @@ import {
   type SequenceEnrollmentQueueKind
 } from "./sequence-queue-service.js";
 import { checkConnectionDailyCap, waitForRateLimit } from "./message-delivery-service.js";
+import { realtimeHub } from "./realtime-hub.js";
 import { dispatchTemplateMessage, getMessageTemplate } from "./template-service.js";
 
 const MAX_MESSAGES_PER_CONTACT_PER_DAY = 20;
@@ -294,6 +296,12 @@ async function processSequenceEnrollmentInternal(
       status: "completed",
       lastExecutedAt: now.toISOString()
     });
+    await appendSequenceLog({
+      enrollmentId: enrollment.id,
+      sequenceId: sequence.id,
+      status: "completed",
+      meta: { reason: "sequence_finished" }
+    });
     return { shouldSchedule: false, queueKind: null };
   }
 
@@ -392,6 +400,12 @@ export async function executeSequenceOutboundMessage(input: {
     await updateSequenceEnrollment(enrollment.id, {
       status: "completed",
       lastExecutedAt: now.toISOString()
+    });
+    await appendSequenceLog({
+      enrollmentId: enrollment.id,
+      sequenceId: sequence.id,
+      status: "completed",
+      meta: { reason: "sequence_finished" }
     });
     return { status: "noop" };
   }
@@ -492,6 +506,28 @@ export async function executeSequenceOutboundMessage(input: {
       phoneNumberId: sent.connection.phoneNumberId
     });
     await markContactTemplateOutboundActivity(contact.user_id, contact.phone_number, template.category);
+    const conversation = await getOrCreateConversation(contact.user_id, contact.phone_number, {
+      channelType: "api",
+      channelLinkedNumber: sent.connection.linkedNumber
+    });
+    await trackOutboundMessage(
+      conversation.id,
+      sent.summaryText,
+      { sourceType: "sequence" },
+      sent.messagePayload.headerMediaUrl ?? null,
+      sent.messagePayload,
+      sent.messageId ?? null
+    );
+    realtimeHub.broadcast(contact.user_id, "conversation.updated", {
+      conversationId: conversation.id,
+      phoneNumber: contact.phone_number,
+      direction: "outbound",
+      message: sent.summaryText,
+      createdAt: new Date().toISOString(),
+      affectsListOrder: true,
+      score: conversation.score,
+      stage: conversation.stage
+    });
 
     const nextStepIndex = enrollment.current_step + 1;
     const nextStep = steps[nextStepIndex];
@@ -514,6 +550,16 @@ export async function executeSequenceOutboundMessage(input: {
       responseId: sent.messageId,
       meta: { templateName: sent.template.name, nextStep: nextStepIndex }
     });
+    if (!nextStep) {
+      await appendSequenceLog({
+        enrollmentId: enrollment.id,
+        sequenceId: sequence.id,
+        stepId: step.id,
+        status: "completed",
+        responseId: sent.messageId,
+        meta: { templateName: sent.template.name, completedAtStep: nextStepIndex }
+      });
+    }
 
     if (nextStep) {
       await enqueueSequenceEnrollment({
