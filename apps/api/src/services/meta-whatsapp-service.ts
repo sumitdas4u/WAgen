@@ -14,6 +14,7 @@ import {
   type FlowMessagePayload,
   validateFlowMessagePayload
 } from "./outbound-message-types.js";
+import { fanoutEvent } from "./event-fanout-service.js";
 
 interface MetaConnectionRow {
   id: string;
@@ -2580,8 +2581,15 @@ export async function sendMetaTextDirect(input: {
     }
   );
 
+  const messageId = response.messages?.[0]?.id ?? null;
+  void fanoutEvent(input.userId, "messages.update", {
+    remoteJid: normalizedTo,
+    status: "sent",
+    messageId
+  });
+
   return {
-    messageId: response.messages?.[0]?.id ?? null,
+    messageId,
     connection: mapConnection(resolvedRow),
     to: normalizedTo,
     text
@@ -2618,8 +2626,15 @@ export async function sendMetaTemplateDirect(input: {
     })
   );
 
+  const messageId = response.messages?.[0]?.id ?? null;
+  void fanoutEvent(input.userId, "messages.update", {
+    remoteJid: normalizedTo,
+    status: "sent",
+    messageId
+  });
+
   return {
-    messageId: response.messages?.[0]?.id ?? null,
+    messageId,
     connection: mapConnection(resolvedRow),
     to: normalizedTo
   };
@@ -2652,8 +2667,15 @@ export async function sendMetaFlowMessageDirect(input: {
     buildMetaFlowRequestBody(normalizedTo, deliveryPayload)
   );
 
+  const messageId = response.messages?.[0]?.id ?? null;
+  void fanoutEvent(input.userId, "messages.update", {
+    remoteJid: normalizedTo,
+    status: "sent",
+    messageId
+  });
+
   return {
-    messageId: response.messages?.[0]?.id ?? null,
+    messageId,
     connection: mapConnection(resolvedRow),
     to: normalizedTo,
     summaryText
@@ -2826,6 +2848,14 @@ async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
         text
       });
     }
+  });
+
+  void fanoutEvent(connectionRow.user_id, "messages.upsert", {
+    remoteJid: task.from,
+    message: task.text,
+    flowText: task.flowText ?? null,
+    fromMe: false,
+    timestamp: new Date().toISOString()
   });
 
   if (!result.autoReplySent) {

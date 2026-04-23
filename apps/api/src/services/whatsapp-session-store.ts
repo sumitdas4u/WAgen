@@ -13,7 +13,7 @@ export interface WhatsAppSessionRecord {
   phone_number: string | null;
 }
 
-function getSessionEncryptionSecret(): string {
+export function getSessionEncryptionSecret(): string {
   return env.WA_SESSION_ENCRYPTION_KEY || env.JWT_SECRET;
 }
 
