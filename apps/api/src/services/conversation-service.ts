@@ -1,4 +1,5 @@
 import { pool, withTransaction } from "../db/pool.js";
+import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { clamp } from "../utils/index.js";
 import type { AgentChannelType, Conversation, ConversationKind } from "../types/models.js";
 import {
@@ -65,7 +66,7 @@ async function scoreKnowledgeIntent(userId: string, text: string): Promise<numbe
     [userId, terms]
   );
 
-  const hits = Number(result.rows[0]?.hits ?? 0);
+  const hits = Number(firstRow(result)?.hits ?? 0);
   if (hits >= 5) {
     return 14;
   }
@@ -262,8 +263,9 @@ export async function getOrCreateConversation(
     [userId, phoneNumber]
   );
 
-  if ((existing.rowCount ?? 0) > 0) {
-    const row = existing.rows[0];
+  const existingRow = firstRow(existing);
+  if (existingRow) {
+    const row = existingRow;
     const nextChannelType = options?.channelType ?? row.channel_type ?? "qr";
     const nextChannelLinkedNumber = options?.channelLinkedNumber ?? row.channel_linked_number ?? null;
     const nextAssignedAgentId = options?.assignedAgentProfileId ?? row.assigned_agent_profile_id ?? null;
@@ -282,7 +284,7 @@ export async function getOrCreateConversation(
          RETURNING *`,
         [nextChannelType, nextChannelLinkedNumber, nextAssignedAgentId, row.id]
       );
-      return updated.rows[0] ?? row;
+      return firstRow(updated) ?? row;
     }
 
     return row;
@@ -311,7 +313,7 @@ export async function getOrCreateConversation(
     ]
   );
 
-  return created.rows[0];
+  return requireRow(created, "Expected conversation row to be created");
 }
 
 export async function reconcileConversationPhone(
@@ -333,7 +335,7 @@ export async function reconcileConversationPhone(
        LIMIT 1`,
       [userId, previous]
     );
-    const source = sourceResult.rows[0];
+    const source = firstRow(sourceResult);
     if (!source) {
       return;
     }
@@ -344,7 +346,7 @@ export async function reconcileConversationPhone(
        LIMIT 1`,
       [userId, canonical]
     );
-    const target = targetResult.rows[0];
+    const target = firstRow(targetResult);
 
     if (!target) {
       await client.query(
@@ -466,7 +468,7 @@ export async function getConversationById(conversationId: string): Promise<Conve
     [conversationId]
   );
 
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function incrementConversationUnreadCount(userId: string, conversationId: string): Promise<void> {
@@ -615,7 +617,7 @@ export async function trackInboundMessage(
     }
   }
 
-  return updated.rows[0];
+  return requireRow(updated, "Expected updated conversation row");
 }
 
 export async function trackOutboundMessage(
@@ -1727,7 +1729,7 @@ export async function getDashboardOverview(userId: string): Promise<{
     [userId]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
 
   const overview = {
     leadsToday: Number(row?.leads_today ?? 0),

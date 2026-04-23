@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Job, QueueEvents, UnrecoverableError, Worker, type JobsOptions } from "bullmq";
 import { env } from "../config/env.js";
+import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import {
   getConversationById,
@@ -250,7 +251,7 @@ async function insertOutboundMessage(input: {
       JSON.stringify(input.usage ?? {})
     ]
   );
-  return result.rows[0]!;
+  return requireRow(result, "Expected outbound message row");
 }
 
 async function loadOutboundMessageByConversationId(messageId: string): Promise<OutboundMessageRow | null> {
@@ -258,7 +259,7 @@ async function loadOutboundMessageByConversationId(messageId: string): Promise<O
     `SELECT * FROM outbound_messages WHERE id = $1 LIMIT 1`,
     [messageId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function loadOutboundMessageByCampaignMessageId(campaignMessageId: string): Promise<OutboundMessageRow | null> {
@@ -266,7 +267,7 @@ async function loadOutboundMessageByCampaignMessageId(campaignMessageId: string)
     `SELECT * FROM outbound_messages WHERE campaign_message_id = $1 LIMIT 1`,
     [campaignMessageId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function loadOutboundMessageBySequenceKey(enrollmentId: string, stepIndex: number): Promise<OutboundMessageRow | null> {
@@ -278,7 +279,7 @@ async function loadOutboundMessageBySequenceKey(enrollmentId: string, stepIndex:
      LIMIT 1`,
     [enrollmentId, stepIndex]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function loadOutboundMessageByWebhookLogId(logId: string): Promise<OutboundMessageRow | null> {
@@ -286,7 +287,7 @@ async function loadOutboundMessageByWebhookLogId(logId: string): Promise<Outboun
     `SELECT * FROM outbound_messages WHERE generic_webhook_log_id = $1 LIMIT 1`,
     [logId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function updateOutboundMessageState(input: {
@@ -319,7 +320,7 @@ async function updateOutboundMessageState(input: {
     ]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
   if (!row?.generic_webhook_log_id || row.type !== "template_api") {
     return;
   }
@@ -444,7 +445,7 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
      LIMIT 1`,
     [campaignMessageId]
   );
-  const row = result.rows[0];
+  const row = firstRow(result);
   if (!row) return null;
 
   const campaign: Campaign = {

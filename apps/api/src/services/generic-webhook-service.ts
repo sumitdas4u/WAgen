@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { queueApiConversationSend } from "./api-outbound-router-service.js";
 import { sendConversationFlowMessage } from "./channel-outbound-service.js";
@@ -371,7 +372,8 @@ async function getIntegrationByWebhookKey(webhookKey: string): Promise<GenericWe
     `SELECT * FROM generic_webhook_integrations WHERE webhook_key = $1 LIMIT 1`,
     [webhookKey]
   );
-  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
+  const row = firstRow(result);
+  return row ? mapIntegration(row) : null;
 }
 
 async function getUserDisplayName(userId: string): Promise<string> {
@@ -379,7 +381,7 @@ async function getUserDisplayName(userId: string): Promise<string> {
     `SELECT name, email FROM users WHERE id = $1 LIMIT 1`,
     [userId]
   );
-  const row = result.rows[0];
+  const row = firstRow(result);
   return row?.name?.trim() || row?.email.split("@")[0] || "Agent";
 }
 
@@ -534,7 +536,7 @@ async function recordGenericWebhookLog(input: {
       JSON.stringify(input.resultJson ?? {})
     ]
   );
-  return result.rows[0]!.id;
+  return requireRow(result, "Expected webhook log row").id;
 }
 
 async function updateGenericWebhookLog(input: {
@@ -595,7 +597,8 @@ export async function getGenericWebhookIntegration(userId: string, integrationId
      LIMIT 1`,
     [integrationId, userId]
   );
-  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
+  const row = firstRow(result);
+  return row ? mapIntegration(row) : null;
 }
 
 export async function createGenericWebhookIntegration(
@@ -612,7 +615,7 @@ export async function createGenericWebhookIntegration(
      RETURNING *`,
     [userId, name, buildWebhookKey(), buildWebhookSecret()]
   );
-  return mapIntegration(result.rows[0]!);
+  return mapIntegration(requireRow(result, "Expected webhook integration row"));
 }
 
 export async function updateGenericWebhookIntegration(
@@ -629,7 +632,8 @@ export async function updateGenericWebhookIntegration(
      RETURNING *`,
     [integrationId, userId, patch.name?.trim() || null, patch.enabled ?? null]
   );
-  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
+  const row = firstRow(result);
+  return row ? mapIntegration(row) : null;
 }
 
 export async function rotateGenericWebhookSecret(userId: string, integrationId: string): Promise<GenericWebhookIntegration | null> {
@@ -641,7 +645,8 @@ export async function rotateGenericWebhookSecret(userId: string, integrationId: 
      RETURNING *`,
     [integrationId, userId, buildWebhookSecret()]
   );
-  return result.rows[0] ? mapIntegration(result.rows[0]) : null;
+  const row = firstRow(result);
+  return row ? mapIntegration(row) : null;
 }
 
 export async function deleteGenericWebhookIntegration(userId: string, integrationId: string): Promise<boolean> {
@@ -651,7 +656,7 @@ export async function deleteGenericWebhookIntegration(userId: string, integratio
        AND user_id = $2`,
     [integrationId, userId]
   );
-  return (result.rowCount ?? 0) > 0;
+  return hasRows(result);
 }
 
 export async function listGenericWebhookWorkflows(userId: string, integrationId: string): Promise<GenericWebhookWorkflow[]> {
@@ -698,7 +703,7 @@ export async function createGenericWebhookWorkflow(
     `SELECT MAX(sort_order) AS max FROM generic_webhook_workflows WHERE integration_id = $1`,
     [integration.id]
   );
-  const nextSortOrder = (sortOrderResult.rows[0]?.max ?? -1) + 1;
+  const nextSortOrder = (firstRow(sortOrderResult)?.max ?? -1) + 1;
   const result = await pool.query<GenericWebhookWorkflowRow>(
     `INSERT INTO generic_webhook_workflows (
        user_id, integration_id, name, enabled, channel_mode, match_mode, conditions_json, contact_action_json, template_action_json, qr_flow_action_json, sort_order
@@ -719,7 +724,7 @@ export async function createGenericWebhookWorkflow(
       nextSortOrder
     ]
   );
-  return mapWorkflow(result.rows[0]!);
+  return mapWorkflow(requireRow(result, "Expected webhook workflow row"));
 }
 
 export async function updateGenericWebhookWorkflow(

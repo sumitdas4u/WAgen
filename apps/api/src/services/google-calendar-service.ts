@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import {
   decryptJsonPayload,
@@ -245,7 +246,7 @@ async function getConnectionRowByUserId(
       LIMIT 1`,
     [userId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function getConnectionRowById(
@@ -260,7 +261,7 @@ async function getConnectionRowById(
       LIMIT 1`,
     [id]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function updateConnectionStatus(
@@ -339,7 +340,7 @@ async function upsertConnection(args: {
     ]
   );
 
-  return mapConnection(result.rows[0]);
+  return mapConnection(requireRow(result, "Expected Google Calendar connection row"));
 }
 
 async function googleApiFetchJson<T>(
@@ -504,7 +505,7 @@ async function refreshAccessToken(
     ]
   );
 
-  return result.rows[0];
+  return requireRow(result, "Expected refreshed Google Calendar connection row");
 }
 
 async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUserInfo> {

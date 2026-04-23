@@ -1,3 +1,4 @@
+import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import type { AgentChannelType, AgentObjectiveType, PersonalityOption } from "../types/models.js";
 
@@ -23,6 +24,11 @@ export interface AgentProfileSummary {
   configuredProfiles: number;
   activeProfiles: number;
 }
+
+type AgentProfileSummaryRow = {
+  configured_profiles: string;
+  active_profiles: string;
+};
 
 type AgentProfileRow = {
   id: string;
@@ -55,6 +61,13 @@ function mapRow(row: AgentProfileRow): AgentProfileRecord {
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  };
+}
+
+function mapSummaryRow(row: AgentProfileSummaryRow | null): AgentProfileSummary {
+  return {
+    configuredProfiles: Number(row?.configured_profiles ?? 0),
+    activeProfiles: Number(row?.active_profiles ?? 0)
   };
 }
 
@@ -109,7 +122,7 @@ export async function listAgentProfiles(userId: string): Promise<AgentProfileRec
 }
 
 export async function getAgentProfileSummary(userId: string): Promise<AgentProfileSummary> {
-  const result = await pool.query<{ configured_profiles: string; active_profiles: string }>(
+  const result = await pool.query<AgentProfileSummaryRow>(
     `SELECT COUNT(*)::text AS configured_profiles,
             COUNT(*) FILTER (WHERE is_active = TRUE)::text AS active_profiles
      FROM agent_profiles
@@ -117,10 +130,7 @@ export async function getAgentProfileSummary(userId: string): Promise<AgentProfi
     [userId]
   );
 
-  return {
-    configuredProfiles: Number(result.rows[0]?.configured_profiles ?? 0),
-    activeProfiles: Number(result.rows[0]?.active_profiles ?? 0)
-  };
+  return mapSummaryRow(firstRow(result));
 }
 
 export async function createAgentProfile(
@@ -184,7 +194,7 @@ export async function createAgentProfile(
     ]
   );
 
-  return mapRow(result.rows[0]);
+  return mapRow(requireRow(result, "Expected created agent profile row"));
 }
 
 export async function updateAgentProfile(
@@ -249,10 +259,11 @@ export async function updateAgentProfile(
     ]
   );
 
-  if ((result.rowCount ?? 0) === 0) {
+  const row = firstRow(result);
+  if (!row) {
     return null;
   }
-  return mapRow(result.rows[0]);
+  return mapRow(row);
 }
 
 export async function deleteAgentProfile(userId: string, profileId: string): Promise<boolean> {
@@ -263,7 +274,7 @@ export async function deleteAgentProfile(userId: string, profileId: string): Pro
     [profileId, userId]
   );
 
-  return (result.rowCount ?? 0) > 0;
+  return hasRows(result);
 }
 
 export async function resolveAgentProfileForChannel(
@@ -307,9 +318,10 @@ export async function resolveAgentProfileForChannel(
     [userId, channelType, normalized ?? ""]
   );
 
-  if ((result.rowCount ?? 0) === 0) {
+  const row = firstRow(result);
+  if (!row) {
     return null;
   }
 
-  return mapRow(result.rows[0]);
+  return mapRow(row);
 }

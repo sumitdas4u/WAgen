@@ -17,6 +17,7 @@
  *   adapter (using the env OPENAI_API_KEY) so the RAG pipeline keeps working.
  */
 
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { env } from "../config/env.js";
 import { OpenAIAdapter }    from "./ai-providers/openai.adapter.js";
@@ -79,7 +80,7 @@ async function loadProviderConfig(): Promise<ProviderConfig | null> {
     const result = await pool.query<{ value_json: unknown }>(
       `SELECT value_json FROM app_settings WHERE key = 'ai_provider_config' LIMIT 1`
     );
-    const raw = result.rows[0]?.value_json as Record<string, unknown> | undefined;
+    const raw = firstRow(result)?.value_json as Record<string, unknown> | undefined;
     if (
       raw &&
       typeof raw.provider === "string" &&

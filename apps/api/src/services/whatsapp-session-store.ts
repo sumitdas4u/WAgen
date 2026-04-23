@@ -1,5 +1,6 @@
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
+import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { decryptJsonPayload, encryptJsonPayload } from "../utils/encryption.js";
 
 const SESSION_AUTH_ENCRYPTED_FIELD = "__enc_v1";
@@ -13,7 +14,7 @@ export interface WhatsAppSessionRecord {
   phone_number: string | null;
 }
 
-function getSessionEncryptionSecret(): string {
+export function getSessionEncryptionSecret(): string {
   return env.WA_SESSION_ENCRYPTION_KEY || env.JWT_SECRET;
 }
 
@@ -56,8 +57,9 @@ export async function getOrCreateWhatsAppSession(userId: string): Promise<WhatsA
     [userId]
   );
 
-  if ((existing.rowCount ?? 0) > 0) {
-    return mapSessionRecord(existing.rows[0]);
+  const existingRow = firstRow(existing);
+  if (existingRow) {
+    return mapSessionRecord(existingRow);
   }
 
   const created = await pool.query<WhatsAppSessionRecord>(
@@ -67,7 +69,7 @@ export async function getOrCreateWhatsAppSession(userId: string): Promise<WhatsA
     [userId]
   );
 
-  return mapSessionRecord(created.rows[0]);
+  return mapSessionRecord(requireRow(created, "Expected whatsapp session row to be created"));
 }
 
 export async function saveWhatsAppAuthState(userId: string, authState: Record<string, unknown>): Promise<void> {
@@ -166,11 +168,13 @@ export async function getWhatsAppStatus(userId: string): Promise<{
     [userId]
   );
 
+  const row = firstRow(result);
+
   return {
-    enabled: result.rows[0]?.enabled ?? true,
-    status: result.rows[0]?.status ?? "disconnected",
-    phoneNumber: result.rows[0]?.phone_number ?? null,
-    lastDegradedReason: result.rows[0]?.last_degraded_reason ?? null,
-    lastDegradedAt: result.rows[0]?.last_degraded_at ?? null
+    enabled: row?.enabled ?? true,
+    status: row?.status ?? "disconnected",
+    phoneNumber: row?.phone_number ?? null,
+    lastDegradedReason: row?.last_degraded_reason ?? null,
+    lastDegradedAt: row?.last_degraded_at ?? null
   };
 }

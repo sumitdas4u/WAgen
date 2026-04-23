@@ -1,5 +1,6 @@
 import { pool } from "../db/pool.js";
 import { env } from "../config/env.js";
+import { firstRow } from "../db/sql-helpers.js";
 
 const AVAILABLE_MODELS = [
   "gpt-4o-mini",
@@ -33,7 +34,7 @@ export async function getChatModelOverride(): Promise<string | null> {
      LIMIT 1`
   );
 
-  const raw = result.rows[0]?.value_json?.model;
+  const raw = firstRow(result)?.value_json?.model;
   if (!raw || typeof raw !== "string") {
     return null;
   }

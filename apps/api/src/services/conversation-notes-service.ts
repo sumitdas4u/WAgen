@@ -1,3 +1,4 @@
+import { requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 
 export interface ConversationNote {
@@ -48,9 +49,5 @@ export async function createConversationNote(input: {
     [input.conversationId, input.userId, input.authorName.trim() || "Agent", trimmedContent]
   );
 
-  if (!result.rows[0]) {
-    throw new Error("Conversation not found.");
-  }
-
-  return result.rows[0];
+  return requireRow(result, "Conversation not found.");
 }

@@ -5,11 +5,7 @@ interface AuthPayload {
   userId: string;
 }
 
-type RealtimeEvent =
-  | "whatsapp.qr"
-  | "whatsapp.status"
-  | "conversation.updated"
-  | "agent.status";
+type RealtimeEvent = string;
 
 interface OutgoingEvent {
   event: RealtimeEvent;

@@ -1,3 +1,4 @@
+import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { requireMetaConnection } from "./meta-whatsapp-service.js";
 
@@ -68,7 +69,7 @@ export async function getFlow(userId: string, flowId: string): Promise<FlowRow |
      LIMIT 1`,
     [flowId, userId]
   );
-  return res.rows[0] ?? null;
+  return firstRow(res);
 }
 
 export async function createFlow(
@@ -95,7 +96,7 @@ export async function createFlow(
       JSON.stringify(data.triggers ?? [])
     ]
   );
-  return res.rows[0];
+  return requireRow(res, "Expected flow row to be created");
 }
 
 export async function updateFlow(
@@ -163,7 +164,7 @@ export async function updateFlow(
      RETURNING *`,
     values
   );
-  return res.rows[0] ?? null;
+  return firstRow(res);
 }
 
 export async function deleteFlow(userId: string, flowId: string): Promise<boolean> {
@@ -171,7 +172,7 @@ export async function deleteFlow(userId: string, flowId: string): Promise<boolea
     "DELETE FROM flows WHERE id = $1 AND user_id = $2 RETURNING id",
     [flowId, userId]
   );
-  return (res.rowCount ?? 0) > 0;
+  return hasRows(res);
 }
 
 export async function publishFlow(
@@ -195,7 +196,7 @@ export async function publishFlow(
      RETURNING *`,
     [publish, flowId, userId]
   );
-  return res.rows[0] ?? null;
+  return firstRow(res);
 }
 
 export async function getPublishedFlowsForUser(
@@ -236,7 +237,7 @@ export async function getActiveFlowSession(conversationId: string): Promise<Flow
      LIMIT 1`,
     [conversationId]
   );
-  return res.rows[0] ?? null;
+  return firstRow(res);
 }
 
 export async function getLastCompletedFlowSession(
@@ -251,7 +252,7 @@ export async function getLastCompletedFlowSession(
      LIMIT 1`,
     [conversationId]
   );
-  return res.rows[0] ?? null;
+  return firstRow(res);
 }
 
 export async function createFlowSession(
@@ -266,7 +267,7 @@ export async function createFlowSession(
     [flowId, conversationId, JSON.stringify(variables)]
   );
   return {
-    ...res.rows[0],
+    ...requireRow(res, "Expected flow session row to be created"),
     variables
   };
 }
