@@ -1,3 +1,4 @@
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { getContactByPhoneForUser } from "./contacts-service.js";
 import { getConversationById } from "./conversation-service.js";
@@ -55,7 +56,7 @@ async function isDuplicateConversationContent(input: {
        AND created_at >= NOW() - ($3::text || ' minutes')::interval`,
     [input.conversationId, normalized, String(RECENT_DUPLICATE_WINDOW_MINUTES)]
   );
-  return Number(result.rows[0]?.recent_match ?? 0) > 0;
+  return Number(firstRow(result)?.recent_match ?? 0) > 0;
 }
 
 
@@ -82,7 +83,7 @@ async function resolveTemplateIdFromPayload(input: {
      LIMIT 1`,
     [input.userId, input.templateName, input.language]
   );
-  return result.rows[0]?.id ?? null;
+  return firstRow(result)?.id ?? null;
 }
 
 export async function queueApiConversationSend(input: {

@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
+import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import type { PersonalityOption, User } from "../types/models.js";
 import { ensureWorkspaceForUser } from "./workspace-billing-service.js";
@@ -50,10 +51,8 @@ export async function createUser(input: {
     [input.name.trim(), normalizedEmail, passwordHash, input.businessType ?? null]
   );
 
-  const user = result.rows[0];
-  if (user) {
-    await ensureWorkspaceForUser(user.id);
-  }
+  const user = requireRow(result, "Expected inserted user row");
+  await ensureWorkspaceForUser(user.id);
   return user;
 }
 
@@ -71,10 +70,8 @@ export async function createUserFromGoogleAuth(input: {
     [input.name.trim(), normalizedEmail, input.googleAuthSub, input.businessType ?? null]
   );
 
-  const user = result.rows[0];
-  if (user) {
-    await ensureWorkspaceForUser(user.id);
-  }
+  const user = requireRow(result, "Expected inserted Google auth user row");
+  await ensureWorkspaceForUser(user.id);
   return user;
 }
 
@@ -87,11 +84,10 @@ export async function authenticateUser(email: string, password: string): Promise
     [normalizedEmail]
   );
 
-  if ((result.rowCount ?? 0) === 0) {
+  const row = firstRow(result);
+  if (!row) {
     return null;
   }
-
-  const row = result.rows[0];
   if (!row.password_hash) {
     return null;
   }
@@ -120,7 +116,7 @@ export async function updateUserPassword(input: {
     [input.userId]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
   if (!row) {
     return "not_found";
   }
@@ -159,7 +155,7 @@ export async function createPasswordResetToken(email: string): Promise<{
     [normalizedEmail]
   );
 
-  const user = userResult.rows[0];
+  const user = firstRow(userResult);
   if (!user) {
     return null;
   }
@@ -195,7 +191,7 @@ export async function resetUserPasswordWithToken(input: {
       [tokenHash]
     );
 
-    const resetToken = tokenResult.rows[0];
+    const resetToken = firstRow(tokenResult);
     if (!resetToken) {
       await client.query("ROLLBACK");
       return "invalid_or_expired";
@@ -235,7 +231,7 @@ export async function userEmailExists(email: string): Promise<boolean> {
     [normalizedEmail]
   );
 
-  return (result.rowCount ?? 0) > 0;
+  return hasRows(result);
 }
 
 export async function getUserAuthIdentityByEmail(email: string): Promise<UserAuthIdentity | null> {
@@ -248,7 +244,7 @@ export async function getUserAuthIdentityByEmail(email: string): Promise<UserAut
     [normalizedEmail]
   );
 
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function getUserAuthIdentityById(userId: string): Promise<UserAuthIdentity | null> {
@@ -260,7 +256,7 @@ export async function getUserAuthIdentityById(userId: string): Promise<UserAuthI
     [userId]
   );
 
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function getUserById(userId: string): Promise<User | null> {
@@ -271,7 +267,7 @@ export async function getUserById(userId: string): Promise<User | null> {
     [userId]
   );
 
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function getUserByGoogleAuthSub(googleAuthSub: string): Promise<User | null> {
@@ -283,7 +279,7 @@ export async function getUserByGoogleAuthSub(googleAuthSub: string): Promise<Use
     [googleAuthSub]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
   return row ? toPublicUser(row) : null;
 }
 
@@ -423,7 +419,7 @@ export async function updateUserDetails(
     values
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
   return row ? toPublicUser(row) : null;
 }
 

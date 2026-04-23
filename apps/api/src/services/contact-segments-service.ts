@@ -1,3 +1,4 @@
+import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import type { Contact } from "../types/models.js";
 import { listContacts } from "./contacts-service.js";
@@ -133,7 +134,7 @@ export async function createSegment(userId: string, name: string, filters: Segme
      RETURNING id, user_id, name, filters, created_at, updated_at`,
     [userId, name.trim(), JSON.stringify(filters)]
   );
-  return result.rows[0];
+  return requireRow(result, "Expected contact segment row");
 }
 
 export async function updateSegment(
@@ -156,7 +157,7 @@ export async function updateSegment(
      RETURNING id, user_id, name, filters, created_at, updated_at`,
     params
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function deleteSegment(userId: string, segmentId: string): Promise<boolean> {
@@ -164,7 +165,7 @@ export async function deleteSegment(userId: string, segmentId: string): Promise<
     `DELETE FROM contact_segments WHERE user_id = $1 AND id = $2`,
     [userId, segmentId]
   );
-  return (result.rowCount ?? 0) > 0;
+  return hasRows(result);
 }
 
 export async function getSegmentContacts(userId: string, segmentId: string): Promise<Contact[]> {
@@ -172,7 +173,7 @@ export async function getSegmentContacts(userId: string, segmentId: string): Pro
     `SELECT filters FROM contact_segments WHERE user_id = $1 AND id = $2 LIMIT 1`,
     [userId, segmentId]
   );
-  const segment = segResult.rows[0];
+  const segment = firstRow(segResult);
   if (!segment) return [];
 
   const filters: SegmentFilter[] = Array.isArray(segment.filters) ? segment.filters : [];

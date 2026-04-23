@@ -1,4 +1,5 @@
 import { Worker, type JobsOptions } from "bullmq";
+import { firstRow } from "../db/sql-helpers.js";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import {
@@ -61,7 +62,7 @@ async function loadRunningCampaign(campaignId: string): Promise<Campaign | null>
     `SELECT * FROM campaigns WHERE id = $1 AND status = 'running' LIMIT 1`,
     [campaignId]
   );
-  return campaignResult.rows[0] ?? null;
+  return firstRow(campaignResult);
 }
 
 async function loadCampaignMessage(campaignMessageId: string): Promise<CampaignMessage | null> {
@@ -69,7 +70,7 @@ async function loadCampaignMessage(campaignMessageId: string): Promise<CampaignM
     `SELECT * FROM campaign_messages WHERE id = $1 LIMIT 1`,
     [campaignMessageId]
   );
-  return messageResult.rows[0] ?? null;
+  return firstRow(messageResult);
 }
 
 async function lookupSenderName(userId: string): Promise<string> {
@@ -77,7 +78,7 @@ async function lookupSenderName(userId: string): Promise<string> {
     `SELECT name FROM users WHERE id = $1 LIMIT 1`,
     [userId]
   );
-  return userRow.rows[0]?.name?.trim() || "Agent";
+  return firstRow(userRow)?.name?.trim() || "Agent";
 }
 
 async function scheduleCampaignMessageJob(message: CampaignMessage, userId: string): Promise<void> {
@@ -134,7 +135,7 @@ async function processCampaignDispatch(job: CampaignDispatchJob): Promise<void> 
       `SELECT status FROM campaigns WHERE id = $1 LIMIT 1`,
       [job.campaignId]
     );
-    if (statusCheck.rows[0]?.status !== "running") {
+    if (firstRow(statusCheck)?.status !== "running") {
       break;
     }
 

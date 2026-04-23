@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { pool, withTransaction } from "../db/pool.js";
 
 export type DeliveryAttemptStatus = "sending" | "sent" | "failed" | "retry_scheduled";
@@ -340,7 +341,7 @@ export async function applyDeliveryAttemptWebhookStatusUpdate(input: {
      LIMIT 1`,
     [input.wamid]
   );
-  const attempt = attemptResult.rows[0];
+  const attempt = firstRow(attemptResult);
   if (!attempt) {
     return;
   }
@@ -699,8 +700,9 @@ async function refreshFailureRateAlert(userId: string, campaignId?: string | nul
     params
   );
 
-  const total = Number(result.rows[0]?.total ?? 0);
-  const failed = Number(result.rows[0]?.failed ?? 0);
+  const aggregate = firstRow(result);
+  const total = Number(aggregate?.total ?? 0);
+  const failed = Number(aggregate?.failed ?? 0);
   const failureRate = total > 0 ? Number(((failed / total) * 100).toFixed(2)) : 0;
 
   if (total >= HIGH_FAILURE_MIN_ATTEMPTS && failureRate > env.DELIVERY_FAILURE_ALERT_THRESHOLD_PERCENT) {
@@ -756,7 +758,7 @@ async function refreshApiDowntimeAlert(userId: string, connectionId?: string | n
     params
   );
 
-  const failures = Number(result.rows[0]?.failures ?? 0);
+  const failures = Number(firstRow(result)?.failures ?? 0);
   if (failures >= env.DELIVERY_API_DOWNTIME_FAILURE_THRESHOLD) {
     await openOrRefreshAlert({
       userId,
@@ -867,7 +869,7 @@ export async function recordDeliveryAttemptStart(input: {
     ]
   );
 
-  return result.rows[0]!;
+  return requireRow(result, "Expected delivery attempt row");
 }
 
 export async function markDeliveryAttemptSuccess(input: {
@@ -986,8 +988,9 @@ export async function claimWebhookStatusEvent(input: {
       ]
     );
 
-    if (inserted.rows[0]?.id) {
-      return { eventId: inserted.rows[0].id, shouldProcess: true };
+    const insertedRow = firstRow(inserted);
+    if (insertedRow?.id) {
+      return { eventId: insertedRow.id, shouldProcess: true };
     }
 
     const existing = await client.query<{ id: string; processed_at: string | null; processing_started_at: string | null }>(
@@ -997,7 +1000,7 @@ export async function claimWebhookStatusEvent(input: {
        FOR UPDATE`,
       [eventKey]
     );
-    const row = existing.rows[0];
+    const row = firstRow(existing);
     if (!row) {
       return { eventId: "", shouldProcess: false };
     }
@@ -1072,7 +1075,7 @@ async function markCampaignCompletedIfIdle(client: import("pg").PoolClient, camp
        AND status IN ('queued', 'sending')`,
     [campaignId]
   );
-  if (Number(pending.rows[0]?.count ?? 0) > 0) {
+  if (Number(firstRow(pending)?.count ?? 0) > 0) {
     return;
   }
 
@@ -1162,7 +1165,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
        LIMIT 1`,
       [input.wamid]
     );
-    const row = rowResult.rows[0];
+    const row = firstRow(rowResult);
     if (!row || !shouldApplyConversationStatus(row.current_status, input.status)) {
       return;
     }
@@ -1255,7 +1258,7 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
        LIMIT 1`,
       [input.wamid]
     );
-    const row = rowResult.rows[0];
+    const row = firstRow(rowResult);
     if (!row || !shouldApplyCampaignStatus(row.current_status, input.status)) {
       return;
     }
@@ -1344,7 +1347,7 @@ export async function resolveDeliveryAlert(userId: string, alertId: string): Pro
      RETURNING *`,
     [alertId, userId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function getDeliveryOverview(userId: string): Promise<DeliveryOverview> {
@@ -1383,21 +1386,25 @@ export async function getDeliveryOverview(userId: string): Promise<DeliveryOverv
     )
   ]);
 
-  const total = Number(attemptResult.rows[0]?.total ?? 0);
-  const failed = Number(attemptResult.rows[0]?.failed ?? 0) + Number(attemptResult.rows[0]?.retry_scheduled ?? 0);
+  const attemptSummary = firstRow(attemptResult);
+  const total = Number(attemptSummary?.total ?? 0);
+  const failed = Number(attemptSummary?.failed ?? 0) + Number(attemptSummary?.retry_scheduled ?? 0);
+  const queuedSummary = firstRow(queuedResult);
+  const alertSummary = firstRow(alertResult);
+  const suppressionSummary = firstRow(suppressionResult);
 
   return {
     windowSeconds: env.DELIVERY_ALERT_WINDOW_SECONDS,
     attempts: {
       total,
-      sent: Number(attemptResult.rows[0]?.sent ?? 0),
-      failed: Number(attemptResult.rows[0]?.failed ?? 0),
-      retryScheduled: Number(attemptResult.rows[0]?.retry_scheduled ?? 0),
+      sent: Number(attemptSummary?.sent ?? 0),
+      failed: Number(attemptSummary?.failed ?? 0),
+      retryScheduled: Number(attemptSummary?.retry_scheduled ?? 0),
       successRate: computeSuccessRate(total, failed)
     },
-    queuedCampaignMessages: Number(queuedResult.rows[0]?.count ?? 0),
-    openAlerts: Number(alertResult.rows[0]?.count ?? 0),
-    suppressedRecipients: Number(suppressionResult.rows[0]?.count ?? 0)
+    queuedCampaignMessages: Number(queuedSummary?.count ?? 0),
+    openAlerts: Number(alertSummary?.count ?? 0),
+    suppressedRecipients: Number(suppressionSummary?.count ?? 0)
   };
 }
 
@@ -1413,7 +1420,7 @@ export async function getCampaignDeliveryAnalytics(
      LIMIT 1`,
     [campaignId, userId]
   );
-  if (!campaignExists.rows[0]?.id) {
+  if (!firstRow(campaignExists)?.id) {
     return null;
   }
 
@@ -1462,7 +1469,8 @@ export async function getCampaignDeliveryAnalytics(
     )
   ]);
 
-  const counts = countResult.rows[0]!;
+  const counts = requireRow(countResult, "Expected campaign delivery counts");
+  const attemptCounts = firstRow(attemptResult);
   const total = Number(counts.total ?? 0);
   const failed = Number(counts.failed ?? 0);
   const skipped = Number(counts.skipped ?? 0);
@@ -1480,9 +1488,9 @@ export async function getCampaignDeliveryAnalytics(
       skipped
     },
     retries: {
-      totalAttempts: Number(attemptResult.rows[0]?.total_attempts ?? 0),
-      retryAttempts: Number(attemptResult.rows[0]?.retry_attempts ?? 0),
-      pendingRetries: Number(attemptResult.rows[0]?.pending_retries ?? 0)
+      totalAttempts: Number(attemptCounts?.total_attempts ?? 0),
+      retryAttempts: Number(attemptCounts?.retry_attempts ?? 0),
+      pendingRetries: Number(attemptCounts?.pending_retries ?? 0)
     },
     failureRate: total > 0 ? Number((((failed + skipped) / total) * 100).toFixed(2)) : 0,
     topErrors: errorResult.rows.map((row) => ({
@@ -1521,7 +1529,7 @@ export async function applySequenceDeliveryStatusUpdate(input: {
     [input.wamid]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
   if (!row || !shouldApplySequenceStatus(row.current_status, input.status)) {
     return;
   }

@@ -1,3 +1,4 @@
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 
 type MetricCount = {
@@ -526,7 +527,7 @@ async function queryBroadcastStats(userId: string, start: Date, end: Date): Prom
       [userId, start, end]
     );
 
-    return result.rows[0] ?? { sent_count: "0", delivered_count: "0", failed_count: "0" };
+    return firstRow(result) ?? { sent_count: "0", delivered_count: "0", failed_count: "0" };
   } catch {
     return { sent_count: "0", delivered_count: "0", failed_count: "0" };
   }
@@ -546,7 +547,7 @@ async function queryAutomationStats(userId: string, start: Date, end: Date): Pro
          AND updated_at < $3`,
       [userId, start, end]
     );
-    sequencesCompleted = seqResult.rows[0]?.count ?? "0";
+    sequencesCompleted = firstRow(seqResult)?.count ?? "0";
   } catch {
     sequencesCompleted = "0";
   }
@@ -561,7 +562,7 @@ async function queryAutomationStats(userId: string, start: Date, end: Date): Pro
          AND updated_at < $3`,
       [userId, start, end]
     );
-    flowsCompleted = flowResult.rows[0]?.count ?? "0";
+    flowsCompleted = firstRow(flowResult)?.count ?? "0";
   } catch {
     flowsCompleted = "0";
   }

@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import {
   handleFlowMessage,
@@ -96,7 +97,7 @@ async function getLatestConversationState(
      LIMIT 1`,
     [conversationId]
   );
-  return refreshed.rows[0] ?? fallback;
+  return firstRow(refreshed) ?? fallback;
 }
 
 export async function processIncomingMessage(

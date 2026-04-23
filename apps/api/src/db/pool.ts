@@ -1,6 +1,8 @@
 import { Pool } from "pg";
 import { env } from "../config/env.js";
 
+// NOTE: WAgen uses the shared pg pool + SQL migrations as the primary DB layer.
+// Prefer typed SQL helpers and withTransaction over introducing a second ORM stack.
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
   max: env.PG_POOL_MAX,

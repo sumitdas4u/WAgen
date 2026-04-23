@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import type { Conversation } from "../types/models.js";
 import {
@@ -68,7 +69,7 @@ async function countTodayOutboundSentForConnection(connectionId: string): Promis
        AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`,
     [connectionId]
   );
-  return parseInt(result.rows[0]?.count ?? "0", 10);
+  return parseInt(firstRow(result)?.count ?? "0", 10);
 }
 
 async function getConnectionTier(connectionId: string): Promise<string | null> {
@@ -78,7 +79,7 @@ async function getConnectionTier(connectionId: string): Promise<string | null> {
      WHERE id = $1`,
     [connectionId]
   );
-  return result.rows[0]?.tier ?? null;
+  return firstRow(result)?.tier ?? null;
 }
 
 function buildRateLimitKey(input: {
@@ -162,7 +163,7 @@ async function lookupContactId(userId: string, phoneNumber: string): Promise<str
      LIMIT 1`,
     [userId, phoneNumber.replace(/\D/g, "")]
   );
-  return result.rows[0]?.id ?? null;
+  return firstRow(result)?.id ?? null;
 }
 
 export async function sendTrackedApiConversationFlowMessage(input: {

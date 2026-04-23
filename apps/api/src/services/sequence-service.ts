@@ -1,4 +1,5 @@
 import { pool, withTransaction } from "../db/pool.js";
+import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { requireMetaConnection } from "./meta-whatsapp-service.js";
 import { getMessageTemplate } from "./template-service.js";
 import type {
@@ -417,7 +418,7 @@ export async function getSequence(userId: string, sequenceId: string): Promise<S
      LIMIT 1`,
     [userId, sequenceId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function getSequenceDetail(userId: string, sequenceId: string): Promise<SequenceDetail | null> {
@@ -459,11 +460,11 @@ export async function getSequenceDetail(userId: string, sequenceId: string): Pro
     steps: stepsResult.rows.map(hydrateSequenceStep),
     conditions: conditionsResult.rows,
     metrics: {
-      enrolled: Number(metricsResult.rows[0]?.enrolled ?? 0),
-      active: Number(metricsResult.rows[0]?.active ?? 0),
-      completed: Number(metricsResult.rows[0]?.completed ?? 0),
-      failed: Number(metricsResult.rows[0]?.failed ?? 0),
-      stopped: Number(metricsResult.rows[0]?.stopped ?? 0)
+      enrolled: Number(firstRow(metricsResult)?.enrolled ?? 0),
+      active: Number(firstRow(metricsResult)?.active ?? 0),
+      completed: Number(firstRow(metricsResult)?.completed ?? 0),
+      failed: Number(firstRow(metricsResult)?.failed ?? 0),
+      stopped: Number(firstRow(metricsResult)?.stopped ?? 0)
     }
   };
 }
@@ -510,8 +511,9 @@ export async function createSequence(userId: string, input: SequenceWriteInput):
     ]
   );
 
-  await replaceSequenceChildren(userId, input.connectionId, result.rows[0]!.id, input.steps, input.conditions);
-  return (await getSequenceDetail(userId, result.rows[0]!.id))!;
+  const created = requireRow(result, "Expected sequence row to be created");
+  await replaceSequenceChildren(userId, input.connectionId, created.id, input.steps, input.conditions);
+  return (await getSequenceDetail(userId, created.id))!;
 }
 
 export async function updateSequence(
@@ -680,7 +682,7 @@ export async function getSequenceEnrollment(enrollmentId: string): Promise<Seque
     `SELECT * FROM sequence_enrollments WHERE id = $1 LIMIT 1`,
     [enrollmentId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function createSequenceEnrollment(
@@ -716,7 +718,7 @@ export async function createSequenceEnrollment(
      RETURNING *`,
     [sequenceId, contactId, nextRunAt]
   );
-  return result.rows[0]!;
+  return requireRow(result, "Expected sequence enrollment row");
 }
 
 export async function updateSequenceEnrollment(
@@ -854,7 +856,7 @@ export async function getSequenceEnrollmentForExecution(enrollmentId: string): P
     `SELECT * FROM sequences WHERE id = $1 LIMIT 1`,
     [enrollment.sequence_id]
   );
-  const sequence = sequenceResult.rows[0];
+  const sequence = firstRow(sequenceResult);
   if (!sequence) {
     return null;
   }
@@ -885,7 +887,7 @@ export async function getSequenceEnrollmentForExecution(enrollmentId: string): P
     )
   ]);
 
-  const contact = contactResult.rows[0];
+  const contact = firstRow(contactResult);
   if (!contact) {
     return null;
   }
