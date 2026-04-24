@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Job, QueueEvents, UnrecoverableError, Worker, type JobsOptions } from "bullmq";
 import { env } from "../config/env.js";
+import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import {
   getConversationById,
@@ -8,6 +9,7 @@ import {
   trackOutboundMessage
 } from "./conversation-service.js";
 import { deliverCampaignMessage, deliverConversationTemplateMessage, sendTrackedApiConversationFlowMessage } from "./message-delivery-service.js";
+import { registerChannelAdapter, getChannelAdapter, type ConversationChannelAdapter } from "./channel-adapter.js";
 import { realtimeHub } from "./realtime-hub.js";
 import {
   createQueueWorkerConnection,
@@ -250,7 +252,7 @@ async function insertOutboundMessage(input: {
       JSON.stringify(input.usage ?? {})
     ]
   );
-  return result.rows[0]!;
+  return requireRow(result, "Expected outbound message row");
 }
 
 async function loadOutboundMessageByConversationId(messageId: string): Promise<OutboundMessageRow | null> {
@@ -258,7 +260,7 @@ async function loadOutboundMessageByConversationId(messageId: string): Promise<O
     `SELECT * FROM outbound_messages WHERE id = $1 LIMIT 1`,
     [messageId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function loadOutboundMessageByCampaignMessageId(campaignMessageId: string): Promise<OutboundMessageRow | null> {
@@ -266,7 +268,7 @@ async function loadOutboundMessageByCampaignMessageId(campaignMessageId: string)
     `SELECT * FROM outbound_messages WHERE campaign_message_id = $1 LIMIT 1`,
     [campaignMessageId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function loadOutboundMessageBySequenceKey(enrollmentId: string, stepIndex: number): Promise<OutboundMessageRow | null> {
@@ -278,7 +280,7 @@ async function loadOutboundMessageBySequenceKey(enrollmentId: string, stepIndex:
      LIMIT 1`,
     [enrollmentId, stepIndex]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function loadOutboundMessageByWebhookLogId(logId: string): Promise<OutboundMessageRow | null> {
@@ -286,7 +288,7 @@ async function loadOutboundMessageByWebhookLogId(logId: string): Promise<Outboun
     `SELECT * FROM outbound_messages WHERE generic_webhook_log_id = $1 LIMIT 1`,
     [logId]
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 async function updateOutboundMessageState(input: {
@@ -319,7 +321,7 @@ async function updateOutboundMessageState(input: {
     ]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
   if (!row?.generic_webhook_log_id || row.type !== "template_api") {
     return;
   }
@@ -444,7 +446,7 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
      LIMIT 1`,
     [campaignMessageId]
   );
-  const row = result.rows[0];
+  const row = firstRow(result);
   if (!row) return null;
 
   const campaign: Campaign = {
@@ -539,7 +541,63 @@ async function ensureQrSessionReady(userId: string): Promise<void> {
   throw new Error("WhatsApp QR session connection timed out.");
 }
 
-async function processConversationApi(row: OutboundMessageRow): Promise<void> {
+// --- Channel adapter registrations ---
+// To add a new outbound channel: implement ConversationChannelAdapter and call
+// registerChannelAdapter() with your implementation. The worker will route to it
+// automatically based on the conversation's channel_type.
+
+const metaConversationAdapter: ConversationChannelAdapter = {
+  channelType: "api",
+  async send({ userId, conversation, payload, summaryText, mediaUrl, senderName, usage }) {
+    // Message was already pre-tracked to conversation_messages by the API server
+    // process at queue time (channel-outbound-service). Skip re-inserting.
+    const result = await sendTrackedApiConversationFlowMessage({
+      userId,
+      conversation,
+      payload,
+      summaryText,
+      mediaUrl,
+      senderName,
+      usage,
+      track: false
+    });
+    return { messageId: result.messageId, tracked: true };
+  }
+};
+
+const baileysConversationAdapter: ConversationChannelAdapter = {
+  channelType: "qr",
+  async send({ userId, conversation, payload }) {
+    await ensureQrSessionReady(userId);
+    await whatsappSessionManager.sendFlowMessage({
+      userId,
+      phoneNumber: conversation.phone_number,
+      payload
+    });
+    return { messageId: null, tracked: false };
+  }
+};
+
+const webConversationAdapter: ConversationChannelAdapter = {
+  channelType: "web",
+  async send({ userId, conversation, summaryText }) {
+    const delivered = await sendWidgetConversationMessage({
+      userId,
+      customerIdentifier: conversation.phone_number,
+      text: summaryText
+    });
+    if (!delivered) {
+      throw new Error("Web visitor is offline. History is still available, but replies can only be sent while the visitor is connected.");
+    }
+    return { messageId: null, tracked: false };
+  }
+};
+
+registerChannelAdapter(metaConversationAdapter);
+registerChannelAdapter(baileysConversationAdapter);
+registerChannelAdapter(webConversationAdapter);
+
+async function processConversationChannel(row: OutboundMessageRow): Promise<void> {
   const conversation = await getConversationById(row.conversation_id ?? "");
   if (!conversation || conversation.user_id !== row.user_id) {
     throw new Error("Conversation not found.");
@@ -551,91 +609,39 @@ async function processConversationApi(row: OutboundMessageRow): Promise<void> {
     throw new Error("Message text is required.");
   }
 
-  // Message was already pre-tracked to conversation_messages by the API server
-  // process at queue time (channel-outbound-service). Skip re-inserting.
-  const result = await sendTrackedApiConversationFlowMessage({
+  const adapter = getChannelAdapter(row.channel);
+  if (!adapter) {
+    throw new Error(`No channel adapter registered for channel: ${row.channel}`);
+  }
+
+  const mediaUrl = row.media_url ?? getPayloadMediaUrl(payload) ?? null;
+  const usage = parseUsage(row);
+
+  const result = await adapter.send({
     userId: row.user_id,
     conversation,
     payload,
     summaryText,
-    mediaUrl: row.media_url ?? getPayloadMediaUrl(payload) ?? null,
+    mediaUrl,
     senderName: row.sender_name ?? null,
-    usage: parseUsage(row),
-    track: false
+    usage
   });
+
+  if (!result.tracked) {
+    await trackOutboundMessage(
+      conversation.id,
+      summaryText,
+      { ...usage, senderName: row.sender_name ?? null },
+      mediaUrl,
+      payload,
+      null
+    );
+  }
+
   await updateOutboundMessageState({
     id: row.id,
     status: "completed",
     providerMessageId: result.messageId ?? null,
-    errorMessage: null
-  });
-  await broadcastConversationUpdate(conversation.id, summaryText);
-}
-
-async function processConversationQr(row: OutboundMessageRow): Promise<void> {
-  const conversation = await getConversationById(row.conversation_id ?? "");
-  if (!conversation || conversation.user_id !== row.user_id) {
-    throw new Error("Conversation not found.");
-  }
-
-  const payload = validateFlowMessagePayload(row.payload_json as FlowMessagePayload);
-  const summaryText = row.display_text?.trim() || summarizeFlowMessage(payload);
-  await ensureQrSessionReady(row.user_id);
-  await whatsappSessionManager.sendFlowMessage({
-    userId: row.user_id,
-    phoneNumber: conversation.phone_number,
-    payload
-  });
-  await trackOutboundMessage(
-    conversation.id,
-    summaryText,
-    {
-      ...parseUsage(row),
-      senderName: row.sender_name ?? null
-    },
-    row.media_url ?? getPayloadMediaUrl(payload) ?? null,
-    payload,
-    null
-  );
-  await updateOutboundMessageState({
-    id: row.id,
-    status: "completed",
-    errorMessage: null
-  });
-  await broadcastConversationUpdate(conversation.id, summaryText);
-}
-
-async function processConversationWeb(row: OutboundMessageRow): Promise<void> {
-  const conversation = await getConversationById(row.conversation_id ?? "");
-  if (!conversation || conversation.user_id !== row.user_id) {
-    throw new Error("Conversation not found.");
-  }
-
-  const payload = validateFlowMessagePayload(row.payload_json as FlowMessagePayload);
-  const summaryText = row.display_text?.trim() || summarizeFlowMessage(payload);
-  const delivered = await sendWidgetConversationMessage({
-    userId: row.user_id,
-    customerIdentifier: conversation.phone_number,
-    text: summaryText
-  });
-  if (!delivered) {
-    throw new Error("Web visitor is offline. History is still available, but replies can only be sent while the visitor is connected.");
-  }
-
-  await trackOutboundMessage(
-    conversation.id,
-    summaryText,
-    {
-      ...parseUsage(row),
-      senderName: row.sender_name ?? null
-    },
-    row.media_url ?? getPayloadMediaUrl(payload) ?? null,
-    payload,
-    null
-  );
-  await updateOutboundMessageState({
-    id: row.id,
-    status: "completed",
     errorMessage: null
   });
   await broadcastConversationUpdate(conversation.id, summaryText);
@@ -749,13 +755,9 @@ async function executeOutboundJob(job: Job<OutboundJobPayload>): Promise<void> {
   await withGroupingLock(row.grouping_key, async () => {
     switch (job.data.type) {
       case "conversation_api":
-        await processConversationApi(row);
-        return;
       case "conversation_qr":
-        await processConversationQr(row);
-        return;
       case "conversation_web":
-        await processConversationWeb(row);
+        await processConversationChannel(row);
         return;
       case "template_api":
         await processTemplateApi(row);

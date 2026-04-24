@@ -10,9 +10,11 @@ import { getAggregateVotesInPollMessage } from "@whiskeysockets/baileys/lib/Util
 import { decryptPollVote } from "@whiskeysockets/baileys/lib/Utils/process-message.js";
 import { jidNormalizedUser } from "@whiskeysockets/baileys/lib/WABinary/jid-utils.js";
 import { env } from "../config/env.js";
+import { pool } from "../db/pool.js";
 import { clearAuthStateCache, useDbAuthState } from "./baileys-auth-state.js";
 import {
   disconnectSessionsByPhoneNumber,
+  getSessionEncryptionSecret,
   getOrCreateWhatsAppSession,
   getWhatsAppStatus,
   resetWhatsAppAuthState,
@@ -27,7 +29,7 @@ import {
   formatFlowPollSummary,
   type CapturedPollInput
 } from "./flow-input-codec.js";
-import { realtimeHub } from "./realtime-hub.js";
+import { decryptJsonPayload } from "../utils/encryption.js";
 import {
   extractMessageLocationPayload,
   getMessageText,
@@ -58,9 +60,13 @@ import {
   type QrSessionHealthEvaluation,
   type QrSessionHealthState
 } from "./whatsapp-session-health.js";
+import { fanoutEvent } from "./event-fanout-service.js";
+import { disconnectRabbitMQ } from "./rabbitmq-service.js";
+import { makeProxyAgent, makeProxyAgentUndici, type ProxyConfig } from "../utils/makeProxyAgent.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
+const PRESENCE_CHUNK_MS = 20_000;
 
 interface SessionRuntime {
   socket: WASocket;
@@ -68,6 +74,7 @@ interface SessionRuntime {
   enabled: boolean;
   status: Exclude<QrChannelStatus, "degraded">;
   connectionId: number;
+  phoneNumber: string | null;
 }
 
 interface DegradedSessionState {
@@ -93,6 +100,119 @@ interface QueuedInboundMessage {
 interface ExtractedInboundText {
   displayText: string;
   flowText?: string | null;
+}
+
+interface WhatsAppProxyRow {
+  enabled: boolean;
+  protocol: ProxyConfig["protocol"];
+  host: string;
+  port: number;
+  username: string | null;
+  password: string | null;
+}
+
+function extractMessageType(content: Record<string, unknown>): string {
+  if (content.conversation || content.extendedTextMessage) return "text";
+  if (content.imageMessage) return "image";
+  if (content.videoMessage) return "video";
+  if (content.audioMessage) return "audio";
+  if (content.documentMessage) return "document";
+  if (content.stickerMessage) return "sticker";
+  if (content.locationMessage) return "location";
+  if (content.contactMessage || content.contactsArrayMessage) return "contact";
+  if (content.pollCreationMessage || content.pollCreationMessageV2 || content.pollCreationMessageV3) return "poll";
+  return "unknown";
+}
+
+function extractMessageText(content: Record<string, unknown>): string | null {
+  if (typeof content.conversation === "string") return content.conversation;
+  const ext = content.extendedTextMessage as Record<string, unknown> | undefined;
+  if (typeof ext?.text === "string") return ext.text;
+  const img = content.imageMessage as Record<string, unknown> | undefined;
+  if (typeof img?.caption === "string") return img.caption;
+  const vid = content.videoMessage as Record<string, unknown> | undefined;
+  if (typeof vid?.caption === "string") return vid.caption;
+  const doc = content.documentMessage as Record<string, unknown> | undefined;
+  if (typeof doc?.caption === "string") return doc.caption;
+  return null;
+}
+
+async function savePairingCode(userId: string, code: string | null, expiresAt: Date | null): Promise<void> {
+  await pool.query(
+    `UPDATE whatsapp_sessions
+     SET pairing_code = $1,
+         pairing_code_expires_at = $2
+     WHERE user_id = $3`,
+    [code, expiresAt, userId]
+  );
+}
+
+async function persistWhatsappMessage(input: {
+  userId: string;
+  remoteJid: string;
+  messageId: string;
+  fromMe: boolean;
+  messageType: string;
+  content: Record<string, unknown>;
+  text: string | null;
+  timestamp: Date;
+  status: string;
+}): Promise<void> {
+  await pool.query(
+    `INSERT INTO whatsapp_messages (
+       user_id,
+       remote_jid,
+       message_id,
+       from_me,
+       message_type,
+       content,
+       text,
+       timestamp,
+       status
+     )
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+     ON CONFLICT (user_id, message_id)
+     DO UPDATE SET remote_jid = EXCLUDED.remote_jid,
+                   from_me = EXCLUDED.from_me,
+                   message_type = EXCLUDED.message_type,
+                   content = EXCLUDED.content,
+                   text = COALESCE(EXCLUDED.text, whatsapp_messages.text),
+                   timestamp = EXCLUDED.timestamp,
+                   status = EXCLUDED.status`,
+    [
+      input.userId,
+      input.remoteJid,
+      input.messageId,
+      input.fromMe,
+      input.messageType,
+      JSON.stringify(input.content),
+      input.text,
+      input.timestamp,
+      input.status
+    ]
+  );
+
+  if (input.fromMe) {
+    await pool.query(
+      `INSERT INTO whatsapp_chats (user_id, remote_jid, unread_count, last_message_at, last_message_id)
+       VALUES ($1, $2, 0, $3, $4)
+       ON CONFLICT (user_id, remote_jid)
+       DO UPDATE SET last_message_at = EXCLUDED.last_message_at,
+                     last_message_id = EXCLUDED.last_message_id`,
+      [input.userId, input.remoteJid, input.timestamp, input.messageId]
+    );
+    return;
+  }
+
+  await pool.query(
+    `INSERT INTO whatsapp_chats (user_id, remote_jid, unread_count, last_message_at, last_message_id)
+     VALUES ($1, $2, 1, $3, $4)
+     ON CONFLICT (user_id, remote_jid)
+     DO UPDATE SET unread_count = whatsapp_chats.unread_count + 1,
+                   last_message_at = EXCLUDED.last_message_at,
+                   last_message_id = EXCLUDED.last_message_id`,
+    [input.userId, input.remoteJid, input.timestamp, input.messageId]
+  );
 }
 
 function getPollCreationContent(
@@ -432,12 +552,27 @@ export async function randomDelay(min: number, max: number): Promise<void> {
   await wait(delay);
 }
 
-export async function simulateTyping(sock: WASocket, jid: string, messageLength: number): Promise<void> {
-  await sock.sendPresenceUpdate("composing", jid);
-  const baseMs = 300;
-  const perCharacterMs = 20;
-  const typingMs = Math.max(600, Math.min(2500, baseMs + messageLength * perCharacterMs));
-  await wait(typingMs);
+export async function simulateTyping(
+  sock: WASocket,
+  jid: string,
+  delayMs: number,
+  presence: "composing" | "recording" = "composing"
+): Promise<void> {
+  let remaining = delayMs;
+
+  while (remaining > PRESENCE_CHUNK_MS) {
+    await sock.presenceSubscribe(jid);
+    await sock.sendPresenceUpdate(presence, jid);
+    await wait(PRESENCE_CHUNK_MS);
+    await sock.sendPresenceUpdate("paused", jid);
+    remaining -= PRESENCE_CHUNK_MS;
+  }
+
+  if (remaining > 0) {
+    await sock.presenceSubscribe(jid);
+    await sock.sendPresenceUpdate(presence, jid);
+    await wait(remaining);
+  }
 }
 
 function getLogMethod(level: string): "info" | "warn" | "error" | "debug" {
@@ -685,9 +820,9 @@ class WhatsAppSessionManager {
     await saveWhatsAppDegradedReason(userId, evaluation.reason);
     await updateWhatsAppStatus(userId, "disconnected");
 
-    realtimeHub.broadcast(
+    void fanoutEvent(
       userId,
-      "whatsapp.status",
+      "status.instance",
       this.buildStatusPayload(userId, {
         enabled: dbStatus.enabled,
         status: "degraded",
@@ -698,7 +833,10 @@ class WhatsAppSessionManager {
     );
   }
 
-  async connectUser(userId: string, options?: { resetAuth?: boolean; force?: boolean }): Promise<void> {
+  async connectUser(
+    userId: string,
+    options?: { resetAuth?: boolean; force?: boolean; phoneNumber?: string }
+  ): Promise<void> {
     if (this.activeConnectAttempts.has(userId)) {
       return;
     }
@@ -721,9 +859,9 @@ class WhatsAppSessionManager {
       this.sessionHealthByUser.set(userId, createQrSessionHealthState());
       const session = await getOrCreateWhatsAppSession(userId);
       await updateWhatsAppStatus(userId, "connecting");
-      realtimeHub.broadcast(
+      void fanoutEvent(
         userId,
-        "whatsapp.status",
+        "status.instance",
         this.buildStatusPayload(userId, {
           enabled: session.enabled,
           status: "connecting",
@@ -736,13 +874,36 @@ class WhatsAppSessionManager {
       clearAuthStateCache(userId);
       const { state, saveCreds } = await useDbAuthState(userId);
       const { version } = await baileys.fetchLatestBaileysVersion();
+      const proxyRecord = await pool.query<WhatsAppProxyRow>(
+        `SELECT enabled, protocol, host, port, username, password
+         FROM whatsapp_proxies
+         WHERE user_id = $1
+         LIMIT 1`,
+        [userId]
+      );
+      const proxyOptions: Record<string, unknown> = {};
+      if (proxyRecord.rows[0]?.enabled) {
+        const row = proxyRecord.rows[0];
+        const config: ProxyConfig = {
+          protocol: row.protocol,
+          host: row.host,
+          port: row.port,
+          username: row.username,
+          password: row.password
+            ? decryptJsonPayload<string>(row.password, getSessionEncryptionSecret())
+            : null
+        };
+        proxyOptions.agent = makeProxyAgent(config);
+        proxyOptions.fetchAgent = makeProxyAgentUndici(config);
+      }
 
-      const socket = (baileys.default ?? (baileys as any).makeWASocket)({
+      const socketConfig = {
         version,
         auth: state,
         printQRInTerminal: false,
         browser: ["WAgen", "Chrome", "1.0.0"],
-        getMessage: async (key) => this.getRecentOutboundMessage(userId, key),
+        getMessage: async (key: { remoteJid?: string | null; id?: string | null }) =>
+          this.getRecentOutboundMessage(userId, key),
         logger: createBaileysLogger(
           userId,
           (remoteJid) => {
@@ -753,8 +914,10 @@ class WhatsAppSessionManager {
           () => {
             this.recordSessionHealthEvent(userId, "registration_attempt", "registration_attempt");
           }
-        ) as never
-      }) as WASocket;
+        ) as never,
+        ...proxyOptions
+      };
+      const socket = (baileys.default ?? (baileys as any).makeWASocket)(socketConfig as never) as WASocket;
       const connectionId = ++this.connectionSeq;
 
       this.sessions.set(userId, {
@@ -762,7 +925,8 @@ class WhatsAppSessionManager {
         qr: null,
         enabled: session.enabled,
         status: "connecting",
-        connectionId
+        connectionId,
+        phoneNumber: options?.phoneNumber ?? null
       });
 
       socket.ev.on("creds.update", saveCreds);
@@ -783,10 +947,31 @@ class WhatsAppSessionManager {
 
         if (update.qr) {
           runtime.qr = update.qr;
-          realtimeHub.broadcast(userId, "whatsapp.qr", {
+          void fanoutEvent(userId, "qrcode.updated", {
             qr: update.qr,
             status: "waiting_scan"
           });
+
+          if (runtime.phoneNumber) {
+            try {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              const pairingSocket = socket as WASocket & {
+                requestPairingCode?: (phoneNumber: string) => Promise<string>;
+              };
+              const code = await pairingSocket.requestPairingCode?.(runtime.phoneNumber);
+              if (typeof code === "string" && code.length > 0) {
+                const expiresAt = new Date(Date.now() + 60_000);
+                void fanoutEvent(userId, "pairing_code.updated", {
+                  code,
+                  phoneNumber: runtime.phoneNumber,
+                  expiresAt: expiresAt.toISOString()
+                });
+                await savePairingCode(userId, code, expiresAt);
+              }
+            } catch (err) {
+              console.warn(`[WA] pairing code request failed user=${userId}`, err);
+            }
+          }
         }
 
         if (update.connection === "open") {
@@ -795,7 +980,9 @@ class WhatsAppSessionManager {
           this.reconnectAttempts.delete(userId);
           this.recordSessionHealthEvent(userId, "connection_open", "connection_open");
           const phone = socket.user?.id?.split(":")[0] ?? null;
+          runtime.phoneNumber = phone;
           await updateWhatsAppStatus(userId, "connected", phone ?? undefined);
+          await savePairingCode(userId, null, null);
 
           if (phone) {
             const duplicateUserIds = await disconnectSessionsByPhoneNumber(userId, phone);
@@ -817,9 +1004,9 @@ class WhatsAppSessionManager {
                 this.sessions.delete(duplicateUserId);
               }
 
-              realtimeHub.broadcast(
+              void fanoutEvent(
                 duplicateUserId,
-                "whatsapp.status",
+                "connection.update",
                 this.buildStatusPayload(duplicateUserId, {
                   enabled: session.enabled,
                   status: "disconnected",
@@ -831,9 +1018,9 @@ class WhatsAppSessionManager {
             }
           }
 
-          realtimeHub.broadcast(
+          void fanoutEvent(
             userId,
-            "whatsapp.status",
+            "connection.update",
             this.buildStatusPayload(userId, {
               enabled: runtime.enabled,
               status: "connected",
@@ -857,9 +1044,10 @@ class WhatsAppSessionManager {
           runtime.status = "disconnected";
           const healthEvaluation = this.recordSessionHealthEvent(userId, "connection_close", "connection_close");
           await updateWhatsAppStatus(userId, "disconnected");
-          realtimeHub.broadcast(
+          await savePairingCode(userId, null, null);
+          void fanoutEvent(
             userId,
-            "whatsapp.status",
+            "connection.update",
             this.buildStatusPayload(userId, {
               enabled: runtime.enabled,
               status: "disconnected",
@@ -920,6 +1108,41 @@ class WhatsAppSessionManager {
 
         for (const message of messages) {
           try {
+            if (message.key?.remoteJid && message.key?.id) {
+              const remoteJid = message.key.remoteJid;
+              const messageId = message.key.id;
+              const fromMe = Boolean(message.key.fromMe);
+              const content = (message.message ?? {}) as Record<string, unknown>;
+              const messageType = extractMessageType(content);
+              const text = extractMessageText(content);
+              const timestamp = message.messageTimestamp
+                ? new Date(Number(message.messageTimestamp) * 1000)
+                : new Date();
+
+              void persistWhatsappMessage({
+                userId,
+                remoteJid,
+                messageId,
+                fromMe,
+                messageType,
+                content,
+                text,
+                timestamp,
+                status: fromMe ? "delivered" : "received"
+              }).catch((err) => {
+                console.error(`[WA] message persist failed user=${userId} msgId=${messageId}`, err);
+              });
+
+              void fanoutEvent(userId, "messages.upsert", {
+                remoteJid,
+                messageId,
+                fromMe,
+                messageType,
+                text,
+                content,
+                timestamp: timestamp.toISOString()
+              });
+            }
             await this.handleInboundMessage(userId, message, shouldAutoReply);
           } catch (error) {
             console.error("Inbound message handling failed", error);
@@ -1342,6 +1565,32 @@ class WhatsAppSessionManager {
     const sent = await socket.sendMessage(jid, content as never);
     if (sent) {
       this.rememberOutboundMessage(userId, sent);
+      const messageId = sent.key?.id;
+      if (messageId) {
+        const messageType = extractMessageType(content);
+        const text = extractMessageText(content);
+        const timestamp = sent.messageTimestamp ? new Date(Number(sent.messageTimestamp) * 1000) : new Date();
+
+        void persistWhatsappMessage({
+          userId,
+          remoteJid: jid,
+          messageId,
+          fromMe: true,
+          messageType,
+          content,
+          text,
+          timestamp,
+          status: "sent"
+        }).catch((err) => console.error(`[WA] outbound persist failed user=${userId} msgId=${messageId}`, err));
+
+        void fanoutEvent(userId, "messages.update", {
+          remoteJid: jid,
+          status: "sent",
+          messageId,
+          text,
+          timestamp: timestamp.toISOString()
+        });
+      }
     }
     return sent;
   }
@@ -1398,12 +1647,14 @@ class WhatsAppSessionManager {
     this.clearPhoneAliasMap(userId);
     this.clearPhoneChatJidMap(userId);
     this.clearRecentOutboundMessages(userId);
+    disconnectRabbitMQ(userId);
     clearAuthStateCache(userId);
     await resetWhatsAppAuthState(userId);
     await updateWhatsAppStatus(userId, "disconnected");
-    realtimeHub.broadcast(
+    await savePairingCode(userId, null, null);
+    void fanoutEvent(
       userId,
-      "whatsapp.status",
+      "status.instance",
       this.buildStatusPayload(userId, {
         enabled: runtime?.enabled ?? true,
         status: "disconnected",
@@ -1532,7 +1783,13 @@ class WhatsAppSessionManager {
         let composingSet = false;
         try {
           try {
-            await simulateTyping(runtime.socket, job.remoteJid, text.length);
+            const baseMs = 300;
+            const perCharMs = 20;
+            const typingMs = Math.min(
+              HUMAN_REPLY_DELAY_MAX_MS,
+              Math.max(600, baseMs + text.length * perCharMs)
+            );
+            await simulateTyping(runtime.socket, job.remoteJid, typingMs, "composing");
             composingSet = true;
           } catch (presenceError) {
             console.warn(`[WA] typing presence failed user=${job.userId} jid=${job.remoteJid}`, presenceError);

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { createSegment, type ContactSegment } from "./contact-segments-service.js";
 import {
@@ -83,7 +84,7 @@ export async function getBroadcastSummary(userId: string): Promise<BroadcastSumm
     [userId]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
   return {
     totalBroadcasts: Number(row?.total_broadcasts ?? 0),
     recipients: Number(row?.recipients ?? 0),
@@ -127,7 +128,7 @@ export async function getBroadcastReport(
     )
   ]);
 
-  const buckets = bucketResult.rows[0];
+  const buckets = firstRow(bucketResult);
   return {
     campaign,
     messages: messagesResult.messages,

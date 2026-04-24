@@ -13,6 +13,7 @@
  * External callers should use chargeUser() instead of deductTokens() directly.
  */
 
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 
 // ── Action cost table ─────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ export async function getTokenBalance(userId: string): Promise<number> {
     `SELECT ai_token_balance FROM users WHERE id = $1`,
     [userId]
   );
-  return result.rows[0]?.ai_token_balance ?? 0;
+  return firstRow(result)?.ai_token_balance ?? 0;
 }
 
 // ── Gate check ────────────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ export async function chargeUser(
       `SELECT ai_token_balance FROM users WHERE id = $1 FOR UPDATE`,
       [userId]
     );
-    const current = lockResult.rows[0]?.ai_token_balance ?? 0;
+    const current = firstRow(lockResult)?.ai_token_balance ?? 0;
     const newBalance = current - cost;
 
     await client.query(
@@ -217,7 +218,7 @@ async function creditTokensInternal(
         : `UPDATE users SET ai_token_balance = ai_token_balance + $1 WHERE id = $2 RETURNING ai_token_balance`,
       [amount, userId]
     );
-    const balanceAfter = updateResult.rows[0]?.ai_token_balance ?? amount;
+    const balanceAfter = firstRow(updateResult)?.ai_token_balance ?? amount;
 
     if (referenceId) {
       await client.query(

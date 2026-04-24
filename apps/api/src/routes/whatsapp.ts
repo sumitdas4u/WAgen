@@ -1,11 +1,17 @@
 import type { FastifyInstance } from "fastify";
+import https from "node:https";
 import { z } from "zod";
+import { pool } from "../db/pool.js";
 import { whatsappSessionManager } from "../services/whatsapp-session-manager.js";
+import { getSessionEncryptionSecret } from "../services/whatsapp-session-store.js";
+import { encryptJsonPayload } from "../utils/encryption.js";
 import { wait } from "../utils/index.js";
+import { makeProxyAgent, type ProxyConfig } from "../utils/makeProxyAgent.js";
 
 const ConnectSchema = z
   .object({
-    resetAuth: z.boolean().optional()
+    resetAuth: z.boolean().optional(),
+    phoneNumber: z.string().min(8).optional()
   })
   .partial()
   .optional();
@@ -19,6 +25,42 @@ const ChannelStatusSchema = z.object({
   enabled: z.boolean()
 });
 
+const ProxySchema = z.object({
+  enabled: z.boolean(),
+  protocol: z.enum(["http", "https", "socks5"]),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  username: z.string().optional(),
+  password: z.string().optional()
+});
+
+async function testProxyReachability(config: ProxyConfig): Promise<string> {
+  const agent = makeProxyAgent(config);
+  return new Promise<string>((resolve, reject) => {
+    const request = https.get(
+      "https://checkip.amazonaws.com",
+      {
+        agent,
+        timeout: 8_000
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          resolve(body.trim());
+        });
+      }
+    );
+    request.on("timeout", () => {
+      request.destroy(new Error("Proxy timeout"));
+    });
+    request.on("error", reject);
+  });
+}
+
 export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
     "/api/whatsapp/connect",
@@ -31,7 +73,8 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
 
       await whatsappSessionManager.connectUser(request.authUser.userId, {
         resetAuth: Boolean(parsed.data?.resetAuth),
-        force: Boolean(parsed.data?.resetAuth)
+        force: Boolean(parsed.data?.resetAuth),
+        phoneNumber: parsed.data?.phoneNumber
       });
       return { ok: true };
     }
@@ -45,12 +88,80 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  fastify.get(
+    "/api/whatsapp/pairing-code",
+    { preHandler: [fastify.requireAuth] },
+    async (request) => {
+      const result = await pool.query<{ pairing_code: string | null; pairing_code_expires_at: Date | null }>(
+        `SELECT pairing_code, pairing_code_expires_at
+         FROM whatsapp_sessions
+         WHERE user_id = $1
+         LIMIT 1`,
+        [request.authUser.userId]
+      );
+
+      const session = result.rows[0];
+      if (!session?.pairing_code) {
+        return { code: null, expiresAt: null };
+      }
+
+      const expired = session.pairing_code_expires_at ? session.pairing_code_expires_at < new Date() : false;
+      return {
+        code: expired ? null : session.pairing_code,
+        expiresAt: session.pairing_code_expires_at?.toISOString() ?? null
+      };
+    }
+  );
+
   fastify.post(
     "/api/whatsapp/disconnect",
     { preHandler: [fastify.requireAuth] },
     async (request) => {
       await whatsappSessionManager.disconnectUser(request.authUser.userId);
       return { ok: true };
+    }
+  );
+
+  fastify.get(
+    "/api/whatsapp/chats",
+    { preHandler: [fastify.requireAuth] },
+    async (request) => {
+      const result = await pool.query(
+        `SELECT id, remote_jid, unread_count, last_message_at, last_message_id, created_at, updated_at
+         FROM whatsapp_chats
+         WHERE user_id = $1
+         ORDER BY last_message_at DESC
+         LIMIT 50`,
+        [request.authUser.userId]
+      );
+      return result.rows;
+    }
+  );
+
+  fastify.get(
+    "/api/whatsapp/messages/:jid",
+    { preHandler: [fastify.requireAuth] },
+    async (request) => {
+      const { jid } = request.params as { jid: string };
+      const { before, limit } = request.query as { before?: string; limit?: string };
+      const take = Math.min(Number(limit ?? 50), 100);
+      const params: unknown[] = [request.authUser.userId, decodeURIComponent(jid), take];
+      const beforeClause = before ? `AND timestamp < $4` : "";
+      if (before) {
+        params.push(new Date(before));
+      }
+
+      const result = await pool.query(
+        `SELECT id, remote_jid, message_id, from_me, message_type, content, text, timestamp, status, created_at, updated_at
+         FROM whatsapp_messages
+         WHERE user_id = $1
+           AND remote_jid = $2
+           ${beforeClause}
+         ORDER BY timestamp DESC
+         LIMIT $3`,
+        params
+      );
+      return result.rows;
     }
   );
 
@@ -68,6 +179,97 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
         parsed.data.enabled
       );
       return { ok: true };
+    }
+  );
+
+  fastify.get(
+    "/api/whatsapp/proxy",
+    { preHandler: [fastify.requireAuth] },
+    async (request) => {
+      const result = await pool.query(
+        `SELECT enabled, protocol, host, port, username, password
+         FROM whatsapp_proxies
+         WHERE user_id = $1
+         LIMIT 1`,
+        [request.authUser.userId]
+      );
+      const proxy = result.rows[0];
+      if (!proxy) {
+        return null;
+      }
+      return {
+        enabled: proxy.enabled,
+        protocol: proxy.protocol,
+        host: proxy.host,
+        port: proxy.port,
+        username: proxy.username ?? null,
+        password: proxy.password ? "********" : null
+      };
+    }
+  );
+
+  fastify.put(
+    "/api/whatsapp/proxy",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = ProxySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid proxy config" });
+      }
+
+      const { password, ...rest } = parsed.data;
+      const encryptedPassword = password ? encryptJsonPayload(password, getSessionEncryptionSecret()) : null;
+      await pool.query(
+        `INSERT INTO whatsapp_proxies (user_id, enabled, protocol, host, port, username, password)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (user_id)
+         DO UPDATE SET enabled = EXCLUDED.enabled,
+                       protocol = EXCLUDED.protocol,
+                       host = EXCLUDED.host,
+                       port = EXCLUDED.port,
+                       username = EXCLUDED.username,
+                       password = EXCLUDED.password`,
+        [
+          request.authUser.userId,
+          rest.enabled,
+          rest.protocol,
+          rest.host,
+          rest.port,
+          rest.username ?? null,
+          encryptedPassword
+        ]
+      );
+      return { ok: true };
+    }
+  );
+
+  fastify.delete(
+    "/api/whatsapp/proxy",
+    { preHandler: [fastify.requireAuth] },
+    async (request) => {
+      await pool.query(`DELETE FROM whatsapp_proxies WHERE user_id = $1`, [request.authUser.userId]);
+      return { ok: true };
+    }
+  );
+
+  fastify.post(
+    "/api/whatsapp/proxy/test",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const parsed = ProxySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid proxy config" });
+      }
+
+      const { password, ...rest } = parsed.data;
+      const config: ProxyConfig = { ...rest, password: password ?? null };
+
+      try {
+        const ip = await testProxyReachability(config);
+        return { ok: true, ip };
+      } catch (err) {
+        return reply.status(502).send({ error: "Proxy unreachable", detail: String(err) });
+      }
     }
   );
 

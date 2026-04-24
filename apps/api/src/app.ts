@@ -7,6 +7,7 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyRawBody from "fastify-raw-body";
 import { randomUUID } from "node:crypto";
 import { env } from "./config/env.js";
+import { validateApiKey } from "./services/api-key-service.js";
 import { registerMetrics } from "./observability/metrics.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -37,6 +38,10 @@ import { genericWebhookRoutes } from "./routes/generic-webhooks.js";
 import { sequenceRoutes } from "./routes/sequences.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { reportsRoutes } from "./routes/reports.js";
+import { webhookRoutes } from "./routes/webhooks.js";
+import { rabbitmqRoutes } from "./routes/rabbitmq.js";
+import { apiKeyRoutes } from "./routes/api-keys.js";
+import { publicApiRoutes } from "./routes/public-api.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
 import { registerQueueDashboard } from "./services/queue-dashboard-service.js";
 import { registerQueueOperations } from "./services/queue-operations-service.js";
@@ -46,6 +51,7 @@ declare module "fastify" {
   interface FastifyInstance {
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireSuperAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireApiKeyAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
@@ -196,6 +202,19 @@ export async function buildApp() {
     }
   });
 
+  app.decorate("requireApiKeyAuth", async (request: FastifyRequest, reply: FastifyReply) => {
+    const authHeader = request.headers.authorization ?? "";
+    const rawKey = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    if (!rawKey) {
+      return reply.status(401).send({ error: "Missing API key. Use Authorization: Bearer wag_..." });
+    }
+    const userId = await validateApiKey(rawKey);
+    if (!userId) {
+      return reply.status(401).send({ error: "Invalid or revoked API key." });
+    }
+    request.authUser = { userId, email: "" };
+  });
+
   await authRoutes(app);
   await adminRoutes(app);
   await registerQueueDashboard(app);
@@ -225,6 +244,10 @@ export async function buildApp() {
   await sequenceRoutes(app);
   await notificationsRoutes(app);
   await reportsRoutes(app);
+  await webhookRoutes(app);
+  await rabbitmqRoutes(app);
+  await apiKeyRoutes(app);
+  await publicApiRoutes(app);
   await flowRoutes(app);
   await channelDefaultReplyRoutes(app);
   await registerRealtimeRoutes(app);

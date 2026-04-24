@@ -1,3 +1,4 @@
+import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 
 export type ContactFieldType = "TEXT" | "MULTI_TEXT" | "NUMBER" | "SWITCH" | "DATE";
@@ -45,7 +46,7 @@ export async function createContactField(userId: string, input: ContactFieldWrit
     `SELECT MAX(sort_order) AS max FROM contact_fields WHERE user_id = $1`,
     [userId]
   );
-  const nextOrder = (maxOrderResult.rows[0]?.max ?? -1) + 1;
+  const nextOrder = (firstRow(maxOrderResult)?.max ?? -1) + 1;
 
   const result = await pool.query<ContactField>(
     `INSERT INTO contact_fields (user_id, label, name, field_type, is_active, is_mandatory, sort_order)
@@ -61,7 +62,7 @@ export async function createContactField(userId: string, input: ContactFieldWrit
       nextOrder
     ]
   );
-  return result.rows[0];
+  return requireRow(result, "Expected contact field row");
 }
 
 export async function updateContactField(
@@ -85,7 +86,7 @@ export async function updateContactField(
      RETURNING id, user_id, label, name, field_type, is_active, is_mandatory, sort_order, created_at, updated_at`,
     params
   );
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
 export async function deleteContactField(userId: string, fieldId: string): Promise<boolean> {
@@ -93,5 +94,5 @@ export async function deleteContactField(userId: string, fieldId: string): Promi
     `DELETE FROM contact_fields WHERE user_id = $1 AND id = $2`,
     [userId, fieldId]
   );
-  return (result.rowCount ?? 0) > 0;
+  return hasRows(result);
 }

@@ -1,12 +1,14 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
+import { uploadInboundMedia } from "./supabase-storage-service.js";
 import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
 import {
   encodeFlowLocationInput,
   formatFlowLocationSummary
 } from "./flow-input-codec.js";
 import { processIncomingMessage } from "./message-router-service.js";
+import { upsertWebhookContact } from "./contacts-service.js";
 import { getUserPlanEntitlements } from "./billing-service.js";
 import {
   adaptPayloadForChannel,
@@ -14,6 +16,7 @@ import {
   type FlowMessagePayload,
   validateFlowMessagePayload
 } from "./outbound-message-types.js";
+import { fanoutEvent } from "./event-fanout-service.js";
 
 interface MetaConnectionRow {
   id: string;
@@ -154,9 +157,13 @@ interface WebhookMessage {
   id?: string;
   from?: string;
   type?: string;
+  timestamp?: string;
   text?: { body?: string };
-  image?: { caption?: string };
-  document?: { caption?: string };
+  image?: { id?: string; mime_type?: string; sha256?: string; caption?: string };
+  video?: { id?: string; mime_type?: string; sha256?: string; caption?: string };
+  audio?: { id?: string; mime_type?: string; sha256?: string; voice?: boolean };
+  document?: { id?: string; mime_type?: string; sha256?: string; filename?: string; caption?: string };
+  sticker?: { id?: string; mime_type?: string; sha256?: string };
   location?: {
     latitude?: number;
     longitude?: number;
@@ -164,6 +171,12 @@ interface WebhookMessage {
     address?: string;
     url?: string;
   };
+  contacts?: Array<{
+    name?: { formatted_name?: string; first_name?: string; last_name?: string };
+    phones?: Array<{ phone?: string; wa_id?: string; type?: string }>;
+    org?: { company?: string };
+  }>;
+  reaction?: { message_id?: string; emoji?: string };
   button?: { text?: string; payload?: string };
   interactive?: {
     button_reply?: { title?: string; id?: string };
@@ -205,10 +218,23 @@ interface WebhookPayload {
 type WebhookMessageTask = {
   phoneNumberId: string;
   displayPhoneNumber: string | null;
+  message: WebhookMessage;
+  contacts: WebhookContact[];
+};
+
+type NormalizedWebhookMessageTask = {
+  phoneNumberId: string;
+  displayPhoneNumber: string | null;
   from: string;
   senderName: string | null;
+  messageId: string;
+  messageType: string;
   text: string;
   flowText?: string | null;
+  mediaUrl?: string | null;
+  mimeType?: string | null;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
 };
 
 function mapConnection(row: MetaConnectionRow): MetaConnection {
@@ -505,6 +531,263 @@ export async function graphUploadFileHandle(
     body: new Blob([new Uint8Array(fileBuffer)], { type: mimeType })
   });
   return parseGraphResponse<{ h: string }>(response);
+}
+
+type MetaInboundMediaDescriptor = {
+  id: string;
+  mimeType: string | null;
+  filename: string | null;
+  kind: "image" | "video" | "audio" | "document" | "sticker";
+};
+
+type MetaInboundMediaDownload = {
+  buffer: Buffer;
+  mimeType: string;
+  filename: string;
+};
+
+
+function mediaExtensionFromMimeType(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === "image/jpeg") return "jpg";
+  if (normalized === "image/png") return "png";
+  if (normalized === "image/webp") return "webp";
+  if (normalized === "video/mp4") return "mp4";
+  if (normalized === "audio/mpeg") return "mp3";
+  if (normalized === "audio/ogg") return "ogg";
+  if (normalized === "application/pdf") return "pdf";
+  return normalized.split("/")[1] ?? "bin";
+}
+
+async function storeMetaInboundMediaUpload(
+  userId: string,
+  media: MetaInboundMediaDownload
+): Promise<string | null> {
+  return uploadInboundMedia({
+    userId,
+    buffer: media.buffer,
+    mimeType: media.mimeType,
+    folder: "inbound",
+    filename: media.filename
+  });
+}
+
+function normalizeMetaMessageTimestamp(value: string | undefined): string {
+  if (!value?.trim()) {
+    return new Date().toISOString();
+  }
+  if (/^\d+$/.test(value.trim())) {
+    return new Date(Number(value.trim()) * 1000).toISOString();
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
+}
+
+function selectInboundMediaDescriptor(message: WebhookMessage): MetaInboundMediaDescriptor | null {
+  if (message.image?.id) {
+    return {
+      id: message.image.id,
+      mimeType: message.image.mime_type ?? null,
+      filename: null,
+      kind: "image"
+    };
+  }
+  if (message.video?.id) {
+    return {
+      id: message.video.id,
+      mimeType: message.video.mime_type ?? null,
+      filename: null,
+      kind: "video"
+    };
+  }
+  if (message.audio?.id) {
+    return {
+      id: message.audio.id,
+      mimeType: message.audio.mime_type ?? null,
+      filename: null,
+      kind: "audio"
+    };
+  }
+  if (message.document?.id) {
+    return {
+      id: message.document.id,
+      mimeType: message.document.mime_type ?? null,
+      filename: message.document.filename ?? null,
+      kind: "document"
+    };
+  }
+  if (message.sticker?.id) {
+    return {
+      id: message.sticker.id,
+      mimeType: message.sticker.mime_type ?? "image/webp",
+      filename: null,
+      kind: "sticker"
+    };
+  }
+  return null;
+}
+
+async function downloadMetaInboundMedia(
+  accessToken: string,
+  descriptor: MetaInboundMediaDescriptor
+): Promise<MetaInboundMediaDownload | null> {
+  try {
+    const metadata = await graphGet<{
+      url?: string;
+      mime_type?: string;
+      file_size?: number;
+    }>(`/${descriptor.id}`, accessToken);
+    const mediaUrl = metadata.url?.trim();
+    const mimeType = metadata.mime_type?.trim() || descriptor.mimeType || "application/octet-stream";
+    if (!mediaUrl) {
+      return null;
+    }
+
+    const response = await fetch(mediaUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Meta media download failed (${response.status})`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length === 0) {
+      return null;
+    }
+    if (buffer.length > env.INBOUND_MEDIA_MAX_BYTES) {
+      return null;
+    }
+
+    const extension = mediaExtensionFromMimeType(mimeType);
+    return {
+      buffer,
+      mimeType,
+      filename: descriptor.filename?.trim() || `meta-${descriptor.kind}.${extension}`
+    };
+  } catch (error) {
+    console.warn(`[MetaWebhook] inbound media download failed id=${descriptor.id}`, error);
+    return null;
+  }
+}
+
+function summarizeSharedContacts(contacts: NonNullable<WebhookMessage["contacts"]>): string | null {
+  const first = contacts[0];
+  if (!first) {
+    return null;
+  }
+  const name =
+    first.name?.formatted_name?.trim() ||
+    [first.name?.first_name, first.name?.last_name].filter(Boolean).join(" ").trim() ||
+    "Contact";
+  const primaryPhone =
+    first.phones?.[0]?.phone?.trim() ||
+    first.phones?.[0]?.wa_id?.trim() ||
+    null;
+  const company = first.org?.company?.trim() || null;
+  return [`[CONTACT] ${name}`, company, primaryPhone].filter(Boolean).join("\n");
+}
+
+function inferMetaWebhookMessageType(message: WebhookMessage): string {
+  if (message.text?.body) return "text";
+  if (message.image) return "image";
+  if (message.video) return "video";
+  if (message.audio) return "audio";
+  if (message.document) return "document";
+  if (message.sticker) return "sticker";
+  if (message.location) return "location";
+  if (message.contacts?.length) return "contact";
+  if (message.reaction) return "reaction";
+  if (message.button) return "button";
+  if (message.interactive?.button_reply) return "button_reply";
+  if (message.interactive?.list_reply) return "list_reply";
+  return message.type?.trim() || "unknown";
+}
+
+export function summarizeMetaWebhookMessage(message: WebhookMessage): { text: string; flowText?: string | null } | null {
+  const directText = message.text?.body?.trim();
+  if (directText) {
+    return { text: directText, flowText: directText };
+  }
+
+  const buttonText = message.button?.text?.trim();
+  if (buttonText) {
+    return { text: buttonText, flowText: buttonText };
+  }
+
+  const interactiveButton = message.interactive?.button_reply;
+  if (interactiveButton) {
+    const line = [interactiveButton.title, interactiveButton.id].filter(Boolean).join(" ").trim();
+    if (line) {
+      return { text: line, flowText: line };
+    }
+  }
+
+  const interactiveList = message.interactive?.list_reply;
+  if (interactiveList) {
+    const line = [interactiveList.title, interactiveList.description, interactiveList.id].filter(Boolean).join(" ").trim();
+    if (line) {
+      return { text: line, flowText: line };
+    }
+  }
+
+  const latitude = Number(message.location?.latitude);
+  const longitude = Number(message.location?.longitude);
+  if (!Number.isNaN(latitude) && !Number.isNaN(longitude)) {
+    const locationPayload = {
+      latitude,
+      longitude,
+      ...(message.location?.name?.trim() ? { name: message.location.name.trim() } : {}),
+      ...(message.location?.address?.trim() ? { address: message.location.address.trim() } : {}),
+      ...(message.location?.url?.trim() ? { url: message.location.url.trim() } : {}),
+      source: "native" as const
+    };
+    return {
+      text: formatFlowLocationSummary(locationPayload),
+      flowText: encodeFlowLocationInput(locationPayload)
+    };
+  }
+
+  const mediaCaption =
+    message.image?.caption?.trim() ||
+    message.video?.caption?.trim() ||
+    message.document?.caption?.trim();
+  if (mediaCaption) {
+    return { text: mediaCaption, flowText: mediaCaption };
+  }
+
+  if (message.contacts?.length) {
+    const contactSummary = summarizeSharedContacts(message.contacts);
+    if (contactSummary) {
+      return { text: contactSummary, flowText: contactSummary };
+    }
+  }
+
+  const reactionEmoji = message.reaction?.emoji?.trim();
+  if (reactionEmoji) {
+    const summary = `[REACTION] ${reactionEmoji}`;
+    return { text: summary, flowText: summary };
+  }
+
+  if (message.sticker) {
+    return { text: "[Sticker received]", flowText: "[Sticker received]" };
+  }
+  if (message.image) {
+    return { text: "[Image received]", flowText: "[Image received]" };
+  }
+  if (message.video) {
+    return { text: "[Video received]", flowText: "[Video received]" };
+  }
+  if (message.audio) {
+    return { text: message.audio.voice ? "[Voice note received]" : "[Audio received]", flowText: "[Audio received]" };
+  }
+  if (message.document) {
+    const label = message.document.filename?.trim() || "Document received";
+    return { text: `[Document] ${label}`, flowText: `[Document] ${label}` };
+  }
+
+  return null;
 }
 
 type PhoneRegistrationAttempt = {
@@ -2231,13 +2514,14 @@ export async function sendMetaTextMessage(input: {
   to: string;
   text: string;
   phoneNumberId?: string;
+  webhookUrl?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection }> {
   const sent = await sendMetaTextDirect(input);
   const conversation = await getOrCreateConversation(input.userId, sent.to, {
     channelType: "api",
     channelLinkedNumber: sent.connection.linkedNumber
   });
-  await trackOutboundMessage(conversation.id, sent.text, undefined, null, null, sent.messageId ?? null);
+  await trackOutboundMessage(conversation.id, sent.text, { webhookUrl: input.webhookUrl ?? null }, null, null, sent.messageId ?? null);
 
   return {
     messageId: sent.messageId,
@@ -2281,7 +2565,77 @@ function truncateMetaText(value: string, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
-function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Record<string, unknown> {
+function isDataUrl(value: string): boolean {
+  return /^data:/i.test(value.trim());
+}
+
+function decodeDataUrl(value: string): { buffer: Buffer; mimeType: string } | null {
+  const match = value.trim().match(/^data:([^;,]+)?;base64,(.+)$/i);
+  if (!match) {
+    return null;
+  }
+  const mimeType = match[1]?.trim() || "application/octet-stream";
+  try {
+    return {
+      buffer: Buffer.from(match[2]!, "base64"),
+      mimeType
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMediaBufferFromUrl(url: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return null;
+    }
+    return {
+      buffer: Buffer.from(await response.arrayBuffer()),
+      mimeType: response.headers.get("content-type") ?? "application/octet-stream"
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function resolveMetaMediaReference(
+  phoneNumberId: string,
+  accessToken: string,
+  url: string
+): Promise<{ link?: string; id?: string }> {
+  const trimmed = url.trim();
+  const dataUrl = decodeDataUrl(trimmed);
+  if (dataUrl) {
+    const uploaded = await graphPostMedia(phoneNumberId, accessToken, dataUrl.buffer, dataUrl.mimeType);
+    return { id: uploaded.id };
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return { link: trimmed };
+  }
+
+  // Preserve standard public URLs by default; if the fetch fails or the URL is
+  // private we still have the option to upload it by ID in the future.
+  if (!isDataUrl(trimmed) && !trimmed.includes("/api/media/")) {
+    return { link: trimmed };
+  }
+
+  const downloaded = await fetchMediaBufferFromUrl(trimmed);
+  if (!downloaded) {
+    return { link: trimmed };
+  }
+
+  const uploaded = await graphPostMedia(phoneNumberId, accessToken, downloaded.buffer, downloaded.mimeType);
+  return { id: uploaded.id };
+}
+
+async function buildMetaFlowRequestBody(
+  to: string,
+  payload: FlowMessagePayload,
+  context: { phoneNumberId: string; accessToken: string }
+): Promise<Record<string, unknown>> {
   switch (payload.type) {
     case "text":
       return {
@@ -2293,13 +2647,25 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
         }
       };
 
-    case "media":
+    case "reaction":
+      return {
+        messaging_product: "whatsapp",
+        to,
+        type: "reaction",
+        reaction: {
+          message_id: payload.messageId.trim(),
+          emoji: payload.emoji.trim()
+        }
+      };
+
+    case "media": {
+      const reference = await resolveMetaMediaReference(context.phoneNumberId, context.accessToken, payload.url);
       return {
         messaging_product: "whatsapp",
         to,
         type: payload.mediaType,
         [payload.mediaType]: {
-          link: payload.url.trim(),
+          ...("id" in reference && reference.id ? { id: reference.id } : { link: reference.link ?? payload.url.trim() }),
           ...(payload.caption?.trim()
             ? {
                 caption: truncateMetaText(payload.caption, 1024)
@@ -2307,6 +2673,7 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
             : {})
         }
       };
+    }
 
     case "text_buttons":
       return {
@@ -2337,7 +2704,8 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
         }
       };
 
-    case "media_buttons":
+    case "media_buttons": {
+      const reference = await resolveMetaMediaReference(context.phoneNumberId, context.accessToken, payload.url);
       return {
         messaging_product: "whatsapp",
         to,
@@ -2347,7 +2715,7 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
           header: {
             type: payload.mediaType,
             [payload.mediaType]: {
-              link: payload.url.trim()
+              ...("id" in reference && reference.id ? { id: reference.id } : { link: reference.link ?? payload.url.trim() })
             }
           },
           body: {
@@ -2364,6 +2732,7 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
           }
         }
       };
+    }
 
     case "list":
       let remainingRows = 10;
@@ -2489,14 +2858,6 @@ function buildMetaFlowRequestBody(to: string, payload: FlowMessagePayload): Reco
       };
 
     case "contact_share": {
-      const vcard = [
-        "BEGIN:VCARD",
-        "VERSION:3.0",
-        `FN:${payload.name.trim()}`,
-        ...(payload.org?.trim() ? [`ORG:${payload.org.trim()}`] : []),
-        `TEL;type=CELL;type=VOICE;waid=${payload.phone.replace(/\D/g, "")}:+${payload.phone.replace(/\D/g, "")}`,
-        "END:VCARD"
-      ].join("\n");
       return {
         messaging_product: "whatsapp",
         to,
@@ -2580,8 +2941,15 @@ export async function sendMetaTextDirect(input: {
     }
   );
 
+  const messageId = response.messages?.[0]?.id ?? null;
+  void fanoutEvent(input.userId, "messages.update", {
+    remoteJid: normalizedTo,
+    status: "sent",
+    messageId
+  });
+
   return {
-    messageId: response.messages?.[0]?.id ?? null,
+    messageId,
     connection: mapConnection(resolvedRow),
     to: normalizedTo,
     text
@@ -2618,8 +2986,15 @@ export async function sendMetaTemplateDirect(input: {
     })
   );
 
+  const messageId = response.messages?.[0]?.id ?? null;
+  void fanoutEvent(input.userId, "messages.update", {
+    remoteJid: normalizedTo,
+    status: "sent",
+    messageId
+  });
+
   return {
-    messageId: response.messages?.[0]?.id ?? null,
+    messageId,
     connection: mapConnection(resolvedRow),
     to: normalizedTo
   };
@@ -2649,67 +3024,45 @@ export async function sendMetaFlowMessageDirect(input: {
   const response = await graphPost<{ messages?: Array<{ id?: string }> }>(
     `/${resolvedRow.phone_number_id}/messages`,
     accessToken,
-    buildMetaFlowRequestBody(normalizedTo, deliveryPayload)
+    await buildMetaFlowRequestBody(normalizedTo, deliveryPayload, {
+      phoneNumberId: resolvedRow.phone_number_id,
+      accessToken
+    })
   );
 
+  const messageId = response.messages?.[0]?.id ?? null;
+  void fanoutEvent(input.userId, "messages.update", {
+    remoteJid: normalizedTo,
+    status: "sent",
+    messageId
+  });
+
   return {
-    messageId: response.messages?.[0]?.id ?? null,
+    messageId,
     connection: mapConnection(resolvedRow),
     to: normalizedTo,
     summaryText
   };
 }
 
-function extractMessageInput(message: WebhookMessage): { text: string; flowText?: string | null } | null {
-  const directText = message.text?.body?.trim();
-  if (directText) {
-    return { text: directText, flowText: directText };
-  }
-
-  const buttonText = message.button?.text?.trim();
-  if (buttonText) {
-    return { text: buttonText, flowText: buttonText };
-  }
-
-  const interactiveButton = message.interactive?.button_reply;
-  if (interactiveButton) {
-    const line = [interactiveButton.title, interactiveButton.id].filter(Boolean).join(" ").trim();
-    if (line) {
-      return { text: line, flowText: line };
-    }
-  }
-
-  const interactiveList = message.interactive?.list_reply;
-  if (interactiveList) {
-    const line = [interactiveList.title, interactiveList.description, interactiveList.id].filter(Boolean).join(" ").trim();
-    if (line) {
-      return { text: line, flowText: line };
-    }
-  }
-
-  const latitude = Number(message.location?.latitude);
-  const longitude = Number(message.location?.longitude);
-  if (!Number.isNaN(latitude) && !Number.isNaN(longitude)) {
-    const locationPayload = {
-      latitude,
-      longitude,
-      ...(message.location?.name?.trim() ? { name: message.location.name.trim() } : {}),
-      ...(message.location?.address?.trim() ? { address: message.location.address.trim() } : {}),
-      ...(message.location?.url?.trim() ? { url: message.location.url.trim() } : {}),
-      source: "native" as const
-    };
-    return {
-      text: formatFlowLocationSummary(locationPayload),
-      flowText: encodeFlowLocationInput(locationPayload)
-    };
-  }
-
-  const mediaCaption = message.image?.caption?.trim() || message.document?.caption?.trim();
-  if (mediaCaption) {
-    return { text: mediaCaption, flowText: mediaCaption };
-  }
-
-  return null;
+export async function sendMetaMessage(input: {
+  userId: string;
+  to: string;
+  payload: FlowMessagePayload;
+  phoneNumberId?: string;
+  webhookUrl?: string | null;
+}): Promise<{ messageId: string | null; connection: MetaConnection; summaryText: string }> {
+  const sent = await sendMetaFlowMessageDirect(input);
+  const conversation = await getOrCreateConversation(input.userId, sent.to, {
+    channelType: "api",
+    channelLinkedNumber: sent.connection.linkedNumber
+  });
+  await trackOutboundMessage(conversation.id, sent.summaryText, { webhookUrl: input.webhookUrl ?? null }, null, input.payload, sent.messageId ?? null);
+  return {
+    messageId: sent.messageId,
+    connection: sent.connection,
+    summaryText: sent.summaryText
+  };
 }
 
 function buildWebhookTasks(payload: WebhookPayload): WebhookMessageTask[] {
@@ -2733,28 +3086,65 @@ function buildWebhookTasks(payload: WebhookPayload): WebhookMessageTask[] {
       }
 
       for (const message of messages) {
-        const from = normalizePhoneDigits(message.from);
-        const extracted = extractMessageInput(message);
-        if (!from || !extracted?.text) {
-          continue;
-        }
-
-        const senderName =
-          value.contacts?.find((contact) => normalizePhoneDigits(contact.wa_id) === from)?.profile?.name ?? null;
-
         tasks.push({
           phoneNumberId,
           displayPhoneNumber,
-          from,
-          senderName,
-          text: extracted.text,
-          flowText: extracted.flowText ?? extracted.text
+          message,
+          contacts: value.contacts ?? []
         });
       }
     }
   }
 
   return tasks;
+}
+
+async function normalizeWebhookTask(
+  task: WebhookMessageTask,
+  userId: string,
+  accessToken: string
+): Promise<NormalizedWebhookMessageTask | null> {
+  const from = normalizePhoneDigits(task.message.from);
+  const messageId = task.message.id?.trim();
+  if (!from || !messageId) {
+    return null;
+  }
+
+  const senderName =
+    task.contacts.find((contact) => normalizePhoneDigits(contact.wa_id) === from)?.profile?.name ?? null;
+  const extracted = summarizeMetaWebhookMessage(task.message);
+  if (!extracted?.text) {
+    return null;
+  }
+
+  const mediaDescriptor = selectInboundMediaDescriptor(task.message);
+  let mediaUrl: string | null = null;
+  let mimeType: string | null = mediaDescriptor?.mimeType ?? null;
+  if (mediaDescriptor) {
+    const downloaded = await downloadMetaInboundMedia(accessToken, mediaDescriptor);
+    if (downloaded) {
+      mimeType = downloaded.mimeType;
+      mediaUrl = await storeMetaInboundMediaUpload(userId, downloaded);
+    }
+  }
+
+  return {
+    phoneNumberId: task.phoneNumberId,
+    displayPhoneNumber: task.displayPhoneNumber,
+    from,
+    senderName,
+    messageId,
+    messageType: inferMetaWebhookMessageType(task.message),
+    text: extracted.text,
+    flowText: extracted.flowText ?? extracted.text,
+    mediaUrl,
+    mimeType,
+    timestamp: normalizeMetaMessageTimestamp(task.message.timestamp),
+    metadata: {
+      type: task.message.type ?? null,
+      reactionTo: task.message.reaction?.message_id ?? null
+    }
+  };
 }
 
 async function sendAutoReplyViaMetaApi(input: {
@@ -2800,29 +3190,54 @@ async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
       .map((value) => normalizePhoneDigits(value))
       .filter((value): value is string => Boolean(value))
   );
-  if (ownNumbers.has(task.from)) {
+  const senderPhone = normalizePhoneDigits(task.message.from);
+  if (senderPhone && ownNumbers.has(senderPhone)) {
     console.info(
-      `[MetaWebhook] inbound skipped user=${connectionRow.user_id} reason=from_own_number from=${task.from} phoneNumberId=${task.phoneNumberId}`
+      `[MetaWebhook] inbound skipped user=${connectionRow.user_id} reason=from_own_number from=${senderPhone} phoneNumberId=${task.phoneNumberId}`
     );
     return;
   }
 
   const channelLinkedNumber = connectionRow.linked_number || task.displayPhoneNumber || null;
   const accessToken = decryptToken(connectionRow.access_token_encrypted);
+  const normalizedTask = await normalizeWebhookTask(task, connectionRow.user_id, accessToken);
+  if (!normalizedTask) {
+    return;
+  }
+
+  try {
+    await upsertWebhookContact({
+      userId: connectionRow.user_id,
+      phoneNumber: normalizedTask.from,
+      displayName: normalizedTask.senderName ?? undefined
+    });
+  } catch (error) {
+    console.warn(`[MetaWebhook] contact upsert failed user=${connectionRow.user_id} from=${normalizedTask.from}`, error);
+  }
+
   const result = await processIncomingMessage({
     userId: connectionRow.user_id,
     channelType: "api",
     channelLinkedNumber,
-    customerIdentifier: task.from,
-    messageText: task.text,
-    flowMessageText: task.flowText ?? task.text,
-    senderName: task.senderName ?? undefined,
+    customerIdentifier: normalizedTask.from,
+    messageText: normalizedTask.text,
+    flowMessageText: normalizedTask.flowText ?? normalizedTask.text,
+    senderName: normalizedTask.senderName ?? undefined,
+    mediaUrl: normalizedTask.mediaUrl ?? null,
     shouldAutoReply: connectionRow.enabled,
+    rawPayload: {
+      messageId: normalizedTask.messageId,
+      messageType: normalizedTask.messageType,
+      flowText: normalizedTask.flowText ?? null,
+      mimeType: normalizedTask.mimeType ?? null,
+      metadata: normalizedTask.metadata ?? null,
+      timestamp: normalizedTask.timestamp
+    },
     sendReply: async ({ text }) => {
       await sendAutoReplyViaMetaApi({
         phoneNumberId: connectionRow.phone_number_id,
         accessToken,
-        to: task.from,
+        to: normalizedTask.from,
         text
       });
     }
@@ -2830,13 +3245,13 @@ async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
 
   if (!result.autoReplySent) {
     console.info(
-      `[MetaWebhook] auto-reply skipped user=${connectionRow.user_id} conversation=${result.conversationId} reason=${result.reason} from=${task.from}`
+      `[MetaWebhook] auto-reply skipped user=${connectionRow.user_id} conversation=${result.conversationId} reason=${result.reason} from=${normalizedTask.from}`
     );
     return;
   }
 
   console.info(
-    `[MetaWebhook] auto-reply sent user=${connectionRow.user_id} conversation=${result.conversationId} from=${task.from}`
+    `[MetaWebhook] auto-reply sent user=${connectionRow.user_id} conversation=${result.conversationId} from=${normalizedTask.from}`
   );
 }
 

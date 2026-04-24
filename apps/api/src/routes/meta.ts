@@ -10,12 +10,14 @@ import {
   listMetaBusinessConnections,
   getMetaBusinessStatus,
   handleMetaWebhookPayload,
+  sendMetaMessage,
   setMetaBusinessChannelEnabled,
   sendMetaTextMessage,
   updateMetaBusinessProfile,
   uploadMetaBusinessProfileLogo,
   verifyMetaWebhookSignature
 } from "../services/meta-whatsapp-service.js";
+import { validateFlowMessagePayload } from "../services/outbound-message-types.js";
 import { applyTemplateWebhookUpdate } from "../services/template-service.js";
 import { readFile } from "node:fs/promises";
 
@@ -31,7 +33,15 @@ const CompleteEmbeddedSignupSchema = z.object({
 const SendTextSchema = z.object({
   to: z.string().trim().min(8).max(25),
   text: z.string().trim().min(1).max(4096),
-  phoneNumberId: z.string().trim().optional()
+  phoneNumberId: z.string().trim().optional(),
+  webhookUrl: z.string().trim().url().optional()
+});
+
+const SendMessageSchema = z.object({
+  to: z.string().trim().min(8).max(25),
+  phoneNumberId: z.string().trim().optional(),
+  payload: z.unknown(),
+  webhookUrl: z.string().trim().url().optional()
 });
 
 const DisconnectSchema = z.object({
@@ -288,10 +298,48 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
         userId: request.authUser.userId,
         to: parsed.data.to,
         text: parsed.data.text,
-        phoneNumberId: parsed.data.phoneNumberId
+        phoneNumberId: parsed.data.phoneNumberId,
+        webhookUrl: parsed.data.webhookUrl ?? null
       });
 
       return { ok: true, messageId: result.messageId, connection: result.connection };
+    }
+  );
+
+  fastify.post(
+    "/api/meta/business/send-message",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      if (!consumeRateLimit(`meta-send:${request.authUser.userId}`, 60)) {
+        return reply.status(429).send({ error: "Rate limit exceeded. Try again in a minute." });
+      }
+
+      const parsed = SendMessageSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid message payload" });
+      }
+
+      let payload;
+      try {
+        payload = validateFlowMessagePayload(parsed.data.payload as never);
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message });
+      }
+
+      const result = await sendMetaMessage({
+        userId: request.authUser.userId,
+        to: parsed.data.to,
+        payload,
+        phoneNumberId: parsed.data.phoneNumberId,
+        webhookUrl: parsed.data.webhookUrl ?? null
+      });
+
+      return {
+        ok: true,
+        messageId: result.messageId,
+        connection: result.connection,
+        summaryText: result.summaryText
+      };
     }
   );
 

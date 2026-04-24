@@ -1,4 +1,6 @@
 import { pool, withTransaction } from "../db/pool.js";
+import { firstRow, requireRow } from "../db/sql-helpers.js";
+import { fanoutEvent } from "./event-fanout-service.js";
 import { clamp } from "../utils/index.js";
 import type { AgentChannelType, Conversation, ConversationKind } from "../types/models.js";
 import {
@@ -65,7 +67,7 @@ async function scoreKnowledgeIntent(userId: string, text: string): Promise<numbe
     [userId, terms]
   );
 
-  const hits = Number(result.rows[0]?.hits ?? 0);
+  const hits = Number(firstRow(result)?.hits ?? 0);
   if (hits >= 5) {
     return 14;
   }
@@ -262,8 +264,9 @@ export async function getOrCreateConversation(
     [userId, phoneNumber]
   );
 
-  if ((existing.rowCount ?? 0) > 0) {
-    const row = existing.rows[0];
+  const existingRow = firstRow(existing);
+  if (existingRow) {
+    const row = existingRow;
     const nextChannelType = options?.channelType ?? row.channel_type ?? "qr";
     const nextChannelLinkedNumber = options?.channelLinkedNumber ?? row.channel_linked_number ?? null;
     const nextAssignedAgentId = options?.assignedAgentProfileId ?? row.assigned_agent_profile_id ?? null;
@@ -282,7 +285,7 @@ export async function getOrCreateConversation(
          RETURNING *`,
         [nextChannelType, nextChannelLinkedNumber, nextAssignedAgentId, row.id]
       );
-      return updated.rows[0] ?? row;
+      return firstRow(updated) ?? row;
     }
 
     return row;
@@ -311,7 +314,7 @@ export async function getOrCreateConversation(
     ]
   );
 
-  return created.rows[0];
+  return requireRow(created, "Expected conversation row to be created");
 }
 
 export async function reconcileConversationPhone(
@@ -333,7 +336,7 @@ export async function reconcileConversationPhone(
        LIMIT 1`,
       [userId, previous]
     );
-    const source = sourceResult.rows[0];
+    const source = firstRow(sourceResult);
     if (!source) {
       return;
     }
@@ -344,7 +347,7 @@ export async function reconcileConversationPhone(
        LIMIT 1`,
       [userId, canonical]
     );
-    const target = targetResult.rows[0];
+    const target = firstRow(targetResult);
 
     if (!target) {
       await client.query(
@@ -466,19 +469,21 @@ export async function getConversationById(conversationId: string): Promise<Conve
     [conversationId]
   );
 
-  return result.rows[0] ?? null;
+  return firstRow(result);
 }
 
-export async function incrementConversationUnreadCount(userId: string, conversationId: string): Promise<void> {
-  await pool.query(
+export async function incrementConversationUnreadCount(userId: string, conversationId: string): Promise<number> {
+  const result = await pool.query<{ unread_count: number }>(
     `INSERT INTO conversation_read_state (user_id, conversation_id, unread_count, last_read_at, updated_at)
      VALUES ($1, $2, 1, NULL, NOW())
      ON CONFLICT (user_id, conversation_id)
      DO UPDATE SET
        unread_count = conversation_read_state.unread_count + 1,
-       updated_at = NOW()`,
+       updated_at = NOW()
+     RETURNING unread_count`,
     [userId, conversationId]
   );
+  return firstRow(result)?.unread_count ?? 1;
 }
 
 export async function markConversationRead(userId: string, conversationId: string): Promise<number> {
@@ -492,7 +497,10 @@ export async function markConversationRead(userId: string, conversationId: strin
        updated_at = NOW()`,
     [userId, conversationId]
   );
-
+  void fanoutEvent(userId, "chats.update", {
+    id: conversationId,
+    unreadCount: 0
+  });
   return 0;
 }
 
@@ -505,6 +513,7 @@ export async function trackInboundMessage(
     channelType?: AgentChannelType;
     channelLinkedNumber?: string | null;
     mediaUrl?: string | null;
+    payloadJson?: unknown;
   }
 ): Promise<Conversation> {
   const channelType = options?.channelType ?? "qr";
@@ -558,12 +567,13 @@ export async function trackInboundMessage(
   );
 
   const inboundMediaUrl = options?.mediaUrl ?? null;
+  const payloadJsonStr = options?.payloadJson != null ? JSON.stringify(options.payloadJson) : null;
   if (inboundMediaUrl) {
     try {
       await pool.query(
-        `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, media_url)
-         VALUES ($1, 'inbound', $2, $3, $4)`,
-        [conversation.id, senderName ?? null, message, inboundMediaUrl]
+        `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, media_url, payload_json)
+         VALUES ($1, 'inbound', $2, $3, $4, $5::jsonb)`,
+        [conversation.id, senderName ?? null, message, inboundMediaUrl, payloadJsonStr]
       );
     } catch {
       await pool.query(
@@ -574,12 +584,23 @@ export async function trackInboundMessage(
     }
   } else {
     await pool.query(
-      `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text)
-       VALUES ($1, 'inbound', $2, $3)`,
-      [conversation.id, senderName ?? null, message]
+      `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, payload_json)
+       VALUES ($1, 'inbound', $2, $3, $4::jsonb)`,
+      [conversation.id, senderName ?? null, message, payloadJsonStr]
     );
   }
-  await incrementConversationUnreadCount(userId, conversation.id);
+  const newUnreadCount = await incrementConversationUnreadCount(userId, conversation.id);
+  const updatedConv = firstRow(updated);
+  void fanoutEvent(userId, "chats.upsert", {
+    id: conversation.id,
+    phoneNumber,
+    channelType: options?.channelType ?? "qr",
+    unreadCount: newUnreadCount,
+    lastMessage: message,
+    lastMessageAt: new Date().toISOString(),
+    score: updatedConv?.score ?? conversation.score,
+    stage: updatedConv?.stage ?? conversation.stage
+  });
 
   const capturedProfile = extractCapturedProfileDetails(message);
   const contactPhoneNumber = capturedProfile.phoneNumber ?? phoneNumber;
@@ -615,7 +636,7 @@ export async function trackInboundMessage(
     }
   }
 
-  return updated.rows[0];
+  return requireRow(updated, "Expected updated conversation row");
 }
 
 export async function trackOutboundMessage(
@@ -630,6 +651,7 @@ export async function trackOutboundMessage(
     markAsAiReply?: boolean;
     senderName?: string | null;
     sourceType?: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
+    webhookUrl?: string | null;
   },
   mediaUrl?: string | null,
   payload?: FlowMessagePayload | null,
@@ -657,9 +679,10 @@ export async function trackOutboundMessage(
          message_content,
          wamid,
          sent_at,
-         source_type
+         source_type,
+         webhook_url
        )
-       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13)`,
+       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13, $14)`,
       [
         conversationId,
         usage?.senderName ?? null,
@@ -673,7 +696,8 @@ export async function trackOutboundMessage(
         msgType,
         msgContent,
         wamid ?? null,
-        usage?.sourceType ?? "manual"
+        usage?.sourceType ?? "manual",
+        usage?.webhookUrl ?? null
       ]
     );
   } catch {
@@ -737,7 +761,7 @@ export async function trackOutboundMessage(
 
   const retrievalDelta = scoreFromRetrievalChunks(usage?.retrievalChunks);
   const markAsAiReply = usage?.markAsAiReply ?? false;
-  await pool.query(
+  const outboundUpdated = await pool.query<{ id: string; user_id: string }>(
     `UPDATE conversations
      SET last_message = $1,
          last_message_at = NOW(),
@@ -748,9 +772,18 @@ export async function trackOutboundMessage(
            WHEN LEAST(100, GREATEST(0, score + $3)) >= 40 THEN 'warm'
            ELSE 'cold'
          END
-     WHERE id = $2`,
+     WHERE id = $2
+     RETURNING id, user_id`,
     [message, conversationId, retrievalDelta, markAsAiReply]
   );
+  const outboundConv = firstRow(outboundUpdated);
+  if (outboundConv) {
+    void fanoutEvent(outboundConv.user_id, "chats.update", {
+      id: outboundConv.id,
+      lastMessage: message,
+      lastMessageAt: new Date().toISOString()
+    });
+  }
 }
 
 interface CursorStamp {
@@ -1727,7 +1760,7 @@ export async function getDashboardOverview(userId: string): Promise<{
     [userId]
   );
 
-  const row = result.rows[0];
+  const row = firstRow(result);
 
   const overview = {
     leadsToday: Number(row?.leads_today ?? 0),

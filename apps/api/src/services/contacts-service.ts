@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import ExcelJS from "exceljs";
 import { pool, withTransaction } from "../db/pool.js";
+import { fanoutEvent } from "./event-fanout-service.js";
 import type {
   Contact,
   ContactFieldValue,
@@ -1087,6 +1088,18 @@ export async function upsertWebhookContact(input: {
   const fieldValuesMap = await loadFieldValues(pool, [result.contact.id]);
   const contact = { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
   await emitSequenceContactEvent({ action: result.action, contact });
+  if (result.action !== "skipped") {
+    void fanoutEvent(
+      input.userId,
+      result.action === "created" ? "contacts.upsert" : "contacts.update",
+      {
+        id: contact.id,
+        phoneNumber: contact.phone_number,
+        displayName: contact.display_name,
+        action: result.action
+      }
+    );
+  }
   return contact;
 }
 

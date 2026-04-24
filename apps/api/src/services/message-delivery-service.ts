@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import type { Conversation } from "../types/models.js";
 import {
@@ -68,7 +69,7 @@ async function countTodayOutboundSentForConnection(connectionId: string): Promis
        AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')`,
     [connectionId]
   );
-  return parseInt(result.rows[0]?.count ?? "0", 10);
+  return parseInt(firstRow(result)?.count ?? "0", 10);
 }
 
 async function getConnectionTier(connectionId: string): Promise<string | null> {
@@ -78,7 +79,7 @@ async function getConnectionTier(connectionId: string): Promise<string | null> {
      WHERE id = $1`,
     [connectionId]
   );
-  return result.rows[0]?.tier ?? null;
+  return firstRow(result)?.tier ?? null;
 }
 
 function buildRateLimitKey(input: {
@@ -162,7 +163,7 @@ async function lookupContactId(userId: string, phoneNumber: string): Promise<str
      LIMIT 1`,
     [userId, phoneNumber.replace(/\D/g, "")]
   );
-  return result.rows[0]?.id ?? null;
+  return firstRow(result)?.id ?? null;
 }
 
 export async function sendTrackedApiConversationFlowMessage(input: {
@@ -701,8 +702,42 @@ export async function processMetaDeliveryStatusEvent(event: MetaDeliveryStatusEv
     });
     await applySequenceDeliveryStatusUpdate({ wamid: event.wamid, status: event.status });
     await markWebhookStatusEventProcessed(claimed.eventId);
+    void firePerMessageWebhook(event);
   } catch (error) {
     console.error("[DeliveryWebhook] status processing failed", error);
+  }
+}
+
+async function firePerMessageWebhook(event: MetaDeliveryStatusEvent): Promise<void> {
+  try {
+    const result = await pool.query<{ webhook_url: string }>(
+      `SELECT webhook_url
+       FROM conversation_messages
+       WHERE wamid = $1
+         AND webhook_url IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [event.wamid]
+    );
+    const webhookUrl = firstRow(result)?.webhook_url;
+    if (!webhookUrl) {
+      return;
+    }
+
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wamid: event.wamid,
+        status: event.status,
+        errorCode: event.errorCode ?? null,
+        errorMessage: event.errorMessage ?? null,
+        timestamp: event.eventTimestamp ?? new Date().toISOString()
+      }),
+      signal: AbortSignal.timeout(10_000)
+    });
+  } catch (error) {
+    console.warn(`[DeliveryWebhook] per-message webhook fire failed wamid=${event.wamid}`, error);
   }
 }
 

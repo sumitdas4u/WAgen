@@ -1,3 +1,4 @@
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { normalizeDeliveryFailureMessage } from "./message-delivery-data-service.js";
 
@@ -331,7 +332,7 @@ export async function getDeliveryReportSummary(
     )
   ]);
 
-  const summary = summaryResult.rows[0] ?? {
+  const summary = firstRow(summaryResult) ?? {
     recipients: "0",
     sent: "0",
     delivered: "0",
@@ -459,6 +460,6 @@ export async function listDeliveryLogs(
       remarks: row.final_status === "failed" ? normalizeDeliveryFailureMessage(row.error_code ?? null, row.remarks) : row.remarks,
       errorCode: row.error_code ?? null
     })),
-    total: Number(countResult.rows[0]?.count ?? 0)
+    total: Number(firstRow(countResult)?.count ?? 0)
   };
 }

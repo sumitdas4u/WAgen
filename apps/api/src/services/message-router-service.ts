@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import {
   handleFlowMessage,
@@ -35,6 +36,7 @@ import type { FlowMessagePayload } from "./outbound-message-types.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
 import { evaluateConversationCredit } from "./workspace-billing-service.js";
+import { fanoutEvent } from "./event-fanout-service.js";
 
 type UnifiedChannelType = "web" | "qr" | "api";
 
@@ -48,6 +50,9 @@ export interface ProcessIncomingMessageInput {
   senderName?: string;
   shouldAutoReply?: boolean;
   mediaUrl?: string | null;
+  /** Channel-specific normalized payload stored in conversation_messages.payload_json
+   *  and included in the messages.upsert fanout event. */
+  rawPayload?: unknown;
   sendReply?: (payload: { text: string }) => Promise<void>;
 }
 
@@ -96,7 +101,7 @@ async function getLatestConversationState(
      LIMIT 1`,
     [conversationId]
   );
-  return refreshed.rows[0] ?? fallback;
+  return firstRow(refreshed) ?? fallback;
 }
 
 export async function processIncomingMessage(
@@ -116,7 +121,8 @@ export async function processIncomingMessage(
     {
       channelType: input.channelType,
       channelLinkedNumber: input.channelLinkedNumber ?? null,
-      mediaUrl: input.mediaUrl ?? null
+      mediaUrl: input.mediaUrl ?? null,
+      payloadJson: input.rawPayload ?? null
     }
   );
   await markContactInboundActivity(input.userId, input.customerIdentifier);
@@ -164,6 +170,18 @@ export async function processIncomingMessage(
     affectsListOrder: true,
     score: conversation.score,
     stage: conversation.stage
+  });
+
+  void fanoutEvent(input.userId, "messages.upsert", {
+    conversationId: conversation.id,
+    remoteJid: input.customerIdentifier,
+    channelType: input.channelType,
+    message: normalizedMessage,
+    senderName: input.senderName ?? null,
+    mediaUrl: input.mediaUrl ?? null,
+    fromMe: false,
+    timestamp: new Date().toISOString(),
+    ...(typeof input.rawPayload === "object" && input.rawPayload !== null ? input.rawPayload : {})
   });
 
   const phoneCandidate = normalizePhoneCandidate(input.customerIdentifier);

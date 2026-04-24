@@ -1,3 +1,4 @@
+import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { estimateInrCost } from "./usage-cost-service.js";
 
@@ -23,6 +24,10 @@ export interface AdminUserUsage {
   totalTokens: number;
   costInr: number;
   createdAt: string;
+}
+
+function toCount(value: string | null | undefined): number {
+  return Number(value ?? 0);
 }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
@@ -69,11 +74,11 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   );
 
   return {
-    totalUsers: Number(usersResult.rows[0]?.total_users ?? 0),
-    activeAgents: Number(usersResult.rows[0]?.active_agents ?? 0),
-    totalConversations: Number(conversationsResult.rows[0]?.total_conversations ?? 0),
-    totalMessages: Number(messagesResult.rows[0]?.total_messages ?? 0),
-    totalChunks: Number(chunksResult.rows[0]?.total_chunks ?? 0),
+    totalUsers: toCount(firstRow(usersResult)?.total_users),
+    activeAgents: toCount(firstRow(usersResult)?.active_agents),
+    totalConversations: toCount(firstRow(conversationsResult)?.total_conversations),
+    totalMessages: toCount(firstRow(messagesResult)?.total_messages),
+    totalChunks: toCount(firstRow(chunksResult)?.total_chunks),
     totalTokens: usageTotals.totalTokens,
     totalCostInr: usageTotals.totalCostInr
   };
