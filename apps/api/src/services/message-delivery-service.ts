@@ -702,8 +702,42 @@ export async function processMetaDeliveryStatusEvent(event: MetaDeliveryStatusEv
     });
     await applySequenceDeliveryStatusUpdate({ wamid: event.wamid, status: event.status });
     await markWebhookStatusEventProcessed(claimed.eventId);
+    void firePerMessageWebhook(event);
   } catch (error) {
     console.error("[DeliveryWebhook] status processing failed", error);
+  }
+}
+
+async function firePerMessageWebhook(event: MetaDeliveryStatusEvent): Promise<void> {
+  try {
+    const result = await pool.query<{ webhook_url: string }>(
+      `SELECT webhook_url
+       FROM conversation_messages
+       WHERE wamid = $1
+         AND webhook_url IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [event.wamid]
+    );
+    const webhookUrl = firstRow(result)?.webhook_url;
+    if (!webhookUrl) {
+      return;
+    }
+
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wamid: event.wamid,
+        status: event.status,
+        errorCode: event.errorCode ?? null,
+        errorMessage: event.errorMessage ?? null,
+        timestamp: event.eventTimestamp ?? new Date().toISOString()
+      }),
+      signal: AbortSignal.timeout(10_000)
+    });
+  } catch (error) {
+    console.warn(`[DeliveryWebhook] per-message webhook fire failed wamid=${event.wamid}`, error);
   }
 }
 

@@ -2,9 +2,9 @@ import type { WAMessage, WASocket } from "@whiskeysockets/baileys";
 import * as baileys from "@whiskeysockets/baileys";
 import pdfParse from "pdf-parse";
 import { env } from "../config/env.js";
-import { pool } from "../db/pool.js";
 import { aiService } from "./ai-service.js";
 import { chargeUser } from "./ai-token-service.js";
+import { uploadInboundMedia } from "./supabase-storage-service.js";
 
 function unwrapMessageContent(message: NonNullable<WAMessage["message"]>): NonNullable<WAMessage["message"]> {
   let current = message as Record<string, any>;
@@ -75,18 +75,7 @@ async function storeMediaInUploads(
   mimeType: string,
   filename: string
 ): Promise<string | null> {
-  try {
-    const base64Data = buffer.toString("base64");
-    const result = await pool.query<{ id: string }>(
-      `INSERT INTO media_uploads (user_id, mime_type, filename, data, size_bytes)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id`,
-      [userId, mimeType, filename, base64Data, buffer.length]
-    );
-    return `/api/media/${result.rows[0].id}`;
-  } catch {
-    return null;
-  }
+  return uploadInboundMedia({ userId, buffer, mimeType, folder: "inbound", filename });
 }
 
 export async function extractInboundMediaText(

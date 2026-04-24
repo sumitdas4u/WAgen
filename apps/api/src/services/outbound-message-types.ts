@@ -31,6 +31,7 @@ export type FlowRendererMessageType =
 
 export type FlowMessagePayload =
   | { type: "text"; text: string }
+  | { type: "reaction"; messageId: string; emoji: string }
   | {
       type: "media";
       mediaType: "image" | "video" | "document" | "audio";
@@ -160,6 +161,12 @@ export function validateFlowMessagePayload(payload: FlowMessagePayload): FlowMes
       }
       return payload;
 
+    case "reaction":
+      if (!isNonEmptyString(payload.messageId) || !isNonEmptyString(payload.emoji)) {
+        throw new Error("reaction requires messageId and emoji.");
+      }
+      return payload;
+
     case "media":
       if (!isNonEmptyString(payload.url)) {
         throw new Error("media payload requires url.");
@@ -238,6 +245,7 @@ export function validateFlowMessagePayload(payload: FlowMessagePayload): FlowMes
 export function deriveRendererMessageType(payload: FlowMessagePayload): FlowRendererMessageType {
   switch (payload.type) {
     case "text":
+    case "reaction":
       return "text";
     case "media":
       if (payload.mediaType === "image") return "image";
@@ -329,6 +337,9 @@ export function summarizeFlowMessage(payload: FlowMessagePayload): string {
   switch (payload.type) {
     case "text":
       return cleanLine(payload.text);
+
+    case "reaction":
+      return `[REACTION] ${cleanLine(payload.emoji)}`;
 
     case "media": {
       const tag = payload.mediaType.toUpperCase();

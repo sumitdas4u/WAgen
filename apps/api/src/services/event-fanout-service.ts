@@ -13,6 +13,7 @@ export type WagenEvent =
   | "chats.upsert"
   | "chats.update"
   | "contacts.upsert"
+  | "contacts.update"
   | "presence.update"
   | "call";
 
