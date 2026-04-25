@@ -44,7 +44,7 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     label: "Chats",
     icon: "chats",
     title: "Chats",
-    defaultModuleIds: ["inbox"]
+    defaultModuleIds: ["inbox", "inbox-v2"]
   },
   {
     id: "leads",

@@ -1,6 +1,7 @@
 import { pool, withTransaction } from "../db/pool.js";
 import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { fanoutEvent } from "./event-fanout-service.js";
+import { realtimeHub } from "./realtime-hub.js";
 import { clamp } from "../utils/index.js";
 import type { AgentChannelType, Conversation, ConversationKind } from "../types/models.js";
 import {
@@ -602,6 +603,42 @@ export async function trackInboundMessage(
     stage: updatedConv?.stage ?? conversation.stage
   });
 
+  // inbox-v2: typed batched WS events
+  const inboundMsgRow = await pool.query<{ id: string; created_at: Date }>(
+    `SELECT id, created_at FROM conversation_messages
+     WHERE conversation_id = $1 AND direction = 'inbound'
+     ORDER BY created_at DESC, id DESC LIMIT 1`,
+    [conversation.id]
+  );
+  const inboundMsg = inboundMsgRow.rows[0];
+  if (inboundMsg) {
+    realtimeHub.broadcastMessageCreated(userId, {
+      conversationId: conversation.id,
+      message: {
+        id: inboundMsg.id,
+        conversation_id: conversation.id,
+        direction: "inbound",
+        sender_name: senderName ?? null,
+        message_text: message,
+        content_type: "text",
+        is_private: false,
+        in_reply_to_id: null,
+        echo_id: null,
+        delivery_status: "delivered",
+        error_code: null,
+        error_message: null,
+        retry_count: 0,
+        created_at: inboundMsg.created_at.toISOString()
+      }
+    });
+  }
+  realtimeHub.broadcastConversationUpdated(userId, {
+    id: conversation.id,
+    last_message: { text: message, sent_at: new Date().toISOString(), direction: "inbound" },
+    unread_count: newUnreadCount,
+    score: updatedConv?.score ?? conversation.score
+  });
+
   const capturedProfile = extractCapturedProfileDetails(message);
   const contactPhoneNumber = capturedProfile.phoneNumber ?? phoneNumber;
   if (contactPhoneNumber.replace(/\D/g, "").length >= 8) {
@@ -652,11 +689,20 @@ export async function trackOutboundMessage(
     senderName?: string | null;
     sourceType?: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
     webhookUrl?: string | null;
+    echoId?: string | null;
   },
   mediaUrl?: string | null,
   payload?: FlowMessagePayload | null,
   wamid?: string | null
 ): Promise<void> {
+  // echo_id dedup: return early if this outbound message was already inserted
+  if (usage?.echoId) {
+    const existing = await pool.query<{ id: string }>(
+      `SELECT id FROM conversation_messages WHERE conversation_id = $1 AND echo_id = $2 LIMIT 1`,
+      [conversationId, usage.echoId]
+    );
+    if ((existing.rowCount ?? 0) > 0) return;
+  }
   const validatedPayload = payload ? validateFlowMessagePayload(payload) : null;
   const msgType = validatedPayload ? deriveRendererMessageType(validatedPayload) : "text";
   const msgContent = validatedPayload ? JSON.stringify(validatedPayload) : null;
@@ -680,9 +726,10 @@ export async function trackOutboundMessage(
          wamid,
          sent_at,
          source_type,
-         webhook_url
+         webhook_url,
+         echo_id
        )
-       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13, $14)`,
+       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13, $14, $15)`,
       [
         conversationId,
         usage?.senderName ?? null,
@@ -697,7 +744,8 @@ export async function trackOutboundMessage(
         msgContent,
         wamid ?? null,
         usage?.sourceType ?? "manual",
-        usage?.webhookUrl ?? null
+        usage?.webhookUrl ?? null,
+        usage?.echoId ?? null
       ]
     );
   } catch {
@@ -782,6 +830,40 @@ export async function trackOutboundMessage(
       id: outboundConv.id,
       lastMessage: message,
       lastMessageAt: new Date().toISOString()
+    });
+
+    // inbox-v2: typed batched WS event for outbound
+    const outboundMsgRow = await pool.query<{ id: string; created_at: Date; echo_id: string | null }>(
+      `SELECT id, created_at, echo_id FROM conversation_messages
+       WHERE conversation_id = $1 AND direction = 'outbound'
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [conversationId]
+    );
+    const outboundMsg = outboundMsgRow.rows[0];
+    if (outboundMsg) {
+      realtimeHub.broadcastMessageCreated(outboundConv.user_id, {
+        conversationId,
+        message: {
+          id: outboundMsg.id,
+          conversation_id: conversationId,
+          direction: "outbound",
+          sender_name: usage?.senderName ?? null,
+          message_text: message,
+          content_type: "text",
+          is_private: false,
+          in_reply_to_id: null,
+          echo_id: outboundMsg.echo_id,
+          delivery_status: "sent",
+          error_code: null,
+          error_message: null,
+          retry_count: 0,
+          created_at: outboundMsg.created_at.toISOString()
+        }
+      });
+    }
+    realtimeHub.broadcastConversationUpdated(outboundConv.user_id, {
+      id: conversationId,
+      last_message: { text: message, sent_at: new Date().toISOString(), direction: "outbound" }
     });
   }
 }

@@ -43,6 +43,7 @@ import { rabbitmqRoutes } from "./routes/rabbitmq.js";
 import { apiKeyRoutes } from "./routes/api-keys.js";
 import { publicApiRoutes } from "./routes/public-api.js";
 import { registerRealtimeRoutes } from "./services/realtime-hub.js";
+import { labelRoutes } from "./routes/labels.js";
 import { registerQueueDashboard } from "./services/queue-dashboard-service.js";
 import { registerQueueOperations } from "./services/queue-operations-service.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
@@ -234,6 +235,7 @@ export async function buildApp() {
   await aiReviewRoutes(app);
   await sdkRoutes(app);
   await conversationRoutes(app);
+  await labelRoutes(app);
   await contactRoutes(app);
   await contactFieldRoutes(app);
   await contactSegmentRoutes(app);

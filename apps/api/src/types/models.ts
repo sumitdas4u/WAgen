@@ -26,6 +26,11 @@ export interface User {
   ai_token_balance: number;
 }
 
+export type ConversationStatus = "open" | "pending" | "resolved" | "snoozed";
+export type ConversationPriority = "none" | "low" | "medium" | "high" | "urgent";
+export type MessageContentType = "text" | "image" | "audio" | "video" | "document" | "sticker" | "location" | "contacts" | "interactive" | "template" | "activity";
+export type MessageDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
+
 export interface Conversation {
   id: string;
   user_id: string;
@@ -45,6 +50,36 @@ export interface Conversation {
   last_ai_reply_at: string | null;
   unread_count?: number;
   visitor_online?: boolean;
+  status: ConversationStatus;
+  priority: ConversationPriority;
+  snoozed_until: string | null;
+  agent_last_seen_at: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversation_id: string;
+  direction: "inbound" | "outbound";
+  sender_name: string | null;
+  message_text: string;
+  content_type: MessageContentType;
+  is_private: boolean;
+  in_reply_to_id: string | null;
+  echo_id: string | null;
+  delivery_status: MessageDeliveryStatus;
+  error_code: string | null;
+  error_message: string | null;
+  retry_count: number;
+  payload_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface Label {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string;
+  created_at: string;
 }
 
 export interface ContactFieldValue {

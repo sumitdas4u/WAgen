@@ -16,6 +16,19 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     requiresAuth: true
   },
   {
+    id: "inbox-v2",
+    path: "inbox-v2/:conversationId?",
+    navTo: "/dashboard/inbox-v2",
+    navLabel: "Inbox v2",
+    subtitle: "Unified super inbox",
+    icon: "chats",
+    section: "main",
+    lazyRoute: () => import("../modules/dashboard/inbox-v2/route"),
+    featureFlag: "dashboard.inbox",
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
     id: "leads",
     path: "leads",
     navTo: "/dashboard/leads",
