@@ -5,7 +5,6 @@ import { getAvatarColor } from "./ConversationRow";
 interface Props {
   message: ConversationMessage;
   isFirst: boolean;
-  isLast: boolean;
   showAvatar: boolean;
   convPhone: string;
   onRetry?: (msgId: string) => void;
@@ -83,7 +82,7 @@ function renderContent(msg: ConversationMessage) {
   }
 }
 
-export function MessageBubble({ message, isFirst, isLast, showAvatar, convPhone, onRetry, quotedMessage }: Props) {
+export function MessageBubble({ message, isFirst, showAvatar, convPhone, onRetry, quotedMessage }: Props) {
   const isOutbound = message.direction === "outbound";
   const isPrivate = message.is_private;
   const isActivity = message.content_type === "activity";

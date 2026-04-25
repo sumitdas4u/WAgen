@@ -53,7 +53,7 @@ export function useRealtimeSocket(token: string | null) {
     let ws: WebSocket | null = null;
     let retryDelay = 1_000;
     let destroyed = false;
-    let ping: ReturnType<typeof setInterval>;
+
 
     function resync() {
       const lastMsgIds = getLastMsgIds();
@@ -187,7 +187,7 @@ export function useRealtimeSocket(token: string | null) {
     }
 
     connect();
-    ping = setInterval(() => {
+    const ping = setInterval(() => {
       if (ws?.readyState === WebSocket.OPEN) ws.send("ping");
     }, 25_000);
 

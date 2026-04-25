@@ -13,7 +13,7 @@ export function Component() {
   const navigate = useNavigate();
   const { token } = useAuth();
   const { setActiveConv, activeConvId } = useConvStore();
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar] = useState(true);
 
   const optimisticMap = useRealtimeSocket(token);
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useConvStore } from "../store/convStore";
 import { useSetStatus, useSetPriority, useSetLabels, useLabels } from "../queries";
 import { getAvatarColor } from "./ConversationRow";
@@ -21,7 +21,7 @@ interface AccordionProps {
   wagenVariant?: "blue" | "purple";
 }
 
-function Accordion({ id, title, open, onToggle, children, wagenVariant }: AccordionProps) {
+function Accordion({ title, open, onToggle, children, wagenVariant }: AccordionProps) {
   return (
     <div className={`iv-acc${wagenVariant ? ` iv-wagen-${wagenVariant === "blue" ? "lead" : "flow"}` : ""}`}>
       <div className="iv-acc-head" onClick={onToggle}>

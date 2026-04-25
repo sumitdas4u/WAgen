@@ -109,7 +109,6 @@ export function MessageThread({ convId, optimisticMap }: Props) {
               key={msg.id}
               message={msg}
               isFirst={isFirst}
-              isLast={isLast}
               showAvatar={showAvatar}
               convPhone={conv.phone_number}
               onRetry={handleRetry}
