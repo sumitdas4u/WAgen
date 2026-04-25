@@ -145,7 +145,7 @@ export const useConvStore = create<ConvStore>((set) => ({
   })),
 
   removeConv: (id) => set((s) => {
-    const { [id]: _removed, ...rest } = s.byId;
+    const { [id]: _, ...rest } = s.byId;
     return { byId: rest, ids: s.ids.filter((i) => i !== id) };
   }),
 
