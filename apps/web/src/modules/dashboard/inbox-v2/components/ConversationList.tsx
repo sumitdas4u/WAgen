@@ -16,8 +16,26 @@ interface Props {
   onSelectConv: (id: string) => void;
 }
 
+function scoreToStage(score: number) {
+  if (score >= 70) return "hot";
+  if (score >= 40) return "warm";
+  return "cold";
+}
+
+function applyLeadFilters(conv: Conversation, filters: import("../store/convStore").ConvFilters): boolean {
+  if (filters.stage !== "all" && scoreToStage(conv.score) !== filters.stage) return false;
+  if (filters.channel !== "all" && conv.channel_type !== filters.channel) return false;
+  if (filters.score !== "all" && scoreToStage(conv.score) !== filters.score) return false;
+  if (filters.kind !== "all" && conv.lead_kind !== filters.kind) return false;
+  if (filters.assignment === "assigned" && !conv.assigned_agent_profile_id) return false;
+  if (filters.assignment === "unassigned" && conv.assigned_agent_profile_id) return false;
+  if (filters.aiMode === "ai" && (conv.ai_paused || conv.manual_takeover)) return false;
+  if (filters.aiMode === "human" && !conv.ai_paused && !conv.manual_takeover) return false;
+  return true;
+}
+
 export function ConversationList({ onSelectConv }: Props) {
-  const { folder, setFolder, byId, ids, activeConvId, setActiveConv, labels } = useConvStore();
+  const { folder, setFolder, byId, ids, activeConvId, setActiveConv, labels, filters } = useConvStore();
   const [searchQ, setSearchQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const parentRef = useRef<HTMLDivElement>(null);
@@ -33,9 +51,9 @@ export function ConversationList({ onSelectConv }: Props) {
   const filteredIds = ids.filter((id) => {
     const c = byId[id];
     if (!c) return false;
-    if (debouncedQ) return true; // server-side search already filtered
-    if (folder === "all") return true;
-    return c.status === folder;
+    if (!debouncedQ && folder !== "all" && c.status !== folder) return false;
+    if (!applyLeadFilters(c, filters)) return false;
+    return true;
   });
 
   const virtualizer = useVirtualizer({

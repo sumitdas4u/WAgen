@@ -528,6 +528,19 @@
 .iv-priority-high   { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 .iv-priority-urgent { background: #ffe4e6; color: #be123c; border: 1px solid #fecdd3; }
 
+/* ── Nav Tree (matches mockup) ───────────────────────────────────────────── */
+.iv-nav-tree {
+  flex: 1; overflow-y: auto; padding: 6px 0;
+}
+.iv-nav-section-label {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #94a3b8;
+  padding: 10px 14px 4px;
+}
+.iv-nav-ch-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block;
+}
+
 /* ── Shimmer skeleton ────────────────────────────────────────────────────── */
 @keyframes iv-shimmer {
   0%   { background-position: -400px 0; }

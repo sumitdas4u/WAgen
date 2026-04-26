@@ -6,18 +6,20 @@ import { useConvStore } from "./store/convStore";
 import { ConversationList } from "./components/ConversationList";
 import { MessageThread } from "./components/MessageThread";
 import { DetailsSidebar } from "./components/DetailsSidebar";
+import { LeadFiltersPanel } from "./components/LeadFiltersPanel";
 import "./inbox-v2.css";
 
 export function Component() {
   const { conversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
   const { token } = useAuth();
-  const { setActiveConv, activeConvId } = useConvStore();
+  const { setActiveConv, activeConvId, byId, ids } = useConvStore();
   const [showSidebar] = useState(true);
 
   const optimisticMap = useRealtimeSocket(token);
 
   const activeId = conversationId ?? activeConvId ?? null;
+  const conversations = ids.map((id) => byId[id]).filter(Boolean);
 
   const handleSelectConv = useCallback((id: string) => {
     setActiveConv(id);
@@ -26,8 +28,8 @@ export function Component() {
 
   return (
     <div className="iv-shell">
-      {/* Col 1: Nav sidebar — minimal for now, full WAgen nav handled by DashboardShell */}
-      <NavSidebar />
+      {/* Col 1: Lead filters nav */}
+      <NavSidebar conversations={conversations} />
 
       {/* Col 2: Conversation list */}
       <ConversationList onSelectConv={handleSelectConv} />
@@ -50,7 +52,7 @@ export function Component() {
   );
 }
 
-function NavSidebar() {
+function NavSidebar({ conversations }: { conversations: import("./store/convStore").Conversation[] }) {
   return (
     <div className="iv-nav">
       <div className="iv-nav-org">
@@ -59,33 +61,7 @@ function NavSidebar() {
         <span className="iv-nav-caret">▾</span>
       </div>
 
-      <div className="iv-nav-search">
-        <div style={{ position: "relative", flex: 1 }}>
-          <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "#94a3b8" }}>🔍</span>
-          <input className="iv-nav-searchinput" placeholder="Search..." />
-        </div>
-        <button className="iv-nav-compose" title="New conversation">✏</button>
-      </div>
-
-      <div className="iv-nav-section-head" style={{ marginTop: 8 }}>
-        <span>⭐</span> Views
-        <span className="iv-nav-section-caret">▾</span>
-      </div>
-      <div className="iv-nav-subitem">All Conversations</div>
-      <div className="iv-nav-subitem">Mine</div>
-      <div className="iv-nav-subitem">Unassigned</div>
-
-      <div className="iv-nav-footer">
-        <div className="iv-nav-avatar-wrap">
-          <div className="iv-nav-avatar">A</div>
-          <div className="iv-online-dot" />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: "#334155", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            Agent
-          </div>
-        </div>
-      </div>
+      <LeadFiltersPanel conversations={conversations} />
     </div>
   );
 }
