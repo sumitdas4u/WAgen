@@ -1300,7 +1300,6 @@ function FlowNewPage() {
 // ─── Exports ─────────────────────────────────────────────────────────────────
 
 export async function prefetchData(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _ctx: DashboardModulePrefetchContext
 ): Promise<void> {
   return;
