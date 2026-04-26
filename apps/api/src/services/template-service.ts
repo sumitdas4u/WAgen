@@ -64,6 +64,7 @@ export interface MessageTemplate {
   id: string;
   userId: string;
   connectionId: string;
+  phoneNumberId: string;
   templateId: string | null;
   name: string;
   category: TemplateCategory;
@@ -82,6 +83,7 @@ interface MessageTemplateRow {
   id: string;
   user_id: string;
   connection_id: string;
+  phone_number_id: string;
   template_id: string | null;
   name: string;
   category: string;
@@ -148,6 +150,7 @@ function mapTemplate(row: MessageTemplateRow): MessageTemplate {
     id: row.id,
     userId: row.user_id,
     connectionId: row.connection_id,
+    phoneNumberId: row.phone_number_id,
     templateId: row.template_id,
     name: row.name,
     category: row.category as TemplateCategory,
@@ -779,6 +782,7 @@ export async function getMessageTemplate(userId: string, templateId: string): Pr
             mt.quality_score,
             mt.components_json,
             mt.meta_rejection_reason,
+            wbc.phone_number_id,
             wbc.linked_number,
             wbc.display_phone_number,
             mt.created_at::text,
@@ -825,6 +829,7 @@ export async function listTemplates(
             mt.quality_score,
             mt.components_json,
             mt.meta_rejection_reason,
+            wbc.phone_number_id,
             wbc.linked_number,
             wbc.display_phone_number,
             mt.created_at::text,
