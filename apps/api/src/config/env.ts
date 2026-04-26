@@ -60,7 +60,7 @@ const BaseEnvSchema = z.object({
   META_VERIFY_TOKEN: z.string().optional(),
   META_REDIRECT_URI: z.string().optional(),
   META_PHONE_REGISTRATION_PIN: z.string().optional(),
-  META_GRAPH_VERSION: z.string().default("v25.0"),
+  META_GRAPH_VERSION: z.string().default("v25.0").transform((v) => v.trim()),
   META_STATUS_SYNC_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
   META_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   META_SYSTEM_USER_TOKEN: z.string().optional(),

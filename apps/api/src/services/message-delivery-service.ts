@@ -318,6 +318,7 @@ export async function deliverConversationTemplateMessage(input: {
     phoneNumber: conversation.phone_number,
     connectionId: template.connectionId,
     linkedNumber: template.linkedNumber,
+    phoneNumberId: template.phoneNumberId,
     messageKind: "conversation_template",
     attemptNumber: 1,
     payload: {
@@ -388,6 +389,7 @@ export async function deliverConversationTemplateMessage(input: {
       classification,
       connectionId: template.connectionId,
       linkedNumber: template.linkedNumber,
+      phoneNumberId: template.phoneNumberId,
       response: {
         templateId: template.id,
         templateName: template.name
@@ -460,6 +462,7 @@ export async function deliverCampaignMessage(input: {
     phoneNumber: input.message.phone_number,
     connectionId: template.connectionId,
     linkedNumber: template.linkedNumber,
+    phoneNumberId: template.phoneNumberId,
     messageKind: "campaign_template",
     attemptNumber: input.message.retry_count + 1,
     payload: {
@@ -543,6 +546,7 @@ export async function deliverCampaignMessage(input: {
       nextRetryAt: nextRetryAt?.toISOString() ?? null,
       connectionId: template.connectionId,
       linkedNumber: template.linkedNumber,
+      phoneNumberId: template.phoneNumberId,
       campaignId: input.campaign.id,
       response: {
         templateId: template.id,

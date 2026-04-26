@@ -413,11 +413,13 @@ export async function executeSequenceOutboundMessage(input: {
   let deliveryAttemptId: string | null = null;
   let deliveryConnectionId: string | null = null;
   let deliveryLinkedNumber: string | null = null;
+  let deliveryPhoneNumberId: string | null = null;
 
   try {
     const template = await getMessageTemplate(contact.user_id, step.message_template_id);
     deliveryConnectionId = template.connectionId ?? null;
     deliveryLinkedNumber = template.linkedNumber ?? null;
+    deliveryPhoneNumberId = template.phoneNumberId ?? null;
     const freshContact = await getContactByPhoneForUser(contact.user_id, contact.phone_number);
     const policy = await evaluateOutboundTemplatePolicy({
       userId: contact.user_id,
@@ -481,6 +483,7 @@ export async function executeSequenceOutboundMessage(input: {
       phoneNumber: contact.phone_number,
       connectionId: template.connectionId,
       linkedNumber: template.linkedNumber,
+      phoneNumberId: template.phoneNumberId,
       messageKind: "sequence_template",
       attemptNumber: enrollment.retry_count + 1,
       payload: {
@@ -580,6 +583,7 @@ export async function executeSequenceOutboundMessage(input: {
         classification,
         connectionId: deliveryConnectionId,
         linkedNumber: deliveryLinkedNumber,
+        phoneNumberId: deliveryPhoneNumberId,
         response: { errorMessage: classification.errorMessage }
       });
     }
