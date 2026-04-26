@@ -67,18 +67,6 @@ function NavSidebar() {
         <button className="iv-nav-compose" title="New conversation">✏</button>
       </div>
 
-      <div className="iv-nav-section-head">
-        <span>💬</span> Conversations
-        <span className="iv-nav-section-caret">▾</span>
-      </div>
-      <div className="iv-nav-item active">
-        <span>📥</span> Inbox v2
-        <span className="iv-nav-badge">0</span>
-      </div>
-      <div className="iv-nav-item" onClick={() => window.location.href = "/dashboard/inbox"}>
-        <span>📭</span> Inbox (classic)
-      </div>
-
       <div className="iv-nav-section-head" style={{ marginTop: 8 }}>
         <span>⭐</span> Views
         <span className="iv-nav-section-caret">▾</span>

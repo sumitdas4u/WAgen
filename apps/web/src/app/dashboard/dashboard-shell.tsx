@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
+type PrimaryNavId = "conversations" | "inbox-classic" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -44,7 +44,14 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     label: "Chats",
     icon: "chats",
     title: "Chats",
-    defaultModuleIds: ["inbox", "inbox-v2"]
+    defaultModuleIds: ["inbox-v2"]
+  },
+  {
+    id: "inbox-classic",
+    label: "Inbox",
+    icon: "unanswered",
+    title: "Inbox (classic)",
+    defaultModuleIds: ["inbox"]
   },
   {
     id: "leads",
@@ -97,10 +104,6 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   }
 ];
 
-const CONVERSATIONS_MENU_ITEMS: StudioNavItem[] = [
-  { moduleId: "inbox", label: "Inbox (classic)", icon: "chats", to: "/dashboard/inbox" },
-  { moduleId: "inbox-v2", label: "Inbox v2", icon: "chats", to: "/dashboard/inbox-v2" }
-];
 
 const STUDIO_MENU_ITEMS: StudioNavItem[] = [
   { moduleId: "studio-flows", label: "Flows", icon: "flows", to: "/dashboard/studio/flows" },
@@ -263,7 +266,9 @@ function DashboardShellLayout() {
       ...item,
       to:
         item.id === "conversations"
-          ? "/dashboard/inbox"
+          ? "/dashboard/inbox-v2"
+          : item.id === "inbox-classic"
+            ? "/dashboard/inbox"
           : item.id === "leads"
             ? "/dashboard/leads"
             : item.id === "broadcast"
@@ -280,8 +285,10 @@ function DashboardShellLayout() {
     }));
 
   const currentPrimaryNavId: PrimaryNavId =
-    currentModuleId === "inbox" || currentModuleId === "inbox-v2"
+    currentModuleId === "inbox-v2"
       ? "conversations"
+      : currentModuleId === "inbox"
+        ? "inbox-classic"
       : currentModuleId === "leads"
         ? "leads"
         : currentModuleId === "broadcast"
@@ -375,8 +382,6 @@ function DashboardShellLayout() {
             : "No agent found yet. Create one to start receiving chats."
       : sectionMeta.subtitle;
 
-  const isConversationsSection = currentModuleId === "inbox" || currentModuleId === "inbox-v2";
-  const visibleConversationsItems = CONVERSATIONS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const isStudioSection = visibleStudioItems.some((item) => item.moduleId === currentModuleId);
   const isSettingsSection = currentModuleId.startsWith("settings-");
   const isAnalyticsSection = currentModuleId === "analytics";
@@ -411,10 +416,6 @@ function DashboardShellLayout() {
   );
 
   const renderOutlet = () => {
-    if (isConversationsSection && visibleConversationsItems.length > 1) {
-      return renderSubSidebar("Chats", visibleConversationsItems);
-    }
-
     if (isStudioSection) {
       return renderSubSidebar("AI Agents", visibleStudioItems);
     }
