@@ -97,6 +97,11 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   }
 ];
 
+const CONVERSATIONS_MENU_ITEMS: StudioNavItem[] = [
+  { moduleId: "inbox", label: "Inbox (classic)", icon: "chats", to: "/dashboard/inbox" },
+  { moduleId: "inbox-v2", label: "Inbox v2", icon: "chats", to: "/dashboard/inbox-v2" }
+];
+
 const STUDIO_MENU_ITEMS: StudioNavItem[] = [
   { moduleId: "studio-flows", label: "Flows", icon: "flows", to: "/dashboard/studio/flows" },
   { moduleId: "studio-knowledge", label: "Knowledge Base", icon: "knowledge", to: "/dashboard/studio/knowledge" },
@@ -275,7 +280,7 @@ function DashboardShellLayout() {
     }));
 
   const currentPrimaryNavId: PrimaryNavId =
-    currentModuleId === "inbox"
+    currentModuleId === "inbox" || currentModuleId === "inbox-v2"
       ? "conversations"
       : currentModuleId === "leads"
         ? "leads"
@@ -370,6 +375,8 @@ function DashboardShellLayout() {
             : "No agent found yet. Create one to start receiving chats."
       : sectionMeta.subtitle;
 
+  const isConversationsSection = currentModuleId === "inbox" || currentModuleId === "inbox-v2";
+  const visibleConversationsItems = CONVERSATIONS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const isStudioSection = visibleStudioItems.some((item) => item.moduleId === currentModuleId);
   const isSettingsSection = currentModuleId.startsWith("settings-");
   const isAnalyticsSection = currentModuleId === "analytics";
@@ -404,6 +411,10 @@ function DashboardShellLayout() {
   );
 
   const renderOutlet = () => {
+    if (isConversationsSection && visibleConversationsItems.length > 1) {
+      return renderSubSidebar("Chats", visibleConversationsItems);
+    }
+
     if (isStudioSection) {
       return renderSubSidebar("AI Agents", visibleStudioItems);
     }
