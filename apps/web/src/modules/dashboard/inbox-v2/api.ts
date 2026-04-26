@@ -126,6 +126,36 @@ export function deleteLabel(token: string, labelId: string): Promise<{ ok: boole
   return apiFetch(token, `/api/labels/${labelId}`, { method: "DELETE" });
 }
 
+// ── Contact detail + custom fields ───────────────────────────────────────
+
+export interface ContactRecord {
+  id: string;
+  display_name: string | null;
+  phone_number: string;
+  email: string | null;
+  contact_type: string;
+  tags: string[];
+  source_type: string;
+  custom_field_values: Array<{ field_id: string; field_name: string; field_label: string; field_type: string; value: string | null }>;
+  linked_conversation_id: string | null;
+  created_at: string;
+}
+
+export interface ContactField {
+  id: string;
+  label: string;
+  name: string;
+  field_type: string;
+}
+
+export function fetchContactByConversation(token: string, convId: string): Promise<{ contact: ContactRecord }> {
+  return apiFetch(token, `/api/contacts/by-conversation/${convId}`);
+}
+
+export function listContactFields(token: string): Promise<{ fields: ContactField[] }> {
+  return apiFetch(token, `/api/contact-fields`);
+}
+
 // ── Contact lookup ────────────────────────────────────────────────────────
 
 export function fetchContactByPhone(token: string, phone: string): Promise<{ contact: { display_name: string | null; email: string | null; last_incoming_message_at: string | null; marketing_consent_status: string } | null }> {

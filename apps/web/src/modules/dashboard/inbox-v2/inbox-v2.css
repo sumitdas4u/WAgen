@@ -528,6 +528,44 @@
 .iv-priority-high   { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 .iv-priority-urgent { background: #ffe4e6; color: #be123c; border: 1px solid #fecdd3; }
 
+/* ── Contact Info fields ─────────────────────────────────────────────────── */
+.iv-cf-section {
+  padding: 0 14px 4px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.iv-cf-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0 6px;
+  font-size: 12px; font-weight: 700; color: #334155;
+}
+.iv-cf-badge {
+  font-size: 10px; font-weight: 700; color: #2563eb;
+  background: #eff6ff; border: 1px solid #c7d6f7;
+  padding: 2px 7px; border-radius: 999px;
+}
+.iv-cf-row {
+  padding: 5px 0;
+  border-top: 1px solid #f8fafc;
+}
+.iv-cf-label {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; color: #94a3b8; margin-bottom: 2px;
+}
+.iv-cf-value {
+  font-size: 12.5px; font-weight: 500; color: #334155; word-break: break-word;
+}
+.iv-cf-divider {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #94a3b8;
+  border-top: 1px solid #e2eaf4; padding-top: 10px; margin-top: 4px; margin-bottom: 4px;
+}
+.iv-tag-cloud { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.iv-tag {
+  font-size: 10.5px; font-weight: 700; color: #334155;
+  background: #f1f5f9; border: 1px solid #e2eaf4;
+  padding: 2px 8px; border-radius: 999px;
+}
+
 /* ── Lead Filters Panel ──────────────────────────────────────────────────── */
 .iv-lf {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column;
