@@ -21,6 +21,7 @@ import {
   createConversationNote,
   listConversationNotes
 } from "../services/conversation-notes-service.js";
+import { realtimeHub } from "../services/realtime-hub.js";
 
 const ToggleSchema = z.object({
   enabled: z.boolean().optional(),
@@ -260,6 +261,11 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         [agentProfileId, params.conversationId, request.authUser.userId]
       );
 
+      realtimeHub.broadcast(request.authUser.userId, "conversation.assigned", {
+        id: params.conversationId,
+        agent_id: agentProfileId ?? null
+      });
+
       return { ok: true };
     }
   );
@@ -306,6 +312,37 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           authorName,
           content: parsed.data.content
         });
+
+        // Detect @mentions and create in-app notifications
+        const mentionMatches = [...parsed.data.content.matchAll(/@(\S+)/g)];
+        if (mentionMatches.length > 0) {
+          const shortBody = parsed.data.content.slice(0, 120);
+          try {
+            const notifResult = await pool.query<{ id: string; created_at: string }>(
+              `INSERT INTO agent_notifications (user_id, type, conversation_id, actor_name, body)
+               VALUES ($1, 'mention', $2, $3, $4)
+               RETURNING id, created_at`,
+              [request.authUser.userId, params.conversationId, authorName, shortBody]
+            );
+            const notif = notifResult.rows[0];
+            if (notif) {
+              realtimeHub.broadcast(request.authUser.userId, "conversation.mentioned", {
+                conversationId: params.conversationId,
+                noteId: note.id,
+                actorName: authorName,
+                body: shortBody
+              });
+              realtimeHub.broadcast(request.authUser.userId, "agent.notification", {
+                id: notif.id,
+                type: "mention",
+                conversation_id: params.conversationId,
+                actor_name: authorName,
+                body: shortBody,
+                created_at: notif.created_at
+              });
+            }
+          } catch { /* non-fatal */ }
+        }
 
         return reply.status(201).send({ note });
       } catch (error) {
@@ -527,6 +564,362 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       const result = await aiService.generateReply(systemPrompt, text, undefined, { temperature: 0.5 });
       void chargeUser(request.authUser.userId, "ai_text_assist");
       return { text: result.content.trim() };
+    }
+  );
+
+  // ── inbox-v2: status change ──────────────────────────────────────────────
+  const StatusSchema = z.object({
+    status: z.enum(["open", "pending", "resolved", "snoozed"]),
+    snoozed_until: z.string().datetime().optional()
+  });
+
+  fastify.patch(
+    "/api/conversations/:conversationId/status",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const parsed = StatusSchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid status payload" });
+
+      const { status, snoozed_until } = parsed.data;
+      const result = await pool.query<{ id: string }>(
+        `UPDATE conversations
+         SET status = $1,
+             snoozed_until = $2,
+             updated_at = NOW()
+         WHERE id = $3 AND user_id = $4
+         RETURNING id`,
+        [status, snoozed_until ?? null, conversationId, request.authUser.userId]
+      );
+      if ((result.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      realtimeHub.broadcastConversationStatusChanged(request.authUser.userId, {
+        id: conversationId,
+        status,
+        snoozed_until
+      });
+      return { ok: true };
+    }
+  );
+
+  // ── inbox-v2: priority change ────────────────────────────────────────────
+  const PrioritySchema = z.object({
+    priority: z.enum(["none", "low", "medium", "high", "urgent"])
+  });
+
+  fastify.patch(
+    "/api/conversations/:conversationId/priority",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const parsed = PrioritySchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid priority payload" });
+
+      const result = await pool.query<{ id: string }>(
+        `UPDATE conversations SET priority = $1, updated_at = NOW()
+         WHERE id = $2 AND user_id = $3 RETURNING id`,
+        [parsed.data.priority, conversationId, request.authUser.userId]
+      );
+      if ((result.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      realtimeHub.broadcast(request.authUser.userId, "conversation.priority_changed", {
+        id: conversationId,
+        priority: parsed.data.priority
+      });
+      return { ok: true };
+    }
+  );
+
+  // ── inbox-v2: labels ─────────────────────────────────────────────────────
+  const LabelsSchema = z.object({ label_ids: z.array(z.string().uuid()) });
+
+  fastify.put(
+    "/api/conversations/:conversationId/labels",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const parsed = LabelsSchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid labels payload" });
+
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      await pool.query(`DELETE FROM conversation_labels WHERE conversation_id = $1`, [conversationId]);
+      if (parsed.data.label_ids.length > 0) {
+        const values = parsed.data.label_ids.map((_, i) => `($1, $${i + 2})`).join(", ");
+        await pool.query(
+          `INSERT INTO conversation_labels (conversation_id, label_id) VALUES ${values}
+           ON CONFLICT DO NOTHING`,
+          [conversationId, ...parsed.data.label_ids]
+        );
+      }
+
+      realtimeHub.broadcastConversationLabelChanged(request.authUser.userId, conversationId, parsed.data.label_ids);
+      return { ok: true };
+    }
+  );
+
+  // ── inbox-v2: typing indicator ────────────────────────────────────────────
+  const TypingSchema = z.object({ typing: z.boolean() });
+
+  fastify.post(
+    "/api/conversations/:conversationId/typing",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const parsed = TypingSchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid typing payload" });
+
+      realtimeHub.broadcastTyping(request.authUser.userId, conversationId, parsed.data.typing, request.authUser.userId, true);
+      return { ok: true };
+    }
+  );
+
+  // ── inbox-v2: retry failed message ───────────────────────────────────────
+  fastify.post(
+    "/api/conversations/:conversationId/messages/:messageId/retry",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId, messageId } = request.params as { conversationId: string; messageId: string };
+
+      const msgResult = await pool.query<{ retry_count: number; delivery_status: string }>(
+        `SELECT m.retry_count, m.delivery_status
+         FROM conversation_messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         WHERE m.id = $1 AND m.conversation_id = $2 AND c.user_id = $3
+         LIMIT 1`,
+        [messageId, conversationId, request.authUser.userId]
+      );
+      if ((msgResult.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Message not found" });
+
+      const { retry_count, delivery_status } = msgResult.rows[0];
+      if (delivery_status !== "failed") return reply.status(400).send({ error: "Message is not in failed state" });
+      if (retry_count >= 3) return reply.status(400).send({ error: "Max retries exceeded. Contact support." });
+
+      await pool.query(
+        `UPDATE conversation_messages
+         SET delivery_status = 'sent', retry_count = retry_count + 1, error_code = NULL, error_message = NULL
+         WHERE id = $1`,
+        [messageId]
+      );
+
+      realtimeHub.broadcastMessageUpdated(request.authUser.userId, {
+        messageId,
+        conversationId,
+        deliveryStatus: "sent"
+      });
+      return { ok: true };
+    }
+  );
+
+  // ── inbox-v2: messages with direction cursor (after) ─────────────────────
+  fastify.get(
+    "/api/conversations/:conversationId/messages/after",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const query = request.query as { cursor?: string; limit?: string };
+
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      const limit = Math.min(Number(query.limit) || 30, 50);
+      const cursor = query.cursor ?? null;
+
+      type AfterMsgRow = { id: string; conversation_id: string; direction: string; sender_name: string | null; message_text: string; content_type: string; is_private: boolean; in_reply_to_id: string | null; echo_id: string | null; delivery_status: string; error_code: string | null; error_message: string | null; retry_count: number; created_at: Date };
+      let messages: AfterMsgRow[] = [];
+      if (cursor) {
+        const result = await pool.query<AfterMsgRow>(
+          `SELECT id, conversation_id, direction, sender_name, message_text, content_type,
+                  is_private, in_reply_to_id, echo_id, delivery_status, error_code, error_message, retry_count, created_at
+           FROM conversation_messages
+           WHERE conversation_id = $1 AND id > $2
+           ORDER BY created_at ASC, id ASC
+           LIMIT $3`,
+          [conversationId, cursor, limit]
+        );
+        messages = result.rows;
+      } else {
+        messages = [];
+      }
+
+      return { messages, items: messages, hasMore: messages.length === limit };
+    }
+  );
+
+  // ── inbox-v2: bulk actions ────────────────────────────────────────────────
+  const BulkActionSchema = z.object({
+    ids: z.array(z.string().uuid()).min(1).max(100),
+    action: z.enum(["resolve", "assign", "label", "snooze", "reopen"]),
+    payload: z.record(z.unknown()).optional()
+  });
+
+  fastify.post(
+    "/api/conversations/bulk",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = BulkActionSchema.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid bulk action payload" });
+
+      const { ids, action, payload } = parsed.data;
+      const userId = request.authUser.userId;
+
+      const placeholders = ids.map((_, i) => `$${i + 2}`).join(", ");
+
+      if (action === "resolve" || action === "reopen") {
+        const status = action === "resolve" ? "resolved" : "open";
+        await pool.query(
+          `UPDATE conversations SET status = $1, updated_at = NOW()
+           WHERE id IN (${placeholders}) AND user_id = $${ids.length + 2}`,
+          [status, ...ids, userId]
+        );
+      } else if (action === "assign") {
+        const agentId = (payload as { agentId?: string })?.agentId ?? null;
+        await pool.query(
+          `UPDATE conversations SET assigned_agent_profile_id = $1, updated_at = NOW()
+           WHERE id IN (${placeholders}) AND user_id = $${ids.length + 2}`,
+          [agentId, ...ids, userId]
+        );
+      } else if (action === "label") {
+        const labelIds = ((payload as { label_ids?: string[] })?.label_ids ?? []) as string[];
+        for (const convId of ids) {
+          await pool.query(`DELETE FROM conversation_labels WHERE conversation_id = $1`, [convId]);
+          if (labelIds.length > 0) {
+            const vals = labelIds.map((_, i) => `($1, $${i + 2})`).join(", ");
+            await pool.query(
+              `INSERT INTO conversation_labels (conversation_id, label_id) VALUES ${vals} ON CONFLICT DO NOTHING`,
+              [convId, ...labelIds]
+            );
+          }
+        }
+      } else if (action === "snooze") {
+        const snoozedUntil = (payload as { snoozed_until?: string })?.snoozed_until ?? null;
+        await pool.query(
+          `UPDATE conversations SET status = 'snoozed', snoozed_until = $1, updated_at = NOW()
+           WHERE id IN (${placeholders}) AND user_id = $${ids.length + 2}`,
+          [snoozedUntil, ...ids, userId]
+        );
+      }
+
+      realtimeHub.broadcastBulkUpdated(userId, { ids, action, payload: payload as Record<string, unknown> | undefined });
+      return { ok: true, count: ids.length };
+    }
+  );
+
+  // ── inbox-v2: search conversations ───────────────────────────────────────
+  const SearchQuerySchema = z.object({
+    q: z.string().trim().min(1).max(200),
+    limit: z.coerce.number().int().min(1).max(50).optional().default(20)
+  });
+
+  fastify.get(
+    "/api/conversations/search",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = SearchQuerySchema.safeParse(request.query);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid search query" });
+
+      const { q, limit } = parsed.data;
+      const pattern = `%${q}%`;
+
+      const result = await pool.query(
+        `SELECT c.* FROM conversations c
+         LEFT JOIN contacts ct ON ct.phone_number = c.phone_number AND ct.user_id = c.user_id
+         WHERE c.user_id = $1
+           AND (
+             ct.display_name ILIKE $2 OR
+             c.phone_number ILIKE $2 OR
+             EXISTS (
+               SELECT 1 FROM conversation_messages m
+               WHERE m.conversation_id = c.id AND m.message_text ILIKE $2
+               LIMIT 1
+             )
+           )
+         ORDER BY c.updated_at DESC
+         LIMIT $3`,
+        [request.authUser.userId, pattern, limit]
+      );
+      return { items: result.rows, conversations: result.rows };
+    }
+  );
+
+  // ── inbox-v2: get label IDs for a conversation ───────────────────────────
+  fastify.get(
+    "/api/conversations/:conversationId/labels",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      const result = await pool.query<{ label_id: string }>(
+        `SELECT label_id FROM conversation_labels WHERE conversation_id = $1`,
+        [conversationId]
+      );
+      return { label_ids: result.rows.map((r) => r.label_id) };
+    }
+  );
+
+  // ── CSAT ─────────────────────────────────────────────────────────────────
+  fastify.patch(
+    "/api/conversations/:conversationId/csat",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const { rating } = request.body as { rating: unknown };
+      if (!Number.isInteger(rating) || (rating as number) < 1 || (rating as number) > 5) {
+        return reply.status(400).send({ error: "Rating must be integer 1–5" });
+      }
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      await pool.query(
+        `UPDATE conversations SET csat_rating = $1 WHERE id = $2`,
+        [rating, conversationId]
+      );
+      return { ok: true };
+    }
+  );
+
+  fastify.post(
+    "/api/conversations/:conversationId/csat/send",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      try {
+        await sendManualConversationMessage({
+          userId: request.authUser.userId,
+          conversationId,
+          text: "How would you rate your experience today? Please reply with a number from 1 (poor) to 5 (excellent). ⭐",
+          senderName: null
+        });
+        await pool.query(
+          `UPDATE conversations SET csat_sent_at = NOW() WHERE id = $1`,
+          [conversationId]
+        );
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to send CSAT survey";
+        return reply.status(500).send({ error: msg });
+      }
     }
   );
 

@@ -16,6 +16,19 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     requiresAuth: true
   },
   {
+    id: "inbox-v2",
+    path: "inbox-v2/:conversationId?",
+    navTo: "/dashboard/inbox-v2",
+    navLabel: "Inbox v2",
+    subtitle: "Unified super inbox",
+    icon: "chats",
+    section: "main",
+    lazyRoute: () => import("../modules/dashboard/inbox-v2/route"),
+    featureFlag: "dashboard.inbox",
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
     id: "leads",
     path: "leads",
     navTo: "/dashboard/leads",
@@ -323,6 +336,30 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     icon: "leads",
     section: "account",
     lazyRoute: () => import("../modules/dashboard/account/users/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-canned-responses",
+    path: "account/canned-responses",
+    navTo: "/dashboard/account/canned-responses",
+    navLabel: "Canned Responses",
+    subtitle: "Saved reply shortcuts for the compose area",
+    icon: "templates",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/canned-responses/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-macros",
+    path: "account/macros",
+    navTo: "/dashboard/account/macros",
+    navLabel: "Macros",
+    subtitle: "Multi-step action sequences for the compose area",
+    icon: "templates",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/macros/route"),
     prefetchStrategy: "code",
     requiresAuth: true
   }

@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
+type PrimaryNavId = "conversations" | "inbox-classic" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -44,6 +44,13 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     label: "Chats",
     icon: "chats",
     title: "Chats",
+    defaultModuleIds: ["inbox-v2"]
+  },
+  {
+    id: "inbox-classic",
+    label: "Inbox",
+    icon: "unanswered",
+    title: "Inbox (classic)",
     defaultModuleIds: ["inbox"]
   },
   {
@@ -96,6 +103,7 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     defaultModuleIds: ["account-details", "account-subscription", "account-credits", "account-ai-wallet", "account-profile", "account-users"]
   }
 ];
+
 
 const STUDIO_MENU_ITEMS: StudioNavItem[] = [
   { moduleId: "studio-flows", label: "Flows", icon: "flows", to: "/dashboard/studio/flows" },
@@ -258,7 +266,9 @@ function DashboardShellLayout() {
       ...item,
       to:
         item.id === "conversations"
-          ? "/dashboard/inbox"
+          ? "/dashboard/inbox-v2"
+          : item.id === "inbox-classic"
+            ? "/dashboard/inbox"
           : item.id === "leads"
             ? "/dashboard/leads"
             : item.id === "broadcast"
@@ -275,8 +285,10 @@ function DashboardShellLayout() {
     }));
 
   const currentPrimaryNavId: PrimaryNavId =
-    currentModuleId === "inbox"
+    currentModuleId === "inbox-v2"
       ? "conversations"
+      : currentModuleId === "inbox"
+        ? "inbox-classic"
       : currentModuleId === "leads"
         ? "leads"
         : currentModuleId === "broadcast"

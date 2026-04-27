@@ -15,6 +15,15 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["error", {
+        varsIgnorePattern: "^_",
+        argsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_"
+      }]
+    }
+  },
+  {
     files: ["apps/web/src/shared/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
