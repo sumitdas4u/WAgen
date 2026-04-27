@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useConvStore, type ConvFolder, type Conversation } from "../store/convStore";
 import { useConversations } from "../queries";
 import { ConversationRow } from "./ConversationRow";
+import { NotificationBell } from "./NotificationsPanel";
 
 const FOLDERS: { key: ConvFolder; label: string }[] = [
   { key: "all", label: "All" },
@@ -25,12 +26,11 @@ function scoreToStage(score: number) {
 function applyLeadFilters(conv: Conversation, filters: import("../store/convStore").ConvFilters): boolean {
   if (filters.stage !== "all" && scoreToStage(conv.score) !== filters.stage) return false;
   if (filters.channel !== "all" && conv.channel_type !== filters.channel) return false;
-  if (filters.score !== "all" && scoreToStage(conv.score) !== filters.score) return false;
-  if (filters.kind !== "all" && conv.lead_kind !== filters.kind) return false;
   if (filters.assignment === "assigned" && !conv.assigned_agent_profile_id) return false;
   if (filters.assignment === "unassigned" && conv.assigned_agent_profile_id) return false;
   if (filters.aiMode === "ai" && (conv.ai_paused || conv.manual_takeover)) return false;
   if (filters.aiMode === "human" && !conv.ai_paused && !conv.manual_takeover) return false;
+  if (filters.labelId !== "all" && !(conv.label_ids ?? []).includes(filters.labelId)) return false;
   return true;
 }
 
@@ -92,6 +92,7 @@ export function ConversationList({ onSelectConv }: Props) {
         <div className="iv-convlist-title">
           Inbox
           <span className="iv-status-pill iv-status-open">{folderCounts.open ?? 0} open</span>
+          <span style={{ marginLeft: "auto" }}><NotificationBell /></span>
         </div>
 
         <div className="iv-tabs">

@@ -1,5 +1,5 @@
 import { useConvStore } from "../store/convStore";
-import type { ConvFilters, Conversation } from "../store/convStore";
+import type { Conversation } from "../store/convStore";
 
 function scoreToStage(score: number): "hot" | "warm" | "cold" {
   if (score >= 70) return "hot";
@@ -7,105 +7,154 @@ function scoreToStage(score: number): "hot" | "warm" | "cold" {
   return "cold";
 }
 
-function PillGroup<T extends string>({
-  options, value, onChange
-}: { options: { label: string; value: T }[]; value: T; onChange: (v: T) => void }) {
+function NavSection({ title }: { title: string }) {
+  return <div className="iv-nav-section-head" style={{ cursor: "default" }}>{title}</div>;
+}
+
+function NavItem({ label, count, active, icon, dot, onClick }: {
+  label: string; count?: number; active?: boolean; icon?: string; dot?: string; onClick: () => void;
+}) {
   return (
-    <div className="iv-lf-pills">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          className={`iv-lf-pill${value === o.value ? " active" : ""}`}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
+    <div className={`iv-nav-item${active ? " active" : ""}`} onClick={onClick}>
+      {dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />}
+      {icon && <span style={{ fontSize: 13 }}>{icon}</span>}
+      {label}
+      {count !== undefined && <span className="iv-nav-badge">{count}</span>}
     </div>
   );
 }
 
-function FilterSelect({ value, onChange, options }: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { label: string; value: string }[];
-}) {
+function FilterSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <select className="iv-lf-select" value={value} onChange={(e) => onChange(e.target.value)}>
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
-}
-
-function FilterRow({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
-  return (
-    <div className="iv-lf-row">
-      <div className="iv-lf-row-head">
-        <span className="iv-lf-row-label">{label}</span>
-        <span className="iv-lf-row-hint">{hint}</span>
-      </div>
+    <div className="iv-nav-filter-row">
+      <div className="iv-nav-filter-label">{label}</div>
       {children}
     </div>
   );
 }
 
-interface Props {
-  conversations: Conversation[];
+function Pills<T extends string>({ options, value, onChange }: {
+  options: { label: string; value: T }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="iv-lf-pills" style={{ marginTop: 4 }}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          className={`iv-lf-pill${value === o.value ? " active" : ""}`}
+          style={{ fontSize: 10, padding: "2px 8px" }}
+          onClick={() => onChange(o.value)}
+        >{o.label}</button>
+      ))}
+    </div>
+  );
 }
 
+interface Props { conversations: Conversation[] }
+
 export function LeadFiltersPanel({ conversations }: Props) {
-  const { filters, setFilters } = useConvStore();
+  const { filters, setFilters, labels, folder, setFolder } = useConvStore();
 
-  const allCount = conversations.length;
+  const total = conversations.length;
+  const unattended = conversations.filter((c) => c.ai_paused || c.manual_takeover).length;
   const hotCount = conversations.filter((c) => scoreToStage(c.score) === "hot").length;
-  const humanCount = conversations.filter((c) => c.manual_takeover || c.ai_paused).length;
-  const unassignedCount = conversations.filter((c) => !c.assigned_agent_profile_id).length;
+  const pendingCount = conversations.filter((c) => c.status === "pending").length;
+  const apiCount = conversations.filter((c) => c.channel_type === "api").length;
+  const qrCount = conversations.filter((c) => c.channel_type === "qr").length;
+  const webCount = conversations.filter((c) => c.channel_type === "web").length;
 
-  const isDefault = Object.values(filters).every((v) => v === "all");
+  const isDefault = filters.stage === "all" && filters.channel === "all" && filters.aiMode === "all" && filters.assignment === "all" && filters.labelId === "all";
 
-  function reset() {
-    setFilters({ stage: "all", channel: "all", score: "all", assignment: "all", dateRange: "all", aiMode: "all", kind: "all" });
+  // Compute which nav item is "active"
+  const activeView = (() => {
+    if (filters.assignment === "assigned") return "my-inbox";
+    if (filters.stage === "hot") return "hot-leads";
+    if (folder === "pending") return "pending";
+    if (filters.aiMode === "human") return "unattended";
+    if (filters.channel === "api") return "wa-api";
+    if (filters.channel === "qr") return "wa-qr";
+    if (filters.channel === "web") return "web";
+    if (isDefault) return "all";
+    return "";
+  })();
+
+  function selectAll() {
+    setFilters({ stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all" });
+    setFolder("all");
   }
 
   return (
     <div className="iv-lf">
-      <div className="iv-lf-header">
-        <div className="iv-lf-title">Lead Filters</div>
-        <div className="iv-lf-subtitle">Lead intelligence filters that update the inbox instantly.</div>
-      </div>
+      {/* CONVERSATIONS section */}
+      <NavSection title="CONVERSATIONS" />
+      <NavItem
+        label="All Conversations"
+        count={total}
+        active={activeView === "all"}
+        onClick={selectAll}
+      />
+      <NavItem
+        label="My Inbox"
+        active={activeView === "my-inbox"}
+        onClick={() => { selectAll(); setFilters({ assignment: "assigned" }); }}
+      />
+      <NavItem
+        label="Unattended"
+        count={unattended || undefined}
+        active={activeView === "unattended"}
+        onClick={() => { selectAll(); setFilters({ aiMode: "human" }); }}
+      />
 
-      {isDefault ? (
-        <div className="iv-lf-no-filter">
-          <div className="iv-lf-no-filter-label">No lead filter applied</div>
-          <div className="iv-lf-no-filter-sub">All conversations are visible until you apply a filter below.</div>
-        </div>
-      ) : (
-        <button className="iv-lf-reset" onClick={reset}>Clear all filters</button>
-      )}
+      {/* FOLDERS section */}
+      <NavSection title="FOLDERS" />
+      <NavItem
+        label="Hot Leads"
+        icon="🔥"
+        count={hotCount || undefined}
+        active={activeView === "hot-leads"}
+        onClick={() => { selectAll(); setFilters({ stage: "hot" }); }}
+      />
+      <NavItem
+        label="Pending Review"
+        icon="⚠️"
+        count={pendingCount || undefined}
+        active={activeView === "pending"}
+        onClick={() => { selectAll(); setFolder("pending"); }}
+      />
 
-      <div className="iv-lf-stats">
-        <div className="iv-lf-stat iv-lf-stat-all">
-          <div className="iv-lf-stat-label">ALL CHATS</div>
-          <div className="iv-lf-stat-val">{allCount}</div>
-        </div>
-        <div className="iv-lf-stat iv-lf-stat-hot">
-          <div className="iv-lf-stat-label">HOT LEADS</div>
-          <div className="iv-lf-stat-val">{hotCount}</div>
-        </div>
-        <div className="iv-lf-stat iv-lf-stat-human">
-          <div className="iv-lf-stat-label">HUMAN HANDLING</div>
-          <div className="iv-lf-stat-val">{humanCount}</div>
-        </div>
-        <div className="iv-lf-stat iv-lf-stat-unassigned">
-          <div className="iv-lf-stat-label">UNASSIGNED</div>
-          <div className="iv-lf-stat-val">{unassignedCount}</div>
-        </div>
-      </div>
+      {/* CHANNELS section */}
+      <NavSection title="CHANNELS" />
+      <NavItem
+        label="WhatsApp API"
+        dot="#22c55e"
+        count={apiCount || undefined}
+        active={activeView === "wa-api"}
+        onClick={() => { selectAll(); setFilters({ channel: "api" }); }}
+      />
+      <NavItem
+        label="WhatsApp QR"
+        dot="#22c55e"
+        count={qrCount || undefined}
+        active={activeView === "wa-qr"}
+        onClick={() => { selectAll(); setFilters({ channel: "qr" }); }}
+      />
+      <NavItem
+        label="Web Widget"
+        dot="#8b5cf6"
+        count={webCount || undefined}
+        active={activeView === "web"}
+        onClick={() => { selectAll(); setFilters({ channel: "web" }); }}
+      />
 
-      <div className="iv-lf-filters">
-        <FilterRow label="Status" hint="Lead stage">
-          <PillGroup
-            value={filters.stage as ConvFilters["stage"]}
+      {/* Compact filter controls */}
+      <div className="iv-nav-filters-divider" />
+
+      <div className="iv-nav-filters">
+        <FilterSection label="Lead Stage">
+          <Pills
+            value={filters.stage}
             onChange={(v) => setFilters({ stage: v })}
             options={[
               { label: "All", value: "all" },
@@ -114,83 +163,80 @@ export function LeadFiltersPanel({ conversations }: Props) {
               { label: "Cold", value: "cold" }
             ]}
           />
-        </FilterRow>
+        </FilterSection>
 
-        <FilterRow label="Source" hint="Conversation channel">
-          <FilterSelect
-            value={filters.channel}
-            onChange={(v) => setFilters({ channel: v })}
+        <FilterSection label="AI Status">
+          <Pills
+            value={filters.aiMode}
+            onChange={(v) => setFilters({ aiMode: v })}
             options={[
-              { label: "All channels", value: "all" },
-              { label: "WhatsApp QR", value: "qr" },
-              { label: "WhatsApp API", value: "api" },
-              { label: "Web Widget", value: "web" }
+              { label: "All", value: "all" },
+              { label: "AI", value: "ai" },
+              { label: "Human", value: "human" }
             ]}
           />
-        </FilterRow>
+        </FilterSection>
 
-        <FilterRow label="AI Score" hint="Derived from lead score">
-          <PillGroup
-            value={filters.score as ConvFilters["score"]}
-            onChange={(v) => setFilters({ score: v })}
-            options={[
-              { label: "All scores", value: "all" },
-              { label: "Hot", value: "hot" },
-              { label: "Warm", value: "warm" },
-              { label: "Cold", value: "cold" }
-            ]}
-          />
-        </FilterRow>
-
-        <FilterRow label="Lead Type" hint="Intent classification">
-          <FilterSelect
-            value={filters.kind}
-            onChange={(v) => setFilters({ kind: v })}
-            options={[
-              { label: "All types", value: "all" },
-              { label: "Lead", value: "lead" },
-              { label: "Customer", value: "customer" },
-              { label: "Support", value: "support" }
-            ]}
-          />
-        </FilterRow>
-
-        <FilterRow label="Assigned" hint="Owner routing">
-          <FilterSelect
+        <FilterSection label="Assigned">
+          <Pills
             value={filters.assignment}
             onChange={(v) => setFilters({ assignment: v })}
             options={[
-              { label: "All owners", value: "all" },
+              { label: "All", value: "all" },
               { label: "Assigned", value: "assigned" },
               { label: "Unassigned", value: "unassigned" }
             ]}
           />
-        </FilterRow>
+        </FilterSection>
 
-        <FilterRow label="AI Status" hint="Automation mode">
-          <FilterSelect
-            value={filters.aiMode}
-            onChange={(v) => setFilters({ aiMode: v })}
+        <FilterSection label="Channel">
+          <Pills
+            value={filters.channel}
+            onChange={(v) => setFilters({ channel: v })}
             options={[
-              { label: "AI + Human", value: "all" },
-              { label: "AI only", value: "ai" },
-              { label: "Human only", value: "human" }
+              { label: "All", value: "all" },
+              { label: "QR", value: "qr" },
+              { label: "API", value: "api" },
+              { label: "Web", value: "web" }
             ]}
           />
-        </FilterRow>
+        </FilterSection>
 
-        <FilterRow label="Date" hint="Latest message window">
-          <FilterSelect
-            value={filters.dateRange}
-            onChange={(v) => setFilters({ dateRange: v })}
-            options={[
-              { label: "All time", value: "all" },
-              { label: "Today", value: "today" },
-              { label: "This week", value: "week" },
-              { label: "This month", value: "month" }
-            ]}
-          />
-        </FilterRow>
+        {labels.length > 0 && (
+          <FilterSection label="Label">
+            <div className="iv-lf-pills" style={{ marginTop: 4 }}>
+              <button
+                className={`iv-lf-pill${filters.labelId === "all" ? " active" : ""}`}
+                style={{ fontSize: 10, padding: "2px 8px" }}
+                onClick={() => setFilters({ labelId: "all" })}
+              >All</button>
+              {labels.map((l) => (
+                <button
+                  key={l.id}
+                  className={`iv-lf-pill${filters.labelId === l.id ? " active" : ""}`}
+                  style={{
+                    fontSize: 10, padding: "2px 8px",
+                    borderColor: filters.labelId === l.id ? l.color : undefined,
+                    background: filters.labelId === l.id ? `${l.color}22` : undefined,
+                    color: filters.labelId === l.id ? l.color : undefined
+                  }}
+                  onClick={() => setFilters({ labelId: l.id })}
+                >
+                  <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: l.color, marginRight: 4, verticalAlign: "middle" }} />
+                  {l.name}
+                </button>
+              ))}
+            </div>
+          </FilterSection>
+        )}
+
+        {!isDefault && (
+          <button
+            className="iv-lf-reset"
+            style={{ margin: "4px 12px 8px", alignSelf: "flex-start" }}
+            onClick={selectAll}
+          >Clear filters</button>
+        )}
       </div>
     </div>
   );

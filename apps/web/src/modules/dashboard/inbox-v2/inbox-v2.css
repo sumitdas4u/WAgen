@@ -118,6 +118,23 @@
   border: 2px solid #fff; position: absolute; bottom: -1px; right: -1px;
 }
 
+/* ── Nav filter compact section ──────────────────────────────────────────── */
+.iv-nav-filters-divider {
+  height: 1px; background: #f1f5f9; margin: 8px 0;
+}
+.iv-nav-filters {
+  padding: 0 0 12px;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.iv-nav-filter-row {
+  padding: 6px 14px;
+}
+.iv-nav-filter-label {
+  font-size: 9.5px; font-weight: 800; color: #94a3b8;
+  letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 2px;
+}
+
 /* ── Conversation List ───────────────────────────────────────────────────── */
 .iv-convlist {
   width: 340px; background: #fff;
@@ -735,6 +752,7 @@
 /* ── Lead Filters Panel ──────────────────────────────────────────────────── */
 .iv-lf {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+  padding-top: 8px;
 }
 .iv-lf-header {
   padding: 12px 14px 8px;
@@ -849,7 +867,7 @@
   font-size: 15px; position: relative; display: grid; place-items: center;
   border-radius: 8px; transition: background 120ms ease;
 }
-.iv-bell-btn:hover { background: rgba(255,255,255,0.12); }
+.iv-bell-btn:hover { background: #f1f5f9; }
 .iv-bell-btn.has-unread { color: #f59e0b; }
 .iv-bell-badge {
   position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px;

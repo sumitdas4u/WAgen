@@ -7,7 +7,7 @@ import { ConversationList } from "./components/ConversationList";
 import { MessageThread } from "./components/MessageThread";
 import { DetailsSidebar } from "./components/DetailsSidebar";
 import { LeadFiltersPanel } from "./components/LeadFiltersPanel";
-import { NotificationBell, NotificationsPanel } from "./components/NotificationsPanel";
+import { NotificationsPanel } from "./components/NotificationsPanel";
 import "./inbox-v2.css";
 
 export function Component() {
@@ -57,14 +57,6 @@ export function Component() {
 function NavSidebar({ conversations }: { conversations: import("./store/convStore").Conversation[] }) {
   return (
     <div className="iv-nav">
-      <div className="iv-nav-org">
-        <div className="iv-nav-logo">W</div>
-        <span className="iv-nav-orgname">WAgen</span>
-        <div style={{ marginLeft: "auto" }}>
-          <NotificationBell />
-        </div>
-      </div>
-
       <LeadFiltersPanel conversations={conversations} />
     </div>
   );

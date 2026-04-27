@@ -173,7 +173,7 @@ export function useRealtimeSocket(token: string | null) {
           break;
         }
         case "conversation.label_changed":
-          s.upsertConv({ id: envelope.data.id, label_ids: envelope.data.label_ids } as Parameters<typeof s.upsertConv>[0]);
+          s.upsertConv({ id: envelope.data.id, label_ids: envelope.data.label_ids });
           break;
         case "conversation.assigned":
           s.upsertConv({ id: envelope.data.id, assigned_agent_profile_id: envelope.data.agent_id });

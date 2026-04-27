@@ -275,7 +275,7 @@ export function DetailsSidebar({ convId }: Props) {
               <span className="iv-acc-key">Labels</span>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                 {labels.map((l) => {
-                  const convLabelIds = (conv as unknown as { label_ids?: string[] }).label_ids ?? [];
+                  const convLabelIds = conv.label_ids ?? [];
                   const isOn = convLabelIds.includes(l.id);
                   return (
                     <div

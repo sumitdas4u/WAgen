@@ -28,6 +28,7 @@ export interface Conversation {
   agent_last_seen_at: string | null;
   csat_rating: number | null;
   csat_sent_at: string | null;
+  label_ids?: string[];
   created_at?: string;
   updated_at?: string;
 }
@@ -59,13 +60,11 @@ export interface Label {
 }
 
 export interface ConvFilters {
-  stage: string;
-  channel: string;
-  score: string;
-  assignment: string;
-  dateRange: string;
-  aiMode: string;
-  kind: string;
+  stage: string;      // "all" | "hot" | "warm" | "cold"
+  channel: string;    // "all" | "qr" | "api" | "web"
+  aiMode: string;     // "all" | "ai" | "human"
+  assignment: string; // "all" | "assigned" | "unassigned"
+  labelId: string;    // "all" | label.id
 }
 
 interface ConvStore {
@@ -108,11 +107,9 @@ interface ConvStore {
 const DEFAULT_FILTERS: ConvFilters = {
   stage: "all",
   channel: "all",
-  score: "all",
-  assignment: "all",
-  dateRange: "all",
   aiMode: "all",
-  kind: "all"
+  assignment: "all",
+  labelId: "all"
 };
 
 export const useConvStore = create<ConvStore>((set) => ({
