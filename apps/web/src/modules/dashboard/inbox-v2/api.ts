@@ -249,11 +249,118 @@ export function sendCsatSurvey(token: string, convId: string): Promise<{ ok: boo
   return apiFetch(token, `/api/conversations/${convId}/csat/send`, { method: "POST" });
 }
 
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+export interface ConvNote {
+  id: string;
+  content: string;
+  created_at: string;
+  sender_name: string | null;
+}
+
+export function fetchConvNotes(token: string, convId: string): Promise<{ notes: ConvNote[] }> {
+  return apiFetch(token, `/api/conversations/${convId}/notes`);
+}
+
+export function createConvNote(token: string, convId: string, content: string): Promise<{ note: ConvNote }> {
+  return apiFetch(token, `/api/conversations/${convId}/notes`, {
+    method: "POST",
+    body: JSON.stringify({ content })
+  });
+}
+
+// ── Flows ─────────────────────────────────────────────────────────────────────
+
+export interface PublishedFlowSummary {
+  id: string;
+  name: string;
+  channel: "web" | "qr" | "api";
+}
+
+export function fetchPublishedFlows(token: string): Promise<PublishedFlowSummary[]> {
+  return apiFetch<PublishedFlowSummary[]>(token, `/api/flows/published`);
+}
+
+export function assignFlow(token: string, flowId: string, convId: string): Promise<{ sessionId: string; flowId: string; flowName: string }> {
+  return apiFetch(token, `/api/flows/${flowId}/assign`, {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId })
+  });
+}
+
+// ── Templates ─────────────────────────────────────────────────────────────────
+
+export interface TemplateComponentButton {
+  type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER" | "COPY_CODE" | "FLOW";
+  text: string;
+  url?: string;
+  phone_number?: string;
+  example?: string[];
+}
+
+export interface TemplateComponent {
+  type: "HEADER" | "BODY" | "FOOTER" | "BUTTONS";
+  format?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "LOCATION";
+  text?: string;
+  buttons?: TemplateComponentButton[];
+  example?: Record<string, unknown>;
+}
+
+export interface MessageTemplate {
+  id: string;
+  userId: string;
+  connectionId: string;
+  templateId: string | null;
+  name: string;
+  category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
+  language: string;
+  status: string;
+  qualityScore: string | null;
+  components: TemplateComponent[];
+  metaRejectionReason: string | null;
+  linkedNumber: string | null;
+}
+
+export function fetchApprovedTemplates(token: string, connectionId?: string | null): Promise<MessageTemplate[]> {
+  const sp = new URLSearchParams({ status: "APPROVED" });
+  if (connectionId) sp.set("connectionId", connectionId);
+  return apiFetch<{ templates: MessageTemplate[] }>(token, `/api/meta/templates?${sp}`).then((d) => d.templates);
+}
+
+export function sendTemplate(token: string, convId: string, templateId: string, variableValues?: Record<string, string>): Promise<{ ok: boolean; messageId: string | null }> {
+  return apiFetch(token, `/api/conversations/${convId}/send-template`, {
+    method: "POST",
+    body: JSON.stringify({ templateId, variableValues: variableValues ?? {} })
+  });
+}
+
+// ── AI Assist ─────────────────────────────────────────────────────────────────
+
+export function aiAssistText(token: string, text: string, action: "rewrite" | "translate", language?: string): Promise<{ text: string }> {
+  return apiFetch(token, `/api/ai-assist/text`, {
+    method: "POST",
+    body: JSON.stringify({ text, action, language })
+  });
+}
+
 // ── Contact lookup ────────────────────────────────────────────────────────
 
 export function fetchContactByPhone(token: string, phone: string): Promise<{ contact: { display_name: string | null; email: string | null; last_incoming_message_at: string | null; marketing_consent_status: string } | null }> {
   return apiFetch(token, `/api/contacts?phone=${encodeURIComponent(phone)}&limit=1`).then((d: unknown) => {
     const data = d as { items?: Array<{ display_name: string | null; email: string | null; last_incoming_message_at: string | null; marketing_consent_status: string }> };
     return { contact: data.items?.[0] ?? null };
+  });
+}
+
+// ── Outbound conversation ─────────────────────────────────────────────────
+
+export function createOutboundConversation(token: string, params: {
+  phone: string;
+  channelType: "api" | "qr";
+  initialMessage?: string;
+}): Promise<{ conversationId: string }> {
+  return apiFetch(token, `/api/conversations/outbound`, {
+    method: "POST",
+    body: JSON.stringify(params)
   });
 }

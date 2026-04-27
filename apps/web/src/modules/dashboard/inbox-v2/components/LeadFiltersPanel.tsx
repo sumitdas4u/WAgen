@@ -57,22 +57,29 @@ interface Props { conversations: Conversation[] }
 export function LeadFiltersPanel({ conversations }: Props) {
   const { filters, setFilters, labels, folder, setFolder } = useConvStore();
 
-  const total = conversations.length;
-  const unattended = conversations.filter((c) => c.ai_paused || c.manual_takeover).length;
   const hotCount = conversations.filter((c) => scoreToStage(c.score) === "hot").length;
+  const warmCount = conversations.filter((c) => scoreToStage(c.score) === "warm").length;
+  const coldCount = conversations.filter((c) => scoreToStage(c.score) === "cold").length;
   const pendingCount = conversations.filter((c) => c.status === "pending").length;
   const apiCount = conversations.filter((c) => c.channel_type === "api").length;
   const qrCount = conversations.filter((c) => c.channel_type === "qr").length;
   const webCount = conversations.filter((c) => c.channel_type === "web").length;
 
-  const isDefault = filters.stage === "all" && filters.channel === "all" && filters.aiMode === "all" && filters.assignment === "all" && filters.labelId === "all";
+  const isDefault =
+    filters.stage === "all" &&
+    filters.channel === "all" &&
+    filters.aiMode === "all" &&
+    filters.assignment === "all" &&
+    filters.labelId === "all" &&
+    filters.leadKind === "all" &&
+    filters.priority === "all" &&
+    folder === "all";
 
-  // Compute which nav item is "active"
   const activeView = (() => {
-    if (filters.assignment === "assigned") return "my-inbox";
-    if (filters.stage === "hot") return "hot-leads";
+    if (filters.stage === "hot" && filters.channel === "all") return "hot-leads";
+    if (filters.stage === "warm" && filters.channel === "all") return "warm-leads";
+    if (filters.stage === "cold" && filters.channel === "all") return "cold-leads";
     if (folder === "pending") return "pending";
-    if (filters.aiMode === "human") return "unattended";
     if (filters.channel === "api") return "wa-api";
     if (filters.channel === "qr") return "wa-qr";
     if (filters.channel === "web") return "web";
@@ -81,40 +88,34 @@ export function LeadFiltersPanel({ conversations }: Props) {
   })();
 
   function selectAll() {
-    setFilters({ stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all" });
+    setFilters({ stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all", leadKind: "all", priority: "all" });
     setFolder("all");
   }
 
   return (
     <div className="iv-lf">
-      {/* CONVERSATIONS section */}
-      <NavSection title="CONVERSATIONS" />
-      <NavItem
-        label="All Conversations"
-        count={total}
-        active={activeView === "all"}
-        onClick={selectAll}
-      />
-      <NavItem
-        label="My Inbox"
-        active={activeView === "my-inbox"}
-        onClick={() => { selectAll(); setFilters({ assignment: "assigned" }); }}
-      />
-      <NavItem
-        label="Unattended"
-        count={unattended || undefined}
-        active={activeView === "unattended"}
-        onClick={() => { selectAll(); setFilters({ aiMode: "human" }); }}
-      />
-
-      {/* FOLDERS section */}
-      <NavSection title="FOLDERS" />
+      {/* LEAD STATUS section */}
+      <NavSection title="LEAD STATUS" />
       <NavItem
         label="Hot Leads"
         icon="🔥"
         count={hotCount || undefined}
         active={activeView === "hot-leads"}
         onClick={() => { selectAll(); setFilters({ stage: "hot" }); }}
+      />
+      <NavItem
+        label="Warm Leads"
+        icon="☀️"
+        count={warmCount || undefined}
+        active={activeView === "warm-leads"}
+        onClick={() => { selectAll(); setFilters({ stage: "warm" }); }}
+      />
+      <NavItem
+        label="Cold Leads"
+        icon="❄️"
+        count={coldCount || undefined}
+        active={activeView === "cold-leads"}
+        onClick={() => { selectAll(); setFilters({ stage: "cold" }); }}
       />
       <NavItem
         label="Pending Review"
@@ -152,15 +153,30 @@ export function LeadFiltersPanel({ conversations }: Props) {
       <div className="iv-nav-filters-divider" />
 
       <div className="iv-nav-filters">
-        <FilterSection label="Lead Stage">
+        <FilterSection label="Lead Type">
           <Pills
-            value={filters.stage}
-            onChange={(v) => setFilters({ stage: v })}
+            value={filters.leadKind}
+            onChange={(v) => setFilters({ leadKind: v })}
             options={[
               { label: "All", value: "all" },
-              { label: "Hot", value: "hot" },
-              { label: "Warm", value: "warm" },
-              { label: "Cold", value: "cold" }
+              { label: "Lead", value: "lead" },
+              { label: "Feedback", value: "feedback" },
+              { label: "Complaint", value: "complaint" },
+              { label: "Other", value: "other" }
+            ]}
+          />
+        </FilterSection>
+
+        <FilterSection label="Priority">
+          <Pills
+            value={filters.priority}
+            onChange={(v) => setFilters({ priority: v })}
+            options={[
+              { label: "All", value: "all" },
+              { label: "Urgent", value: "urgent" },
+              { label: "High", value: "high" },
+              { label: "Medium", value: "medium" },
+              { label: "Low", value: "low" }
             ]}
           />
         </FilterSection>
@@ -185,19 +201,6 @@ export function LeadFiltersPanel({ conversations }: Props) {
               { label: "All", value: "all" },
               { label: "Assigned", value: "assigned" },
               { label: "Unassigned", value: "unassigned" }
-            ]}
-          />
-        </FilterSection>
-
-        <FilterSection label="Channel">
-          <Pills
-            value={filters.channel}
-            onChange={(v) => setFilters({ channel: v })}
-            options={[
-              { label: "All", value: "all" },
-              { label: "QR", value: "qr" },
-              { label: "API", value: "api" },
-              { label: "Web", value: "web" }
             ]}
           />
         </FilterSection>

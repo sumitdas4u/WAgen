@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useConvStore, type ConvFolder, type Conversation } from "../store/convStore";
-import { useConversations } from "../queries";
+import { useConversations, useBulkAction } from "../queries";
 import { ConversationRow } from "./ConversationRow";
 import { NotificationBell } from "./NotificationsPanel";
 
@@ -15,6 +15,8 @@ const FOLDERS: { key: ConvFolder; label: string }[] = [
 
 interface Props {
   onSelectConv: (id: string) => void;
+  onNew?: () => void;
+  onCannedManage?: () => void;
 }
 
 function scoreToStage(score: number) {
@@ -31,14 +33,18 @@ function applyLeadFilters(conv: Conversation, filters: import("../store/convStor
   if (filters.aiMode === "ai" && (conv.ai_paused || conv.manual_takeover)) return false;
   if (filters.aiMode === "human" && !conv.ai_paused && !conv.manual_takeover) return false;
   if (filters.labelId !== "all" && !(conv.label_ids ?? []).includes(filters.labelId)) return false;
+  if (filters.leadKind !== "all" && conv.lead_kind !== filters.leadKind) return false;
+  if (filters.priority !== "all" && conv.priority !== filters.priority) return false;
   return true;
 }
 
-export function ConversationList({ onSelectConv }: Props) {
+export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props) {
   const { folder, setFolder, byId, ids, activeConvId, setActiveConv, labels, filters } = useConvStore();
   const [searchQ, setSearchQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const parentRef = useRef<HTMLDivElement>(null);
+  const bulkAction = useBulkAction();
 
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = useConversations(folder, debouncedQ);
 
@@ -70,6 +76,19 @@ export function ConversationList({ onSelectConv }: Props) {
     onSelectConv(id);
   }, [setActiveConv, onSelectConv]);
 
+  const handleToggleSelect = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulk = useCallback((action: string) => {
+    void bulkAction.mutateAsync({ ids: [...selectedIds], action }).then(() => setSelectedIds(new Set()));
+  }, [selectedIds, bulkAction]);
+
   // Load more when last item visible
   useEffect(() => {
     const lastItem = items[items.length - 1];
@@ -92,8 +111,25 @@ export function ConversationList({ onSelectConv }: Props) {
         <div className="iv-convlist-title">
           Inbox
           <span className="iv-status-pill iv-status-open">{folderCounts.open ?? 0} open</span>
-          <span style={{ marginLeft: "auto" }}><NotificationBell /></span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+            {onCannedManage && (
+              <button className="iv-btn-icon" title="Manage canned responses" style={{ fontSize: 13 }} onClick={onCannedManage}>⚡</button>
+            )}
+            {onNew && (
+              <button className="iv-btn-icon" title="New conversation" style={{ fontSize: 16, fontWeight: 700 }} onClick={onNew}>+</button>
+            )}
+            <NotificationBell />
+          </div>
         </div>
+
+        {selectedIds.size > 0 && (
+          <div className="iv-bulk-bar">
+            <span className="iv-bulk-count">{selectedIds.size} selected</span>
+            <button className="iv-bulk-btn" disabled={bulkAction.isPending} onClick={() => handleBulk("resolve")}>Resolve</button>
+            <button className="iv-bulk-btn" disabled={bulkAction.isPending} onClick={() => handleBulk("reopen")}>Reopen</button>
+            <button className="iv-bulk-btn iv-bulk-cancel" onClick={() => setSelectedIds(new Set())}>✕ Clear</button>
+          </div>
+        )}
 
         <div className="iv-tabs">
           {FOLDERS.map((f) => (
@@ -141,6 +177,9 @@ export function ConversationList({ onSelectConv }: Props) {
                   conv={conv as Conversation}
                   labels={labels}
                   active={activeConvId === id}
+                  selected={selectedIds.has(id)}
+                  hasSelection={selectedIds.size > 0}
+                  onToggleSelect={(e) => handleToggleSelect(id, e)}
                   onClick={() => handleSelect(id)}
                 />
               </div>

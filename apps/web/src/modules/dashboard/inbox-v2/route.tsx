@@ -8,6 +8,8 @@ import { MessageThread } from "./components/MessageThread";
 import { DetailsSidebar } from "./components/DetailsSidebar";
 import { LeadFiltersPanel } from "./components/LeadFiltersPanel";
 import { NotificationsPanel } from "./components/NotificationsPanel";
+import { NewConvModal } from "./components/NewConvModal";
+import { CannedManageModal } from "./components/CannedManageModal";
 import "./inbox-v2.css";
 
 export function Component() {
@@ -16,6 +18,8 @@ export function Component() {
   const { token } = useAuth();
   const { setActiveConv, activeConvId, byId, ids } = useConvStore();
   const [showSidebar] = useState(true);
+  const [showNewConv, setShowNewConv] = useState(false);
+  const [showCannedManage, setShowCannedManage] = useState(false);
 
   const optimisticMap = useRealtimeSocket(token);
 
@@ -34,7 +38,11 @@ export function Component() {
       <NavSidebar conversations={conversations} />
 
       {/* Col 2: Conversation list */}
-      <ConversationList onSelectConv={handleSelectConv} />
+      <ConversationList
+        onSelectConv={handleSelectConv}
+        onNew={() => setShowNewConv(true)}
+        onCannedManage={() => setShowCannedManage(true)}
+      />
 
       {/* Col 3: Message thread */}
       {activeId ? (
@@ -50,6 +58,14 @@ export function Component() {
       {showSidebar && activeId && (
         <DetailsSidebar convId={activeId} />
       )}
+
+      {showNewConv && (
+        <NewConvModal
+          onClose={() => setShowNewConv(false)}
+          onCreated={(id) => { handleSelectConv(id); setShowNewConv(false); }}
+        />
+      )}
+      {showCannedManage && <CannedManageModal onClose={() => setShowCannedManage(false)} />}
     </div>
   );
 }
