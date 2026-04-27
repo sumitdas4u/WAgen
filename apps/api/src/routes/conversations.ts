@@ -261,6 +261,11 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         [agentProfileId, params.conversationId, request.authUser.userId]
       );
 
+      realtimeHub.broadcast(request.authUser.userId, "conversation.assigned", {
+        id: params.conversationId,
+        agent_id: agentProfileId ?? null
+      });
+
       return { ok: true };
     }
   );
@@ -307,6 +312,37 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           authorName,
           content: parsed.data.content
         });
+
+        // Detect @mentions and create in-app notifications
+        const mentionMatches = [...parsed.data.content.matchAll(/@(\S+)/g)];
+        if (mentionMatches.length > 0) {
+          const shortBody = parsed.data.content.slice(0, 120);
+          try {
+            const notifResult = await pool.query<{ id: string; created_at: string }>(
+              `INSERT INTO agent_notifications (user_id, type, conversation_id, actor_name, body)
+               VALUES ($1, 'mention', $2, $3, $4)
+               RETURNING id, created_at`,
+              [request.authUser.userId, params.conversationId, authorName, shortBody]
+            );
+            const notif = notifResult.rows[0];
+            if (notif) {
+              realtimeHub.broadcast(request.authUser.userId, "conversation.mentioned", {
+                conversationId: params.conversationId,
+                noteId: note.id,
+                actorName: authorName,
+                body: shortBody
+              });
+              realtimeHub.broadcast(request.authUser.userId, "agent.notification", {
+                id: notif.id,
+                type: "mention",
+                conversation_id: params.conversationId,
+                actor_name: authorName,
+                body: shortBody,
+                created_at: notif.created_at
+              });
+            }
+          } catch { /* non-fatal */ }
+        }
 
         return reply.status(201).send({ note });
       } catch (error) {
@@ -830,6 +866,60 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         [conversationId]
       );
       return { label_ids: result.rows.map((r) => r.label_id) };
+    }
+  );
+
+  // ── CSAT ─────────────────────────────────────────────────────────────────
+  fastify.patch(
+    "/api/conversations/:conversationId/csat",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const { rating } = request.body as { rating: unknown };
+      if (!Number.isInteger(rating) || (rating as number) < 1 || (rating as number) > 5) {
+        return reply.status(400).send({ error: "Rating must be integer 1–5" });
+      }
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      await pool.query(
+        `UPDATE conversations SET csat_rating = $1 WHERE id = $2`,
+        [rating, conversationId]
+      );
+      return { ok: true };
+    }
+  );
+
+  fastify.post(
+    "/api/conversations/:conversationId/csat/send",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+      if ((exists.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Conversation not found" });
+
+      try {
+        await sendManualConversationMessage({
+          userId: request.authUser.userId,
+          conversationId,
+          text: "How would you rate your experience today? Please reply with a number from 1 (poor) to 5 (excellent). ⭐",
+          senderName: null
+        });
+        await pool.query(
+          `UPDATE conversations SET csat_sent_at = NOW() WHERE id = $1`,
+          [conversationId]
+        );
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to send CSAT survey";
+        return reply.status(500).send({ error: msg });
+      }
     }
   );
 

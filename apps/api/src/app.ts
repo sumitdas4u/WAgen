@@ -38,6 +38,8 @@ import { genericWebhookRoutes } from "./routes/generic-webhooks.js";
 import { sequenceRoutes } from "./routes/sequences.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { reportsRoutes } from "./routes/reports.js";
+import { cannedResponsesRoutes } from "./routes/canned-responses.js";
+import { agentNotificationsRoutes } from "./routes/agent-notifications.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { rabbitmqRoutes } from "./routes/rabbitmq.js";
 import { apiKeyRoutes } from "./routes/api-keys.js";
@@ -246,6 +248,8 @@ export async function buildApp() {
   await sequenceRoutes(app);
   await notificationsRoutes(app);
   await reportsRoutes(app);
+  await cannedResponsesRoutes(app);
+  await agentNotificationsRoutes(app);
   await webhookRoutes(app);
   await rabbitmqRoutes(app);
   await apiKeyRoutes(app);

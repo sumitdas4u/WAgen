@@ -156,6 +156,99 @@ export function listContactFields(token: string): Promise<{ fields: ContactField
   return apiFetch(token, `/api/contact-fields`);
 }
 
+// ── Agent assignment ──────────────────────────────────────────────────────
+
+export interface AgentProfile {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  handle: string | null;
+}
+
+export function fetchAgentProfiles(token: string): Promise<{ profiles: AgentProfile[] }> {
+  return apiFetch(token, `/api/agents/profiles`);
+}
+
+export function patchAssignAgent(token: string, convId: string, agentProfileId: string | null): Promise<{ ok: boolean }> {
+  return apiFetch(token, `/api/conversations/${convId}/assign-agent`, {
+    method: "PATCH",
+    body: JSON.stringify({ agentProfileId })
+  });
+}
+
+// ── AI mode toggle ────────────────────────────────────────────────────────
+
+export async function patchAiMode(token: string, convId: string, paused: boolean): Promise<void> {
+  await Promise.all([
+    apiFetch(token, `/api/conversations/${convId}/manual-takeover`, { method: "PATCH", body: JSON.stringify({ enabled: paused }) }),
+    apiFetch(token, `/api/conversations/${convId}/pause`, { method: "PATCH", body: JSON.stringify({ paused }) })
+  ]);
+}
+
+// ── Canned responses ─────────────────────────────────────────────────────
+
+export interface CannedResponse {
+  id: string;
+  name: string;
+  short_code: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listCannedResponses(token: string): Promise<{ cannedResponses: CannedResponse[] }> {
+  return apiFetch(token, `/api/canned-responses`);
+}
+
+export function createCannedResponse(token: string, payload: { name: string; short_code: string; content: string }): Promise<{ cannedResponse: CannedResponse }> {
+  return apiFetch(token, `/api/canned-responses`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateCannedResponse(token: string, id: string, payload: Partial<{ name: string; short_code: string; content: string }>): Promise<{ cannedResponse: CannedResponse }> {
+  return apiFetch(token, `/api/canned-responses/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deleteCannedResponse(token: string, id: string): Promise<{ ok: boolean }> {
+  return apiFetch(token, `/api/canned-responses/${id}`, { method: "DELETE" });
+}
+
+// ── Agent notifications ───────────────────────────────────────────────────
+
+export interface AgentNotification {
+  id: string;
+  type: "mention" | "assigned" | "unassigned" | "system";
+  conversation_id: string | null;
+  actor_name: string | null;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+export function listAgentNotifications(token: string, opts?: { unread?: boolean; limit?: number }): Promise<{ notifications: AgentNotification[]; unreadCount: number }> {
+  const sp = new URLSearchParams();
+  if (opts?.unread) sp.set("unread", "true");
+  if (opts?.limit) sp.set("limit", String(opts.limit));
+  return apiFetch(token, `/api/agent-notifications?${sp}`);
+}
+
+export function markNotificationRead(token: string, id: string): Promise<{ ok: boolean }> {
+  return apiFetch(token, `/api/agent-notifications/${id}/read`, { method: "POST" });
+}
+
+export function markAllNotificationsRead(token: string): Promise<{ ok: boolean }> {
+  return apiFetch(token, `/api/agent-notifications/read-all`, { method: "POST" });
+}
+
+// ── CSAT ─────────────────────────────────────────────────────────────────
+
+export function setCsatRating(token: string, convId: string, rating: number): Promise<{ ok: boolean }> {
+  return apiFetch(token, `/api/conversations/${convId}/csat`, { method: "PATCH", body: JSON.stringify({ rating }) });
+}
+
+export function sendCsatSurvey(token: string, convId: string): Promise<{ ok: boolean }> {
+  return apiFetch(token, `/api/conversations/${convId}/csat/send`, { method: "POST" });
+}
+
 // ── Contact lookup ────────────────────────────────────────────────────────
 
 export function fetchContactByPhone(token: string, phone: string): Promise<{ contact: { display_name: string | null; email: string | null; last_incoming_message_at: string | null; marketing_consent_status: string } | null }> {

@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
 import { useSetStatus, useSetPriority, useSetLabels, useLabels } from "../queries";
-import { fetchContactByConversation, listContactFields } from "../api";
+import { fetchContactByConversation, listContactFields, fetchAgentProfiles, patchAssignAgent, patchAiMode, setCsatRating, sendCsatSurvey } from "../api";
 import { useAuth } from "../../../../lib/auth-context";
 import { getAvatarColor } from "./ConversationRow";
 
@@ -82,16 +83,43 @@ interface Props { convId: string }
 
 export function DetailsSidebar({ convId }: Props) {
   const [openSections, setOpenSections] = useState<Set<string>>(getSavedSections);
-  const [sidebarTab, setSidebarTab] = useState<"contact" | "copilot">("contact");
 
   const { byId, labels } = useConvStore();
   const conv = byId[convId];
   const { token } = useAuth();
   useLabels();
 
+  const { upsertConv } = useConvStore();
   const setStatus = useSetStatus();
   const setPriority = useSetPriority();
   const setLabels = useSetLabels();
+
+  const agentProfilesQuery = useQuery({
+    queryKey: ["iv2-agent-profiles"],
+    queryFn: () => fetchAgentProfiles(token!),
+    enabled: Boolean(token),
+    staleTime: 60_000
+  });
+
+  const assignMut = useMutation({
+    mutationFn: (agentProfileId: string | null) => patchAssignAgent(token!, convId, agentProfileId),
+    onSuccess: (_data, agentProfileId) => upsertConv({ id: convId, assigned_agent_profile_id: agentProfileId })
+  });
+
+  const aiToggleMut = useMutation({
+    mutationFn: (paused: boolean) => patchAiMode(token!, convId, paused),
+    onSuccess: (_data, paused) => upsertConv({ id: convId, ai_paused: paused, manual_takeover: paused })
+  });
+
+  const csatRatingMut = useMutation({
+    mutationFn: (rating: number) => setCsatRating(token!, convId, rating),
+    onSuccess: (_data, rating) => upsertConv({ id: convId, csat_rating: rating } as Parameters<typeof upsertConv>[0])
+  });
+
+  const csatSendMut = useMutation({
+    mutationFn: () => sendCsatSurvey(token!, convId),
+    onSuccess: () => upsertConv({ id: convId, csat_sent_at: new Date().toISOString() } as Parameters<typeof upsertConv>[0])
+  });
 
   const contactQuery = useQuery({
     queryKey: ["iv2-contact", convId],
@@ -140,14 +168,7 @@ export function DetailsSidebar({ convId }: Props) {
 
   return (
     <div className="iv-sidebar">
-      {/* Tabs */}
-      <div className="iv-sidebar-tabs">
-        <div className={`iv-sidebar-tab${sidebarTab === "contact" ? " active" : ""}`} onClick={() => setSidebarTab("contact")}>Contact</div>
-        <div className={`iv-sidebar-tab${sidebarTab === "copilot" ? " active" : ""}`} onClick={() => setSidebarTab("copilot")}>Copilot ✨</div>
-      </div>
-
-      {sidebarTab === "contact" && (
-        <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto" }}>
           {/* Contact card */}
           <div className="iv-contact-card">
             <div className={`iv-avatar av-${avatarColor} av-lg`} style={{ margin: "0 auto" }}>
@@ -168,7 +189,11 @@ export function DetailsSidebar({ convId }: Props) {
               <span className="iv-cf-badge">{channelBadge(conv.channel_type)}</span>
             </div>
 
-            <FieldRow label="NAME" value={displayName} />
+            <FieldRow label="NAME" value={
+              contact?.id
+                ? <Link to={`/dashboard/contacts/${contact.id}`} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>{displayName}</Link>
+                : displayName
+            } />
             <FieldRow label="PHONE" value={formatPhone(conv.phone_number)} />
             <FieldRow label="EMAIL" value={contact?.email ?? "Not captured yet"} />
             <FieldRow label="TYPE" value={contact?.contact_type ?? conv.lead_kind} />
@@ -229,6 +254,23 @@ export function DetailsSidebar({ convId }: Props) {
                 {["none", "low", "medium", "high", "urgent"].map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
+            {/* Assign agent */}
+            <div className="iv-acc-row">
+              <span className="iv-acc-key">Assigned</span>
+              <select
+                className="iv-acc-val"
+                value={conv.assigned_agent_profile_id ?? ""}
+                style={{ border: "1px solid #e2eaf4", borderRadius: 6, padding: "2px 6px", fontSize: 12, background: "#fff", flex: 1 }}
+                disabled={assignMut.isPending}
+                onChange={(e) => assignMut.mutate(e.target.value || null)}
+              >
+                <option value="">Unassigned</option>
+                {(agentProfilesQuery.data?.profiles ?? []).map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="iv-acc-row" style={{ flexDirection: "column", gap: 4 }}>
               <span className="iv-acc-key">Labels</span>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
@@ -261,11 +303,16 @@ export function DetailsSidebar({ convId }: Props) {
             <div className="iv-acc-row"><span className="iv-acc-key">Kind</span><span className="iv-acc-val">{conv.lead_kind}</span></div>
             <div className="iv-acc-row" style={{ alignItems: "center" }}>
               <span className="iv-acc-key">AI Reply</span>
-              <div className={`iv-toggle ${conv.ai_paused ? "off" : "on"}`}>
+              <div
+                className={`iv-toggle ${conv.ai_paused ? "off" : "on"}${aiToggleMut.isPending ? " loading" : ""}`}
+                style={{ cursor: aiToggleMut.isPending ? "default" : "pointer" }}
+                onClick={() => { if (!aiToggleMut.isPending) aiToggleMut.mutate(!conv.ai_paused); }}
+              >
                 <div className="iv-toggle-knob" />
               </div>
             </div>
-            {conv.ai_paused && <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>⏸ AI paused</div>}
+            {conv.ai_paused && <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>⏸ AI paused — agents handle replies</div>}
+            {!conv.ai_paused && <div style={{ fontSize: 11, color: "#22c55e", marginTop: 4 }}>🤖 AI active — auto-replies enabled</div>}
           </Accordion>
 
           {/* Conversation Info */}
@@ -276,16 +323,51 @@ export function DetailsSidebar({ convId }: Props) {
 
           {/* CSAT */}
           <Accordion id="csat" title="CSAT" open={openSections.has("csat")} onToggle={() => toggleSection("csat")}>
-            <div style={{ fontSize: 12, color: "#94a3b8", padding: "4px 0" }}>No rating yet</div>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>Customer rating</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    disabled={csatRatingMut.isPending}
+                    onClick={() => csatRatingMut.mutate(star)}
+                    style={{
+                      width: 32, height: 32, border: "none", borderRadius: 6, cursor: "pointer", fontSize: 18,
+                      background: (conv.csat_rating ?? 0) >= star ? "#fbbf24" : "#f1f5f9",
+                      opacity: csatRatingMut.isPending ? 0.6 : 1,
+                      transition: "background 0.15s"
+                    }}
+                  >⭐</button>
+                ))}
+              </div>
+              {conv.csat_rating && (
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                  Rated {conv.csat_rating}/5
+                </div>
+              )}
+            </div>
+            <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
+              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
+                {conv.csat_sent_at
+                  ? `Survey sent ${new Date(conv.csat_sent_at).toLocaleDateString()}`
+                  : "No survey sent yet"}
+              </div>
+              <button
+                className="account-btn-secondary"
+                style={{ fontSize: 11, padding: "3px 10px" }}
+                disabled={csatSendMut.isPending}
+                onClick={() => csatSendMut.mutate()}
+              >
+                {csatSendMut.isPending ? "Sending…" : "Send CSAT survey"}
+              </button>
+              {csatSendMut.isError && (
+                <div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>
+                  {(csatSendMut.error as Error).message}
+                </div>
+              )}
+            </div>
           </Accordion>
-        </div>
-      )}
-
-      {sidebarTab === "copilot" && (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 13 }}>
-          Copilot coming soon
-        </div>
-      )}
+      </div>
     </div>
   );
 }

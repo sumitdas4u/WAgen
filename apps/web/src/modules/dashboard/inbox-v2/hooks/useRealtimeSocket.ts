@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "../../../../lib/api";
 import { useConvStore } from "../store/convStore";
+import { useNotificationStore } from "../store/notificationStore";
+import type { AgentNotification } from "../api";
 import type { WSEvent } from "../types";
 
 function toWsBase(url: string): string {
@@ -37,11 +40,17 @@ function setLastMsgId(convId: string, msgId: string) {
 
 export function useRealtimeSocket(token: string | null) {
   const store = useConvStore();
+  const notifStore = useNotificationStore();
+  const qc = useQueryClient();
   const storeRef = useRef(store);
+  const notifRef = useRef(notifStore);
+  const qcRef = useRef(qc);
   const optimisticMap = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     storeRef.current = store;
+    notifRef.current = notifStore;
+    qcRef.current = qc;
   });
 
   // Expose optimisticMap so ComposeArea can register echo_id → tempId
@@ -136,6 +145,8 @@ export function useRealtimeSocket(token: string | null) {
             ai_paused: false,
             manual_takeover: false,
             last_ai_reply_at: null,
+            csat_rating: null,
+            csat_sent_at: null,
             user_id: ""
           });
           break;
@@ -161,6 +172,23 @@ export function useRealtimeSocket(token: string | null) {
           }
           break;
         }
+        case "conversation.label_changed":
+          s.upsertConv({ id: envelope.data.id, label_ids: envelope.data.label_ids } as Parameters<typeof s.upsertConv>[0]);
+          break;
+        case "conversation.assigned":
+          s.upsertConv({ id: envelope.data.id, assigned_agent_profile_id: envelope.data.agent_id });
+          break;
+        case "contact.updated":
+          // Invalidate contact query so sidebar refetches updated info
+          void qcRef.current.invalidateQueries({ queryKey: ["iv2-contact", envelope.data.conversation_id] });
+          break;
+        case "agent.notification":
+          notifRef.current.prependNotification(envelope.data as AgentNotification);
+          break;
+        case "conversation.mentioned":
+          // Also surfaces as agent.notification — trigger badge pulse only
+          notifRef.current.incrementUnread();
+          break;
         default:
           break;
       }

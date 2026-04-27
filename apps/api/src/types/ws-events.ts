@@ -59,6 +59,15 @@ export interface BulkUpdatedPayload {
   payload?: Record<string, unknown>;
 }
 
+export interface AgentNotificationPayload {
+  id: string;
+  type: "mention" | "assigned" | "unassigned" | "system";
+  conversation_id?: string;
+  actor_name?: string;
+  body: string;
+  created_at: string;
+}
+
 export type WSEvent =
   | WSEnvelope<"message.created", MessageCreatedPayload>
   | WSEnvelope<"message.updated", MessageUpdatedPayload>
@@ -72,4 +81,6 @@ export type WSEvent =
   | WSEnvelope<"conversation.label_changed", { id: string; label_ids: string[] }>
   | WSEnvelope<"conversation.assigned", { id: string; agent_id: string | null }>
   | WSEnvelope<"conversations.bulk_updated", BulkUpdatedPayload>
-  | WSEnvelope<"contact.updated", { conversation_id: string; name: string; phone: string }>;
+  | WSEnvelope<"contact.updated", { conversation_id: string; name: string; phone: string }>
+  | WSEnvelope<"conversation.mentioned", { conversationId: string; noteId: string; actorName: string; body: string }>
+  | WSEnvelope<"agent.notification", AgentNotificationPayload>;

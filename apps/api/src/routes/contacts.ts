@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { pool } from "../db/pool.js";
 import {
   createManualContact,
   generateContactsExportWorkbook,
@@ -205,6 +206,40 @@ export async function contactRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: "Contact not found" });
       }
       return { contact };
+    }
+  );
+
+  fastify.patch(
+    "/api/contacts/:contactId",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { contactId } = request.params as { contactId: string };
+      const parsed = z.object({
+        name:  z.string().trim().min(1).max(200).optional(),
+        email: z.string().email().nullable().optional(),
+        type:  z.enum(["lead", "feedback", "complaint", "other"]).optional(),
+        tags:  z.array(z.string().trim().min(1)).optional()
+      }).safeParse(request.body ?? {});
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid contact payload" });
+
+      const { name, email, type, tags } = parsed.data;
+      const fields: string[] = [];
+      const values: unknown[] = [];
+      let idx = 1;
+      if (name  !== undefined) { fields.push(`display_name = $${idx++}`);   values.push(name); }
+      if (email !== undefined) { fields.push(`email = $${idx++}`);          values.push(email); }
+      if (type  !== undefined) { fields.push(`contact_type = $${idx++}`);   values.push(type); }
+      if (tags  !== undefined) { fields.push(`tags = $${idx++}`);           values.push(tags); }
+      if (fields.length === 0) return reply.status(400).send({ error: "No fields to update" });
+
+      fields.push(`updated_at = NOW()`);
+      values.push(contactId, request.authUser.userId);
+      const result = await pool.query(
+        `UPDATE contacts SET ${fields.join(", ")} WHERE id = $${idx} AND user_id = $${idx + 1} RETURNING id, display_name, email, contact_type, tags`,
+        values
+      );
+      if ((result.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Contact not found" });
+      return { contact: result.rows[0] };
     }
   );
 

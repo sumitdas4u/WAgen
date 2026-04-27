@@ -338,5 +338,29 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     lazyRoute: () => import("../modules/dashboard/account/users/route"),
     prefetchStrategy: "code",
     requiresAuth: true
+  },
+  {
+    id: "account-canned-responses",
+    path: "account/canned-responses",
+    navTo: "/dashboard/account/canned-responses",
+    navLabel: "Canned Responses",
+    subtitle: "Saved reply shortcuts for the compose area",
+    icon: "templates",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/canned-responses/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
+  },
+  {
+    id: "account-macros",
+    path: "account/macros",
+    navTo: "/dashboard/account/macros",
+    navLabel: "Macros",
+    subtitle: "Multi-step action sequences for the compose area",
+    icon: "templates",
+    section: "account",
+    lazyRoute: () => import("../modules/dashboard/account/macros/route"),
+    prefetchStrategy: "code",
+    requiresAuth: true
   }
 ];

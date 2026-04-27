@@ -17,4 +17,6 @@ export type WSEvent =
   | WSEnvelope<"conversation.label_changed", { id: string; label_ids: string[] }>
   | WSEnvelope<"conversation.assigned", { id: string; agent_id: string | null }>
   | WSEnvelope<"conversations.bulk_updated", { ids: string[]; action: string; payload?: Record<string, unknown> }>
-  | WSEnvelope<"contact.updated", { conversation_id: string; name: string; phone: string }>;
+  | WSEnvelope<"contact.updated", { conversation_id: string; name: string; phone: string }>
+  | WSEnvelope<"conversation.mentioned", { conversationId: string; noteId: string; actorName: string; body: string }>
+  | WSEnvelope<"agent.notification", { id: string; type: string; conversation_id?: string; actor_name?: string; body: string; created_at: string }>;
