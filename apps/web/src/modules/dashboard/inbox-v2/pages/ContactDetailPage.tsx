@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../../../lib/auth-context";
-import { fetchContactByConversation } from "../api";
 
 // Fetch contact by ID directly
 async function fetchContactById(token: string, id: string) {
