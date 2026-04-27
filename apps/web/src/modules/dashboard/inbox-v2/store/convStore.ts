@@ -10,6 +10,7 @@ export interface Conversation {
   id: string;
   user_id: string;
   phone_number: string;
+  contact_name: string | null;
   stage: string;
   score: number;
   lead_kind: string;
@@ -48,6 +49,8 @@ export interface ConversationMessage {
   error_message: string | null;
   retry_count: number;
   payload_json: Record<string, unknown> | null;
+  ai_model: string | null;
+  total_tokens: number | null;
   created_at: string;
 }
 
@@ -65,6 +68,8 @@ export interface ConvFilters {
   aiMode: string;     // "all" | "ai" | "human"
   assignment: string; // "all" | "assigned" | "unassigned"
   labelId: string;    // "all" | label.id
+  leadKind: string;   // "all" | "lead" | "feedback" | "complaint" | "other"
+  priority: string;   // "all" | "none" | "low" | "medium" | "high" | "urgent"
 }
 
 interface ConvStore {
@@ -77,6 +82,9 @@ interface ConvStore {
 
   // Messages per conversation
   messagesByConvId: Record<string, ConversationMessage[]>;
+
+  // Private notes per conversation (fetched from dedicated endpoint, not washed by setMessages)
+  notesByConvId: Record<string, ConversationMessage[]>;
 
   // Typing state per conversation
   typingState: Record<string, boolean>;
@@ -99,6 +107,9 @@ interface ConvStore {
   replaceOptimisticMessage: (convId: string, tempId: string, message: ConversationMessage) => void;
   patchMessageDelivery: (convId: string, msgId: string, status: MsgDeliveryStatus, errorCode?: string, errorMsg?: string) => void;
 
+  setNotes: (convId: string, notes: ConversationMessage[]) => void;
+  appendNote: (convId: string, note: ConversationMessage) => void;
+
   setTyping: (convId: string, on: boolean) => void;
   clearUnread: (convId: string) => void;
   setLabels: (labels: Label[]) => void;
@@ -109,7 +120,9 @@ const DEFAULT_FILTERS: ConvFilters = {
   channel: "all",
   aiMode: "all",
   assignment: "all",
-  labelId: "all"
+  labelId: "all",
+  leadKind: "all",
+  priority: "all"
 };
 
 export const useConvStore = create<ConvStore>((set) => ({
@@ -119,6 +132,7 @@ export const useConvStore = create<ConvStore>((set) => ({
   filters: DEFAULT_FILTERS,
   activeConvId: null,
   messagesByConvId: {},
+  notesByConvId: {},
   typingState: {},
   labels: [],
 
@@ -177,6 +191,16 @@ export const useConvStore = create<ConvStore>((set) => ({
       m.id === msgId ? { ...m, delivery_status: status, error_code: errorCode ?? m.error_code, error_message: errorMsg ?? m.error_message } : m
     );
     return { messagesByConvId: { ...s.messagesByConvId, [convId]: patched } };
+  }),
+
+  setNotes: (convId, notes) => set((s) => ({
+    notesByConvId: { ...s.notesByConvId, [convId]: notes }
+  })),
+
+  appendNote: (convId, note) => set((s) => {
+    const existing = s.notesByConvId[convId] ?? [];
+    if (existing.some((n) => n.id === note.id)) return s;
+    return { notesByConvId: { ...s.notesByConvId, [convId]: [...existing, note] } };
   }),
 
   setTyping: (convId, on) => set((s) => ({

@@ -937,3 +937,295 @@
 }
 .cd-input:focus { border-color: #2563eb; }
 select.cd-input { height: 36px; }
+
+/* ── Date Separator ──────────────────────────────────────────────────────── */
+.iv-date-separator {
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px 16px; gap: 8px;
+}
+.iv-date-separator::before, .iv-date-separator::after {
+  content: ""; flex: 1; height: 1px; background: #e2eaf4;
+}
+.iv-date-separator span {
+  font-size: 11px; font-weight: 600; color: #94a3b8;
+  background: #f8fafc; padding: 2px 10px; border-radius: 12px;
+  border: 1px solid #e2eaf4; white-space: nowrap;
+}
+
+/* ── Load Older Messages ─────────────────────────────────────────────────── */
+.iv-load-older {
+  display: flex; justify-content: center; padding: 10px 0;
+}
+.iv-load-older-btn {
+  font-size: 12px; color: #2563eb; background: none; border: 1px solid #2563eb;
+  border-radius: 16px; padding: 4px 14px; cursor: pointer; transition: background 120ms;
+}
+.iv-load-older-btn:hover { background: #eff6ff; }
+.iv-load-older-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Scroll-to-bottom FAB ────────────────────────────────────────────────── */
+.iv-scroll-fab {
+  position: absolute; bottom: 72px; right: 18px;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #2563eb; color: #fff; border: none;
+  font-size: 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(37,99,235,0.35);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 120ms, box-shadow 120ms; z-index: 10;
+}
+.iv-scroll-fab:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.4); }
+
+/* ── Copy button on message bubble ──────────────────────────────────────── */
+.iv-copy-btn {
+  background: none; border: none; cursor: pointer; color: inherit; opacity: 0;
+  font-size: 12px; padding: 0 2px; line-height: 1; transition: opacity 120ms;
+  margin-left: auto;
+}
+.iv-bubble:hover .iv-copy-btn { opacity: 0.5; }
+.iv-bubble:hover .iv-copy-btn:hover { opacity: 1; }
+
+/* ── Meta error block ────────────────────────────────────────────────────── */
+.iv-meta-error {
+  margin-top: 4px; padding: 6px 8px;
+  background: rgba(239,68,68,0.08); border-radius: 6px;
+  border-left: 3px solid #ef4444;
+  font-size: 11.5px; color: #b91c1c;
+}
+.iv-meta-error-msg { opacity: 0.75; margin-bottom: 2px; }
+.iv-meta-error-fix { color: #1d4ed8; }
+.iv-meta-error-fix strong { margin-right: 3px; }
+
+/* ── File attachment strip ───────────────────────────────────────────────── */
+.iv-attachment-strip {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 12px; border-bottom: 1px solid #f1f5f9;
+}
+.iv-attachment-thumb {
+  position: relative; width: 64px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.iv-attachment-thumb img {
+  width: 56px; height: 56px; object-fit: cover; border-radius: 6px;
+  border: 1px solid #e2eaf4;
+}
+.iv-attachment-file-icon { font-size: 32px; line-height: 1; }
+.iv-attachment-name {
+  font-size: 9px; color: #64748b; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 62px; text-align: center;
+}
+.iv-attachment-remove {
+  position: absolute; top: -4px; right: -4px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #ef4444; color: #fff; border: none;
+  font-size: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Emoji picker ────────────────────────────────────────────────────────── */
+.iv-emoji-picker {
+  position: absolute; bottom: 40px; left: 0;
+  background: #fff; border: 1px solid #e2eaf4; border-radius: 10px;
+  padding: 8px; display: flex; flex-wrap: wrap; gap: 2px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 30; width: 200px;
+}
+.iv-emoji-btn {
+  font-size: 20px; background: none; border: none; cursor: pointer;
+  padding: 4px; border-radius: 6px; transition: background 80ms;
+  line-height: 1;
+}
+.iv-emoji-btn:hover { background: #f1f5f9; }
+
+/* ── Char counter ────────────────────────────────────────────────────────── */
+.iv-char-counter {
+  font-size: 10.5px; text-align: right; padding: 1px 12px 3px;
+}
+
+/* ── Score chip on conversation row ─────────────────────────────────────── */
+.iv-score-chip {
+  font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 8px;
+  line-height: 1.3; flex-shrink: 0;
+}
+.iv-score-hot { background: #fee2e2; color: #b91c1c; }
+.iv-score-warm { background: #fef3c7; color: #92400e; }
+.iv-score-cold { background: #f1f5f9; color: #475569; }
+
+/* ── Sender badges ────────────────────────────────────────────────────────── */
+.iv-badge {
+  font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 6px;
+  letter-spacing: 0.03em; text-transform: uppercase; flex-shrink: 0;
+}
+.iv-badge-ai   { background: #ede9fe; color: #6d28d9; }
+.iv-badge-flow { background: #d1fae5; color: #065f46; }
+.iv-badge-template { background: #dbeafe; color: #1e40af; }
+
+/* ── Bubble meta row ─────────────────────────────────────────────────────── */
+.iv-bubble-meta {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  margin-top: 4px; font-size: 10.5px; color: rgba(255,255,255,0.6);
+}
+.iv-bubble.inbound .iv-bubble-meta { color: rgba(0,0,0,0.45); }
+.iv-bubble-sender { font-size: 10.5px; font-weight: 600; }
+.iv-token-count { font-size: 9.5px; opacity: 0.55; }
+
+/* ── Bubble variants for AI / Flow ──────────────────────────────────────── */
+.iv-bubble.iv-bubble-ai   { border-left: 2px solid #8b5cf6; }
+.iv-bubble.iv-bubble-flow { border-left: 2px solid #10b981; }
+.iv-bubble.iv-bubble-failed { border-left: 2px solid #ef4444; }
+
+/* ── Inline error hint ───────────────────────────────────────────────────── */
+.iv-bubble-error-hint {
+  display: flex; align-items: flex-start; gap: 5px;
+  margin-top: 5px; font-size: 11px;
+  color: #fca5a5; /* light red for dark outbound bubble */
+}
+.iv-bubble.inbound .iv-bubble-error-hint { color: #b91c1c; }
+.iv-bubble-error-hint-icon { flex-shrink: 0; }
+.iv-bubble-error-hint-text { line-height: 1.4; }
+
+/* ── Info button ─────────────────────────────────────────────────────────── */
+.iv-info-btn {
+  background: none; border: none; cursor: pointer; color: inherit;
+  opacity: 0.4; font-size: 13px; padding: 0 1px; line-height: 1;
+  transition: opacity 120ms; margin-left: 2px;
+}
+.iv-info-btn:hover { opacity: 0.85; }
+.iv-info-btn-error { opacity: 0.8; color: #fca5a5; }
+.iv-bubble.inbound .iv-info-btn-error { color: #ef4444; }
+
+/* ── Info popover ────────────────────────────────────────────────────────── */
+.iv-info-popover {
+  margin-top: 6px; padding: 8px 10px;
+  background: rgba(0,0,0,0.18); border-radius: 8px;
+  font-size: 11.5px; display: flex; flex-direction: column; gap: 3px;
+}
+.iv-bubble.inbound .iv-info-popover { background: #f1f5f9; color: #1e293b; }
+.iv-info-row { line-height: 1.4; }
+.iv-info-errmsg { opacity: 0.75; }
+.iv-info-fix { color: #93c5fd; }
+.iv-bubble.inbound .iv-info-fix { color: #2563eb; }
+.iv-info-ts { opacity: 0.5; font-size: 10.5px; }
+
+/* ── Reply button on bubble ──────────────────────────────────────────────── */
+.iv-reply-btn {
+  background: none; border: none; cursor: pointer; color: inherit;
+  opacity: 0; font-size: 13px; padding: 0 2px; line-height: 1;
+  transition: opacity 120ms; margin-left: 2px;
+}
+.iv-bubble:hover .iv-reply-btn { opacity: 0.55; }
+.iv-reply-btn:hover { opacity: 1 !important; }
+
+/* ── Reply-to strip in ComposeArea ──────────────────────────────────────── */
+.iv-reply-to-strip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; background: #f0f9ff;
+  border-left: 3px solid #38bdf8; font-size: 12px;
+  color: #0369a1; border-radius: 0 4px 4px 0; margin: 0 2px 2px;
+}
+.iv-reply-to-icon { font-size: 13px; flex-shrink: 0; }
+.iv-reply-to-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iv-reply-to-clear {
+  background: none; border: none; cursor: pointer;
+  color: #64748b; font-size: 12px; padding: 0 2px; flex-shrink: 0;
+}
+.iv-reply-to-clear:hover { color: #ef4444; }
+
+/* ── Thread tags bar ────────────────────────────────────────────────────── */
+.iv-thread-tags {
+  display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+  padding: 5px 16px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0;
+  background: #fafbfd;
+}
+.iv-thread-tag {
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.iv-tag-ai     { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+.iv-tag-paused { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.iv-tag-score-hot  { background: #fee2e2; color: #b91c1c; border-color: #fecdd3; }
+.iv-tag-score-warm { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.iv-tag-score-cold { background: #f1f5f9; color: #475569; border-color: #e2eaf4; }
+
+/* ── Reply suggestion banner ─────────────────────────────────────────────── */
+.iv-reply-suggestion {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 16px; background: #f0f4ff; border-bottom: 1px solid #c7d6f7;
+  font-size: 12px; color: #334155; flex-shrink: 0;
+}
+.iv-reply-suggestion strong { color: #1d4ed8; }
+.iv-reply-suggestion-close {
+  background: none; border: none; cursor: pointer; color: #94a3b8;
+  font-size: 13px; padding: 0 2px; line-height: 1; flex-shrink: 0;
+}
+.iv-reply-suggestion-close:hover { color: #475569; }
+
+/* ── Bulk action bar ─────────────────────────────────────────────────────── */
+.iv-bulk-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; background: #f0f4ff; border-bottom: 1px solid #c7d6f7;
+  flex-shrink: 0;
+}
+.iv-bulk-count { font-size: 12px; font-weight: 700; color: #1d4ed8; flex: 1; }
+.iv-bulk-btn {
+  height: 26px; padding: 0 10px; border: 1px solid #c7d6f7; border-radius: 6px;
+  background: #fff; font-size: 11.5px; font-weight: 600; color: #334155; cursor: pointer;
+  transition: background 80ms; font-family: "Manrope", sans-serif;
+}
+.iv-bulk-btn:hover:not(:disabled) { background: #eff6ff; color: #1d4ed8; }
+.iv-bulk-btn:disabled { opacity: 0.5; cursor: default; }
+.iv-bulk-cancel { color: #5f6f86; }
+
+/* ── Conversation row checkbox ───────────────────────────────────────────── */
+.iv-crow-check {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 100%; flex-shrink: 0; cursor: pointer; padding-top: 2px;
+}
+.iv-checkbox {
+  width: 14px; height: 14px; border-radius: 4px; border: 2px solid #c7d6f7;
+  background: #fff; transition: all 80ms; flex-shrink: 0;
+}
+.iv-checkbox.checked {
+  background: #2563eb; border-color: #2563eb;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 8'%3E%3Cpath d='M1 4l2.5 2.5L9 1' stroke='%23fff' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: center; background-size: 10px;
+}
+.iv-crow.selected { background: #eff6ff; }
+.iv-crow.selected .iv-crow-check .iv-checkbox { border-color: #2563eb; }
+
+/* ── Modal overlay + container ───────────────────────────────────────────── */
+.iv-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+}
+.iv-modal {
+  background: #fff; border-radius: 14px; width: 440px; max-width: 92vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18); overflow: hidden;
+  max-height: 82vh; display: flex; flex-direction: column;
+}
+.iv-modal-lg { width: 560px; }
+
+/* ── Canned manage rows ──────────────────────────────────────────────────── */
+.iv-canned-manage-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid #f1f5f9;
+  transition: background 80ms;
+}
+.iv-canned-manage-row:hover { background: #fafbfd; }
+.iv-canned-edit-row {
+  padding: 10px 12px; border-radius: 8px; border: 1px solid #c7d6f7;
+  background: #f0f4ff; display: flex; flex-direction: column; gap: 4px;
+}
+
+/* ── Timeline ────────────────────────────────────────────────────────────── */
+.iv-timeline { display: flex; flex-direction: column; gap: 0; }
+.iv-timeline-item {
+  display: flex; align-items: flex-start; gap: 8px; padding: 5px 0;
+  border-left: 2px solid #e2eaf4; margin-left: 10px; padding-left: 14px;
+  position: relative;
+}
+.iv-timeline-item:last-child { border-left-color: transparent; }
+.iv-timeline-icon {
+  font-size: 13px; position: absolute; left: -10px; top: 4px;
+  background: #fff; line-height: 1;
+}
+.iv-timeline-body { display: flex; flex-direction: column; gap: 1px; }
+.iv-timeline-label { font-size: 12px; font-weight: 600; color: #334155; }
+.iv-timeline-time  { font-size: 10.5px; color: #94a3b8; }

@@ -14,8 +14,12 @@ import {
   postRetry,
   postBulk,
   fetchConvSearch,
-  type SendMessageParams
+  fetchConvNotes,
+  createConvNote,
+  type SendMessageParams,
+  type ConvNote
 } from "./api";
+import type { ConversationMessage } from "./store/convStore";
 
 // ── Conversations ─────────────────────────────────────────────────────────
 
@@ -137,5 +141,58 @@ export function useBulkAction() {
     mutationFn: ({ ids, action, payload }: { ids: string[]; action: string; payload?: Record<string, unknown> }) =>
       postBulk(token!, ids, action, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["iv2-convs"] })
+  });
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+function noteToMessage(note: ConvNote, convId: string): ConversationMessage {
+  return {
+    id: `note-${note.id}`,
+    conversation_id: convId,
+    direction: "outbound",
+    sender_name: note.sender_name,
+    message_text: note.content,
+    content_type: "text",
+    is_private: true,
+    in_reply_to_id: null,
+    echo_id: null,
+    delivery_status: "delivered",
+    error_code: null,
+    error_message: null,
+    retry_count: 0,
+    payload_json: null,
+    ai_model: null,
+    total_tokens: null,
+    created_at: note.created_at
+  };
+}
+
+export function useNotes(convId: string | null) {
+  const { token } = useAuth();
+  const store = useConvStore();
+
+  return useQuery({
+    queryKey: ["iv2-notes", convId],
+    queryFn: async () => {
+      const { notes } = await fetchConvNotes(token!, convId!);
+      store.setNotes(convId!, notes.map((n) => noteToMessage(n, convId!)));
+      return notes;
+    },
+    enabled: !!token && !!convId
+  });
+}
+
+export function useCreateNote() {
+  const { token } = useAuth();
+  const store = useConvStore();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ convId, content }: { convId: string; content: string }) =>
+      createConvNote(token!, convId, content),
+    onSuccess: (data, { convId }) => {
+      store.appendNote(convId, noteToMessage(data.note, convId));
+      void qc.invalidateQueries({ queryKey: ["iv2-notes", convId] });
+    }
   });
 }

@@ -106,7 +106,7 @@ export function useRealtimeSocket(token: string | null) {
               direction: message.direction as "inbound" | "outbound",
               delivery_status: message.delivery_status as import("../store/convStore").MsgDeliveryStatus,
               content_type: (message.content_type ?? "text") as import("../store/convStore").MsgContentType,
-              payload_json: null
+              payload_json: (message as unknown as { payload_json?: Record<string, unknown> }).payload_json ?? null
             });
             optimisticMap.current.delete(message.echo_id!);
           } else if (!s.messagesByConvId[conversationId]?.some((m) => m.id === message.id)) {
@@ -115,7 +115,7 @@ export function useRealtimeSocket(token: string | null) {
               direction: message.direction as "inbound" | "outbound",
               delivery_status: message.delivery_status as import("../store/convStore").MsgDeliveryStatus,
               content_type: (message.content_type ?? "text") as import("../store/convStore").MsgContentType,
-              payload_json: null
+              payload_json: (message as unknown as { payload_json?: Record<string, unknown> }).payload_json ?? null
             });
           }
           break;
@@ -134,6 +134,7 @@ export function useRealtimeSocket(token: string | null) {
             agent_last_seen_at: null,
             unread_count: 0,
             phone_number: "",
+            contact_name: null,
             stage: "",
             score: 0,
             lead_kind: "lead",
@@ -152,9 +153,17 @@ export function useRealtimeSocket(token: string | null) {
           break;
         case "conversation.updated":
         case "conversation.status_changed":
-        case "conversation.priority_changed":
-          s.upsertConv(envelope.data as Partial<import("../store/convStore").Conversation> & { id: string });
+        case "conversation.priority_changed": {
+          const raw = envelope.data;
+          if (!s.byId[raw.id]) break; // ignore events for convs not in store (incomplete data)
+          const lm = (raw as { last_message?: { text: string; sent_at: string } }).last_message;
+          s.upsertConv({
+            ...raw,
+            last_message: lm ? lm.text : (raw as unknown as { last_message?: string }).last_message,
+            last_message_at: lm ? lm.sent_at : undefined,
+          } as Partial<import("../store/convStore").Conversation> & { id: string });
           break;
+        }
         case "conversation.read":
           s.clearUnread(envelope.data.conversation_id);
           break;
@@ -167,16 +176,19 @@ export function useRealtimeSocket(token: string | null) {
         case "conversations.bulk_updated": {
           const { ids, action } = envelope.data;
           for (const id of ids) {
+            if (!s.byId[id]) continue;
             if (action === "resolve") s.upsertConv({ id, status: "resolved" as import("../store/convStore").ConvStatus });
             else if (action === "reopen") s.upsertConv({ id, status: "open" as import("../store/convStore").ConvStatus });
           }
           break;
         }
         case "conversation.label_changed":
-          s.upsertConv({ id: envelope.data.id, label_ids: envelope.data.label_ids });
+          if (s.byId[envelope.data.id])
+            s.upsertConv({ id: envelope.data.id, label_ids: envelope.data.label_ids });
           break;
         case "conversation.assigned":
-          s.upsertConv({ id: envelope.data.id, assigned_agent_profile_id: envelope.data.agent_id });
+          if (s.byId[envelope.data.id])
+            s.upsertConv({ id: envelope.data.id, assigned_agent_profile_id: envelope.data.agent_id });
           break;
         case "contact.updated":
           // Invalidate contact query so sidebar refetches updated info

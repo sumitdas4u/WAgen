@@ -1,27 +1,39 @@
 import { useCallback, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
-import { useSendMessage } from "../queries";
+import { useSendMessage, useCreateNote } from "../queries";
 import { postTyping, listCannedResponses } from "../api";
 import { useAuth } from "../../../../lib/auth-context";
-import type { MessageTemplate } from "../../../../lib/api";
+import { uploadInboxMedia } from "../../../../lib/supabase";
 import {
   aiAssistText,
-  assignInboxFlow,
-  sendInboxConversationTemplate,
-  updateConversationAiMode,
-  fetchInboxPublishedFlows,
-  fetchInboxApprovedTemplates
-} from "../../inbox/api";
+  assignFlow,
+  sendTemplate,
+  patchAiMode,
+  fetchPublishedFlows,
+  fetchApprovedTemplates,
+  type MessageTemplate
+} from "../api";
 
 interface Props {
   convId: string;
   optimisticMap: React.MutableRefObject<Map<string, string>>;
+  replyToMsg?: import("../store/convStore").ConversationMessage | null;
+  onClearReply?: () => void;
 }
 
 
 const TRANSLATE_LANGUAGES = ["English", "Hindi", "Spanish", "French", "Arabic", "Portuguese", "Bengali", "Urdu", "Gujarati", "Marathi", "Tamil", "Telugu"];
 const PLACEHOLDER_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
+const QUICK_EMOJIS = ["👍", "😊", "🙏", "✅", "🔥", "💯", "👋", "😄", "❤️", "🎉", "⚡", "📞", "📧", "💬", "🏷️", "🔔"];
+const MAX_CHARS = 4000;
+
+interface AttachedFile {
+  file: File;
+  previewUrl: string;
+  name: string;
+  mimeType: string;
+}
 
 function getTemplateBody(t: MessageTemplate): string {
   return t.components.find((c) => c.type === "BODY")?.text ?? t.name;
@@ -37,24 +49,31 @@ interface TemplateVarsState {
   template: MessageTemplate;
   vars: string[];
   values: Record<string, string>;
+  headerMediaUrl?: string | null;
 }
 
-export function ComposeArea({ convId, optimisticMap }: Props) {
+export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }: Props) {
   const [mode, setMode] = useState<"reply" | "note">("reply");
   const [text, setText] = useState("");
   const [showCanned, setShowCanned] = useState(false);
   const [cannedSearch, setCannedSearch] = useState("");
+  const [cannedIdx, setCannedIdx] = useState(-1);
   const [showReplyGuide, setShowReplyGuide] = useState(true);
   const [showAiAssistPopup, setShowAiAssistPopup] = useState(false);
   const [showFlowMenu, setShowFlowMenu] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showTranslateSubmenu, setShowTranslateSubmenu] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isAiRewriting, setIsAiRewriting] = useState(false);
   const [templateVarsDialog, setTemplateVarsDialog] = useState<TemplateVarsState | null>(null);
   const [tookOver, setTookOver] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -62,6 +81,7 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
   const { byId, appendMessage, upsertConv } = useConvStore();
   const conv = byId[convId];
   const sendMsg = useSendMessage();
+  const createNote = useCreateNote();
 
   const canManualReply = Boolean(conv && (conv.ai_paused || conv.manual_takeover || tookOver));
   const isApiChannel = conv?.channel_type === "api";
@@ -77,14 +97,14 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
 
   const flowsQuery = useQuery({
     queryKey: ["iv2-flows"],
-    queryFn: () => fetchInboxPublishedFlows(token!),
+    queryFn: () => fetchPublishedFlows(token!),
     enabled: Boolean(token),
     staleTime: 60_000
   });
 
   const templatesQuery = useQuery({
     queryKey: ["iv2-templates", conv?.channel_linked_number ?? "all"],
-    queryFn: () => fetchInboxApprovedTemplates(token!, conv?.channel_linked_number ?? null),
+    queryFn: () => fetchApprovedTemplates(token!, conv?.channel_linked_number ?? null),
     enabled: Boolean(token && isApiChannel),
     staleTime: 60_000
   });
@@ -92,7 +112,7 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   const takeOverMut = useMutation({
-    mutationFn: () => updateConversationAiMode(token!, convId, true),
+    mutationFn: () => patchAiMode(token!, convId, true),
     onSuccess: () => {
       upsertConv({ id: convId, ai_paused: true, manual_takeover: true });
       setTookOver(true);
@@ -100,14 +120,14 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
   });
 
   const assignFlowMut = useMutation({
-    mutationFn: ({ flowId }: { flowId: string }) => assignInboxFlow(token!, convId, flowId),
+    mutationFn: ({ flowId }: { flowId: string }) => assignFlow(token!, flowId, convId),
     onSuccess: () => { setShowFlowMenu(false); showToast("Flow assigned"); },
     onError: (e: Error) => showToast(e.message)
   });
 
   const sendTemplateMut = useMutation({
     mutationFn: ({ templateId, vars }: { templateId: string; vars: Record<string, string> }) =>
-      sendInboxConversationTemplate(token!, convId, templateId, vars),
+      sendTemplate(token!, convId, templateId, vars),
     onSuccess: () => { setShowTemplateMenu(false); setTemplateVarsDialog(null); showToast("Template sent"); },
     onError: (e: Error) => showToast(e.message)
   });
@@ -132,10 +152,11 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
   }, [token, convId]);
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
+    const val = e.target.value.slice(0, MAX_CHARS);
     setText(val);
-    setShowCanned(val.startsWith("/") && mode === "reply");
-    if (val.startsWith("/")) setCannedSearch(val.slice(1).toLowerCase());
+    const openCanned = val.startsWith("/") && mode === "reply";
+    setShowCanned(openCanned);
+    if (openCanned) { setCannedSearch(val.slice(1).toLowerCase()); setCannedIdx(-1); }
     if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
     typingDebounceRef.current = setTimeout(() => broadcastTyping(true), 300);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
@@ -150,34 +171,121 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    const echoId = crypto.randomUUID();
-    const tempId = `temp-${echoId}`;
-    const isPrivate = mode === "note";
-    appendMessage(convId, {
-      id: tempId, conversation_id: convId, direction: "outbound", sender_name: null,
-      message_text: trimmed, content_type: "text", is_private: isPrivate,
-      in_reply_to_id: null, echo_id: echoId, delivery_status: "pending",
-      error_code: null, error_message: null, retry_count: 0, payload_json: null,
-      created_at: new Date().toISOString()
-    });
-    optimisticMap.current.set(echoId, tempId);
-    setText("");
-    setShowCanned(false);
-    broadcastTyping(false);
-    try {
-      await sendMsg.mutateAsync({ convId, params: { text: trimmed, echoId, isPrivate } });
-    } catch {
-      const { patchMessageDelivery } = useConvStore.getState();
-      patchMessageDelivery(convId, tempId, "failed");
-      optimisticMap.current.delete(echoId);
+    const hasFiles = attachedFiles.length > 0;
+    if (!trimmed && !hasFiles) return;
+    setIsUploading(hasFiles);
+
+    // Upload files first (one at a time)
+    const uploads: Array<{ url: string; mimeType: string }> = [];
+    if (hasFiles) {
+      try {
+        for (const af of attachedFiles) {
+          const result = await uploadInboxMedia(af.file);
+          uploads.push(result);
+        }
+      } catch (e) {
+        showToast((e as Error).message);
+        setIsUploading(false);
+        return;
+      }
     }
-  }, [text, mode, convId, appendMessage, optimisticMap, sendMsg, broadcastTyping]);
+
+    setIsUploading(false);
+    const isPrivate = mode === "note";
+
+    // Send one message per file, then text
+    for (const upload of uploads) {
+      const echoId = crypto.randomUUID();
+      const tempId = `temp-${echoId}`;
+      appendMessage(convId, {
+        id: tempId, conversation_id: convId, direction: "outbound", sender_name: null,
+        message_text: upload.url, content_type: upload.mimeType.startsWith("image/") ? "image" : upload.mimeType.startsWith("video/") ? "video" : upload.mimeType.startsWith("audio/") ? "audio" : "document",
+        is_private: isPrivate, in_reply_to_id: null, echo_id: echoId, delivery_status: "pending",
+        error_code: null, error_message: null, retry_count: 0, payload_json: { url: upload.url },
+        ai_model: null, total_tokens: null, created_at: new Date().toISOString()
+      });
+      optimisticMap.current.set(echoId, tempId);
+      void sendMsg.mutateAsync({ convId, params: { mediaUrl: upload.url, mediaMimeType: upload.mimeType, echoId, isPrivate } }).catch(() => {
+        useConvStore.getState().patchMessageDelivery(convId, tempId, "failed");
+        optimisticMap.current.delete(echoId);
+      });
+    }
+
+    setAttachedFiles([]);
+
+    if (trimmed) {
+      setText("");
+      setShowCanned(false);
+      setCannedIdx(-1);
+      broadcastTyping(false);
+
+      if (isPrivate) {
+        // Notes use dedicated endpoint — stored separately, always visible after reload
+        try {
+          await createNote.mutateAsync({ convId, content: trimmed });
+        } catch (e) {
+          showToast((e as Error).message);
+        }
+      } else {
+        const echoId = crypto.randomUUID();
+        const tempId = `temp-${echoId}`;
+        const replyToId = replyToMsg?.id ?? null;
+        appendMessage(convId, {
+          id: tempId, conversation_id: convId, direction: "outbound", sender_name: null,
+          message_text: trimmed, content_type: "text", is_private: false,
+          in_reply_to_id: replyToId, echo_id: echoId, delivery_status: "pending",
+          error_code: null, error_message: null, retry_count: 0, payload_json: null,
+          ai_model: null, total_tokens: null, created_at: new Date().toISOString()
+        });
+        optimisticMap.current.set(echoId, tempId);
+        onClearReply?.();
+        try {
+          await sendMsg.mutateAsync({ convId, params: { text: trimmed, echoId, isPrivate: false, inReplyToId: replyToId } });
+        } catch {
+          useConvStore.getState().patchMessageDelivery(convId, tempId, "failed");
+          optimisticMap.current.delete(echoId);
+        }
+      }
+    } else {
+      setText("");
+      setShowCanned(false);
+      setCannedIdx(-1);
+      broadcastTyping(false);
+    }
+  }, [text, attachedFiles, mode, convId, appendMessage, optimisticMap, sendMsg, broadcastTyping]);
+
+  const cannedList = cannedQuery.data?.cannedResponses ?? [];
+  const filteredCanned = cannedList.filter((c) =>
+    !cannedSearch || c.short_code.includes(cannedSearch) || c.content.toLowerCase().includes(cannedSearch)
+  );
+
+  const selectCanned = useCallback((t: string) => {
+    setText(t); setShowCanned(false); textareaRef.current?.focus();
+  }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showCanned && filteredCanned.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setCannedIdx((i) => (i + 1) % filteredCanned.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setCannedIdx((i) => (i - 1 + filteredCanned.length) % filteredCanned.length);
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && cannedIdx >= 0) {
+        e.preventDefault();
+        const item = filteredCanned[cannedIdx];
+        if (item) selectCanned(item.content);
+        return;
+      }
+      if (e.key === "Escape") { setShowCanned(false); setCannedIdx(-1); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(); }
     if (e.key === "Escape") { setShowCanned(false); closeAllMenus(); }
-  }, [handleSend]);
+  }, [showCanned, filteredCanned, cannedIdx, handleSend, selectCanned]);
 
   const handleAiRewrite = useCallback(async () => {
     if (!text.trim() || isAiRewriting) return;
@@ -222,15 +330,6 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
     }
   }, [sendTemplateMut]);
 
-  const cannedList = cannedQuery.data?.cannedResponses ?? [];
-  const filteredCanned = cannedList.filter((c) =>
-    !cannedSearch || c.short_code.includes(cannedSearch) || c.content.toLowerCase().includes(cannedSearch)
-  );
-
-  const selectCanned = useCallback((t: string) => {
-    setText(t); setShowCanned(false); textareaRef.current?.focus();
-  }, []);
-
   const applyFormat = useCallback((style: string) => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -244,6 +343,46 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
     setText(text.slice(0, start) + open + selected + close + text.slice(end));
     setTimeout(() => { ta.setSelectionRange(start + open.length, end + open.length); ta.focus(); }, 0);
   }, [text]);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    const newFiles: AttachedFile[] = files.map((f) => ({
+      file: f,
+      previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : "",
+      name: f.name,
+      mimeType: f.type
+    }));
+    setAttachedFiles((prev) => [...prev, ...newFiles].slice(0, 5));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const handleRemoveAttachment = useCallback((idx: number) => {
+    setAttachedFiles((prev) => {
+      const next = [...prev];
+      if (next[idx]?.previewUrl) URL.revokeObjectURL(next[idx].previewUrl);
+      next.splice(idx, 1);
+      return next;
+    });
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (mode !== "reply") return;
+    const imageItem = Array.from(e.clipboardData.items).find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+    e.preventDefault();
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    const named = new File([file], `paste-${Date.now()}.png`, { type: file.type });
+    setAttachedFiles((prev) => [...prev, {
+      file: named, previewUrl: URL.createObjectURL(named), name: named.name, mimeType: named.type
+    }].slice(0, 5));
+  }, [mode]);
+
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    setText((prev) => prev + emoji);
+    setShowEmojiPicker(false);
+    textareaRef.current?.focus();
+  }, []);
 
   const flows = flowsQuery.data ?? [];
   const templates = templatesQuery.data ?? [];
@@ -266,6 +405,30 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
               <button className="iv-tvd-close" onClick={() => setTemplateVarsDialog(null)}>✕</button>
             </div>
             <div className="iv-tvd-preview">{getTemplateBody(templateVarsDialog.template)}</div>
+            {/* Header media upload (for MARKETING templates with image/video/pdf header) */}
+            {templateVarsDialog.template.category === "MARKETING" && (
+              <div className="iv-tvd-field">
+                <label className="iv-tvd-label">Header media (image/video/PDF)</label>
+                <input
+                  type="file"
+                  accept="image/*,video/*,application/pdf"
+                  className="iv-tvd-input"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const result = await uploadInboxMedia(file);
+                      setTemplateVarsDialog((prev) => prev ? { ...prev, headerMediaUrl: result.url } : prev);
+                    } catch (err) {
+                      showToast((err as Error).message);
+                    }
+                  }}
+                />
+                {templateVarsDialog.headerMediaUrl && (
+                  <div style={{ fontSize: 11, color: "#22c55e", marginTop: 2 }}>✓ Uploaded</div>
+                )}
+              </div>
+            )}
             {templateVarsDialog.vars.length > 0 && (
               <div className="iv-tvd-fields">
                 {templateVarsDialog.vars.map((v) => (
@@ -288,7 +451,12 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
               <button
                 className="iv-tvd-send"
                 disabled={sendTemplateMut.isPending}
-                onClick={() => sendTemplateMut.mutate({ templateId: templateVarsDialog.template.id, vars: templateVarsDialog.values })}
+                onClick={() => sendTemplateMut.mutate({
+                  templateId: templateVarsDialog.template.id,
+                  vars: templateVarsDialog.headerMediaUrl
+                    ? { ...templateVarsDialog.values, headerMediaUrl: templateVarsDialog.headerMediaUrl }
+                    : templateVarsDialog.values
+                })}
               >
                 {sendTemplateMut.isPending ? "Sending…" : "Send Template"}
               </button>
@@ -307,8 +475,12 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
             onChange={(e) => setCannedSearch(e.target.value)}
             autoFocus
           />
-          {filteredCanned.map((c) => (
-            <div key={c.id} className="iv-canned-item" onClick={() => selectCanned(c.content)}>
+          {filteredCanned.map((c, i) => (
+            <div
+              key={c.id}
+              className={`iv-canned-item${cannedIdx === i ? " selected" : ""}`}
+              onClick={() => selectCanned(c.content)}
+            >
               <span className="iv-canned-key">/{c.short_code}</span>
               <span className="iv-canned-text">{c.content}</span>
             </div>
@@ -357,6 +529,33 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
             <button className="iv-fmt-btn" title="List">≡</button>
           </div>
 
+          {/* Attachment preview strip */}
+          {attachedFiles.length > 0 && (
+            <div className="iv-attachment-strip">
+              {attachedFiles.map((af, i) => (
+                <div key={i} className="iv-attachment-thumb">
+                  {af.previewUrl
+                    ? <img src={af.previewUrl} alt={af.name} />
+                    : <span className="iv-attachment-file-icon">📄</span>
+                  }
+                  <span className="iv-attachment-name">{af.name.slice(0, 20)}</span>
+                  <button className="iv-attachment-remove" onClick={() => handleRemoveAttachment(i)}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Reply-to preview */}
+          {replyToMsg && (
+            <div className="iv-reply-to-strip">
+              <span className="iv-reply-to-icon">↩</span>
+              <span className="iv-reply-to-text">
+                {(replyToMsg.message_text ?? "").slice(0, 80) || "Media"}
+              </span>
+              <button className="iv-reply-to-clear" onClick={onClearReply} title="Cancel reply">✕</button>
+            </div>
+          )}
+
           {/* Textarea */}
           <textarea
             ref={textareaRef}
@@ -366,7 +565,13 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
             onChange={handleInput}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
           />
+          {text.length > MAX_CHARS * 0.9 && (
+            <div className="iv-char-counter" style={{ color: text.length >= MAX_CHARS ? "#ef4444" : "#94a3b8" }}>
+              {text.length}/{MAX_CHARS}
+            </div>
+          )}
 
           {/* Toolbar with dropups */}
           <div className="iv-compose-footer" style={{ position: "relative" }}>
@@ -453,8 +658,34 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
               </div>
             )}
 
-            <button className="iv-footer-btn" title="Emoji">😊</button>
-            <button className="iv-footer-btn" title="Attach">📎</button>
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.txt"
+              multiple
+              style={{ display: "none" }}
+              onChange={handleFileSelect}
+            />
+            {/* Emoji picker */}
+            {showEmojiPicker && (
+              <div className="iv-emoji-picker" ref={emojiPickerRef}>
+                {QUICK_EMOJIS.map((emoji) => (
+                  <button key={emoji} className="iv-emoji-btn" onClick={() => handleEmojiSelect(emoji)}>{emoji}</button>
+                ))}
+              </div>
+            )}
+            <button
+              className={`iv-footer-btn${showEmojiPicker ? " active" : ""}`}
+              title="Emoji"
+              onClick={() => { setShowEmojiPicker((v) => !v); closeAllMenus(); }}
+            >😊</button>
+            <button
+              className="iv-footer-btn"
+              title="Attach file"
+              disabled={attachedFiles.length >= 5}
+              onClick={() => fileInputRef.current?.click()}
+            >📎</button>
             {mode === "reply" && (
               <>
                 <button
@@ -484,8 +715,8 @@ export function ComposeArea({ convId, optimisticMap }: Props) {
               ✨
             </button>
             <div className="iv-send-group">
-              <button className="iv-btn-send" onClick={() => void handleSend()}>
-                {mode === "note" ? "Add Note" : "Send ↵"}
+              <button className="iv-btn-send" disabled={isUploading} onClick={() => void handleSend()}>
+                {isUploading ? "Uploading…" : mode === "note" ? "Add Note" : "Send ↵"}
               </button>
               <button className="iv-btn-send-caret">▾</button>
             </div>

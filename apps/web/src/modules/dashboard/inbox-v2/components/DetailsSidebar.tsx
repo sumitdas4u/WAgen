@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
@@ -83,6 +83,8 @@ interface Props { convId: string }
 
 export function DetailsSidebar({ convId }: Props) {
   const [openSections, setOpenSections] = useState<Set<string>>(getSavedSections);
+  const [snoozeAt, setSnoozeAt] = useState("");
+  const [pendingSnooze, setPendingSnooze] = useState(false);
 
   const { byId, labels } = useConvStore();
   const conv = byId[convId];
@@ -144,6 +146,11 @@ export function DetailsSidebar({ convId }: Props) {
     return { id: def.id, label: def.label, field_type: def.field_type, value: fv?.value ?? null };
   });
   const orphans = fieldValues.filter((fv) => !fieldDefs.some((d) => d.id === fv.field_id));
+
+  useEffect(() => {
+    setPendingSnooze(false);
+    setSnoozeAt("");
+  }, [convId]);
 
   const toggleSection = useCallback((id: string) => {
     setOpenSections((prev) => {
@@ -232,16 +239,50 @@ export function DetailsSidebar({ convId }: Props) {
 
           {/* Conversation Actions */}
           <Accordion id="conv-actions" title="Conversation Actions" open={openSections.has("conv-actions")} onToggle={() => toggleSection("conv-actions")}>
-            <div className="iv-acc-row">
-              <span className="iv-acc-key">Status</span>
-              <select
-                className="iv-acc-val"
-                value={conv.status ?? "open"}
-                style={{ border: "1px solid #e2eaf4", borderRadius: 6, padding: "2px 6px", fontSize: 12, background: "#fff" }}
-                onChange={(e) => setStatus.mutate({ convId, status: e.target.value })}
-              >
-                {["open", "pending", "resolved", "snoozed"].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+            <div className="iv-acc-row" style={{ flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <span className="iv-acc-key" style={{ paddingTop: 4 }}>Status</span>
+                <select
+                  className="iv-acc-val"
+                  value={pendingSnooze ? "snoozed" : (conv.status ?? "open")}
+                  style={{ border: "1px solid #e2eaf4", borderRadius: 6, padding: "2px 6px", fontSize: 12, background: "#fff" }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "snoozed") {
+                      const d = new Date(); d.setHours(d.getHours() + 1);
+                      setSnoozeAt(d.toISOString().slice(0, 16));
+                      setPendingSnooze(true);
+                    } else {
+                      setPendingSnooze(false);
+                      setStatus.mutate({ convId, status: val });
+                    }
+                  }}
+                >
+                  {["open", "pending", "resolved", "snoozed"].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              {(pendingSnooze || conv.status === "snoozed") && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: 88 }}>
+                  <input
+                    type="datetime-local"
+                    style={{ border: "1px solid #e2eaf4", borderRadius: 6, padding: "3px 6px", fontSize: 11.5, background: "#fff", outline: "none" }}
+                    value={snoozeAt || (conv.snoozed_until ? conv.snoozed_until.slice(0, 16) : "")}
+                    onChange={(e) => setSnoozeAt(e.target.value)}
+                  />
+                  <button
+                    className="iv-btn-blue"
+                    style={{ fontSize: 11, padding: "3px 8px", alignSelf: "flex-start" }}
+                    disabled={setStatus.isPending || !(snoozeAt || conv.snoozed_until)}
+                    onClick={() => {
+                      const val = snoozeAt || (conv.snoozed_until ? conv.snoozed_until.slice(0, 16) : "");
+                      void setStatus.mutateAsync({ convId, status: "snoozed", snoozedUntil: new Date(val).toISOString() })
+                        .then(() => setPendingSnooze(false));
+                    }}
+                  >
+                    Confirm snooze
+                  </button>
+                </div>
+              )}
             </div>
             <div className="iv-acc-row">
               <span className="iv-acc-key">Priority</span>
@@ -319,6 +360,35 @@ export function DetailsSidebar({ convId }: Props) {
           <Accordion id="conv-info" title="Conversation Info" open={openSections.has("conv-info")} onToggle={() => toggleSection("conv-info")}>
             <div className="iv-acc-row"><span className="iv-acc-key">ID</span><span className="iv-acc-val" style={{ fontSize: 11, fontFamily: "monospace" }}>{convId.slice(-8)}</span></div>
             {conv.created_at && <div className="iv-acc-row"><span className="iv-acc-key">Created</span><span className="iv-acc-val">{new Date(conv.created_at).toLocaleDateString()}</span></div>}
+            {conv.snoozed_until && <div className="iv-acc-row"><span className="iv-acc-key">Snoozed until</span><span className="iv-acc-val">{new Date(conv.snoozed_until).toLocaleString()}</span></div>}
+          </Accordion>
+
+          {/* Timeline */}
+          <Accordion id="timeline" title="Timeline" open={openSections.has("timeline")} onToggle={() => toggleSection("timeline")}>
+            <div className="iv-timeline">
+              {[
+                conv.created_at         && { icon: "💬", label: "Conversation started",  time: conv.created_at },
+                conv.last_message_at    && { icon: "📩", label: "Last message",           time: conv.last_message_at },
+                conv.last_ai_reply_at   && { icon: "🤖", label: "Last AI reply",          time: conv.last_ai_reply_at },
+                conv.agent_last_seen_at && { icon: "👁", label: "Agent last seen",        time: conv.agent_last_seen_at },
+                conv.csat_sent_at       && { icon: "⭐", label: "CSAT survey sent",       time: conv.csat_sent_at },
+              ]
+                .filter(Boolean)
+                .sort((a, b) => Date.parse((a as { time: string }).time) - Date.parse((b as { time: string }).time))
+                .map((ev, i) => {
+                  const e = ev as { icon: string; label: string; time: string };
+                  return (
+                    <div key={i} className="iv-timeline-item">
+                      <span className="iv-timeline-icon">{e.icon}</span>
+                      <div className="iv-timeline-body">
+                        <span className="iv-timeline-label">{e.label}</span>
+                        <span className="iv-timeline-time">{new Date(e.time).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+            </div>
           </Accordion>
 
           {/* CSAT */}
