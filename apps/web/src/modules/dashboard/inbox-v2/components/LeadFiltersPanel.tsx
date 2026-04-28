@@ -54,17 +54,19 @@ function Pills<T extends string>({ options, value, onChange }: {
 
 interface Props { conversations: Conversation[] }
 
-export function LeadFiltersPanel({ conversations }: Props) {
-  const { filters, setFilters, labels, folder, setFolder } = useConvStore();
+const RESET_FILTERS = { stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all", leadKind: "all", priority: "all" } as const;
 
-  const hotCount = conversations.filter((c) => scoreToStage(c.score) === "hot").length;
+export function LeadFiltersPanel({ conversations }: Props) {
+  const { filters, setFilters, labels } = useConvStore();
+
+  const hotCount  = conversations.filter((c) => scoreToStage(c.score) === "hot").length;
   const warmCount = conversations.filter((c) => scoreToStage(c.score) === "warm").length;
   const coldCount = conversations.filter((c) => scoreToStage(c.score) === "cold").length;
-  const pendingCount = conversations.filter((c) => c.status === "pending").length;
-  const apiCount = conversations.filter((c) => c.channel_type === "api").length;
-  const qrCount = conversations.filter((c) => c.channel_type === "qr").length;
-  const webCount = conversations.filter((c) => c.channel_type === "web").length;
+  const apiCount  = conversations.filter((c) => c.channel_type === "api").length;
+  const qrCount   = conversations.filter((c) => c.channel_type === "qr").length;
+  const webCount  = conversations.filter((c) => c.channel_type === "web").length;
 
+  // isDefault only checks filters — folder (tabs) is independent
   const isDefault =
     filters.stage === "all" &&
     filters.channel === "all" &&
@@ -72,24 +74,23 @@ export function LeadFiltersPanel({ conversations }: Props) {
     filters.assignment === "all" &&
     filters.labelId === "all" &&
     filters.leadKind === "all" &&
-    filters.priority === "all" &&
-    folder === "all";
+    filters.priority === "all";
 
+  // activeView only reflects filters state — tabs don't affect left panel
   const activeView = (() => {
-    if (filters.stage === "hot" && filters.channel === "all") return "hot-leads";
+    if (filters.stage === "hot"  && filters.channel === "all") return "hot-leads";
     if (filters.stage === "warm" && filters.channel === "all") return "warm-leads";
     if (filters.stage === "cold" && filters.channel === "all") return "cold-leads";
-    if (folder === "pending") return "pending";
     if (filters.channel === "api") return "wa-api";
-    if (filters.channel === "qr") return "wa-qr";
+    if (filters.channel === "qr")  return "wa-qr";
     if (filters.channel === "web") return "web";
     if (isDefault) return "all";
     return "";
   })();
 
-  function selectAll() {
-    setFilters({ stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all", leadKind: "all", priority: "all" });
-    setFolder("all");
+  // Only resets filters — never touches folder/tabs
+  function resetFilters() {
+    setFilters(RESET_FILTERS);
   }
 
   return (
@@ -101,28 +102,21 @@ export function LeadFiltersPanel({ conversations }: Props) {
         icon="🔥"
         count={hotCount || undefined}
         active={activeView === "hot-leads"}
-        onClick={() => { selectAll(); setFilters({ stage: "hot" }); }}
+        onClick={() => setFilters({ ...RESET_FILTERS, stage: "hot" })}
       />
       <NavItem
         label="Warm Leads"
         icon="☀️"
         count={warmCount || undefined}
         active={activeView === "warm-leads"}
-        onClick={() => { selectAll(); setFilters({ stage: "warm" }); }}
+        onClick={() => setFilters({ ...RESET_FILTERS, stage: "warm" })}
       />
       <NavItem
         label="Cold Leads"
         icon="❄️"
         count={coldCount || undefined}
         active={activeView === "cold-leads"}
-        onClick={() => { selectAll(); setFilters({ stage: "cold" }); }}
-      />
-      <NavItem
-        label="Pending Review"
-        icon="⚠️"
-        count={pendingCount || undefined}
-        active={activeView === "pending"}
-        onClick={() => { selectAll(); setFolder("pending"); }}
+        onClick={() => setFilters({ ...RESET_FILTERS, stage: "cold" })}
       />
 
       {/* CHANNELS section */}
@@ -132,21 +126,21 @@ export function LeadFiltersPanel({ conversations }: Props) {
         dot="#22c55e"
         count={apiCount || undefined}
         active={activeView === "wa-api"}
-        onClick={() => { selectAll(); setFilters({ channel: "api" }); }}
+        onClick={() => setFilters({ ...RESET_FILTERS, channel: "api" })}
       />
       <NavItem
         label="WhatsApp QR"
         dot="#22c55e"
         count={qrCount || undefined}
         active={activeView === "wa-qr"}
-        onClick={() => { selectAll(); setFilters({ channel: "qr" }); }}
+        onClick={() => setFilters({ ...RESET_FILTERS, channel: "qr" })}
       />
       <NavItem
         label="Web Widget"
         dot="#8b5cf6"
         count={webCount || undefined}
         active={activeView === "web"}
-        onClick={() => { selectAll(); setFilters({ channel: "web" }); }}
+        onClick={() => setFilters({ ...RESET_FILTERS, channel: "web" })}
       />
 
       {/* Compact filter controls */}
@@ -237,7 +231,7 @@ export function LeadFiltersPanel({ conversations }: Props) {
           <button
             className="iv-lf-reset"
             style={{ margin: "4px 12px 8px", alignSelf: "flex-start" }}
-            onClick={selectAll}
+            onClick={resetFilters}
           >Clear filters</button>
         )}
       </div>

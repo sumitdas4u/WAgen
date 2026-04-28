@@ -30,7 +30,11 @@ export function fetchConvPage(token: string, params: {
   const sp = new URLSearchParams();
   if (params.cursor) sp.set("cursor", params.cursor);
   if (params.limit) sp.set("limit", String(params.limit));
-  if (params.folder && params.folder !== "all") sp.set("status", params.folder);
+  // "pending" tab = open conversations with unread messages (client-side filter)
+  // send "open" to server so we get the right pool
+  if (params.folder && params.folder !== "all") {
+    sp.set("status", params.folder === "pending" ? "open" : params.folder);
+  }
   if (params.q) sp.set("q", params.q);
   return apiFetch<ConvPage>(token, `/api/conversations?${sp}`);
 }

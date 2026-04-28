@@ -158,13 +158,15 @@
 
 .iv-tabs {
   display: flex; border-bottom: 2px solid #edf2f7;
-  gap: 0;
+  gap: 0; overflow-x: auto; scrollbar-width: none;
 }
+.iv-tabs::-webkit-scrollbar { display: none; }
 .iv-tab {
-  padding: 7px 14px; font-size: 13px; font-weight: 600; color: #475569;
+  padding: 7px 10px; font-size: 12px; font-weight: 600; color: #475569;
   cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px;
   transition: color 120ms ease, border-color 120ms ease;
   display: flex; align-items: center; gap: 4px;
+  white-space: nowrap; flex-shrink: 0;
 }
 .iv-tab:hover { color: #334155; }
 .iv-tab.active { color: #2563eb; border-bottom-color: #2563eb; }

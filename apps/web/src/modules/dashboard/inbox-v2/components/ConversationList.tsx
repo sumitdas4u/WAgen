@@ -6,11 +6,11 @@ import { ConversationRow } from "./ConversationRow";
 import { NotificationBell } from "./NotificationsPanel";
 
 const FOLDERS: { key: ConvFolder; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "open", label: "Open" },
-  { key: "pending", label: "Pending" },
+  { key: "all",      label: "All" },
+  { key: "open",     label: "Open" },
+  { key: "pending",  label: "Unread" },
   { key: "resolved", label: "Resolved" },
-  { key: "snoozed", label: "Snoozed" }
+  { key: "snoozed",  label: "Snoozed" }
 ];
 
 interface Props {
@@ -57,7 +57,14 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
   const filteredIds = ids.filter((id) => {
     const c = byId[id];
     if (!c) return false;
-    if (!debouncedQ && folder !== "all" && c.status !== folder) return false;
+    if (!debouncedQ) {
+      if (folder === "pending") {
+        // Unread tab = open conversations the agent hasn't replied to yet
+        if (c.status !== "open" || (c.unread_count ?? 0) === 0) return false;
+      } else if (folder !== "all") {
+        if (c.status !== folder) return false;
+      }
+    }
     if (!applyLeadFilters(c, filters)) return false;
     return true;
   });
@@ -99,9 +106,15 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
   }, [items, filteredIds.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const folderCounts = ids.reduce<Record<string, number>>((acc, id) => {
-    const s = byId[id]?.status ?? "open";
+    const conv = byId[id];
+    if (!conv) return acc;
+    const s = conv.status ?? "open";
     acc[s] = (acc[s] ?? 0) + 1;
     acc.all = (acc.all ?? 0) + 1;
+    // "pending" tab counts open conversations with unread messages
+    if (s === "open" && (conv.unread_count ?? 0) > 0) {
+      acc.pending = (acc.pending ?? 0) + 1;
+    }
     return acc;
   }, {});
 
