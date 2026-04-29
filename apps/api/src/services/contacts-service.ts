@@ -1195,13 +1195,14 @@ export async function updateContactFieldValueFromFlow(input: {
     const rawValue = String(input.value ?? "").trim();
 
     if (fieldKey === "tags") {
+      const existingTags = Array.isArray(contact.tags) ? contact.tags : [];
       const nextTags =
         op === "add_if_empty"
-          ? contact.tags.length > 0
-            ? contact.tags
+          ? existingTags.length > 0
+            ? existingTags
             : parseTagCell(rawValue)
           : op === "append"
-            ? mergeTags(contact.tags, parseTagCell(rawValue))
+            ? mergeTags(existingTags, parseTagCell(rawValue))
             : parseTagCell(rawValue);
 
       contact = await updateContact(client, contact.id, {

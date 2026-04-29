@@ -588,6 +588,15 @@ async function runChain(
     if (result.signal === "use_ai") {
       const mode = String(node.data.mode ?? "one_shot");
       if (mode === "ongoing") {
+        if (options.userId) {
+          await pool.query(
+            `UPDATE conversations
+             SET manual_takeover = FALSE,
+                 ai_paused = FALSE
+             WHERE id = $1 AND user_id = $2`,
+            [session.conversation_id, options.userId]
+          );
+        }
         await updateFlowSession(session.id, {
           current_node_id: node.id,
           variables: currentVars,
