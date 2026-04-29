@@ -59,7 +59,7 @@ export function useMessages(convId: string | null) {
 
   useEffect(() => {
     if (!query.data || !convId) return;
-    const all = query.data.pages.flatMap((p) => p.items).reverse();
+    const all = [...query.data.pages].reverse().flatMap((p) => p.items);
     store.setMessages(convId, all);
   }, [query.data, convId]);
 
@@ -164,6 +164,7 @@ function noteToMessage(note: ConvNote, convId: string): ConversationMessage {
     error_message: null,
     retry_count: 0,
     payload_json: null,
+    source_type: "manual",
     ai_model: null,
     total_tokens: null,
     created_at: note.created_at

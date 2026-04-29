@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
 import { useSendMessage, useCreateNote } from "../queries";
@@ -27,6 +27,13 @@ const TRANSLATE_LANGUAGES = ["English", "Hindi", "Spanish", "French", "Arabic", 
 const PLACEHOLDER_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
 const QUICK_EMOJIS = ["👍", "😊", "🙏", "✅", "🔥", "💯", "👋", "😄", "❤️", "🎉", "⚡", "📞", "📧", "💬", "🏷️", "🔔"];
 const MAX_CHARS = 4000;
+type TemplateMediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
+
+const TEMPLATE_MEDIA_INPUT_CONFIG: Record<TemplateMediaType, { label: string; accept: string; allowedMimeTypes: string[]; extensions: string[]; maxMb: number }> = {
+  IMAGE: { label: "Image", accept: "image/jpeg,image/png", allowedMimeTypes: ["image/jpeg", "image/png"], extensions: [".jpg", ".jpeg", ".png"], maxMb: 5 },
+  VIDEO: { label: "Video", accept: "video/mp4", allowedMimeTypes: ["video/mp4"], extensions: [".mp4"], maxMb: 16 },
+  DOCUMENT: { label: "Document", accept: "application/pdf", allowedMimeTypes: ["application/pdf"], extensions: [".pdf"], maxMb: 10 }
+};
 
 interface AttachedFile {
   file: File;
@@ -35,21 +42,118 @@ interface AttachedFile {
   mimeType: string;
 }
 
+type TemplateDialogField =
+  | { key: string; label: string; kind: "text"; placeholder: string }
+  | { key: string; label: string; kind: "media"; mediaType: TemplateMediaType; description: string };
+
+interface TemplateDialogUpload {
+  fileName: string;
+  mimeType: string;
+  previewUrl: string | null;
+}
+
 function getTemplateBody(t: MessageTemplate): string {
   return t.components.find((c) => c.type === "BODY")?.text ?? t.name;
 }
 
-function extractVars(t: MessageTemplate): string[] {
-  const body = getTemplateBody(t);
-  const matches = [...body.matchAll(PLACEHOLDER_RE)];
+function extractTemplatePlaceholders(text: string | null | undefined): string[] {
+  if (!text) return [];
+  const matches = [...text.matchAll(PLACEHOLDER_RE)];
   return [...new Set(matches.map((m) => `{{${(m[1] ?? "").trim()}}}`))];
+}
+
+function buildTemplateDialogFields(t: MessageTemplate): TemplateDialogField[] {
+  const fields: TemplateDialogField[] = [];
+  const header = t.components.find((c) => c.type === "HEADER");
+  if (header?.format === "IMAGE" || header?.format === "VIDEO" || header?.format === "DOCUMENT") {
+    const config = TEMPLATE_MEDIA_INPUT_CONFIG[header.format];
+    fields.push({
+      key: "headerMediaUrl",
+      label: `${config.label} header`,
+      kind: "media",
+      mediaType: header.format,
+      description: `Upload ${config.extensions.join(", ")} up to ${config.maxMb}MB.`
+    });
+  }
+
+  const placeholders = new Set<string>();
+  for (const component of t.components) {
+    extractTemplatePlaceholders(component.text).forEach((p) => placeholders.add(p));
+    if (component.type === "BUTTONS") {
+      (component.buttons ?? []).forEach((button) => extractTemplatePlaceholders(button.url).forEach((p) => placeholders.add(p)));
+    }
+  }
+
+  fields.push(...Array.from(placeholders).map((p) => ({ key: p, label: p, kind: "text" as const, placeholder: `Value for ${p}` })));
+  return fields;
+}
+
+function fileExtension(fileName: string): string {
+  const dot = fileName.lastIndexOf(".");
+  return dot >= 0 ? fileName.slice(dot).toLowerCase() : "";
+}
+
+function validateTemplateMediaFile(mediaType: TemplateMediaType, file: File): string | null {
+  const config = TEMPLATE_MEDIA_INPUT_CONFIG[mediaType];
+  if (file.size > config.maxMb * 1024 * 1024) return `${config.label} files must be ${config.maxMb}MB or smaller.`;
+  const mime = file.type.trim().toLowerCase();
+  const extension = fileExtension(file.name);
+  if (!config.allowedMimeTypes.includes(mime) && !config.extensions.includes(extension)) {
+    return `${config.label} uploads must use ${config.extensions.join(", ")} files.`;
+  }
+  return null;
 }
 
 interface TemplateVarsState {
   template: MessageTemplate;
-  vars: string[];
+  fields: TemplateDialogField[];
   values: Record<string, string>;
-  headerMediaUrl?: string | null;
+  uploads: Record<string, TemplateDialogUpload>;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderRawDraftHtml(raw: string): string {
+  const applyInline = (line: string) => {
+    const escaped = escapeHtml(line);
+    return escaped
+      .replace(/```([\s\S]+?)```/g, "<code>$1</code>")
+      .replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>")
+      .replace(/_([^_\n]+)_/g, "<em>$1</em>")
+      .replace(/~([^~\n]+)~/g, "<s>$1</s>");
+  };
+
+  return raw.split("\n").map(applyInline).join("<br>");
+}
+
+function serializeEditableNode(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+  if (node.nodeName === "BR") return "\n";
+  if (!(node instanceof HTMLElement)) return "";
+
+  const childText = Array.from(node.childNodes).map(serializeEditableNode).join("");
+  const tag = node.tagName.toLowerCase();
+
+  if (tag === "strong" || tag === "b") return `*${childText}*`;
+  if (tag === "em" || tag === "i") return `_${childText}_`;
+  if (tag === "s" || tag === "strike" || tag === "del") return `~${childText}~`;
+  if (tag === "code") return `\`\`\`${childText}\`\`\``;
+  if (tag === "div" || tag === "p") return `${childText}\n`;
+  return childText;
+}
+
+function serializeEditable(root: HTMLElement | null): string {
+  if (!root) return "";
+  return Array.from(root.childNodes)
+    .map(serializeEditableNode)
+    .join("")
+    .replace(/\n+$/g, "");
 }
 
 export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }: Props) {
@@ -70,8 +174,9 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
   const [toast, setToast] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [templateUploadingFieldKey, setTemplateUploadingFieldKey] = useState<string | null>(null);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,6 +190,21 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
 
   const canManualReply = Boolean(conv && (conv.ai_paused || conv.manual_takeover || tookOver));
   const isApiChannel = conv?.channel_type === "api";
+  const messages = useConvStore((s) => s.messagesByConvId[convId] ?? []);
+  const isWithinApiWindow = useMemo(() => {
+    if (!isApiChannel) return true;
+    const latestInbound = messages
+      .filter((m) => m.direction === "inbound")
+      .reduce<string | null>((latest, msg) => {
+        if (!latest) return msg.created_at;
+        return Date.parse(msg.created_at) > Date.parse(latest) ? msg.created_at : latest;
+      }, null);
+    if (!latestInbound) return false;
+    return Date.now() - Date.parse(latestInbound) <= 24 * 60 * 60 * 1000;
+  }, [isApiChannel, messages]);
+  const freeFormBlockedReason = isApiChannel && !isWithinApiWindow
+    ? "24-hour WhatsApp window is closed. Send an approved template to reopen this chat."
+    : null;
 
   // ── Queries ──────────────────────────────────────────────────────────────
 
@@ -146,13 +266,21 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     setShowTranslateSubmenu(false);
   }
 
+  function setDraftValue(raw: string) {
+    const next = raw.slice(0, MAX_CHARS);
+    setText(next);
+    if (editorRef.current && serializeEditable(editorRef.current) !== next) {
+      editorRef.current.innerHTML = renderRawDraftHtml(next);
+    }
+  }
+
   const broadcastTyping = useCallback((on: boolean) => {
     if (!token) return;
     void postTyping(token, convId, on);
   }, [token, convId]);
 
-  const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value.slice(0, MAX_CHARS);
+  const syncEditorText = useCallback(() => {
+    const val = serializeEditable(editorRef.current).slice(0, MAX_CHARS);
     setText(val);
     const openCanned = val.startsWith("/") && mode === "reply";
     setShowCanned(openCanned);
@@ -173,6 +301,10 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     const trimmed = text.trim();
     const hasFiles = attachedFiles.length > 0;
     if (!trimmed && !hasFiles) return;
+    if (mode === "reply" && freeFormBlockedReason) {
+      showToast(freeFormBlockedReason);
+      return;
+    }
     setIsUploading(hasFiles);
 
     // Upload files first (one at a time)
@@ -193,19 +325,35 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     setIsUploading(false);
     const isPrivate = mode === "note";
 
-    // Send one message per file, then text
-    for (const upload of uploads) {
+    const replyToId = replyToMsg?.id ?? null;
+
+    // Send the first attachment with the typed text as its caption, matching v1.
+    for (let uploadIndex = 0; uploadIndex < uploads.length; uploadIndex += 1) {
+      const upload = uploads[uploadIndex];
+      const caption = !isPrivate && uploadIndex === 0 ? trimmed : "";
+      const mediaKind = upload.mimeType.startsWith("image/")
+        ? "image"
+        : upload.mimeType.startsWith("video/")
+          ? "video"
+          : upload.mimeType.startsWith("audio/")
+            ? "audio"
+            : "document";
       const echoId = crypto.randomUUID();
       const tempId = `temp-${echoId}`;
       appendMessage(convId, {
         id: tempId, conversation_id: convId, direction: "outbound", sender_name: null,
-        message_text: upload.url, content_type: upload.mimeType.startsWith("image/") ? "image" : upload.mimeType.startsWith("video/") ? "video" : upload.mimeType.startsWith("audio/") ? "audio" : "document",
-        is_private: isPrivate, in_reply_to_id: null, echo_id: echoId, delivery_status: "pending",
-        error_code: null, error_message: null, retry_count: 0, payload_json: { url: upload.url },
+        message_text: caption || upload.url, content_type: mediaKind,
+        is_private: isPrivate, in_reply_to_id: caption ? replyToId : null, echo_id: echoId, delivery_status: "pending",
+        error_code: null, error_message: null, retry_count: 0,
+        payload_json: { type: "media", url: upload.url, mediaType: mediaKind, mimeType: upload.mimeType, caption },
+        media_url: upload.url,
+        message_type: mediaKind,
+        message_content: { type: "media", url: upload.url, mediaType: mediaKind, mimeType: upload.mimeType, caption },
+        source_type: "manual",
         ai_model: null, total_tokens: null, created_at: new Date().toISOString()
       });
       optimisticMap.current.set(echoId, tempId);
-      void sendMsg.mutateAsync({ convId, params: { mediaUrl: upload.url, mediaMimeType: upload.mimeType, echoId, isPrivate } }).catch(() => {
+      void sendMsg.mutateAsync({ convId, params: { text: caption, mediaUrl: upload.url, mediaMimeType: upload.mimeType, echoId, isPrivate, inReplyToId: caption ? replyToId : null } }).catch(() => {
         useConvStore.getState().patchMessageDelivery(convId, tempId, "failed");
         optimisticMap.current.delete(echoId);
       });
@@ -213,8 +361,14 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
 
     setAttachedFiles([]);
 
-    if (trimmed) {
-      setText("");
+    if (uploads.length > 0 && !isPrivate && trimmed) {
+      setDraftValue("");
+      setShowCanned(false);
+      setCannedIdx(-1);
+      broadcastTyping(false);
+      onClearReply?.();
+    } else if (trimmed) {
+      setDraftValue("");
       setShowCanned(false);
       setCannedIdx(-1);
       broadcastTyping(false);
@@ -229,12 +383,12 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
       } else {
         const echoId = crypto.randomUUID();
         const tempId = `temp-${echoId}`;
-        const replyToId = replyToMsg?.id ?? null;
         appendMessage(convId, {
           id: tempId, conversation_id: convId, direction: "outbound", sender_name: null,
           message_text: trimmed, content_type: "text", is_private: false,
           in_reply_to_id: replyToId, echo_id: echoId, delivery_status: "pending",
           error_code: null, error_message: null, retry_count: 0, payload_json: null,
+          source_type: "manual",
           ai_model: null, total_tokens: null, created_at: new Date().toISOString()
         });
         optimisticMap.current.set(echoId, tempId);
@@ -247,12 +401,12 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
         }
       }
     } else {
-      setText("");
+      setDraftValue("");
       setShowCanned(false);
       setCannedIdx(-1);
       broadcastTyping(false);
     }
-  }, [text, attachedFiles, mode, convId, appendMessage, optimisticMap, sendMsg, broadcastTyping]);
+  }, [text, attachedFiles, mode, freeFormBlockedReason, convId, appendMessage, optimisticMap, sendMsg, broadcastTyping, createNote, replyToMsg?.id, onClearReply]);
 
   const cannedList = cannedQuery.data?.cannedResponses ?? [];
   const filteredCanned = cannedList.filter((c) =>
@@ -260,10 +414,10 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
   );
 
   const selectCanned = useCallback((t: string) => {
-    setText(t); setShowCanned(false); textareaRef.current?.focus();
+    setDraftValue(t); setShowCanned(false); editorRef.current?.focus();
   }, []);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (showCanned && filteredCanned.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -292,8 +446,8 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     setIsAiRewriting(true);
     try {
       const result = await aiAssistText(token!, text.trim(), "rewrite");
-      setText(result.text);
-      textareaRef.current?.focus();
+      setDraftValue(result.text);
+      editorRef.current?.focus();
     } catch (e) {
       showToast((e as Error).message);
     } finally {
@@ -307,8 +461,8 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     setIsAiRewriting(true);
     try {
       const result = await aiAssistText(token!, text.trim(), "translate", lang);
-      setText(result.text);
-      textareaRef.current?.focus();
+      setDraftValue(result.text);
+      editorRef.current?.focus();
     } catch (e) {
       showToast((e as Error).message);
     } finally {
@@ -319,30 +473,45 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
   }, [text, isAiRewriting, token]);
 
   const handleSelectTemplate = useCallback((t: MessageTemplate) => {
-    const vars = extractVars(t);
-    if (vars.length === 0 && t.category !== "MARKETING") {
+    const fields = buildTemplateDialogFields(t);
+    if (fields.length === 0 && t.category !== "MARKETING") {
       sendTemplateMut.mutate({ templateId: t.id, vars: {} });
     } else {
       const values: Record<string, string> = {};
-      vars.forEach((v) => { values[v] = ""; });
-      setTemplateVarsDialog({ template: t, vars, values });
+      fields.forEach((field) => { values[field.key] = ""; });
+      setTemplateVarsDialog({ template: t, fields, values, uploads: {} });
       setShowTemplateMenu(false);
     }
   }, [sendTemplateMut]);
 
   const applyFormat = useCallback((style: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const selected = text.slice(start, end);
-    const map: Record<string, [string, string]> = {
-      bold: ["*", "*"], italic: ["_", "_"], strike: ["~", "~"], mono: ["`", "`"]
-    };
-    const [open, close] = map[style] ?? ["", ""];
-    setText(text.slice(0, start) + open + selected + close + text.slice(end));
-    setTimeout(() => { ta.setSelectionRange(start + open.length, end + open.length); ta.focus(); }, 0);
-  }, [text]);
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    editor.focus();
+    if (style === "mono") {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        if (editor.contains(range.commonAncestorContainer)) {
+          const selected = selection.toString();
+          const code = document.createElement("code");
+          code.textContent = selected || "monospace";
+          range.deleteContents();
+          range.insertNode(code);
+          range.setStartAfter(code);
+          range.setEndAfter(code);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+    } else {
+      const command = style === "bold" ? "bold" : style === "italic" ? "italic" : "strikeThrough";
+      document.execCommand(command, false);
+    }
+
+    syncEditorText();
+  }, [syncEditorText]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -365,26 +534,76 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     });
   }, []);
 
-  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (mode !== "reply") return;
-    const imageItem = Array.from(e.clipboardData.items).find((item) => item.type.startsWith("image/"));
-    if (!imageItem) return;
-    e.preventDefault();
-    const file = imageItem.getAsFile();
-    if (!file) return;
-    const named = new File([file], `paste-${Date.now()}.png`, { type: file.type });
-    setAttachedFiles((prev) => [...prev, {
-      file: named, previewUrl: URL.createObjectURL(named), name: named.name, mimeType: named.type
-    }].slice(0, 5));
-  }, [mode]);
+  const handleTemplateFieldFileSelect = useCallback(async (field: Extract<TemplateDialogField, { kind: "media" }>, file: File) => {
+    const validationError = validateTemplateMediaFile(field.mediaType, file);
+    if (validationError) {
+      showToast(validationError);
+      return;
+    }
 
-  const handleEmojiSelect = useCallback((emoji: string) => {
-    setText((prev) => prev + emoji);
-    setShowEmojiPicker(false);
-    textareaRef.current?.focus();
+    setTemplateUploadingFieldKey(field.key);
+    try {
+      const uploaded = await uploadInboxMedia(file);
+      setTemplateVarsDialog((prev) => prev ? {
+        ...prev,
+        values: { ...prev.values, [field.key]: uploaded.url },
+        uploads: {
+          ...prev.uploads,
+          [field.key]: {
+            fileName: file.name,
+            mimeType: uploaded.mimeType,
+            previewUrl: field.mediaType === "IMAGE" ? uploaded.url : null
+          }
+        }
+      } : prev);
+    } catch (err) {
+      showToast((err as Error).message);
+    } finally {
+      setTemplateUploadingFieldKey(null);
+    }
   }, []);
 
-  const flows = flowsQuery.data ?? [];
+  const insertPlainTextAtCursor = useCallback((value: string) => {
+    const editor = editorRef.current;
+    if (!editor) {
+      setDraftValue(text + value);
+      return;
+    }
+    editor.focus();
+    document.execCommand("insertText", false, value);
+    syncEditorText();
+  }, [syncEditorText, text]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (mode !== "reply") return;
+    const imageItem = Array.from(e.clipboardData.items).find((item) => item.type.startsWith("image/"));
+    if (imageItem) {
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      const named = new File([file], `paste-${Date.now()}.png`, { type: file.type });
+      setAttachedFiles((prev) => [...prev, {
+        file: named, previewUrl: URL.createObjectURL(named), name: named.name, mimeType: named.type
+      }].slice(0, 5));
+      return;
+    }
+
+    const pastedText = e.clipboardData.getData("text/plain");
+    if (pastedText) {
+      e.preventDefault();
+      insertPlainTextAtCursor(pastedText);
+    }
+  }, [mode, insertPlainTextAtCursor]);
+
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    insertPlainTextAtCursor(emoji);
+    setShowEmojiPicker(false);
+  }, [insertPlainTextAtCursor]);
+
+  const flows = useMemo(
+    () => (flowsQuery.data ?? []).filter((flow) => !conv?.channel_type || flow.channel === conv.channel_type),
+    [flowsQuery.data, conv?.channel_type]
+  );
   const templates = templatesQuery.data ?? [];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -405,43 +624,45 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
               <button className="iv-tvd-close" onClick={() => setTemplateVarsDialog(null)}>✕</button>
             </div>
             <div className="iv-tvd-preview">{getTemplateBody(templateVarsDialog.template)}</div>
-            {/* Header media upload (for MARKETING templates with image/video/pdf header) */}
-            {templateVarsDialog.template.category === "MARKETING" && (
-              <div className="iv-tvd-field">
-                <label className="iv-tvd-label">Header media (image/video/PDF)</label>
-                <input
-                  type="file"
-                  accept="image/*,video/*,application/pdf"
-                  className="iv-tvd-input"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      const result = await uploadInboxMedia(file);
-                      setTemplateVarsDialog((prev) => prev ? { ...prev, headerMediaUrl: result.url } : prev);
-                    } catch (err) {
-                      showToast((err as Error).message);
-                    }
-                  }}
-                />
-                {templateVarsDialog.headerMediaUrl && (
-                  <div style={{ fontSize: 11, color: "#22c55e", marginTop: 2 }}>✓ Uploaded</div>
-                )}
-              </div>
-            )}
-            {templateVarsDialog.vars.length > 0 && (
+            {templateVarsDialog.fields.length > 0 && (
               <div className="iv-tvd-fields">
-                {templateVarsDialog.vars.map((v) => (
-                  <div key={v} className="iv-tvd-field">
-                    <label className="iv-tvd-label">{v}</label>
-                    <input
-                      className="iv-tvd-input"
-                      value={templateVarsDialog.values[v] ?? ""}
-                      onChange={(e) => setTemplateVarsDialog((prev) =>
-                        prev ? { ...prev, values: { ...prev.values, [v]: e.target.value } } : prev
-                      )}
-                      placeholder={`Value for ${v}`}
-                    />
+                {templateVarsDialog.fields.map((field) => (
+                  <div key={field.key} className="iv-tvd-field">
+                    <label className="iv-tvd-label">{field.label}</label>
+                    {field.kind === "media" ? (
+                      <div className={`iv-tvd-upload${templateVarsDialog.values[field.key] ? " uploaded" : ""}`}>
+                        <span>{field.description}</span>
+                        <label className="iv-tvd-upload-btn">
+                          {templateUploadingFieldKey === field.key ? "Uploading..." : templateVarsDialog.uploads[field.key] ? "Replace file" : `Upload ${TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].label.toLowerCase()}`}
+                          <input
+                            type="file"
+                            accept={TEMPLATE_MEDIA_INPUT_CONFIG[field.mediaType].accept}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) void handleTemplateFieldFileSelect(field, file);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                        {templateVarsDialog.uploads[field.key] && (
+                          <div className="iv-tvd-upload-meta">
+                            {templateVarsDialog.uploads[field.key]?.previewUrl && (
+                              <img src={templateVarsDialog.uploads[field.key]?.previewUrl ?? ""} alt={templateVarsDialog.uploads[field.key]?.fileName} />
+                            )}
+                            <span>{templateVarsDialog.uploads[field.key]?.fileName}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <input
+                        className="iv-tvd-input"
+                        value={templateVarsDialog.values[field.key] ?? ""}
+                        onChange={(e) => setTemplateVarsDialog((prev) =>
+                          prev ? { ...prev, values: { ...prev.values, [field.key]: e.target.value } } : prev
+                        )}
+                        placeholder={field.placeholder}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -450,12 +671,10 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
               <button className="iv-tvd-cancel" onClick={() => setTemplateVarsDialog(null)}>Cancel</button>
               <button
                 className="iv-tvd-send"
-                disabled={sendTemplateMut.isPending}
+                disabled={sendTemplateMut.isPending || Boolean(templateUploadingFieldKey) || templateVarsDialog.fields.some((field) => !templateVarsDialog.values[field.key]?.trim())}
                 onClick={() => sendTemplateMut.mutate({
                   templateId: templateVarsDialog.template.id,
-                  vars: templateVarsDialog.headerMediaUrl
-                    ? { ...templateVarsDialog.values, headerMediaUrl: templateVarsDialog.headerMediaUrl }
-                    : templateVarsDialog.values
+                  vars: templateVarsDialog.values
                 })}
               >
                 {sendTemplateMut.isPending ? "Sending…" : "Send Template"}
@@ -521,10 +740,10 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
 
           {/* Format bar */}
           <div className="iv-format-bar">
-            <button className="iv-fmt-btn" onClick={() => applyFormat("bold")} title="Bold"><b>B</b></button>
-            <button className="iv-fmt-btn" onClick={() => applyFormat("italic")} title="Italic"><i>I</i></button>
-            <button className="iv-fmt-btn" onClick={() => applyFormat("strike")} title="Strikethrough">S̶</button>
-            <button className="iv-fmt-btn" onClick={() => applyFormat("mono")} title="Monospace">{"`< />`"}</button>
+            <button className="iv-fmt-btn" disabled={mode === "reply" && Boolean(freeFormBlockedReason)} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("bold")} title="Bold"><b>B</b></button>
+            <button className="iv-fmt-btn" disabled={mode === "reply" && Boolean(freeFormBlockedReason)} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("italic")} title="Italic"><i>I</i></button>
+            <button className="iv-fmt-btn" disabled={mode === "reply" && Boolean(freeFormBlockedReason)} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("strike")} title="Strikethrough">S̶</button>
+            <button className="iv-fmt-btn" disabled={mode === "reply" && Boolean(freeFormBlockedReason)} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("mono")} title="Monospace">{"`< />`"}</button>
             <div className="iv-fmt-sep" />
             <button className="iv-fmt-btn" title="List">≡</button>
           </div>
@@ -557,12 +776,22 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
           )}
 
           {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            className={`iv-textarea${mode === "note" ? " note-mode" : ""}`}
-            placeholder={mode === "note" ? "Write a private note... (@mention agents)" : "Shift+Enter for new line. Start with '/' for canned responses."}
-            value={text}
-            onChange={handleInput}
+          {freeFormBlockedReason && mode === "reply" && (
+            <div className="iv-compose-policy">{freeFormBlockedReason}</div>
+          )}
+          <div
+            ref={editorRef}
+            className={`iv-rich-editor${mode === "note" ? " note-mode" : ""}`}
+            contentEditable={!(mode === "reply" && Boolean(freeFormBlockedReason))}
+            role="textbox"
+            aria-multiline="true"
+            data-placeholder={freeFormBlockedReason && mode === "reply"
+              ? "Choose Template to send an approved message."
+              : mode === "note"
+                ? "Write a private note... (@mention agents)"
+                : "Shift+Enter for new line. Start with '/' for canned responses."}
+            suppressContentEditableWarning
+            onInput={syncEditorText}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
@@ -619,7 +848,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
             {/* Flow dropup */}
             {showFlowMenu && (
               <div className="iv-dropup">
-                <div className="iv-dropup-label">Assign flow bot</div>
+                <div className="iv-dropup-label">{conv?.channel_type?.toUpperCase() ?? "Channel"} flows</div>
                 {flowsQuery.isLoading ? (
                   <button disabled>Loading…</button>
                 ) : flows.length === 0 ? (
@@ -683,7 +912,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
             <button
               className="iv-footer-btn"
               title="Attach file"
-              disabled={attachedFiles.length >= 5}
+              disabled={attachedFiles.length >= 5 || (mode === "reply" && Boolean(freeFormBlockedReason))}
               onClick={() => fileInputRef.current?.click()}
             >📎</button>
             {mode === "reply" && (
@@ -715,7 +944,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
               ✨
             </button>
             <div className="iv-send-group">
-              <button className="iv-btn-send" disabled={isUploading} onClick={() => void handleSend()}>
+              <button className="iv-btn-send" disabled={isUploading || (mode === "reply" && Boolean(freeFormBlockedReason))} onClick={() => void handleSend()}>
                 {isUploading ? "Uploading…" : mode === "note" ? "Add Note" : "Send ↵"}
               </button>
               <button className="iv-btn-send-caret">▾</button>

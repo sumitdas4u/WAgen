@@ -20,6 +20,11 @@ export interface MessageCreatedPayload {
     error_code: string | null;
     error_message: string | null;
     retry_count: number;
+    payload_json?: Record<string, unknown> | null;
+    media_url?: string | null;
+    message_type?: string | null;
+    message_content?: Record<string, unknown> | null;
+    source_type?: string | null;
     created_at: string;
   };
 }

@@ -612,13 +612,33 @@ export async function trackInboundMessage(
   });
 
   // inbox-v2: typed batched WS events
-  const inboundMsgRow = await pool.query<{ id: string; created_at: Date }>(
-    `SELECT id, created_at FROM conversation_messages
-     WHERE conversation_id = $1 AND direction = 'inbound'
-     ORDER BY created_at DESC, id DESC LIMIT 1`,
-    [conversation.id]
-  );
-  const inboundMsg = inboundMsgRow.rows[0];
+  type InboundRealtimeRow = {
+    id: string;
+    created_at: Date;
+    media_url: string | null;
+    payload_json: Record<string, unknown> | null;
+  };
+  let inboundMsg: InboundRealtimeRow | undefined;
+  try {
+    const inboundMsgRow = await pool.query<InboundRealtimeRow>(
+      `SELECT id, created_at, media_url, payload_json
+       FROM conversation_messages
+       WHERE conversation_id = $1 AND direction = 'inbound'
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [conversation.id]
+    );
+    inboundMsg = inboundMsgRow.rows[0];
+  } catch {
+    const inboundMsgRow = await pool.query<{ id: string; created_at: Date }>(
+      `SELECT id, created_at
+       FROM conversation_messages
+       WHERE conversation_id = $1 AND direction = 'inbound'
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [conversation.id]
+    );
+    const row = inboundMsgRow.rows[0];
+    inboundMsg = row ? { ...row, media_url: null, payload_json: null } : undefined;
+  }
   if (inboundMsg) {
     realtimeHub.broadcastMessageCreated(userId, {
       conversationId: conversation.id,
@@ -636,6 +656,11 @@ export async function trackInboundMessage(
         error_code: null,
         error_message: null,
         retry_count: 0,
+        payload_json: inboundMsg.payload_json ?? null,
+        media_url: inboundMsg.media_url ?? null,
+        message_type: null,
+        message_content: null,
+        source_type: null,
         created_at: inboundMsg.created_at.toISOString()
       }
     });
@@ -841,13 +866,67 @@ export async function trackOutboundMessage(
     });
 
     // inbox-v2: typed batched WS event for outbound
-    const outboundMsgRow = await pool.query<{ id: string; created_at: Date; echo_id: string | null }>(
-      `SELECT id, created_at, echo_id FROM conversation_messages
-       WHERE conversation_id = $1 AND direction = 'outbound'
-       ORDER BY created_at DESC, id DESC LIMIT 1`,
-      [conversationId]
-    );
-    const outboundMsg = outboundMsgRow.rows[0];
+    type OutboundRealtimeRow = {
+      id: string;
+      created_at: Date;
+      echo_id: string | null;
+      sender_name: string | null;
+      media_url: string | null;
+      message_type: string | null;
+      message_content: Record<string, unknown> | null;
+      delivery_status: string | null;
+      error_code: string | null;
+      error_message: string | null;
+      source_type: string | null;
+    };
+    let outboundMsg: OutboundRealtimeRow | undefined;
+    try {
+      const outboundMsgRow = await pool.query<OutboundRealtimeRow>(
+        `SELECT
+           id,
+           created_at,
+           echo_id,
+           sender_name,
+           media_url,
+           message_type,
+           message_content,
+           delivery_status,
+           error_code,
+           error_message,
+           COALESCE(source_type, 'manual') AS source_type
+         FROM conversation_messages
+         WHERE conversation_id = $1 AND direction = 'outbound'
+         ORDER BY created_at DESC, id DESC LIMIT 1`,
+        [conversationId]
+      );
+      outboundMsg = outboundMsgRow.rows[0];
+    } catch {
+      const outboundMsgRow = await pool.query<{
+        id: string;
+        created_at: Date;
+        echo_id: string | null;
+        sender_name: string | null;
+      }>(
+        `SELECT id, created_at, echo_id, sender_name
+         FROM conversation_messages
+         WHERE conversation_id = $1 AND direction = 'outbound'
+         ORDER BY created_at DESC, id DESC LIMIT 1`,
+        [conversationId]
+      );
+      const row = outboundMsgRow.rows[0];
+      outboundMsg = row
+        ? {
+            ...row,
+            media_url: null,
+            message_type: null,
+            message_content: null,
+            delivery_status: "sent",
+            error_code: null,
+            error_message: null,
+            source_type: "manual"
+          }
+        : undefined;
+    }
     if (outboundMsg) {
       realtimeHub.broadcastMessageCreated(outboundConv.user_id, {
         conversationId,
@@ -855,16 +934,20 @@ export async function trackOutboundMessage(
           id: outboundMsg.id,
           conversation_id: conversationId,
           direction: "outbound",
-          sender_name: usage?.senderName ?? null,
+          sender_name: outboundMsg.sender_name ?? usage?.senderName ?? null,
           message_text: message,
-          content_type: "text",
+          content_type: outboundMsg.message_type === "file" ? "document" : outboundMsg.message_type ?? "text",
           is_private: false,
           in_reply_to_id: null,
           echo_id: outboundMsg.echo_id,
-          delivery_status: "sent",
-          error_code: null,
-          error_message: null,
+          delivery_status: outboundMsg.delivery_status ?? "sent",
+          error_code: outboundMsg.error_code ?? null,
+          error_message: outboundMsg.error_message ?? null,
           retry_count: 0,
+          media_url: outboundMsg.media_url ?? null,
+          message_type: outboundMsg.message_type ?? null,
+          message_content: outboundMsg.message_content ?? null,
+          source_type: outboundMsg.source_type ?? null,
           created_at: outboundMsg.created_at.toISOString()
         }
       });

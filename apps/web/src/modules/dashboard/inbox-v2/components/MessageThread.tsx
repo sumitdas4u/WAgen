@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from "react";
 import { differenceInSeconds } from "date-fns";
 import { useConvStore, type ConversationMessage } from "../store/convStore";
 import { useMessages, useMarkRead, useSetStatus, useRetryMessage, useNotes } from "../queries";
@@ -57,6 +57,8 @@ export function MessageThread({ convId, optimisticMap }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const didInitialScrollRef = useRef<string | null>(null);
+  const pendingHistoryScrollRef = useRef<{ previousHeight: number; previousTop: number } | null>(null);
   const [showFab, setShowFab] = useState(false);
 
   const messagesQuery = useMessages(convId);
@@ -66,7 +68,23 @@ export function MessageThread({ convId, optimisticMap }: Props) {
   const retryMsg = useRetryMessage();
   const [replyToMsg, setReplyToMsg] = useState<ConversationMessage | null>(null);
   const [showSuggestion, setShowSuggestion] = useState(true);
-  useEffect(() => setShowSuggestion(true), [convId]);
+
+  const scrollToBottomNow = useCallback((behavior: ScrollBehavior = "auto") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    isAtBottomRef.current = true;
+    setShowFab(false);
+  }, []);
+
+  useEffect(() => {
+    setShowSuggestion(true);
+    setReplyToMsg(null);
+    setShowFab(false);
+    isAtBottomRef.current = true;
+    didInitialScrollRef.current = null;
+    pendingHistoryScrollRef.current = null;
+  }, [convId]);
 
   const inboundCount = useMemo(
     () => messages.filter((m) => m.direction === "inbound").length,
@@ -77,17 +95,52 @@ export function MessageThread({ convId, optimisticMap }: Props) {
     void markRead.mutateAsync(convId).catch(() => undefined);
   }, [convId, inboundCount]);
 
-  // Auto-scroll to bottom on new messages if already at bottom
+  useLayoutEffect(() => {
+    if (messages.length === 0 || messagesQuery.isFetchingNextPage) return;
+    if (didInitialScrollRef.current === convId) return;
+
+    didInitialScrollRef.current = convId;
+    scrollToBottomNow("auto");
+    requestAnimationFrame(() => scrollToBottomNow("auto"));
+  }, [convId, messages.length, messagesQuery.isFetchingNextPage, scrollToBottomNow]);
+
+  useLayoutEffect(() => {
+    if (messagesQuery.isFetchingNextPage) return;
+    const pending = pendingHistoryScrollRef.current;
+    const el = scrollRef.current;
+    if (!pending || !el) return;
+
+    const addedHeight = el.scrollHeight - pending.previousHeight;
+    el.scrollTop = pending.previousTop + Math.max(0, addedHeight);
+    pendingHistoryScrollRef.current = null;
+  }, [messages.length, messagesQuery.isFetchingNextPage]);
+
+  // Auto-scroll to bottom on new messages only when the agent is already there.
   useEffect(() => {
+    if (didInitialScrollRef.current !== convId) return;
+    if (pendingHistoryScrollRef.current || messagesQuery.isFetchingNextPage) return;
     if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      requestAnimationFrame(() => scrollToBottomNow("smooth"));
     }
-  }, [messages.length]);
+  }, [convId, messages.length, messagesQuery.isFetchingNextPage, scrollToBottomNow]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const handleMediaLoad = () => {
+      if (isAtBottomRef.current && !pendingHistoryScrollRef.current) {
+        requestAnimationFrame(() => scrollToBottomNow("auto"));
+      }
+    };
+
+    el.addEventListener("load", handleMediaLoad, true);
+    return () => el.removeEventListener("load", handleMediaLoad, true);
+  }, [scrollToBottomNow]);
 
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    setShowFab(false);
-  }, []);
+    scrollToBottomNow("smooth");
+  }, [scrollToBottomNow]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -95,7 +148,19 @@ export function MessageThread({ convId, optimisticMap }: Props) {
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     isAtBottomRef.current = atBottom;
     setShowFab(!atBottom);
-  }, []);
+    if (
+      el.scrollTop <= 80 &&
+      messagesQuery.hasNextPage &&
+      !messagesQuery.isFetchingNextPage &&
+      !messagesQuery.isLoading
+    ) {
+      pendingHistoryScrollRef.current = {
+        previousHeight: el.scrollHeight,
+        previousTop: el.scrollTop
+      };
+      void messagesQuery.fetchNextPage();
+    }
+  }, [messagesQuery]);
 
   const handleRetry = useCallback((msgId: string) => {
     void retryMsg.mutateAsync({ convId, msgId });
@@ -106,6 +171,13 @@ export function MessageThread({ convId, optimisticMap }: Props) {
   }, []);
 
   const handleLoadOlder = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) {
+      pendingHistoryScrollRef.current = {
+        previousHeight: el.scrollHeight,
+        previousTop: el.scrollTop
+      };
+    }
     void messagesQuery.fetchNextPage();
   }, [messagesQuery]);
 
@@ -119,6 +191,7 @@ export function MessageThread({ convId, optimisticMap }: Props) {
 
   const avatarColor = getNameAvatarColor(conv.contact_name, conv.phone_number);
   const scoreBand = conv.score >= 70 ? "hot" : conv.score >= 40 ? "warm" : "cold";
+  const isResolved = conv.status === "resolved";
   const SUGGESTIONS = {
     hot:  { icon: "🚀", label: "Hot lead",  tip: "Reply with pricing or a booking link" },
     warm: { icon: "💬", label: "Warm lead", tip: "Qualify budget and timeline" },
@@ -138,12 +211,13 @@ export function MessageThread({ convId, optimisticMap }: Props) {
           <div className="iv-thread-meta">{conv.channel_type === "api" ? "WhatsApp API" : conv.channel_type === "web" ? "Web Widget" : "WhatsApp QR"}</div>
         </div>
         <div className="iv-thread-actions">
-          <button className="iv-btn-icon" title="Mute">🔕</button>
           <button
-            className={`iv-btn-resolve ${conv.status === "resolved" ? "is-resolved" : "is-open"}`}
-            onClick={() => setStatus.mutate({ convId, status: conv.status === "resolved" ? "open" : "resolved" })}
+            className={`iv-btn-resolve ${isResolved ? "is-reopen" : "is-resolve"}`}
+            disabled={setStatus.isPending}
+            title={isResolved ? "Reopen conversation" : "Mark conversation resolved"}
+            onClick={() => setStatus.mutate({ convId, status: isResolved ? "open" : "resolved" })}
           >
-            {conv.status === "resolved" ? "Reopen" : "Resolve"}
+            {isResolved ? "Reopen" : "Resolve"}
           </button>
         </div>
       </div>

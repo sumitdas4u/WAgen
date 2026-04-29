@@ -292,22 +292,15 @@
 }
 .iv-btn-icon:hover { background: #f8fafc; }
 .iv-btn-resolve {
-  height: 32px; padding: 0 12px;
-  border: none; border-radius: 8px 0 0 8px; font-size: 13px; font-weight: 700;
+  height: 32px; min-width: 82px; padding: 0 14px;
+  border: 1px solid transparent; border-radius: 8px; font-size: 13px; font-weight: 700;
   cursor: pointer; transition: background 120ms ease;
 }
-.iv-btn-resolve.is-open { background: #f1f5f9; color: #334155; border: 1px solid #dbe4f0; border-right: 0; }
-.iv-btn-resolve.is-open:hover { background: #e2e8f0; }
-.iv-btn-resolve.is-resolved { background: #25d366; color: #fff; }
-.iv-btn-resolve.is-resolved:hover { background: #1db954; }
-.iv-btn-resolve-caret {
-  width: 28px; height: 32px; border: none;
-  border-radius: 0 8px 8px 0; font-size: 11px; cursor: pointer; display: grid; place-items: center;
-}
-.iv-btn-resolve-caret.is-open { background: #e2e8f0; color: #475569; border: 1px solid #dbe4f0; border-left: 0; }
-.iv-btn-resolve-caret.is-open:hover { background: #cbd5e1; }
-.iv-btn-resolve-caret.is-resolved { background: #1db954; color: #fff; }
-.iv-btn-resolve-caret.is-resolved:hover { background: #16a34a; }
+.iv-btn-resolve:disabled { opacity: 0.65; cursor: default; }
+.iv-btn-resolve.is-resolve { background: #f1f5f9; color: #334155; border-color: #dbe4f0; }
+.iv-btn-resolve.is-resolve:hover:not(:disabled) { background: #e2e8f0; }
+.iv-btn-resolve.is-reopen { background: #22c55e; color: #fff; }
+.iv-btn-resolve.is-reopen:hover:not(:disabled) { background: #16a34a; }
 
 .iv-thread-labels {
   padding: 6px 16px; border-bottom: 1px solid #f1f5f9;
@@ -364,6 +357,200 @@
   border-left: 3px solid #2563eb; padding: 3px 8px; margin-bottom: 7px;
   font-size: 12px; color: #5f6f86; background: rgba(37,99,235,0.06); border-radius: 3px;
 }
+
+.iv-msg-text {
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+.iv-msg-rich {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(280px, 100%);
+}
+.iv-msg-body,
+.iv-msg-caption,
+.iv-msg-heading {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.iv-msg-body { font-size: 13px; }
+.iv-msg-heading { font-size: 13px; font-weight: 800; color: #122033; }
+.iv-bubble.outbound .iv-msg-heading { color: #1e3a5f; }
+.iv-msg-caption {
+  font-size: 12px;
+  color: #475569;
+}
+.iv-msg-caption.muted { color: #94a3b8; }
+.iv-msg-media-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.iv-msg-media-img,
+.iv-msg-media-video {
+  display: block;
+  width: min(320px, 100%);
+  max-height: 360px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.06);
+}
+.iv-msg-media-img { object-fit: contain; }
+.iv-msg-media-video {
+  min-width: min(280px, 100%);
+  object-fit: contain;
+  background: #0f172a;
+}
+.iv-msg-audio {
+  display: block;
+  width: min(280px, 100%);
+}
+.iv-msg-media-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.75);
+  color: #475569;
+  font-size: 12px;
+}
+.iv-msg-media-kind {
+  font-size: 10px;
+  font-weight: 800;
+  color: #2563eb;
+  text-transform: uppercase;
+}
+.iv-msg-file-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(260px, 100%);
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid #dbe4f0;
+  background: rgba(255, 255, 255, 0.65);
+  color: inherit;
+  text-decoration: none;
+}
+.iv-msg-file-card:hover { border-color: #93c5fd; background: #fff; }
+.iv-msg-file-icon {
+  flex-shrink: 0;
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 9px;
+  font-weight: 900;
+}
+.iv-msg-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.iv-msg-action-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.iv-msg-action-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: rgba(255, 255, 255, 0.58);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+.iv-msg-action-icon {
+  flex-shrink: 0;
+  color: #60a5fa;
+  font-weight: 900;
+}
+.iv-msg-action-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.iv-msg-list-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 1px;
+  color: #334155;
+}
+.iv-msg-action-desc {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+.iv-msg-list-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #2563eb;
+  text-transform: uppercase;
+}
+.iv-msg-template-name {
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10.5px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.iv-msg-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: min(240px, 100%);
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid #dbe4f0;
+  background: rgba(255, 255, 255, 0.6);
+}
+.iv-msg-card-icon,
+.iv-msg-contact-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 900;
+}
+.iv-msg-card-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12.5px;
+}
+.iv-msg-card-main strong {
+  color: #122033;
+  overflow-wrap: anywhere;
+}
+.iv-msg-card-main span {
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+.iv-msg-card-main a {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+.iv-msg-card-main a:hover { text-decoration: underline; }
 
 .iv-bubble-footer {
   display: flex; justify-content: flex-end; align-items: center; gap: 5px; margin-top: 5px;
@@ -435,6 +622,28 @@
 }
 .iv-textarea::placeholder { color: #94a3b8; }
 .iv-textarea.note-mode { background: #fef9c3; }
+.iv-rich-editor {
+  min-height: 74px; max-height: 150px; overflow-y: auto; outline: none;
+  padding: 10px 14px; box-sizing: border-box; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: "Manrope", sans-serif; font-size: 13px; line-height: 1.5; color: #334155;
+  background: #fff;
+}
+.iv-rich-editor.note-mode { background: #fef9c3; }
+.iv-rich-editor:empty::before {
+  content: attr(data-placeholder); color: #94a3b8; pointer-events: none;
+}
+.iv-rich-editor[contenteditable="false"] { cursor: default; color: #94a3b8; }
+.iv-rich-editor strong { font-weight: 800; }
+.iv-rich-editor em { font-style: italic; }
+.iv-rich-editor s { text-decoration: line-through; }
+.iv-rich-editor code {
+  background: rgba(15, 23, 42, 0.08); border-radius: 4px; padding: 0 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em;
+}
+.iv-compose-policy {
+  padding: 8px 14px; background: #fffbeb; border-top: 1px solid #fde68a; border-bottom: 1px solid #fde68a;
+  color: #92400e; font-size: 12px; font-weight: 600;
+}
 
 .iv-compose-footer {
   display: flex; align-items: center; gap: 6px; padding: 8px 12px;
@@ -635,6 +844,19 @@
 }
 .iv-tvd-send:hover { background: #1d4ed8; }
 .iv-tvd-send:disabled { opacity: 0.6; cursor: default; }
+.iv-tvd-upload {
+  border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #64748b;
+}
+.iv-tvd-upload.uploaded { border-color: #86efac; background: #f0fdf4; }
+.iv-tvd-upload-btn {
+  height: 32px; padding: 0 12px; border-radius: 7px; background: #2563eb; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; width: fit-content;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.iv-tvd-upload-btn input { display: none; }
+.iv-tvd-upload-meta { display: flex; align-items: center; gap: 8px; color: #166534; font-weight: 700; }
+.iv-tvd-upload-meta img { width: 42px; height: 42px; object-fit: cover; border-radius: 6px; border: 1px solid #bbf7d0; }
 
 /* ── Compose: Toast notification ─────────────────────────────────────────── */
 .iv-compose-toast {
@@ -946,8 +1168,19 @@
   font-size: 13px; flex-shrink: 0;
 }
 .iv-notif-body { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.iv-notif-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .iv-notif-actor { font-size: 12px; font-weight: 700; color: #122033; }
+.iv-notif-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: #2563eb; color: #fff; font-size: 10px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
 .iv-notif-text { font-size: 12px; color: #475569; line-height: 1.4; }
+.iv-notif-snippets { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; }
+.iv-notif-snippet {
+  font-size: 11px; line-height: 1.35; color: #64748b;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px;
+}
 .iv-notif-time { font-size: 10.5px; color: #94a3b8; margin-top: 2px; }
 .iv-notif-dot {
   width: 8px; height: 8px; border-radius: 50%; background: #2563eb;
@@ -1081,6 +1314,11 @@ select.cd-input { height: 36px; }
 .iv-badge-ai   { background: #ede9fe; color: #6d28d9; }
 .iv-badge-flow { background: #d1fae5; color: #065f46; }
 .iv-badge-template { background: #dbeafe; color: #1e40af; }
+.iv-badge-sequence { background: #fef3c7; color: #92400e; }
+.iv-badge-broadcast { background: #ffe4e6; color: #be123c; }
+.iv-badge-human { background: #e0f2fe; color: #0369a1; }
+.iv-badge-api { background: #f1f5f9; color: #334155; }
+.iv-badge-system { background: #e2e8f0; color: #475569; }
 
 /* ── Bubble meta row ─────────────────────────────────────────────────────── */
 .iv-bubble-meta {

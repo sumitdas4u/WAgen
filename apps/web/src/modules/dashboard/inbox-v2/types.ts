@@ -5,7 +5,7 @@ export interface WSEnvelope<E extends string, D> {
 }
 
 export type WSEvent =
-  | WSEnvelope<"message.created", { conversationId: string; message: { id: string; conversation_id: string; direction: string; sender_name: string | null; message_text: string; content_type: string; is_private: boolean; in_reply_to_id: string | null; echo_id: string | null; delivery_status: string; error_code: string | null; error_message: string | null; retry_count: number; ai_model: string | null; total_tokens: number | null; created_at: string } }>
+  | WSEnvelope<"message.created", { conversationId: string; message: { id: string; conversation_id: string; direction: string; sender_name: string | null; message_text: string; content_type: string; is_private: boolean; in_reply_to_id: string | null; echo_id: string | null; delivery_status: string; error_code: string | null; error_message: string | null; retry_count: number; payload_json?: Record<string, unknown> | null; media_url?: string | null; message_type?: string | null; message_content?: Record<string, unknown> | null; source_type?: string | null; ai_model: string | null; total_tokens: number | null; created_at: string } }>
   | WSEnvelope<"message.updated", { messageId: string; conversationId: string; deliveryStatus: "sent" | "delivered" | "read" | "failed"; errorCode?: string; errorMessage?: string }>
   | WSEnvelope<"conversation.created", { id: string; last_message?: { text: string; sent_at: string; direction: string }; unread_count?: number; score?: number; status?: string; priority?: string }>
   | WSEnvelope<"conversation.updated", { id: string; last_message?: { text: string; sent_at: string; direction: string }; unread_count?: number; score?: number; status?: string; priority?: string }>

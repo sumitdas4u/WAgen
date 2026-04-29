@@ -92,7 +92,7 @@ function renderInlineSegment(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
-function renderFormattedText(text: string | null | undefined, keyPrefix = "fmt"): ReactNode[] {
+export function renderFormattedText(text: string | null | undefined, keyPrefix = "fmt"): ReactNode[] {
   const lines = (text ?? "").split("\n");
   const nodes: ReactNode[] = [];
   lines.forEach((line, li) => {
@@ -120,7 +120,7 @@ function renderFormattedText(text: string | null | undefined, keyPrefix = "fmt")
 
 // ─── Content renderers ────────────────────────────────────────────────────────
 
-function renderContent(msg: ConversationMessage): ReactNode {
+function renderLegacyContent(msg: ConversationMessage): ReactNode {
   const type = msg.content_type ?? "text";
   const payload = msg.payload_json as Record<string, unknown> | null;
   const text = msg.message_text ?? "";
@@ -346,6 +346,794 @@ function renderContent(msg: ConversationMessage): ReactNode {
 
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
+type BubbleMessageType =
+  | "text"
+  | "image"
+  | "video"
+  | "audio"
+  | "file"
+  | "buttons"
+  | "list"
+  | "template"
+  | "location"
+  | "contact"
+  | "poll"
+  | "unsupported";
+
+type BubbleMediaType = "image" | "video" | "audio" | "document" | "file";
+
+interface BubbleButton {
+  id: string;
+  label: string;
+}
+
+interface BubbleListItem {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+interface BubbleContent {
+  text?: string;
+  mediaUrl?: string;
+  mediaType?: BubbleMediaType;
+  fileName?: string;
+  buttons?: BubbleButton[];
+  list?: {
+    title?: string;
+    buttonLabel?: string;
+    items: BubbleListItem[];
+  };
+  template?: {
+    name?: string;
+    headerText?: string;
+    text?: string;
+    footerText?: string;
+    mediaUrl?: string;
+    mediaType?: BubbleMediaType;
+    buttons?: BubbleButton[];
+  };
+  location?: {
+    latitude: number;
+    longitude: number;
+    name?: string;
+    address?: string;
+  };
+  contacts?: Array<{
+    name: string;
+    phone?: string;
+    org?: string;
+  }>;
+  poll?: {
+    question: string;
+    options: string[];
+  };
+}
+
+interface BubbleMessage {
+  type: BubbleMessageType;
+  content: BubbleContent;
+}
+
+interface MessageSourceBadge {
+  label: string;
+  className: string;
+}
+
+const MEDIA_EXT_RE = /\.(jpg|jpeg|png|gif|webp|bmp|svg|mp4|mov|avi|webm|mkv|mp3|ogg|wav|m4a|aac|opus|pdf|doc|docx|xls|xlsx|ppt|pptx|zip|csv|txt)(\?.*)?$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function getNestedText(value: unknown): string | undefined {
+  if (typeof value === "string") return stringValue(value);
+  const record = recordValue(value);
+  return record ? firstString(record.text, record.body, record.title) : undefined;
+}
+
+function getStructuredPayload(msg: ConversationMessage): Record<string, unknown> | null {
+  const messageContent = isRecord(msg.message_content) && Object.keys(msg.message_content).length > 0 ? msg.message_content : null;
+  const payloadJson = isRecord(msg.payload_json) && Object.keys(msg.payload_json).length > 0 ? msg.payload_json : null;
+  if (messageContent?.type) return messageContent;
+  if (payloadJson?.type) return payloadJson;
+  if (messageContent) return messageContent;
+  if (payloadJson) return payloadJson;
+  return null;
+}
+
+function normalizeStoredType(msg: ConversationMessage): string {
+  return (msg.message_type ?? msg.content_type ?? "text").toLowerCase();
+}
+
+function resolvePayloadMediaUrl(payload: Record<string, unknown> | null, fallback?: string | null): string | undefined {
+  const url = firstString(
+    payload?.url,
+    payload?.media_url,
+    payload?.mediaUrl,
+    payload?.link,
+    payload?.headerMediaUrl,
+    payload?.header_media_url,
+    fallback
+  );
+  return resolveMediaUrl(url);
+}
+
+function mediaTypeFromUrl(url: string | null | undefined): BubbleMediaType | undefined {
+  if (!url) return undefined;
+  const path = url.split("?")[0].toLowerCase();
+  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/.test(path)) return "image";
+  if (/\.(mp4|mov|avi|webm|mkv)$/.test(path)) return "video";
+  if (/\.(mp3|ogg|wav|m4a|aac|opus)$/.test(path)) return "audio";
+  if (/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|csv|txt)$/.test(path)) return "document";
+  return undefined;
+}
+
+function mediaTypeFromMime(mimeType: string | undefined): BubbleMediaType | undefined {
+  if (!mimeType) return undefined;
+  const mime = mimeType.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.includes("pdf") || mime.startsWith("application/") || mime.startsWith("text/")) return "document";
+  return undefined;
+}
+
+function mediaTypeFromPayload(payload: Record<string, unknown> | null, mediaUrl?: string): BubbleMediaType | undefined {
+  const explicit = firstString(payload?.mediaType, payload?.media_type, payload?.kind, payload?.format, payload?.mimeType, payload?.mime_type);
+  const lower = explicit?.toLowerCase();
+  if (lower === "image" || lower === "video" || lower === "audio") return lower;
+  if (lower === "document" || lower === "file") return lower;
+  return mediaTypeFromMime(explicit) ?? mediaTypeFromUrl(mediaUrl);
+}
+
+function normalizeButtons(value: unknown): BubbleButton[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw, index) => {
+    const item = recordValue(raw);
+    if (!item) return [];
+    const reply = recordValue(item.reply);
+    const label = firstString(item.label, item.title, item.text, item.name, reply?.title);
+    if (!label) return [];
+    return [{
+      id: firstString(item.id, item.key, reply?.id) ?? String(index),
+      label
+    }];
+  });
+}
+
+function normalizeActionButtons(payload: Record<string, unknown>): BubbleButton[] {
+  const action = recordValue(payload.action);
+  return [
+    ...normalizeButtons(payload.buttons),
+    ...normalizeButtons(action?.buttons)
+  ];
+}
+
+function normalizeListItemsFromSections(sections: unknown): BubbleListItem[] {
+  if (!Array.isArray(sections)) return [];
+  return sections.flatMap((section, sectionIndex) => {
+    const s = recordValue(section);
+    if (!s) return [];
+    const rows = Array.isArray(s.rows) ? s.rows : [];
+    const productIds = Array.isArray(s.productIds) ? s.productIds : [];
+    return [
+      ...rows.flatMap((row, rowIndex) => {
+        const r = recordValue(row);
+        const label = firstString(r?.title, r?.label, r?.name);
+        if (!r || !label) return [];
+        return [{
+          id: firstString(r.id, r.key) ?? `${sectionIndex}-${rowIndex}`,
+          label,
+          description: firstString(r.description)
+        }];
+      }),
+      ...productIds.flatMap((pid) => {
+        const label = stringValue(pid);
+        return label ? [{ id: label, label, description: undefined }] : [];
+      })
+    ];
+  });
+}
+
+function findComponent(components: unknown, type: string): Record<string, unknown> | undefined {
+  if (!Array.isArray(components)) return undefined;
+  return components
+    .map(recordValue)
+    .find((component) => firstString(component?.type)?.toLowerCase() === type.toLowerCase());
+}
+
+function templateButtonsFromComponents(components: unknown): BubbleButton[] {
+  if (!Array.isArray(components)) return [];
+  return components.flatMap((component, componentIndex) => {
+    const c = recordValue(component);
+    const type = firstString(c?.type)?.toLowerCase();
+    if (!c) return [];
+    if (type === "buttons") return normalizeButtons(c.buttons);
+    if (type === "button") {
+      const label = firstString(c.text, c.label, c.title);
+      return label ? [{ id: firstString(c.id) ?? String(componentIndex), label }] : [];
+    }
+    return [];
+  });
+}
+
+function payloadTypeToBubbleType(payload: Record<string, unknown>, storedType: string): BubbleMessageType {
+  const type = firstString(payload.type, storedType)?.toLowerCase() ?? "text";
+  switch (type) {
+    case "text":
+      return "text";
+    case "media": {
+      const mediaType = mediaTypeFromPayload(payload, resolvePayloadMediaUrl(payload));
+      if (mediaType === "image") return "image";
+      if (mediaType === "video") return "video";
+      if (mediaType === "audio") return "audio";
+      return "file";
+    }
+    case "image":
+    case "sticker":
+      return "image";
+    case "video":
+      return "video";
+    case "audio":
+      return "audio";
+    case "document":
+    case "file":
+      return "file";
+    case "text_buttons":
+    case "media_buttons":
+    case "buttons":
+    case "button":
+    case "button_reply":
+      return "buttons";
+    case "interactive": {
+      const actionType = firstString(payload.interactive_type, recordValue(payload.interactive)?.type, payload.kind)?.toLowerCase();
+      return actionType?.includes("list") ? "list" : "buttons";
+    }
+    case "list":
+    case "list_reply":
+    case "product_list":
+      return "list";
+    case "template":
+    case "product":
+      return "template";
+    case "location":
+    case "location_share":
+      return "location";
+    case "contact":
+    case "contacts":
+    case "contact_share":
+      return "contact";
+    case "poll":
+      return "poll";
+    default:
+      return "unsupported";
+  }
+}
+
+function storedTypeToBubbleType(storedType: string, payload: Record<string, unknown> | null): BubbleMessageType | null {
+  switch (storedType) {
+    case "image":
+    case "sticker":
+      return "image";
+    case "video":
+      return "video";
+    case "audio":
+      return "audio";
+    case "document":
+    case "file":
+      return "file";
+    case "contacts":
+    case "contact":
+      return "contact";
+    case "location":
+      return "location";
+    case "interactive": {
+      const actionType = firstString(payload?.type, payload?.interactive_type, recordValue(payload?.interactive)?.type)?.toLowerCase();
+      return actionType?.includes("list") ? "list" : "buttons";
+    }
+    case "template":
+      return "template";
+    case "activity":
+    case "text":
+      return "text";
+    default:
+      return null;
+  }
+}
+
+function detectTypeFromText(text: string, mediaUrl: string | undefined, storedType: string, payload: Record<string, unknown> | null): BubbleMessageType {
+  if (payload?.type) {
+    const fromPayload = payloadTypeToBubbleType(payload, storedType);
+    if (fromPayload !== "unsupported") return fromPayload;
+  }
+
+  const fromStored = storedTypeToBubbleType(storedType, payload);
+  if (fromStored && fromStored !== "text") return fromStored;
+
+  if (mediaUrl) {
+    const mediaType = mediaTypeFromUrl(mediaUrl);
+    if (mediaType === "image") return "image";
+    if (mediaType === "video") return "video";
+    if (mediaType === "audio") return "audio";
+    if (mediaType === "document") return "file";
+  }
+
+  const trimmed = text.trim();
+  if (trimmed.startsWith("[IMAGE]") || trimmed.startsWith("[Extracted image text]:") || trimmed === "[Image received]" || trimmed === "[Image received with no readable text]" || trimmed === "[Image received; text extraction unavailable]") return "image";
+  if (trimmed.startsWith("[VIDEO]") || trimmed === "[Video received]") return "video";
+  if (trimmed.startsWith("[AUDIO]") || trimmed === "[Audio message received]") return "audio";
+  if (trimmed.startsWith("[DOCUMENT]") || trimmed.startsWith("[Extracted document text]:") || trimmed.startsWith("[Document received") || trimmed.startsWith("[PDF received")) return "file";
+  if (trimmed.startsWith("[LOCATION]")) return "location";
+  if (trimmed.startsWith("[CONTACT]")) return "contact";
+  if (trimmed.startsWith("[POLL]")) return "poll";
+  if (trimmed.startsWith("[Template:")) return "template";
+
+  if (trimmed.includes("\n\n")) {
+    const afterTitle = trimmed.slice(trimmed.indexOf("\n\n") + 2).trimStart();
+    const lines = afterTitle.split("\n").filter((line) => line.trim());
+    const hasNumberedItems = lines.some((line) => /^\d+\./.test(line.trim()));
+    if (hasNumberedItems) {
+      const firstLine = lines[0] ?? "";
+      return /^\d+\./.test(firstLine.trim()) ? "buttons" : "list";
+    }
+  }
+
+  const directUrl = trimmed.startsWith("http") && MEDIA_EXT_RE.test(trimmed) ? trimmed : undefined;
+  const directType = mediaTypeFromUrl(directUrl);
+  if (directType === "image") return "image";
+  if (directType === "video") return "video";
+  if (directType === "audio") return "audio";
+  if (directType === "document") return "file";
+
+  if (mediaUrl) return "file";
+  return "text";
+}
+
+function normalizeContacts(payload: Record<string, unknown>): BubbleContent["contacts"] {
+  if (Array.isArray(payload.contacts)) {
+    return payload.contacts.flatMap((raw) => {
+      const contact = recordValue(raw);
+      if (!contact) return [];
+      const nameRecord = recordValue(contact.name);
+      const phones = Array.isArray(contact.phones) ? contact.phones : [];
+      const firstPhone = recordValue(phones[0]);
+      return [{
+        name: firstString(nameRecord?.formatted_name, nameRecord?.first_name, contact.name) ?? "Unknown",
+        phone: firstString(firstPhone?.phone, firstPhone?.wa_id, contact.phone),
+        org: firstString(contact.org)
+      }];
+    });
+  }
+  return [{
+    name: firstString(payload.name) ?? "Unknown",
+    phone: firstString(payload.phone),
+    org: firstString(payload.org)
+  }];
+}
+
+function templateContentFromPayload(payload: Record<string, unknown>, text: string, mediaUrl?: string): BubbleContent {
+  const components = payload.components;
+  const bodyComp = findComponent(components, "body");
+  const headerComp = findComponent(components, "header");
+  const footerComp = findComponent(components, "footer");
+  const name = firstString(payload.templateName, payload.template_name, payload.name);
+  const headerText = firstString(payload.headerText, payload.header_text, getNestedText(payload.header), headerComp?.text);
+  const bodyText = firstString(payload.previewText, payload.bodyText, payload.body_text, getNestedText(payload.body), bodyComp?.text, text);
+  const footerText = firstString(payload.footerText, payload.footer_text, footerComp?.text);
+  const headerMedia = resolvePayloadMediaUrl(payload, mediaUrl);
+  const headerMediaType = mediaTypeFromPayload(payload, headerMedia) ?? mediaTypeFromUrl(headerMedia);
+  const buttons = [
+    ...normalizeButtons(payload.buttons),
+    ...templateButtonsFromComponents(components)
+  ];
+
+  return {
+    template: {
+      name,
+      headerText,
+      text: bodyText || (name ? `Template: ${name}` : undefined),
+      footerText,
+      mediaUrl: headerMedia,
+      mediaType: headerMediaType,
+      buttons
+    }
+  };
+}
+
+function contentFromPayload(payload: Record<string, unknown>, mediaUrl: string | undefined, text: string, storedType: string): BubbleContent {
+  const type = firstString(payload.type, storedType)?.toLowerCase() ?? "text";
+  const payloadMediaUrl = resolvePayloadMediaUrl(payload, mediaUrl);
+  const mediaType = mediaTypeFromPayload(payload, payloadMediaUrl);
+
+  switch (type) {
+    case "text":
+      return { text: firstString(payload.text, text) ?? "" };
+    case "media":
+    case "image":
+    case "sticker":
+    case "video":
+    case "audio":
+    case "document":
+    case "file":
+      return {
+        mediaUrl: payloadMediaUrl,
+        mediaType: mediaType ?? (type === "sticker" ? "image" : type === "image" || type === "video" || type === "audio" ? type : "document"),
+        fileName: firstString(payload.filename, payload.file_name, payload.name),
+        text: firstString(payload.caption, payload.text)
+      };
+    case "text_buttons":
+      return {
+        text: firstString(payload.text, payload.bodyText, getNestedText(payload.body), text),
+        buttons: normalizeButtons(payload.buttons)
+      };
+    case "media_buttons":
+      return {
+        mediaUrl: payloadMediaUrl,
+        mediaType: mediaType ?? "image",
+        text: firstString(payload.caption, payload.text, payload.bodyText, text),
+        buttons: normalizeButtons(payload.buttons)
+      };
+    case "interactive":
+    case "button":
+    case "button_reply":
+      return {
+        text: firstString(getNestedText(payload.body), payload.text, text),
+        buttons: normalizeActionButtons(payload)
+      };
+    case "list":
+    case "list_reply": {
+      const action = recordValue(payload.action);
+      return {
+        list: {
+          title: firstString(payload.text, payload.bodyText, getNestedText(payload.body), text),
+          buttonLabel: firstString(payload.buttonLabel, payload.button_label, action?.button),
+          items: normalizeListItemsFromSections(payload.sections ?? action?.sections)
+        }
+      };
+    }
+    case "product_list":
+      return {
+        list: {
+          title: firstString(payload.bodyText, payload.text, text) ?? "Products",
+          items: normalizeListItemsFromSections(payload.sections)
+        }
+      };
+    case "template":
+      return templateContentFromPayload(payload, text, mediaUrl);
+    case "product":
+      return {
+        template: {
+          text: firstString(payload.bodyText, payload.text) ?? `Product: ${firstString(payload.productId) ?? "Product"}`,
+          buttons: [{ id: "view", label: "View Product" }]
+        }
+      };
+    case "location":
+    case "location_share":
+      return {
+        location: {
+          latitude: numberValue(payload.latitude) ?? numberValue(payload.lat) ?? 0,
+          longitude: numberValue(payload.longitude) ?? numberValue(payload.lng) ?? 0,
+          name: firstString(payload.name),
+          address: firstString(payload.address)
+        }
+      };
+    case "contacts":
+    case "contact":
+    case "contact_share":
+      return { contacts: normalizeContacts(payload) };
+    case "poll":
+      return {
+        poll: {
+          question: firstString(payload.question, text) ?? "",
+          options: Array.isArray(payload.options) ? payload.options.map(String).filter(Boolean) : []
+        }
+      };
+    default:
+      return { text, mediaUrl: payloadMediaUrl, mediaType };
+  }
+}
+
+function contentFromText(text: string, mediaUrl: string | undefined, type: BubbleMessageType, payload: Record<string, unknown> | null): BubbleContent {
+  if (payload && type === "template") return templateContentFromPayload(payload, text, mediaUrl);
+
+  switch (type) {
+    case "image":
+    case "video":
+    case "audio":
+    case "file": {
+      let caption: string | undefined;
+      if (text.startsWith("[Extracted image text]:")) {
+        caption = text.slice("[Extracted image text]:".length).trim() || undefined;
+      } else if (
+        text === "[Image received]" ||
+        text === "[Video received]" ||
+        text === "[Audio message received]" ||
+        text === "[Image received with no readable text]" ||
+        text === "[Image received; text extraction unavailable]"
+      ) {
+        caption = undefined;
+      } else {
+        const cleaned = text.replace(/^\[(IMAGE|VIDEO|AUDIO|DOCUMENT)\]\n?/, "").trim();
+        caption = cleaned && cleaned !== mediaUrl ? cleaned : undefined;
+      }
+      const directUrl = text.trim().startsWith("http") ? text.trim() : undefined;
+      return {
+        mediaUrl: mediaUrl ?? resolveMediaUrl(directUrl),
+        mediaType: type === "file" ? "document" : type,
+        fileName: type === "file" ? firstString(text.match(/\[Document received:\s?([^\]]+)\]/)?.[1]) : undefined,
+        text: caption
+      };
+    }
+    case "location": {
+      const lines = text.replace(/^\[LOCATION\]\n?/, "").split("\n").filter(Boolean);
+      const lastLine = lines[lines.length - 1] ?? "";
+      const coordMatch = lastLine.match(/([-\d.]+),\s*([-\d.]+)/);
+      return {
+        location: {
+          latitude: coordMatch ? parseFloat(coordMatch[1]) : 0,
+          longitude: coordMatch ? parseFloat(coordMatch[2]) : 0,
+          name: lines[0] !== lastLine ? lines[0] : undefined,
+          address: lines.length > 2 ? lines[1] : undefined
+        }
+      };
+    }
+    case "contact": {
+      const lines = text.replace(/^\[CONTACT\]\s?/, "").split("\n").filter(Boolean);
+      return { contacts: [{ name: lines[0] ?? "Unknown", phone: lines[lines.length - 1] }] };
+    }
+    case "poll": {
+      const lines = text.replace(/^\[POLL\]\s?/, "").split("\n").filter(Boolean);
+      return {
+        poll: {
+          question: lines[0] ?? "",
+          options: lines.slice(1).map((line) => line.replace(/^\d+\.\s?/, "").trim()).filter(Boolean)
+        }
+      };
+    }
+    case "template": {
+      const name = text.match(/\[Template:\s?([^\]]+)\]/)?.[1];
+      return { template: { name, text: name ? `Template: ${name}` : text, buttons: [] } };
+    }
+    case "buttons": {
+      const parts = text.split(/\n\n+/);
+      const body = parts[0] ?? "";
+      const buttons = parts.slice(1).join("\n").split("\n")
+        .filter((line) => /^\d+\./.test(line.trim()))
+        .map((line, index) => ({ id: String(index), label: line.replace(/^\d+\.\s?/, "").trim() }))
+        .filter((button) => button.label);
+      return { text: body, buttons };
+    }
+    case "list": {
+      const parts = text.split(/\n\n+/);
+      const title = parts[0] ?? "";
+      const bodyLines = parts.slice(1).join("\n").split("\n").filter((line) => line.trim());
+      const firstNumberedIdx = bodyLines.findIndex((line) => /^\d+\./.test(line.trim()));
+      const buttonLabel = firstNumberedIdx > 0 ? bodyLines.slice(0, firstNumberedIdx).join(" ").trim() : undefined;
+      const itemLines = firstNumberedIdx >= 0 ? bodyLines.slice(firstNumberedIdx) : bodyLines;
+      const items = itemLines
+        .filter((line) => /^\d+\./.test(line.trim()))
+        .map((line, index) => {
+          const withoutNumber = line.replace(/^\d+\.\s?/, "").trim();
+          const dashIdx = withoutNumber.indexOf(" - ");
+          return {
+            id: String(index),
+            label: dashIdx >= 0 ? withoutNumber.slice(0, dashIdx) : withoutNumber,
+            description: dashIdx >= 0 ? withoutNumber.slice(dashIdx + 3) : undefined
+          };
+        });
+      return { list: { title, buttonLabel, items } };
+    }
+    default:
+      return { text, mediaUrl };
+  }
+}
+
+function normalizeBubbleMessage(msg: ConversationMessage): BubbleMessage {
+  const payload = getStructuredPayload(msg);
+  const storedType = normalizeStoredType(msg);
+  const text = msg.message_text ?? "";
+  const mediaUrl = resolvePayloadMediaUrl(payload, msg.media_url) ?? resolveMediaUrl(text.trim().startsWith("http") ? text.trim() : undefined);
+  const type = detectTypeFromText(text, mediaUrl, storedType, payload);
+  const content = payload && payload.type
+    ? contentFromPayload(payload, mediaUrl, text, storedType)
+    : contentFromText(text, mediaUrl, type, payload);
+  return { type, content };
+}
+
+function renderMediaPreview(content: BubbleContent, label = "Media"): ReactNode {
+  const { mediaUrl, mediaType, text, fileName } = content;
+  if (!mediaUrl) {
+    return <div className="iv-msg-media-placeholder"><span className="iv-msg-media-kind">{label}</span><span>{text || label}</span></div>;
+  }
+  if (mediaType === "image") {
+    return (
+      <a className="iv-msg-media-link" href={mediaUrl} target="_blank" rel="noopener noreferrer">
+        <img className="iv-msg-media-img" src={mediaUrl} alt={text || label} loading="lazy" />
+      </a>
+    );
+  }
+  if (mediaType === "video") {
+    return (
+      <video className="iv-msg-media-video" controls preload="metadata">
+        <source src={mediaUrl} />
+      </video>
+    );
+  }
+  if (mediaType === "audio") {
+    return <audio className="iv-msg-audio" controls preload="metadata" src={mediaUrl} />;
+  }
+  const name = fileName || mediaUrl.split("/").pop() || "Download file";
+  return (
+    <a className="iv-msg-file-card" href={mediaUrl} target="_blank" rel="noopener noreferrer" download>
+      <span className="iv-msg-file-icon">FILE</span>
+      <span className="iv-msg-file-name">{name}</span>
+    </a>
+  );
+}
+
+function renderButtons(buttons: BubbleButton[] | undefined): ReactNode {
+  if (!buttons?.length) return null;
+  return (
+    <div className="iv-msg-action-rows">
+      {buttons.map((button) => (
+        <div key={button.id} className="iv-msg-action-row">
+          <span className="iv-msg-action-icon">&gt;</span>
+          <span className="iv-msg-action-label">{button.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function renderContent(msg: ConversationMessage): ReactNode {
+  const normalized = normalizeBubbleMessage(msg);
+  const { type, content } = normalized;
+
+  switch (type) {
+    case "image":
+    case "video":
+    case "audio":
+    case "file":
+      return (
+        <div className="iv-msg-rich">
+          {renderMediaPreview(content, type === "file" ? "Document" : type)}
+          {content.text && <p className="iv-msg-caption">{renderFormattedText(content.text, `media-${msg.id}`)}</p>}
+        </div>
+      );
+    case "buttons":
+      return (
+        <div className="iv-msg-rich">
+          {content.mediaUrl && renderMediaPreview(content)}
+          {content.text && <p className="iv-msg-body">{renderFormattedText(content.text, `btn-${msg.id}`)}</p>}
+          {renderButtons(content.buttons)}
+        </div>
+      );
+    case "list": {
+      const list = content.list;
+      return (
+        <div className="iv-msg-rich">
+          {list?.title && <p className="iv-msg-body">{renderFormattedText(list.title, `list-${msg.id}`)}</p>}
+          {list?.buttonLabel && <div className="iv-msg-list-label">{list.buttonLabel}</div>}
+          {list?.items.length ? (
+            <div className="iv-msg-action-rows">
+              {list.items.map((item) => (
+                <div key={item.id} className="iv-msg-action-row iv-msg-list-row">
+                  <span className="iv-msg-action-label">{item.label}</span>
+                  {item.description && <span className="iv-msg-action-desc">{item.description}</span>}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+    case "template": {
+      const template = content.template;
+      return (
+        <div className="iv-msg-rich iv-msg-template">
+          {template?.mediaUrl && renderMediaPreview({ mediaUrl: template.mediaUrl, mediaType: template.mediaType, text: template.headerText }, "Template media")}
+          {template?.name && <div className="iv-msg-template-name">{template.name}</div>}
+          {template?.headerText && <p className="iv-msg-heading">{renderFormattedText(template.headerText, `tmpl-head-${msg.id}`)}</p>}
+          {template?.text && <p className="iv-msg-body">{renderFormattedText(template.text, `tmpl-body-${msg.id}`)}</p>}
+          {template?.footerText && <p className="iv-msg-caption muted">{renderFormattedText(template.footerText, `tmpl-foot-${msg.id}`)}</p>}
+          {renderButtons(template?.buttons)}
+        </div>
+      );
+    }
+    case "location": {
+      const location = content.location;
+      const mapsUrl = `https://maps.google.com/?q=${location?.latitude ?? 0},${location?.longitude ?? 0}`;
+      return (
+        <div className="iv-msg-card iv-msg-location">
+          <div className="iv-msg-card-icon">PIN</div>
+          <div className="iv-msg-card-main">
+            {location?.name && <strong>{location.name}</strong>}
+            {location?.address && <span>{location.address}</span>}
+            <a href={mapsUrl} target="_blank" rel="noopener noreferrer">View on map</a>
+          </div>
+        </div>
+      );
+    }
+    case "contact":
+      return (
+        <div className="iv-msg-rich">
+          {(content.contacts ?? [{ name: content.text ?? "Contact" }]).map((contact, index) => (
+            <div key={`${contact.name}-${index}`} className="iv-msg-card iv-msg-contact">
+              <div className="iv-msg-contact-avatar">{contact.name.charAt(0).toUpperCase()}</div>
+              <div className="iv-msg-card-main">
+                <strong>{contact.name}</strong>
+                {contact.org && <span>{contact.org}</span>}
+                {contact.phone && <span>{contact.phone}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    case "poll":
+      return (
+        <div className="iv-msg-rich iv-msg-poll">
+          <p className="iv-msg-heading">{content.poll?.question || "Poll"}</p>
+          <div className="iv-msg-action-rows">
+            {(content.poll?.options ?? []).map((option, index) => (
+              <div key={index} className="iv-msg-action-row">
+                <span className="iv-msg-action-label">{option}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    case "unsupported":
+      return renderLegacyContent(msg);
+    default:
+      return <span className="iv-msg-text">{renderFormattedText(content.text ?? msg.message_text ?? "", `txt-${msg.id}`)}</span>;
+  }
+}
+
+function getMessageSourceBadge(msg: ConversationMessage, normalizedType: BubbleMessageType): MessageSourceBadge | null {
+  if (msg.direction !== "outbound" || msg.is_private) return null;
+
+  const sourceType = msg.source_type?.toLowerCase() ?? "";
+  if (msg.ai_model) return { label: "AI", className: "iv-badge-ai" };
+  if (sourceType === "broadcast") return { label: "Broadcast", className: "iv-badge-broadcast" };
+  if (sourceType === "sequence") return { label: "Sequence", className: "iv-badge-sequence" };
+  if (sourceType === "api") return { label: "API", className: "iv-badge-api" };
+  if (sourceType === "system") return { label: "System", className: "iv-badge-system" };
+  if (normalizedType === "template") return { label: "Template", className: "iv-badge-template" };
+  if (sourceType === "bot") return { label: "Flow", className: "iv-badge-flow" };
+
+  const payload = getStructuredPayload(msg);
+  const payloadType = firstString(payload?.type)?.toLowerCase();
+  const isLegacyFlowPayload = Boolean(payloadType) && !msg.sender_name && !msg.echo_id;
+  if (isLegacyFlowPayload) return { label: "Flow", className: "iv-badge-flow" };
+
+  if (msg.sender_name || msg.echo_id || sourceType === "manual") {
+    return { label: "Human", className: "iv-badge-human" };
+  }
+
+  return null;
+}
+
 export function MessageBubble({ message, isFirst, showAvatar, convPhone, contactName, onRetry, onReply, quotedMessage }: Props) {
   const [copied, setCopied] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -356,12 +1144,11 @@ export function MessageBubble({ message, isFirst, showAvatar, convPhone, contact
   const avatarColor = getNameAvatarColor(contactName, convPhone);
   const avatarInitials = getNameInitials(contactName, convPhone);
 
-  const isAi = isOutbound && Boolean(message.ai_model);
-  const isManual = isOutbound && !isAi && Boolean(message.sender_name);
-  const isFlow = isOutbound && !isAi && !isManual;
-  const isTemplate = message.content_type === "template" ||
-    Boolean((message.payload_json as Record<string, unknown> | null)?.templateName) ||
-    (message.payload_json as Record<string, unknown> | null)?.type === "template";
+  const normalizedMessageType = normalizeBubbleMessage(message).type;
+  const sourceBadge = getMessageSourceBadge(message, normalizedMessageType);
+  const isAi = sourceBadge?.label === "AI";
+  const isFlow = sourceBadge?.label === "Flow";
+  const isManual = sourceBadge?.label === "Human";
   const isFailed = message.delivery_status === "failed";
 
   function handleCopy() {
@@ -412,9 +1199,7 @@ export function MessageBubble({ message, isFirst, showAvatar, convPhone, contact
 
         {/* Meta row: badges + sender + time + delivery + actions */}
         <div className="iv-bubble-meta">
-          {isAi && <span className="iv-badge iv-badge-ai">AI</span>}
-          {isFlow && <span className="iv-badge iv-badge-flow">Flow</span>}
-          {isTemplate && <span className="iv-badge iv-badge-template">Template</span>}
+          {sourceBadge && <span className={`iv-badge ${sourceBadge.className}`}>{sourceBadge.label}</span>}
           {isManual && message.sender_name && (
             <span className="iv-bubble-sender">{message.sender_name}</span>
           )}
