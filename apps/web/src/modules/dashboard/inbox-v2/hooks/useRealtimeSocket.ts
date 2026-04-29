@@ -225,6 +225,8 @@ export function useRealtimeSocket(token: string | null) {
       ws.onopen = () => {
         retryDelay = 1_000;
         resync();
+        // Refresh conversation list on reconnect so unread counts and new convs are current
+        void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
       };
 
       ws.onmessage = (e) => handleMessage(e.data as string);

@@ -65,8 +65,8 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFi
   const tabsAutoScrollSpeedRef = useRef(0);
   const bulkAction = useBulkAction();
 
-  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } = useConversations(folder, debouncedQ);
-  const showShimmer = (isLoading || isFetching) && ids.length === 0;
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useConversations(folder, debouncedQ);
+  const showShimmer = isLoading && ids.length === 0;
 
   // Debounce search
   useEffect(() => {

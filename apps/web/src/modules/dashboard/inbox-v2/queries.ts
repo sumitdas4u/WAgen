@@ -41,7 +41,20 @@ export function useConversations(_folder: string, _searchQ: string) {
   useEffect(() => {
     if (!query.data) return;
     const all = query.data.pages.flatMap((p) => p.items);
-    store.setConversations(all);
+    // Preserve optimistically-cleared unread_count for the active conversation so a
+    // stale server response during an in-flight markRead mutation doesn't restore the badge.
+    const { activeConvId, byId } = useConvStore.getState();
+    const merged = activeConvId
+      ? all.map((c) => {
+          if (c.id !== activeConvId) return c;
+          const local = byId[c.id];
+          if (local && (local.unread_count ?? 0) === 0 && (c.unread_count ?? 0) > 0) {
+            return { ...c, unread_count: 0 };
+          }
+          return c;
+        })
+      : all;
+    store.setConversations(merged);
   }, [query.data]);
 
   return query;
