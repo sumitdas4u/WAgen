@@ -134,15 +134,12 @@ export function MessageThread({ convId, optimisticMap }: Props) {
         </div>
         <div className="iv-thread-actions">
           <button className="iv-btn-icon" title="Mute">🔕</button>
-          <div style={{ display: "flex" }}>
-            <button
-              className={`iv-btn-resolve ${conv.status === "resolved" ? "is-resolved" : "is-open"}`}
-              onClick={() => setStatus.mutate({ convId, status: conv.status === "resolved" ? "open" : "resolved" })}
-            >
-              {conv.status === "resolved" ? "Reopen" : "Resolve"}
-            </button>
-            <button className={`iv-btn-resolve-caret ${conv.status === "resolved" ? "is-resolved" : "is-open"}`}>▾</button>
-          </div>
+          <button
+            className={`iv-btn-resolve ${conv.status === "resolved" ? "is-resolved" : "is-open"}`}
+            onClick={() => setStatus.mutate({ convId, status: conv.status === "resolved" ? "open" : "resolved" })}
+          >
+            {conv.status === "resolved" ? "Reopen" : "Resolve"}
+          </button>
         </div>
       </div>
 
