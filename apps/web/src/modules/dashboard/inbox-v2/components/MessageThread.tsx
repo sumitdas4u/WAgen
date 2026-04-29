@@ -91,9 +91,11 @@ export function MessageThread({ convId, optimisticMap }: Props) {
     [messages]
   );
 
+  // Mirror V1: only fire when there are actual unread messages and no mutation in-flight
   useEffect(() => {
-    void markRead.mutateAsync(convId).catch(() => undefined);
-  }, [convId, inboundCount]);
+    if ((conv?.unread_count ?? 0) <= 0 || markRead.isPending) return;
+    markRead.mutate(convId);
+  }, [convId, inboundCount, conv?.unread_count, markRead.isPending]);
 
   useLayoutEffect(() => {
     if (messages.length === 0 || messagesQuery.isFetchingNextPage) return;

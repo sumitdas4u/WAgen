@@ -1,9 +1,12 @@
 import { useEffect } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 import { useAuth } from "../../../lib/auth-context";
 import { useConvStore } from "./store/convStore";
+import type { ConvPage } from "./api";
 import {
   fetchConvSnapshot,
+  fetchConversation,
   fetchConvMessages,
   fetchLabels,
   postMarkRead,
@@ -40,6 +43,32 @@ export function useConversations(_folder: string, _searchQ: string) {
     const all = query.data.pages.flatMap((p) => p.items);
     store.setConversations(all);
   }, [query.data]);
+
+  return query;
+}
+
+export function useConversation(convId: string | null) {
+  const { token } = useAuth();
+  const existing = useConvStore((s) => (convId ? s.byId[convId] : undefined));
+  const upsertConv = useConvStore((s) => s.upsertConv);
+
+  const query = useQuery({
+    queryKey: ["iv2-conv", convId],
+    queryFn: async () => {
+      const data = await fetchConversation(token!, convId!);
+      upsertConv(data.conversation);
+      return data.conversation;
+    },
+    enabled: !!token && !!convId && !existing,
+    staleTime: 30_000,
+    retry: 1
+  });
+
+  useEffect(() => {
+    if (!existing && query.data) {
+      upsertConv(query.data);
+    }
+  }, [existing, query.data, upsertConv]);
 
   return query;
 }
@@ -87,10 +116,37 @@ export function useMarkRead() {
     mutationFn: (convId: string) => postMarkRead(token!, convId),
     onMutate: async (convId) => {
       await qc.cancelQueries({ queryKey: ["iv2-convs"] });
+
+      // Snapshot the current cache for rollback on error (same as V1)
+      const previous = qc.getQueryData<InfiniteData<ConvPage>>(["iv2-convs"]);
+
+      // Patch React Query cache directly — walk pages → items (same as V1)
+      qc.setQueryData<InfiniteData<ConvPage>>(["iv2-convs"], (current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            items: page.items.map((conv) =>
+              conv.id === convId ? { ...conv, unread_count: 0 } : conv
+            )
+          }))
+        };
+      });
+
+      // Also clear Zustand (V2's display layer reads from here)
       store.clearUnread(convId);
+
+      return { previous };
     },
-    onSuccess: (_data, convId) => {
-      store.clearUnread(convId);
+    onError: (_err, _convId, context) => {
+      // Roll back the cache snapshot (same as V1)
+      if (context?.previous) {
+        qc.setQueryData(["iv2-convs"], context.previous);
+      }
+    },
+    onSettled: () => {
+      // Invalidate after success OR error to sync with server (same as V1)
       void qc.invalidateQueries({ queryKey: ["iv2-convs"] });
     }
   });
