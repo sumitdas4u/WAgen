@@ -560,11 +560,22 @@
 .iv-delivery.sent     { color: #94a3b8; }
 .iv-delivery.delivered{ color: #94a3b8; }
 .iv-delivery.read     { color: #2563eb; }
-.iv-delivery.failed   { color: #f43f5e; }
-.iv-delivery.pending  { color: #94a3b8; }
-.iv-retry-link { font-size: 11px; color: #2563eb; cursor: pointer; margin-left: 2px; }
-.iv-retry-link:hover { text-decoration: underline; }
-.iv-retry-link.disabled { color: #94a3b8; cursor: not-allowed; }
+.iv-delivery.failed   { color: #dc2626; font-weight: 700; }
+.iv-delivery.pending  { color: #94a3b8; display: inline-flex; align-items: center; }
+.iv-sending-spinner {
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 1.5px solid rgba(148,163,184,0.3);
+  border-top-color: #94a3b8;
+  animation: iv-spin 0.7s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+}
+@keyframes iv-spin {
+  to { transform: rotate(360deg); }
+}
+.iv-retry-link { font-size: 11px; color: #2563eb; font-weight: 600; cursor: pointer; margin-left: 2px; }
+.iv-retry-link:hover { text-decoration: underline; color: #1d4ed8; }
+.iv-retry-link.disabled { color: #94a3b8; cursor: not-allowed; font-weight: 400; }
 
 .iv-activity-pill {
   display: flex; justify-content: center; margin: 8px 0;
@@ -1332,17 +1343,29 @@ select.cd-input { height: 36px; }
 /* ── Bubble variants for AI / Flow ──────────────────────────────────────── */
 .iv-bubble.iv-bubble-ai   { border-left: 2px solid #8b5cf6; }
 .iv-bubble.iv-bubble-flow { border-left: 2px solid #10b981; }
-.iv-bubble.iv-bubble-failed { border-left: 2px solid #ef4444; }
+
+/* Failed bubble — red tint so it stands out immediately */
+.iv-bubble.outbound.iv-bubble-failed {
+  background: #fff5f5;
+  border: 1px solid #fecdd3;
+  border-left: 3px solid #ef4444;
+  color: #450a0a;
+}
+.iv-bubble.inbound.iv-bubble-failed {
+  background: #fff5f5;
+  border-left: 3px solid #ef4444;
+  color: #450a0a;
+}
 
 /* ── Inline error hint ───────────────────────────────────────────────────── */
 .iv-bubble-error-hint {
-  display: flex; align-items: flex-start; gap: 5px;
-  margin-top: 5px; font-size: 11px;
-  color: #fca5a5; /* light red for dark outbound bubble */
+  display: flex; align-items: flex-start; gap: 6px;
+  margin-top: 6px; padding: 6px 8px;
+  background: #fef2f2; border: 1px solid #fecdd3; border-radius: 6px;
+  font-size: 11px; color: #b91c1c;
 }
-.iv-bubble.inbound .iv-bubble-error-hint { color: #b91c1c; }
-.iv-bubble-error-hint-icon { flex-shrink: 0; }
-.iv-bubble-error-hint-text { line-height: 1.4; }
+.iv-bubble-error-hint-icon { flex-shrink: 0; color: #ef4444; font-size: 12px; }
+.iv-bubble-error-hint-text { line-height: 1.45; }
 
 /* ── Info button ─────────────────────────────────────────────────────────── */
 .iv-info-btn {
@@ -1351,21 +1374,25 @@ select.cd-input { height: 36px; }
   transition: opacity 120ms; margin-left: 2px;
 }
 .iv-info-btn:hover { opacity: 0.85; }
-.iv-info-btn-error { opacity: 0.8; color: #fca5a5; }
-.iv-bubble.inbound .iv-info-btn-error { color: #ef4444; }
+.iv-info-btn-error { opacity: 1; color: #ef4444; }
 
 /* ── Info popover ────────────────────────────────────────────────────────── */
 .iv-info-popover {
-  margin-top: 6px; padding: 8px 10px;
-  background: rgba(0,0,0,0.18); border-radius: 8px;
-  font-size: 11.5px; display: flex; flex-direction: column; gap: 3px;
+  margin-top: 8px; padding: 10px 12px;
+  background: #fff; border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+  border-radius: 8px;
+  font-size: 11.5px; color: #1e293b;
+  display: flex; flex-direction: column; gap: 5px;
 }
-.iv-bubble.inbound .iv-info-popover { background: #f1f5f9; color: #1e293b; }
-.iv-info-row { line-height: 1.4; }
-.iv-info-errmsg { opacity: 0.75; }
-.iv-info-fix { color: #93c5fd; }
-.iv-bubble.inbound .iv-info-fix { color: #2563eb; }
-.iv-info-ts { opacity: 0.5; font-size: 10.5px; }
+.iv-info-row { line-height: 1.45; }
+.iv-info-errmsg { color: #64748b; font-size: 11px; }
+.iv-info-fix {
+  color: #1d4ed8; font-size: 11px;
+  padding: 5px 8px; background: #eff6ff; border-radius: 5px;
+  border: 1px solid #bfdbfe; line-height: 1.45;
+}
+.iv-info-ts { color: #94a3b8; font-size: 10.5px; }
 
 /* ── Reply button on bubble ──────────────────────────────────────────────── */
 .iv-reply-btn {

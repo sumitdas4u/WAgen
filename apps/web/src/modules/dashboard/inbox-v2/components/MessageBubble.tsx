@@ -35,7 +35,7 @@ interface Props {
 // ─── Delivery status ──────────────────────────────────────────────────────────
 
 function renderDelivery(status: string, retryCount: number, onRetry?: () => void) {
-  if (status === "pending") return <span className="iv-delivery pending">⏳</span>;
+  if (status === "pending") return <span className="iv-delivery pending"><span className="iv-sending-spinner" /></span>;
   if (status === "sent") return <span className="iv-delivery sent">✓</span>;
   if (status === "delivered") return <span className="iv-delivery delivered">✓✓</span>;
   if (status === "read") return <span className="iv-delivery read">✓✓</span>;

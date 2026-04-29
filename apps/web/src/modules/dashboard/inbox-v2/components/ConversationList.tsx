@@ -64,7 +64,8 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
   const tabsAutoScrollSpeedRef = useRef(0);
   const bulkAction = useBulkAction();
 
-  const { fetchNextPage, hasNextPage, isFetchingNextPage } = useConversations(folder, debouncedQ);
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } = useConversations(folder, debouncedQ);
+  const showShimmer = (isLoading || isFetching) && ids.length === 0;
 
   // Debounce search
   useEffect(() => {
@@ -236,6 +237,11 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
       </div>
 
       <div className="iv-convlist-body" ref={parentRef}>
+        {showShimmer && (
+          <div>
+            {Array.from({ length: 8 }).map((_, i) => <ShimmerRow key={i} />)}
+          </div>
+        )}
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {items.map((vItem) => {
             const id = filteredIds[vItem.index];

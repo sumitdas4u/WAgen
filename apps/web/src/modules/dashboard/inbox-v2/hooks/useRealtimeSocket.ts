@@ -157,11 +157,16 @@ export function useRealtimeSocket(token: string | null) {
           const raw = envelope.data;
           if (!s.byId[raw.id]) break; // ignore events for convs not in store (incomplete data)
           const lm = (raw as { last_message?: { text: string; sent_at: string } }).last_message;
-          s.upsertConv({
+          const update = {
             ...raw,
             last_message: lm ? lm.text : (raw as unknown as { last_message?: string }).last_message,
             last_message_at: lm ? lm.sent_at : undefined,
-          } as Partial<import("../store/convStore").Conversation> & { id: string });
+          } as Partial<import("../store/convStore").Conversation> & { id: string };
+          // Don't overwrite unread_count for the currently open conversation
+          if (raw.id === s.activeConvId) {
+            delete (update as Record<string, unknown>).unread_count;
+          }
+          s.upsertConv(update);
           break;
         }
         case "conversation.read":

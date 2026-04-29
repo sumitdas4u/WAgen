@@ -85,7 +85,10 @@ export function useMarkRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (convId: string) => postMarkRead(token!, convId),
-    onMutate: (convId) => store.clearUnread(convId),
+    onMutate: async (convId) => {
+      await qc.cancelQueries({ queryKey: ["iv2-convs"] });
+      store.clearUnread(convId);
+    },
     onSuccess: (_data, convId) => {
       store.clearUnread(convId);
       void qc.invalidateQueries({ queryKey: ["iv2-convs"] });
