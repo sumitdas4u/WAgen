@@ -60,6 +60,8 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const parentRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
+  const tabsAutoScrollRef = useRef<number | null>(null);
+  const tabsAutoScrollSpeedRef = useRef(0);
   const bulkAction = useBulkAction();
 
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = useConversations(folder, debouncedQ);
@@ -111,13 +113,54 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
     void bulkAction.mutateAsync({ ids: [...selectedIds], action }).then(() => setSelectedIds(new Set()));
   }, [selectedIds, bulkAction]);
 
-  const handleTabsWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    const el = tabsRef.current;
-    if (!el || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-    if (el.scrollWidth <= el.clientWidth) return;
-    event.preventDefault();
-    el.scrollBy({ left: event.deltaY, behavior: "smooth" });
+  const stopTabsAutoScroll = useCallback(() => {
+    if (tabsAutoScrollRef.current !== null) {
+      window.cancelAnimationFrame(tabsAutoScrollRef.current);
+      tabsAutoScrollRef.current = null;
+    }
+    tabsAutoScrollSpeedRef.current = 0;
   }, []);
+
+  const startTabsAutoScroll = useCallback((speed: number) => {
+    tabsAutoScrollSpeedRef.current = speed;
+    if (tabsAutoScrollRef.current !== null) return;
+
+    const scrollStep = () => {
+      const el = tabsRef.current;
+      const nextSpeed = tabsAutoScrollSpeedRef.current;
+      if (!el || nextSpeed === 0) {
+        tabsAutoScrollRef.current = null;
+        return;
+      }
+      el.scrollLeft += nextSpeed;
+      tabsAutoScrollRef.current = window.requestAnimationFrame(scrollStep);
+    };
+
+    tabsAutoScrollRef.current = window.requestAnimationFrame(scrollStep);
+  }, []);
+
+  const handleTabsMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const el = tabsRef.current;
+    if (!el || el.scrollWidth <= el.clientWidth) {
+      stopTabsAutoScroll();
+      return;
+    }
+
+    const rect = el.getBoundingClientRect();
+    const edgeSize = 42;
+    const leftDistance = event.clientX - rect.left;
+    const rightDistance = rect.right - event.clientX;
+
+    if (rightDistance < edgeSize && el.scrollLeft < el.scrollWidth - el.clientWidth) {
+      startTabsAutoScroll(Math.max(2, (edgeSize - rightDistance) / 4));
+    } else if (leftDistance < edgeSize && el.scrollLeft > 0) {
+      startTabsAutoScroll(-Math.max(2, (edgeSize - leftDistance) / 4));
+    } else {
+      stopTabsAutoScroll();
+    }
+  }, [startTabsAutoScroll, stopTabsAutoScroll]);
+
+  useEffect(() => stopTabsAutoScroll, [stopTabsAutoScroll]);
 
   // Load more when last item visible
   useEffect(() => {
@@ -167,7 +210,7 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
           </div>
         )}
 
-        <div className="iv-tabs" ref={tabsRef} onWheel={handleTabsWheel}>
+        <div className="iv-tabs" ref={tabsRef} onMouseMove={handleTabsMouseMove} onMouseLeave={stopTabsAutoScroll}>
           {FOLDERS.map((f) => (
             <div
               key={f.key}

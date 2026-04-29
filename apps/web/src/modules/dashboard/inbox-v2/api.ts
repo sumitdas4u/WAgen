@@ -229,7 +229,7 @@ export function deleteCannedResponse(token: string, id: string): Promise<{ ok: b
 
 export interface AgentNotification {
   id: string;
-  type: "mention" | "assigned" | "unassigned" | "system";
+  type: "mention" | "message" | "assigned" | "unassigned" | "bot_alert" | "system";
   conversation_id: string | null;
   actor_name: string | null;
   body: string;
@@ -358,6 +358,25 @@ export function aiAssistText(token: string, text: string, action: "rewrite" | "t
 
 // ── Contact lookup ────────────────────────────────────────────────────────
 
+export interface InboxContact {
+  id: string;
+  display_name: string | null;
+  phone_number: string;
+  email: string | null;
+  contact_type: "lead" | "feedback" | "complaint" | "other";
+  source_type: "manual" | "import" | "web" | "qr" | "api";
+  last_incoming_message_at: string | null;
+  linked_conversation_id: string | null;
+}
+
+export function listInboxContacts(token: string, opts?: { q?: string; limit?: number }): Promise<{ contacts: InboxContact[] }> {
+  const sp = new URLSearchParams();
+  if (opts?.q?.trim()) sp.set("q", opts.q.trim());
+  if (opts?.limit) sp.set("limit", String(opts.limit));
+  const query = sp.toString();
+  return apiFetch(token, query ? `/api/contacts?${query}` : "/api/contacts");
+}
+
 export function fetchContactByPhone(token: string, phone: string): Promise<{ contact: { display_name: string | null; email: string | null; last_incoming_message_at: string | null; marketing_consent_status: string } | null }> {
   return apiFetch(token, `/api/contacts?phone=${encodeURIComponent(phone)}&limit=1`).then((d: unknown) => {
     const data = d as { items?: Array<{ display_name: string | null; email: string | null; last_incoming_message_at: string | null; marketing_consent_status: string }> };
@@ -368,9 +387,9 @@ export function fetchContactByPhone(token: string, phone: string): Promise<{ con
 // ── Outbound conversation ─────────────────────────────────────────────────
 
 export function createOutboundConversation(token: string, params: {
-  phone: string;
+  contactId: string;
   channelType: "api" | "qr";
-  initialMessage?: string;
+  connectionId?: string | null;
 }): Promise<{ conversationId: string }> {
   return apiFetch(token, `/api/conversations/outbound`, {
     method: "POST",

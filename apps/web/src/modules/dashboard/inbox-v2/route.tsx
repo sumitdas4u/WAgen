@@ -17,7 +17,8 @@ export function Component() {
   const navigate = useNavigate();
   const { token } = useAuth();
   const { setActiveConv, activeConvId, byId, ids } = useConvStore();
-  const [showSidebar] = useState(true);
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(true);
   const [showNewConv, setShowNewConv] = useState(false);
   const [showCannedManage, setShowCannedManage] = useState(false);
 
@@ -25,6 +26,11 @@ export function Component() {
 
   const activeId = conversationId ?? activeConvId ?? null;
   const conversations = ids.map((id) => byId[id]).filter(Boolean);
+  const shellClassName = [
+    "iv-shell",
+    !showLeftPanel ? "iv-left-collapsed" : "",
+    !showSidebar || !activeId ? "iv-right-collapsed" : ""
+  ].filter(Boolean).join(" ");
 
   const handleSelectConv = useCallback((id: string) => {
     setActiveConv(id);
@@ -32,10 +38,19 @@ export function Component() {
   }, [setActiveConv, navigate]);
 
   return (
-    <div className="iv-shell">
+    <div className={shellClassName}>
       <NotificationsPanel />
       {/* Col 1: Lead filters nav */}
-      <NavSidebar conversations={conversations} />
+      {showLeftPanel && <NavSidebar conversations={conversations} />}
+      <button
+        type="button"
+        className={`iv-panel-toggle iv-panel-toggle-left${showLeftPanel ? " is-open" : ""}`}
+        title={showLeftPanel ? "Hide filters" : "Show filters"}
+        aria-label={showLeftPanel ? "Hide filters" : "Show filters"}
+        onClick={() => setShowLeftPanel((v) => !v)}
+      >
+        {showLeftPanel ? "‹" : "›"}
+      </button>
 
       {/* Col 2: Conversation list */}
       <ConversationList
@@ -57,6 +72,17 @@ export function Component() {
       {/* Col 4: Details sidebar */}
       {showSidebar && activeId && (
         <DetailsSidebar convId={activeId} />
+      )}
+      {activeId && (
+        <button
+          type="button"
+          className={`iv-panel-toggle iv-panel-toggle-right${showSidebar ? " is-open" : ""}`}
+          title={showSidebar ? "Hide details" : "Show details"}
+          aria-label={showSidebar ? "Hide details" : "Show details"}
+          onClick={() => setShowSidebar((v) => !v)}
+        >
+          {showSidebar ? "›" : "‹"}
+        </button>
       )}
 
       {showNewConv && (

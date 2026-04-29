@@ -22,6 +22,7 @@ import {
   listConversationNotes
 } from "../services/conversation-notes-service.js";
 import { realtimeHub } from "../services/realtime-hub.js";
+import { createAgentNotification } from "../services/agent-notification-service.js";
 
 const ToggleSchema = z.object({
   enabled: z.boolean().optional(),
@@ -237,9 +238,10 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const agentProfileId = parsed.data.agentProfileId ?? null;
+      let assignedAgentName: string | null = null;
       if (agentProfileId) {
-        const agentExists = await pool.query(
-          `SELECT id
+        const agentExists = await pool.query<{ id: string; name: string }>(
+          `SELECT id, name
            FROM agent_profiles
            WHERE id = $1
              AND user_id = $2
@@ -249,6 +251,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         if ((agentExists.rowCount ?? 0) === 0) {
           return reply.status(404).send({ error: "Agent profile not found" });
         }
+        assignedAgentName = agentExists.rows[0]?.name ?? null;
       }
 
       await pool.query(
@@ -264,6 +267,16 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       realtimeHub.broadcast(request.authUser.userId, "conversation.assigned", {
         id: params.conversationId,
         agent_id: agentProfileId ?? null
+      });
+
+      void createAgentNotification({
+        userId: request.authUser.userId,
+        type: agentProfileId ? "assigned" : "unassigned",
+        conversationId: params.conversationId,
+        actorName: request.authUser.email.split("@")[0] || "Agent",
+        body: agentProfileId
+          ? `Conversation assigned to ${assignedAgentName ?? "an agent"}.`
+          : "Conversation was unassigned."
       });
 
       return { ok: true };
@@ -318,27 +331,19 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         if (mentionMatches.length > 0) {
           const shortBody = parsed.data.content.slice(0, 120);
           try {
-            const notifResult = await pool.query<{ id: string; created_at: string }>(
-              `INSERT INTO agent_notifications (user_id, type, conversation_id, actor_name, body)
-               VALUES ($1, 'mention', $2, $3, $4)
-               RETURNING id, created_at`,
-              [request.authUser.userId, params.conversationId, authorName, shortBody]
-            );
-            const notif = notifResult.rows[0];
+            const notif = await createAgentNotification({
+              userId: request.authUser.userId,
+              type: "mention",
+              conversationId: params.conversationId,
+              actorName: authorName,
+              body: shortBody
+            });
             if (notif) {
               realtimeHub.broadcast(request.authUser.userId, "conversation.mentioned", {
                 conversationId: params.conversationId,
                 noteId: note.id,
                 actorName: authorName,
                 body: shortBody
-              });
-              realtimeHub.broadcast(request.authUser.userId, "agent.notification", {
-                id: notif.id,
-                type: "mention",
-                conversation_id: params.conversationId,
-                actor_name: authorName,
-                body: shortBody,
-                created_at: notif.created_at
               });
             }
           } catch { /* non-fatal */ }

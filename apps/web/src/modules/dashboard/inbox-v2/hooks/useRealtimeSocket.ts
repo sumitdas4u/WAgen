@@ -198,8 +198,7 @@ export function useRealtimeSocket(token: string | null) {
           notifRef.current.prependNotification(envelope.data as AgentNotification);
           break;
         case "conversation.mentioned":
-          // Also surfaces as agent.notification — trigger badge pulse only
-          notifRef.current.incrementUnread();
+          // Mentions also surface as agent.notification.
           break;
         default:
           break;

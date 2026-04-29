@@ -12,6 +12,7 @@ import {
 import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
 import { aiService } from "./ai-service.js";
 import { chargeUser } from "./ai-token-service.js";
+import { createAgentNotification } from "./agent-notification-service.js";
 import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
 import { extractCapturedProfileDetails, reconcileContactPhone, syncConversationContact } from "./contacts-service.js";
 import { isWidgetVisitorConnected } from "./widget-connection-registry.js";
@@ -591,6 +592,13 @@ export async function trackInboundMessage(
     );
   }
   const newUnreadCount = await incrementConversationUnreadCount(userId, conversation.id);
+  void createAgentNotification({
+    userId,
+    type: "message",
+    conversationId: conversation.id,
+    actorName: senderName ?? phoneNumber,
+    body: `${senderName ?? phoneNumber}: ${message}`
+  });
   const updatedConv = firstRow(updated);
   void fanoutEvent(userId, "chats.upsert", {
     id: conversation.id,

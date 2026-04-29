@@ -61,7 +61,7 @@ export interface BulkUpdatedPayload {
 
 export interface AgentNotificationPayload {
   id: string;
-  type: "mention" | "assigned" | "unassigned" | "system";
+  type: "mention" | "message" | "assigned" | "unassigned" | "bot_alert" | "system";
   conversation_id?: string;
   actor_name?: string;
   body: string;

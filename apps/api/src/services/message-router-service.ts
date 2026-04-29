@@ -37,6 +37,7 @@ import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
 import { evaluateConversationCredit } from "./workspace-billing-service.js";
 import { fanoutEvent } from "./event-fanout-service.js";
+import { createBotAlertNotification } from "./agent-notification-service.js";
 
 type UnifiedChannelType = "web" | "qr" | "api";
 
@@ -88,6 +89,40 @@ function normalizePhoneCandidate(value: string): string | null {
 
 function isBotLoopProtectedChannel(channelType: UnifiedChannelType): boolean {
   return channelType === "api" || channelType === "qr";
+}
+
+function botAlertMessage(reason: ProcessIncomingMessageResult["reason"]): string | null {
+  switch (reason) {
+    case "insufficient_credits":
+      return "Automation replied with the plan limit message. Review billing or plan limits.";
+    case "external_bot_detected":
+      return "Automation was paused because another bot appears to be replying in this chat.";
+    case "sender_is_agent_number":
+      return "Automation paused because the sender appears to be one of your own agent numbers.";
+    case "flow_error":
+      return "A chatbot flow failed while processing this chat. Review the flow setup.";
+    case "default_reply_manual":
+      return "Automation is in manual reply mode for this channel. A human reply is needed.";
+    case "manual_takeover":
+      return "This chat is in manual takeover. A human reply is needed.";
+    case "conversation_paused":
+      return "AI replies are paused for this chat. Resume automation or reply manually.";
+    case "no_matching_flow":
+      return "No chatbot flow matched this message. Add a matching flow or reply manually.";
+    default:
+      return null;
+  }
+}
+
+async function notifyBotAlert(
+  userId: string,
+  conversationId: string,
+  reason: ProcessIncomingMessageResult["reason"]
+): Promise<void> {
+  const body = botAlertMessage(reason);
+  if (body) {
+    await createBotAlertNotification(userId, conversationId, body);
+  }
 }
 
 async function getLatestConversationState(
@@ -187,6 +222,7 @@ export async function processIncomingMessage(
   const phoneCandidate = normalizePhoneCandidate(input.customerIdentifier);
   if (isBotLoopProtectedChannel(input.channelType) && phoneCandidate && (await isAgentSenderPhone(phoneCandidate))) {
     await setConversationAIPaused(input.userId, conversation.id, true);
+    await notifyBotAlert(input.userId, conversation.id, "sender_is_agent_number");
     return {
       conversationId: conversation.id,
       stage: conversation.stage,
@@ -244,6 +280,7 @@ export async function processIncomingMessage(
       payload: { type: "text", text: pausedMessage }
     });
     latestConversationState = await getLatestConversationState(conversation.id, latestConversationState);
+    await notifyBotAlert(input.userId, conversation.id, "insufficient_credits");
     return {
       conversationId: conversation.id,
       stage: latestConversationState.stage,
@@ -261,6 +298,7 @@ export async function processIncomingMessage(
       if (detection.flagged) {
         console.log(`[Router] External bot detected - marking conversation as manual+paused (conversation=${conversation.id})`);
         await setConversationManualAndPaused(input.userId, conversation.id);
+        await notifyBotAlert(input.userId, conversation.id, "external_bot_detected");
         return {
           conversationId: conversation.id,
           stage: conversation.stage,
@@ -348,6 +386,7 @@ export async function processIncomingMessage(
       console.warn(
         `[Router] flow execution failed user=${input.userId} conversation=${conversation.id} reviewQueued=${reviewResult.queued} itemId=${reviewResult.itemId ?? "none"}`
       );
+      await notifyBotAlert(input.userId, conversation.id, "flow_error");
       return {
         conversationId: conversation.id,
         stage: latestConversationState.stage,
@@ -360,6 +399,7 @@ export async function processIncomingMessage(
         `[Router] flow issue queue failed user=${input.userId} conversation=${conversation.id}`,
         error
       );
+      await notifyBotAlert(input.userId, conversation.id, "flow_error");
       return {
         conversationId: conversation.id,
         stage: latestConversationState.stage,
@@ -382,6 +422,7 @@ export async function processIncomingMessage(
     } catch {
       // keep default reason
     }
+    await notifyBotAlert(input.userId, conversation.id, notMatchedReason);
     return {
       conversationId: conversation.id,
       stage: latestConversationState.stage,
@@ -398,6 +439,7 @@ export async function processIncomingMessage(
   const channelExplicit = (user.business_basics as Record<string, unknown> | null | undefined)
     ?.channelDefaultReplySettings as Record<string, unknown> | null | undefined;
   if ((channelExplicit?.[input.channelType] as Record<string, unknown> | null | undefined)?.mode === "manual") {
+    await notifyBotAlert(input.userId, conversation.id, "default_reply_manual");
     return {
       conversationId: conversation.id,
       stage: conversation.stage,
@@ -409,6 +451,7 @@ export async function processIncomingMessage(
 
   if (conversation.manual_takeover) {
     console.log(`[Router] Manual takeover — skipping AI reply (conversation=${conversation.id})`);
+    await notifyBotAlert(input.userId, conversation.id, "manual_takeover");
     return {
       conversationId: conversation.id,
       stage: conversation.stage,
@@ -420,6 +463,7 @@ export async function processIncomingMessage(
 
   if (conversation.ai_paused) {
     console.log(`[Router] AI paused — skipping AI reply (conversation=${conversation.id})`);
+    await notifyBotAlert(input.userId, conversation.id, "conversation_paused");
     return {
       conversationId: conversation.id,
       stage: conversation.stage,

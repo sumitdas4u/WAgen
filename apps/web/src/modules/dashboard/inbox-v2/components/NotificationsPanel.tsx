@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { useNotificationStore } from "../store/notificationStore";
 import { listAgentNotifications, markNotificationRead, markAllNotificationsRead } from "../api";
 import { useAuth } from "../../../../lib/auth-context";
@@ -14,13 +15,16 @@ function timeAgo(iso: string): string {
 
 const TYPE_ICON: Record<string, string> = {
   mention: "@",
+  message: "💬",
   assigned: "👤",
   unassigned: "🔓",
+  bot_alert: "⚡",
   system: "ℹ️"
 };
 
 export function NotificationsPanel() {
   const { token } = useAuth();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { panelOpen, setPanelOpen, setNotifications, markRead, markAllRead, unreadCount } = useNotificationStore();
 
@@ -77,7 +81,13 @@ export function NotificationsPanel() {
             <div
               key={n.id}
               className={`iv-notif-item${!n.read_at ? " unread" : ""}`}
-              onClick={() => { if (!n.read_at) readMut.mutate(n.id); }}
+              onClick={() => {
+                if (!n.read_at) readMut.mutate(n.id);
+                if (n.conversation_id) {
+                  setPanelOpen(false);
+                  navigate(`/dashboard/inbox-v2/${n.conversation_id}`);
+                }
+              }}
             >
               <div className="iv-notif-icon">{TYPE_ICON[n.type] ?? "🔔"}</div>
               <div className="iv-notif-body">
