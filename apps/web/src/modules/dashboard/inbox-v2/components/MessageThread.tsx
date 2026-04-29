@@ -68,9 +68,14 @@ export function MessageThread({ convId, optimisticMap }: Props) {
   const [showSuggestion, setShowSuggestion] = useState(true);
   useEffect(() => setShowSuggestion(true), [convId]);
 
+  const inboundCount = useMemo(
+    () => messages.filter((m) => m.direction === "inbound").length,
+    [messages]
+  );
+
   useEffect(() => {
     void markRead.mutateAsync(convId).catch(() => undefined);
-  }, [convId]);
+  }, [convId, inboundCount]);
 
   // Auto-scroll to bottom on new messages if already at bottom
   useEffect(() => {
