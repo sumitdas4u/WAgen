@@ -48,6 +48,10 @@ export function fetchConvPage(token: string, params: {
   return apiFetch<ConvPage>(token, `/api/conversations?${sp}`);
 }
 
+export function fetchConversation(token: string, convId: string): Promise<{ conversation: Conversation }> {
+  return apiFetch(token, `/api/conversations/${convId}`);
+}
+
 export function fetchConvMessages(token: string, convId: string, params?: { before?: string; limit?: number }): Promise<{ items: ConversationMessage[]; hasMore: boolean; nextCursor: string | null }> {
   const sp = new URLSearchParams();
   if (params?.before) sp.set("before", params.before);
@@ -324,10 +328,31 @@ export interface MessageTemplate {
   linkedNumber: string | null;
 }
 
-export function fetchApprovedTemplates(token: string, connectionId?: string | null): Promise<MessageTemplate[]> {
+export function fetchApprovedTemplates(token: string, linkedNumber?: string | null): Promise<MessageTemplate[]> {
   const sp = new URLSearchParams({ status: "APPROVED" });
-  if (connectionId) sp.set("connectionId", connectionId);
+  if (linkedNumber) sp.set("linkedNumber", linkedNumber);
   return apiFetch<{ templates: MessageTemplate[] }>(token, `/api/meta/templates?${sp}`).then((d) => d.templates);
+}
+
+export async function uploadConversationMedia(token: string, convId: string, file: File): Promise<{ url: string; mimeType: string }> {
+  const body = new FormData();
+  body.append("file", file);
+
+  const res = await fetch(`${API_URL}/api/conversations/${convId}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? res.statusText);
+  }
+
+  const uploaded = await res.json() as { url: string; mimeType: string };
+  return {
+    ...uploaded,
+    url: uploaded.url.startsWith("/") ? `${API_URL}${uploaded.url}` : uploaded.url
+  };
 }
 
 export function sendTemplate(token: string, convId: string, templateId: string, variableValues?: Record<string, string>): Promise<{ ok: boolean; messageId: string | null }> {
