@@ -38,12 +38,28 @@ function applyLeadFilters(conv: Conversation, filters: import("../store/convStor
   return true;
 }
 
+function matchesSearch(conv: Conversation, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    conv.contact_name,
+    conv.phone_number,
+    conv.last_message,
+    conv.channel_type,
+    conv.lead_kind,
+    conv.priority,
+    conv.status
+  ].filter(Boolean).join(" ").toLowerCase();
+  return haystack.includes(q);
+}
+
 export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props) {
   const { folder, setFolder, byId, ids, activeConvId, setActiveConv, labels, filters } = useConvStore();
   const [searchQ, setSearchQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const parentRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const bulkAction = useBulkAction();
 
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = useConversations(folder, debouncedQ);
@@ -57,14 +73,13 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
   const filteredIds = ids.filter((id) => {
     const c = byId[id];
     if (!c) return false;
-    if (!debouncedQ) {
-      if (folder === "pending") {
-        // Unread tab = open conversations the agent hasn't replied to yet
-        if (c.status !== "open" || (c.unread_count ?? 0) === 0) return false;
-      } else if (folder !== "all") {
-        if (c.status !== folder) return false;
-      }
+    if (folder === "pending") {
+      // Unread tab = open conversations the agent hasn't replied to yet
+      if (c.status !== "open" || (c.unread_count ?? 0) === 0) return false;
+    } else if (folder !== "all") {
+      if (c.status !== folder) return false;
     }
+    if (!matchesSearch(c, debouncedQ)) return false;
     if (!applyLeadFilters(c, filters)) return false;
     return true;
   });
@@ -95,6 +110,14 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
   const handleBulk = useCallback((action: string) => {
     void bulkAction.mutateAsync({ ids: [...selectedIds], action }).then(() => setSelectedIds(new Set()));
   }, [selectedIds, bulkAction]);
+
+  const handleTabsWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    const el = tabsRef.current;
+    if (!el || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    if (el.scrollWidth <= el.clientWidth) return;
+    event.preventDefault();
+    el.scrollBy({ left: event.deltaY, behavior: "smooth" });
+  }, []);
 
   // Load more when last item visible
   useEffect(() => {
@@ -144,7 +167,7 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
           </div>
         )}
 
-        <div className="iv-tabs">
+        <div className="iv-tabs" ref={tabsRef} onWheel={handleTabsWheel}>
           {FOLDERS.map((f) => (
             <div
               key={f.key}

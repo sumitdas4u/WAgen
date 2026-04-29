@@ -21,6 +21,15 @@ export interface ConvPage {
   hasMore: boolean;
 }
 
+export async function fetchConvSnapshot(token: string): Promise<ConvPage> {
+  const response = await apiFetch<{ conversations: Conversation[] }>(token, "/api/conversations");
+  return {
+    items: response.conversations ?? [],
+    nextCursor: null,
+    hasMore: false
+  };
+}
+
 export function fetchConvPage(token: string, params: {
   cursor?: string | null;
   limit?: number;

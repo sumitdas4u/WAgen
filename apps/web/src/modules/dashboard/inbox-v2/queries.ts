@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useAuth } from "../../../lib/auth-context";
 import { useConvStore } from "./store/convStore";
 import {
-  fetchConvPage,
+  fetchConvSnapshot,
   fetchConvMessages,
   fetchLabels,
   postMarkRead,
@@ -13,7 +13,6 @@ import {
   postMessage,
   postRetry,
   postBulk,
-  fetchConvSearch,
   fetchConvNotes,
   createConvNote,
   type SendMessageParams,
@@ -23,19 +22,17 @@ import type { ConversationMessage } from "./store/convStore";
 
 // ── Conversations ─────────────────────────────────────────────────────────
 
-export function useConversations(folder: string, searchQ: string) {
+export function useConversations(_folder: string, _searchQ: string) {
   const { token } = useAuth();
   const store = useConvStore();
 
   const query = useInfiniteQuery({
-    queryKey: ["iv2-convs", folder, searchQ],
-    queryFn: ({ pageParam }) =>
-      searchQ
-        ? fetchConvSearch(token!, searchQ).then((d) => ({ items: d.items, nextCursor: null, hasMore: false }))
-        : fetchConvPage(token!, { cursor: pageParam as string | undefined, limit: 30, folder, q: searchQ || null }),
+    queryKey: ["iv2-convs"],
+    queryFn: () => fetchConvSnapshot(token!),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
-    enabled: !!token
+    enabled: !!token,
+    staleTime: 30_000
   });
 
   useEffect(() => {
@@ -85,9 +82,14 @@ export function useLabels() {
 export function useMarkRead() {
   const { token } = useAuth();
   const store = useConvStore();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (convId: string) => postMarkRead(token!, convId),
-    onMutate: (convId) => store.clearUnread(convId)
+    onMutate: (convId) => store.clearUnread(convId),
+    onSuccess: (_data, convId) => {
+      store.clearUnread(convId);
+      void qc.invalidateQueries({ queryKey: ["iv2-convs"] });
+    }
   });
 }
 
