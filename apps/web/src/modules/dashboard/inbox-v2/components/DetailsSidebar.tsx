@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
 import { useSetStatus, useSetPriority, useSetLabels, useLabels } from "../queries";
-import { fetchContactByConversation, listContactFields, fetchAgentProfiles, patchAssignAgent, patchAiMode, setCsatRating, sendCsatSurvey } from "../api";
+import { fetchContactByConversation, listContactFields, fetchAgentProfiles, patchAssignAgent, patchAiMode } from "../api";
 import { useAuth } from "../../../../lib/auth-context";
 import { getAvatarColor } from "./ConversationRow";
 
@@ -111,16 +111,6 @@ export function DetailsSidebar({ convId }: Props) {
   const aiToggleMut = useMutation({
     mutationFn: (paused: boolean) => patchAiMode(token!, convId, paused),
     onSuccess: (_data, paused) => upsertConv({ id: convId, ai_paused: paused, manual_takeover: paused })
-  });
-
-  const csatRatingMut = useMutation({
-    mutationFn: (rating: number) => setCsatRating(token!, convId, rating),
-    onSuccess: (_data, rating) => upsertConv({ id: convId, csat_rating: rating } as Parameters<typeof upsertConv>[0])
-  });
-
-  const csatSendMut = useMutation({
-    mutationFn: () => sendCsatSurvey(token!, convId),
-    onSuccess: () => upsertConv({ id: convId, csat_sent_at: new Date().toISOString() } as Parameters<typeof upsertConv>[0])
   });
 
   const contactQuery = useQuery({
@@ -371,7 +361,6 @@ export function DetailsSidebar({ convId }: Props) {
                 conv.last_message_at    && { icon: "📩", label: "Last message",           time: conv.last_message_at },
                 conv.last_ai_reply_at   && { icon: "🤖", label: "Last AI reply",          time: conv.last_ai_reply_at },
                 conv.agent_last_seen_at && { icon: "👁", label: "Agent last seen",        time: conv.agent_last_seen_at },
-                conv.csat_sent_at       && { icon: "⭐", label: "CSAT survey sent",       time: conv.csat_sent_at },
               ]
                 .filter(Boolean)
                 .sort((a, b) => Date.parse((a as { time: string }).time) - Date.parse((b as { time: string }).time))
@@ -388,53 +377,6 @@ export function DetailsSidebar({ convId }: Props) {
                   );
                 })
               }
-            </div>
-          </Accordion>
-
-          {/* CSAT */}
-          <Accordion id="csat" title="CSAT" open={openSections.has("csat")} onToggle={() => toggleSection("csat")}>
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>Customer rating</div>
-              <div style={{ display: "flex", gap: 4 }}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    disabled={csatRatingMut.isPending}
-                    onClick={() => csatRatingMut.mutate(star)}
-                    style={{
-                      width: 32, height: 32, border: "none", borderRadius: 6, cursor: "pointer", fontSize: 18,
-                      background: (conv.csat_rating ?? 0) >= star ? "#fbbf24" : "#f1f5f9",
-                      opacity: csatRatingMut.isPending ? 0.6 : 1,
-                      transition: "background 0.15s"
-                    }}
-                  >⭐</button>
-                ))}
-              </div>
-              {conv.csat_rating && (
-                <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
-                  Rated {conv.csat_rating}/5
-                </div>
-              )}
-            </div>
-            <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
-              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
-                {conv.csat_sent_at
-                  ? `Survey sent ${new Date(conv.csat_sent_at).toLocaleDateString()}`
-                  : "No survey sent yet"}
-              </div>
-              <button
-                className="account-btn-secondary"
-                style={{ fontSize: 11, padding: "3px 10px" }}
-                disabled={csatSendMut.isPending}
-                onClick={() => csatSendMut.mutate()}
-              >
-                {csatSendMut.isPending ? "Sending…" : "Send CSAT survey"}
-              </button>
-              {csatSendMut.isError && (
-                <div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>
-                  {(csatSendMut.error as Error).message}
-                </div>
-              )}
             </div>
           </Accordion>
       </div>

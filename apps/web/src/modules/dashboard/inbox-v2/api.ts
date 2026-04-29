@@ -252,16 +252,6 @@ export function markAllNotificationsRead(token: string): Promise<{ ok: boolean }
   return apiFetch(token, `/api/agent-notifications/read-all`, { method: "POST" });
 }
 
-// ── CSAT ─────────────────────────────────────────────────────────────────
-
-export function setCsatRating(token: string, convId: string, rating: number): Promise<{ ok: boolean }> {
-  return apiFetch(token, `/api/conversations/${convId}/csat`, { method: "PATCH", body: JSON.stringify({ rating }) });
-}
-
-export function sendCsatSurvey(token: string, convId: string): Promise<{ ok: boolean }> {
-  return apiFetch(token, `/api/conversations/${convId}/csat/send`, { method: "POST" });
-}
-
 // ── Notes ─────────────────────────────────────────────────────────────────────
 
 export interface ConvNote {
