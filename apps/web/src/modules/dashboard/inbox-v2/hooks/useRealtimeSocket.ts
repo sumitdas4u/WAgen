@@ -169,9 +169,12 @@ export function useRealtimeSocket(token: string | null) {
           }
           // Optimistic update immediately so the row reflects the change
           s.upsertConv(update);
-          // Re-fetch the full list so new conversations appear, sort order is correct,
-          // and conversations not yet in the store are added (matches V1 behaviour)
-          void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
+          // Skip invalidation for the active conversation — upsertConv already applied
+          // the update, and markRead.onSettled handles its own refetch. Refetching here
+          // would briefly restore unread_count from the server and break mark-as-read.
+          if (raw.id !== s.activeConvId) {
+            void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
+          }
           break;
         }
         case "conversation.read":
