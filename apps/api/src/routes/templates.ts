@@ -88,6 +88,7 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
       const query = request.query as Record<string, string | undefined>;
       const templates = await listTemplates(request.authUser.userId, {
         connectionId: query.connectionId,
+        linkedNumber: query.linkedNumber,
         status: query.status as TemplateStatus | undefined
       });
       return { templates };

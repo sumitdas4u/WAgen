@@ -31,7 +31,7 @@ export function resolveLegacyDashboardPath(search: string): string {
       return "/dashboard/settings/web";
     case "conversations":
     default:
-      return "/dashboard/inbox";
+      return "/dashboard/inbox-v2";
   }
 }
 

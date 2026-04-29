@@ -4,7 +4,6 @@ import { useConvStore } from "../store/convStore";
 import { useSendMessage, useCreateNote } from "../queries";
 import { postTyping, listCannedResponses } from "../api";
 import { useAuth } from "../../../../lib/auth-context";
-import { uploadInboxMedia } from "../../../../lib/supabase";
 import {
   aiAssistText,
   assignFlow,
@@ -12,6 +11,7 @@ import {
   patchAiMode,
   fetchPublishedFlows,
   fetchApprovedTemplates,
+  uploadConversationMedia,
   type MessageTemplate
 } from "../api";
 
@@ -27,6 +27,7 @@ const TRANSLATE_LANGUAGES = ["English", "Hindi", "Spanish", "French", "Arabic", 
 const PLACEHOLDER_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
 const QUICK_EMOJIS = ["👍", "😊", "🙏", "✅", "🔥", "💯", "👋", "😄", "❤️", "🎉", "⚡", "📞", "📧", "💬", "🏷️", "🔔"];
 const MAX_CHARS = 4000;
+const REPLY_GUIDE_DISMISSED_KEY = "iv2-reply-guide-dismissed";
 type TemplateMediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
 
 const TEMPLATE_MEDIA_INPUT_CONFIG: Record<TemplateMediaType, { label: string; accept: string; allowedMimeTypes: string[]; extensions: string[]; maxMb: number }> = {
@@ -156,13 +157,29 @@ function serializeEditable(root: HTMLElement | null): string {
     .replace(/\n+$/g, "");
 }
 
+function isReplyGuideDismissed(): boolean {
+  try {
+    return localStorage.getItem(REPLY_GUIDE_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function dismissReplyGuide(): void {
+  try {
+    localStorage.setItem(REPLY_GUIDE_DISMISSED_KEY, "1");
+  } catch {
+    /* noop */
+  }
+}
+
 export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }: Props) {
   const [mode, setMode] = useState<"reply" | "note">("reply");
   const [text, setText] = useState("");
   const [showCanned, setShowCanned] = useState(false);
   const [cannedSearch, setCannedSearch] = useState("");
   const [cannedIdx, setCannedIdx] = useState(-1);
-  const [showReplyGuide, setShowReplyGuide] = useState(true);
+  const [showReplyGuide, setShowReplyGuide] = useState(() => !isReplyGuideDismissed());
   const [showAiAssistPopup, setShowAiAssistPopup] = useState(false);
   const [showFlowMenu, setShowFlowMenu] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
@@ -312,7 +329,8 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     if (hasFiles) {
       try {
         for (const af of attachedFiles) {
-          const result = await uploadInboxMedia(af.file);
+          if (!token) throw new Error("You must be signed in to upload attachments.");
+          const result = await uploadConversationMedia(token, convId, af.file);
           uploads.push(result);
         }
       } catch (e) {
@@ -353,9 +371,10 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
         ai_model: null, total_tokens: null, created_at: new Date().toISOString()
       });
       optimisticMap.current.set(echoId, tempId);
-      void sendMsg.mutateAsync({ convId, params: { text: caption, mediaUrl: upload.url, mediaMimeType: upload.mimeType, echoId, isPrivate, inReplyToId: caption ? replyToId : null } }).catch(() => {
-        useConvStore.getState().patchMessageDelivery(convId, tempId, "failed");
+      void sendMsg.mutateAsync({ convId, params: { text: caption, mediaUrl: upload.url, mediaMimeType: upload.mimeType, echoId, isPrivate, inReplyToId: caption ? replyToId : null } }).catch((e: Error) => {
+        useConvStore.getState().patchMessageDelivery(convId, tempId, "failed", undefined, e.message);
         optimisticMap.current.delete(echoId);
+        showToast(e.message);
       });
     }
 
@@ -406,7 +425,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
       setCannedIdx(-1);
       broadcastTyping(false);
     }
-  }, [text, attachedFiles, mode, freeFormBlockedReason, convId, appendMessage, optimisticMap, sendMsg, broadcastTyping, createNote, replyToMsg?.id, onClearReply]);
+  }, [text, attachedFiles, mode, freeFormBlockedReason, token, convId, appendMessage, optimisticMap, sendMsg, broadcastTyping, createNote, replyToMsg?.id, onClearReply]);
 
   const cannedList = cannedQuery.data?.cannedResponses ?? [];
   const filteredCanned = cannedList.filter((c) =>
@@ -515,7 +534,12 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    const newFiles: AttachedFile[] = files.map((f) => ({
+    const accepted = files.filter((f) => {
+      if (f.size <= 20 * 1024 * 1024) return true;
+      showToast(`${f.name} is too large. Maximum attachment size is 20 MB.`);
+      return false;
+    });
+    const newFiles: AttachedFile[] = accepted.map((f) => ({
       file: f,
       previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : "",
       name: f.name,
@@ -543,7 +567,8 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
 
     setTemplateUploadingFieldKey(field.key);
     try {
-      const uploaded = await uploadInboxMedia(file);
+      if (!token) throw new Error("You must be signed in to upload template media.");
+      const uploaded = await uploadConversationMedia(token, convId, file);
       setTemplateVarsDialog((prev) => prev ? {
         ...prev,
         values: { ...prev.values, [field.key]: uploaded.url },
@@ -561,7 +586,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
     } finally {
       setTemplateUploadingFieldKey(null);
     }
-  }, []);
+  }, [token, convId]);
 
   const insertPlainTextAtCursor = useCallback((value: string) => {
     const editor = editorRef.current;
@@ -609,7 +634,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="iv-compose" style={{ position: "relative" }}>
+    <div className="iv-compose">
       {/* Toast */}
       {toast && (
         <div className="iv-compose-toast">{toast}</div>
@@ -734,7 +759,15 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
                 <strong>Reply channel</strong>
                 <span>Use Template for approved API messages, Flow for automation, AI Assist for drafting.</span>
               </div>
-              <button className="iv-reply-guide-close" onClick={() => setShowReplyGuide(false)}>×</button>
+              <button
+                className="iv-reply-guide-close"
+                onClick={() => {
+                  dismissReplyGuide();
+                  setShowReplyGuide(false);
+                }}
+              >
+                ×
+              </button>
             </div>
           )}
 
@@ -744,8 +777,6 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
             <button className="iv-fmt-btn" disabled={mode === "reply" && Boolean(freeFormBlockedReason)} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("italic")} title="Italic"><i>I</i></button>
             <button className="iv-fmt-btn" disabled={mode === "reply" && Boolean(freeFormBlockedReason)} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("strike")} title="Strikethrough">S̶</button>
             <button className="iv-fmt-btn" disabled={mode === "reply" && Boolean(freeFormBlockedReason)} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("mono")} title="Monospace">{"`< />`"}</button>
-            <div className="iv-fmt-sep" />
-            <button className="iv-fmt-btn" title="List">≡</button>
           </div>
 
           {/* Attachment preview strip */}
@@ -871,6 +902,8 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
                 <div className="iv-dropup-label">Send approved template</div>
                 {templatesQuery.isLoading ? (
                   <button disabled>Loading templates…</button>
+                ) : templatesQuery.isError ? (
+                  <button disabled>{(templatesQuery.error as Error).message || "Failed to load templates"}</button>
                 ) : templates.length === 0 ? (
                   <button disabled>No approved templates</button>
                 ) : templates.map((t) => (

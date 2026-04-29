@@ -103,6 +103,7 @@ export async function queueApiConversationSend(input: {
     aiModel?: string | null;
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
+    echoId?: string | null;
   };
 }): Promise<{
   queuedMessageId: string;

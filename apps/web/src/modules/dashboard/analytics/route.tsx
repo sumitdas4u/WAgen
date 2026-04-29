@@ -849,7 +849,7 @@ function ConversationReportPage({
                     <td>
                       <button
                         type="button"
-                        onClick={() => navigate(`/dashboard/inbox/${conversation.id}`)}
+                        onClick={() => navigate(`/dashboard/inbox-v2/${conversation.id}`)}
                         style={{
                           padding: "8px 12px",
                           borderRadius: "999px",

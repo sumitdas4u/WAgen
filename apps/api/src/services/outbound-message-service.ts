@@ -82,6 +82,7 @@ interface OutboundConversationUsage {
   aiModel?: string | null;
   retrievalChunks?: number | null;
   markAsAiReply?: boolean;
+  echoId?: string | null;
 }
 
 interface CampaignExecutionRow {
@@ -521,6 +522,30 @@ async function broadcastConversationUpdate(conversationId: string, summaryText: 
   });
 }
 
+async function attachConversationProviderMessageId(row: OutboundMessageRow, providerMessageId: string | null): Promise<void> {
+  if (!row.conversation_id || !providerMessageId) {
+    return;
+  }
+
+  const usage = parseUsage(row);
+  const echoId = usage.echoId?.trim() || row.id;
+  await pool.query(
+    `UPDATE conversation_messages
+     SET wamid = COALESCE(wamid, $3),
+         delivery_status = CASE
+           WHEN delivery_status IN ('delivered', 'read', 'failed') THEN delivery_status
+           ELSE 'sent'
+         END,
+         sent_at = COALESCE(sent_at, NOW()),
+         error_code = NULL,
+         error_message = NULL
+     WHERE conversation_id = $1
+       AND direction = 'outbound'
+       AND echo_id = $2`,
+    [row.conversation_id, echoId, providerMessageId]
+  );
+}
+
 async function ensureQrSessionReady(userId: string): Promise<void> {
   const maxAttempts = 5;
   const waitMs = 2_000;
@@ -644,6 +669,7 @@ async function processConversationChannel(row: OutboundMessageRow): Promise<void
     providerMessageId: result.messageId ?? null,
     errorMessage: null
   });
+  await attachConversationProviderMessageId(row, result.messageId);
   await broadcastConversationUpdate(conversation.id, summaryText);
 }
 

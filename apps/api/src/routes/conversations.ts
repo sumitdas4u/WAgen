@@ -16,6 +16,7 @@ import {
   setConversationAIPaused,
   setManualTakeover,
   getOrCreateConversation,
+  getConversationForUser,
 } from "../services/conversation-service.js";
 import {
   createConversationNote,
@@ -37,6 +38,7 @@ const ManualMessageSchema = z.object({
   text: z.string().trim().max(4000).optional().default(""),
   mediaUrl: z.string().optional(),
   mediaMimeType: z.string().optional(),
+  echoId: z.string().uuid().optional(),
   lockToManual: z.boolean().optional()
 });
 
@@ -136,6 +138,19 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         forceAll: parsed.data.forceAll
       });
       return { ok: true, ...result };
+    }
+  );
+
+  fastify.get(
+    "/api/conversations/:conversationId",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const params = request.params as { conversationId: string };
+      const conversation = await getConversationForUser(request.authUser.userId, params.conversationId);
+      if (!conversation) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+      return { conversation };
     }
   );
 
@@ -392,7 +407,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           lockToManual: parsed.data.lockToManual,
           mediaUrl,
           mediaMimeType,
-          senderName
+          senderName,
+          echoId: parsed.data.echoId ?? null
         });
         return { ok: true, delivered };
       } catch (error) {
@@ -489,8 +505,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       }
       const buffer = Buffer.concat(chunks);
 
-      if (buffer.length > 10 * 1024 * 1024) {
-        return reply.status(400).send({ error: "File too large. Maximum 10 MB." });
+      if (buffer.length > 20 * 1024 * 1024) {
+        return reply.status(400).send({ error: "File too large. Maximum 20 MB." });
       }
 
       const base64Data = buffer.toString("base64");

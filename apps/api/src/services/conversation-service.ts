@@ -474,6 +474,111 @@ export async function getConversationById(conversationId: string): Promise<Conve
   return firstRow(result);
 }
 
+export async function getConversationForUser(
+  userId: string,
+  conversationId: string
+): Promise<
+  | (Conversation & {
+      contact_name: string | null;
+      contact_phone: string | null;
+      contact_email: string | null;
+      assigned_agent_name: string | null;
+      unread_count: number;
+      visitor_online: boolean;
+    })
+  | null
+> {
+  const result = await pool.query<
+    Conversation & {
+      contact_name: string | null;
+      contact_phone: string | null;
+      contact_email: string | null;
+      assigned_agent_name: string | null;
+      unread_count: number;
+    }
+  >(
+    `SELECT
+       c.*,
+       COALESCE(ct.contact_type, c.lead_kind) AS lead_kind,
+       ap.name AS assigned_agent_name,
+       COALESCE(crs.unread_count, 0) AS unread_count,
+       COALESCE(
+         ct.display_name,
+         (
+           SELECT cm.sender_name
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.sender_name IS NOT NULL
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         (
+           SELECT (regexp_match(cm.message_text, 'Name=([^,]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
+       ) AS contact_name,
+       COALESCE(
+         ct.phone_number,
+         (
+           SELECT (regexp_match(cm.message_text, 'Phone=([0-9]{8,15})'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         ),
+         c.phone_number
+       ) AS contact_phone,
+       COALESCE(
+         ct.email,
+         (
+           SELECT (regexp_match(cm.message_text, 'Email=([^,\\s]+)'))[1]
+           FROM conversation_messages cm
+           WHERE cm.conversation_id = c.id
+             AND cm.direction = 'inbound'
+             AND cm.message_text LIKE 'Lead details captured:%'
+           ORDER BY cm.created_at DESC
+           LIMIT 1
+         )
+       ) AS contact_email
+     FROM conversations c
+     LEFT JOIN agent_profiles ap ON ap.id = c.assigned_agent_profile_id
+     LEFT JOIN conversation_read_state crs
+       ON crs.user_id = c.user_id
+      AND crs.conversation_id = c.id
+     LEFT JOIN LATERAL (
+       SELECT *
+       FROM contacts ct
+       WHERE ct.user_id = c.user_id
+         AND (ct.linked_conversation_id = c.id OR ct.phone_number = c.phone_number)
+       ORDER BY CASE WHEN ct.linked_conversation_id = c.id THEN 0 ELSE 1 END, ct.updated_at DESC
+       LIMIT 1
+     ) ct ON TRUE
+     WHERE c.user_id = $1
+       AND c.id = $2
+     LIMIT 1`,
+    [userId, conversationId]
+  );
+
+  const row = firstRow(result);
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+    unread_count: Number(row.unread_count ?? 0),
+    visitor_online: row.channel_type === "web" ? isWidgetVisitorConnected(userId, row.phone_number) : false
+  };
+}
+
 export async function incrementConversationUnreadCount(userId: string, conversationId: string): Promise<number> {
   const result = await pool.query<{ unread_count: number }>(
     `INSERT INTO conversation_read_state (user_id, conversation_id, unread_count, last_read_at, updated_at)

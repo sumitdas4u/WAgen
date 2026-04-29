@@ -2,20 +2,6 @@ import type { DashboardModuleDefinition } from "../shared/dashboard/module-contr
 
 export const dashboardModules: DashboardModuleDefinition[] = [
   {
-    id: "inbox",
-    path: "inbox/:conversationId?",
-    navTo: "/dashboard/inbox",
-    navLabel: "Inbox",
-    subtitle: "Live conversations",
-    icon: "chats",
-    section: "main",
-    lazyRoute: () => import("../modules/dashboard/inbox/route"),
-    legacyAliases: ["conversations"],
-    featureFlag: "dashboard.inbox",
-    prefetchStrategy: "code+data",
-    requiresAuth: true
-  },
-  {
     id: "inbox-v2",
     path: "inbox-v2/:conversationId?",
     navTo: "/dashboard/inbox-v2",
@@ -24,6 +10,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     icon: "chats",
     section: "main",
     lazyRoute: () => import("../modules/dashboard/inbox-v2/route"),
+    legacyAliases: ["conversations"],
     featureFlag: "dashboard.inbox",
     prefetchStrategy: "code",
     requiresAuth: true

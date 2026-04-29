@@ -1,8 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../../lib/auth-context";
 import { useRealtimeSocket } from "./hooks/useRealtimeSocket";
 import { useConvStore } from "./store/convStore";
+import { useConversation } from "./queries";
 import { ConversationList } from "./components/ConversationList";
 import { MessageThread } from "./components/MessageThread";
 import { DetailsSidebar } from "./components/DetailsSidebar";
@@ -19,29 +20,68 @@ export function Component() {
   const { setActiveConv, activeConvId, byId, ids } = useConvStore();
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showMobileDetails, setShowMobileDetails] = useState(false);
   const [showNewConv, setShowNewConv] = useState(false);
   const [showCannedManage, setShowCannedManage] = useState(false);
 
   const optimisticMap = useRealtimeSocket(token);
+  const directConvQuery = useConversation(conversationId ?? null);
 
   const activeId = conversationId ?? activeConvId ?? null;
+  const activeConv = activeId ? byId[activeId] : null;
+  const isResolvingDirectConv = Boolean(conversationId && !activeConv && !directConvQuery.isError);
+  const directConvError = Boolean(conversationId && !activeConv && directConvQuery.isError);
   const conversations = ids.map((id) => byId[id]).filter(Boolean);
   const shellClassName = [
     "iv-shell",
+    activeId ? "iv-has-active" : "iv-list-mode",
     !showLeftPanel ? "iv-left-collapsed" : "",
-    !showSidebar || !activeId ? "iv-right-collapsed" : ""
+    !showSidebar || !activeId ? "iv-right-collapsed" : "",
+    showMobileFilters ? "iv-mobile-filters-open" : "",
+    showMobileDetails ? "iv-mobile-details-open" : ""
   ].filter(Boolean).join(" ");
 
   const handleSelectConv = useCallback((id: string) => {
     setActiveConv(id);
+    setShowMobileFilters(false);
+    setShowMobileDetails(false);
     navigate(`/dashboard/inbox-v2/${id}`, { replace: true });
   }, [setActiveConv, navigate]);
+
+  const handleBackToList = useCallback(() => {
+    setActiveConv(null);
+    setShowMobileDetails(false);
+    navigate("/dashboard/inbox-v2", { replace: true });
+  }, [navigate, setActiveConv]);
+
+  useEffect(() => {
+    if (conversationId) {
+      setActiveConv(conversationId);
+    }
+  }, [conversationId, setActiveConv]);
 
   return (
     <div className={shellClassName}>
       <NotificationsPanel />
+      {(showMobileFilters || showMobileDetails) && (
+        <button
+          type="button"
+          className="iv-mobile-backdrop"
+          aria-label="Close side panel"
+          onClick={() => {
+            setShowMobileFilters(false);
+            setShowMobileDetails(false);
+          }}
+        />
+      )}
       {/* Col 1: Lead filters nav */}
-      {showLeftPanel && <NavSidebar conversations={conversations} />}
+      {(showLeftPanel || showMobileFilters) && (
+        <NavSidebar
+          conversations={conversations}
+          onClose={() => setShowMobileFilters(false)}
+        />
+      )}
       <button
         type="button"
         className={`iv-panel-toggle iv-panel-toggle-left${showLeftPanel ? " is-open" : ""}`}
@@ -57,21 +97,28 @@ export function Component() {
         onSelectConv={handleSelectConv}
         onNew={() => setShowNewConv(true)}
         onCannedManage={() => setShowCannedManage(true)}
+        onOpenFilters={() => setShowMobileFilters(true)}
       />
 
       {/* Col 3: Message thread */}
-      {activeId ? (
+      {activeId && (!conversationId || activeConv) && !directConvError ? (
         <MessageThread
           convId={activeId}
           optimisticMap={optimisticMap as React.MutableRefObject<Map<string, string>>}
+          onBack={handleBackToList}
+          onOpenDetails={() => setShowMobileDetails(true)}
         />
+      ) : activeId && isResolvingDirectConv ? (
+        <ThreadState title="Opening conversation" detail="Loading the selected chat..." />
+      ) : activeId && directConvError ? (
+        <ThreadState title="Conversation not found" detail="This chat may have moved, been merged, or is unavailable for this account." />
       ) : (
         <EmptyThread />
       )}
 
       {/* Col 4: Details sidebar */}
-      {showSidebar && activeId && (
-        <DetailsSidebar convId={activeId} />
+      {(showSidebar || showMobileDetails) && activeId && (
+        <DetailsSidebar convId={activeId} onClose={() => setShowMobileDetails(false)} />
       )}
       {activeId && (
         <button
@@ -96,9 +143,19 @@ export function Component() {
   );
 }
 
-function NavSidebar({ conversations }: { conversations: import("./store/convStore").Conversation[] }) {
+function NavSidebar({
+  conversations,
+  onClose
+}: {
+  conversations: import("./store/convStore").Conversation[];
+  onClose?: () => void;
+}) {
   return (
     <div className="iv-nav">
+      <div className="iv-mobile-panel-head">
+        <span>Filters</span>
+        <button type="button" onClick={onClose} aria-label="Close filters">×</button>
+      </div>
       <LeadFiltersPanel conversations={conversations} />
     </div>
   );
@@ -106,7 +163,7 @@ function NavSidebar({ conversations }: { conversations: import("./store/convStor
 
 function EmptyThread() {
   return (
-    <div style={{
+    <div className="iv-thread-state iv-empty-thread" style={{
       flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       background: "#f8fafc", gap: 12
     }}>
@@ -116,6 +173,22 @@ function EmptyThread() {
       </div>
       <div style={{ fontSize: 13, color: "#94a3b8" }}>
         Choose from the list to start chatting
+      </div>
+    </div>
+  );
+}
+
+function ThreadState({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="iv-thread-state" style={{
+      flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      background: "#f8fafc", gap: 8, textAlign: "center", padding: 24
+    }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#334155", fontFamily: "'Space Grotesk', sans-serif" }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 13, color: "#64748b", maxWidth: 360 }}>
+        {detail}
       </div>
     </div>
   );

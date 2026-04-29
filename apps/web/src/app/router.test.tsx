@@ -28,9 +28,17 @@ vi.mock("../components/dashboard-billing-center", () => ({
   DashboardBillingCenter: () => <div>Billing module</div>
 }));
 
+vi.mock("../modules/dashboard/account/credits/route", () => ({
+  Component: () => <div>Credits module</div>
+}));
+
 vi.mock("../modules/dashboard/contacts/route", () => ({
   Component: () => <div>Contacts module</div>,
   prefetchData: mockContactsPrefetchData
+}));
+
+vi.mock("../modules/dashboard/inbox-v2/route", () => ({
+  Component: () => <div>Inbox v2 module</div>
 }));
 
 vi.mock("../modules/dashboard/studio/knowledge/route", () => ({
@@ -203,11 +211,14 @@ describe("dashboard router", () => {
     });
   });
 
-  it("renders the billing module shell for deep links", async () => {
-    renderRoute("/dashboard/billing");
+  it("redirects billing deep links to account credits", async () => {
+    const { router } = renderRoute("/dashboard/billing");
 
-    expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
-    expect(screen.getByText("Billing module")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Account" })).toBeInTheDocument();
+    expect(screen.getByText("Credits module")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/dashboard/account/credits");
+    });
   });
 
   it("renders the sequence module on /dashboard/sequence", async () => {
@@ -233,8 +244,8 @@ describe("dashboard router", () => {
 
     renderRoute("/dashboard/billing", legacyBootstrap as DashboardBootstrapResponse);
 
-    expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
-    expect(screen.getByText("Billing module")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Account" })).toBeInTheDocument();
+    expect(screen.getByText("Credits module")).toBeInTheDocument();
     expect(screen.queryByText("Unexpected Application Error!")).not.toBeInTheDocument();
   });
 
@@ -255,7 +266,7 @@ describe("dashboard router", () => {
       })
     );
 
-    expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Account" })).toBeInTheDocument();
     expect(screen.queryByText("Your agent workflow is paused.")).not.toBeInTheDocument();
   });
 
@@ -299,7 +310,7 @@ describe("dashboard router", () => {
     const user = userEvent.setup();
     renderRoute("/dashboard/billing");
 
-    await screen.findByText("Billing module");
+    await screen.findByText("Credits module");
     await user.hover(screen.getAllByRole("link", { name: /Contacts/i })[0]);
 
     await waitFor(() => {
@@ -314,53 +325,14 @@ describe("dashboard router", () => {
     });
   });
 
-  it("shows a waiting inbox state instead of the go-live setup when channels are offline", async () => {
-    const bootstrap = createBootstrap({
-      agentSummary: {
-        configuredProfiles: 0,
-        activeProfiles: 0,
-        hasConfiguredProfile: false,
-        hasActiveProfile: false
-      },
-      channelSummary: {
-        website: {
-          enabled: false
-        },
-        whatsapp: {
-          enabled: true,
-          status: "disconnected",
-          phoneNumber: null,
-          hasQr: false,
-          qr: null
-        },
-        metaApi: {
-          connected: false,
-          enabled: false,
-          connection: null,
-          connections: []
-        },
-        anyConnected: false
-      }
-    });
+  it("redirects classic inbox deep links to inbox v2", async () => {
+    const { router } = renderRoute("/dashboard/inbox/conv_123?folder=all");
 
-    renderRoute("/dashboard/inbox", bootstrap, async (path) => {
-      if (path === "/api/dashboard/bootstrap") {
-        return bootstrap;
-      }
-      if (path === "/api/conversations") {
-        return { conversations: [] };
-      }
-      throw new Error(`Unhandled path in test: ${path}`);
+    expect(await screen.findByText("Inbox v2 module")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/dashboard/inbox-v2/conv_123");
     });
-
-    expect(await screen.findByRole("heading", { name: "Chats" })).toBeInTheDocument();
-    expect(
-      await screen.findByText("No agent found yet. Create one to start receiving chats.")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("No live channel connected.")
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Connect to Website")).not.toBeInTheDocument();
+    expect(router.state.location.search).toBe("?folder=all");
   });
 
 });

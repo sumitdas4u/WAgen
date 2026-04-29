@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useParams } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { DashboardModuleGuard } from "./dashboard/dashboard-module-guard";
 import { DashboardShell } from "./dashboard/dashboard-shell";
@@ -65,10 +65,21 @@ function lazyComponent<TModule>(importer: () => Promise<TModule>, exportName: ke
   };
 }
 
+function LegacyInboxRedirect() {
+  const { conversationId } = useParams<{ conversationId?: string }>();
+  const location = useLocation();
+  const conversationPath = conversationId ? `/${conversationId}` : "";
+  return <Navigate to={`/dashboard/inbox-v2${conversationPath}${location.search}`} replace />;
+}
+
 const dashboardChildren: RouteObject[] = [
   {
     index: true,
     element: <LegacyDashboardRedirect />
+  },
+  {
+    path: "inbox/:conversationId?",
+    element: <LegacyInboxRedirect />
   },
   {
     path: "contacts",

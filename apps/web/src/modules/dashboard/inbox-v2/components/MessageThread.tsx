@@ -40,9 +40,11 @@ function formatDateLabel(value: string): string {
 interface Props {
   convId: string;
   optimisticMap: React.MutableRefObject<Map<string, string>>;
+  onBack?: () => void;
+  onOpenDetails?: () => void;
 }
 
-export function MessageThread({ convId, optimisticMap }: Props) {
+export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: Props) {
   const { byId, messagesByConvId, notesByConvId, typingState } = useConvStore();
   const conv = byId[convId];
 
@@ -205,6 +207,13 @@ export function MessageThread({ convId, optimisticMap }: Props) {
     <div className="iv-thread">
       {/* Header */}
       <div className="iv-thread-header">
+        <button
+          type="button"
+          className="iv-mobile-action-btn iv-mobile-back-btn"
+          onClick={onBack}
+        >
+          Back
+        </button>
         <div className={`iv-avatar av-${avatarColor}`} style={{ width: 36, height: 36, fontSize: 11, flexShrink: 0 }}>
           {getNameInitials(conv.contact_name, conv.phone_number)}
         </div>
@@ -213,6 +222,13 @@ export function MessageThread({ convId, optimisticMap }: Props) {
           <div className="iv-thread-meta">{conv.channel_type === "api" ? "WhatsApp API" : conv.channel_type === "web" ? "Web Widget" : "WhatsApp QR"}</div>
         </div>
         <div className="iv-thread-actions">
+          <button
+            type="button"
+            className="iv-mobile-action-btn iv-mobile-info-btn"
+            onClick={onOpenDetails}
+          >
+            Info
+          </button>
           <button
             className={`iv-btn-resolve ${isResolved ? "is-reopen" : "is-resolve"}`}
             disabled={setStatus.isPending}

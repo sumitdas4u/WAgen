@@ -181,6 +181,7 @@ export async function sendTrackedApiConversationFlowMessage(input: {
     aiModel?: string | null;
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
+    echoId?: string | null;
   };
 }): Promise<{ messageId: string | null }> {
   const lastInboundContact = await getContactByPhoneForUser(input.userId, input.conversation.phone_number);

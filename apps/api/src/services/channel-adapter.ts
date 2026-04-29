@@ -15,6 +15,7 @@ export interface ChannelSendInput {
     aiModel?: string | null;
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
+    echoId?: string | null;
   };
 }
 

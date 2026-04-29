@@ -20,8 +20,8 @@ describe("resolveLegacyDashboardPath", () => {
     expect(resolveLegacyDashboardPath("?tab=billing")).toBe("/dashboard/billing");
   });
 
-  it("resolves ?tab=conversations to /dashboard/inbox", () => {
-    expect(resolveLegacyDashboardPath("?tab=conversations")).toBe("/dashboard/inbox");
+  it("resolves ?tab=conversations to /dashboard/inbox-v2", () => {
+    expect(resolveLegacyDashboardPath("?tab=conversations")).toBe("/dashboard/inbox-v2");
   });
 
   it("resolves ?tab=chatbot_personality to /dashboard/studio/personality", () => {
@@ -60,16 +60,16 @@ describe("resolveLegacyDashboardPath", () => {
 
   // ── Fallback / edge cases ─────────────────────────────────────────────────
 
-  it("resolves empty search string to /dashboard/inbox", () => {
-    expect(resolveLegacyDashboardPath("")).toBe("/dashboard/inbox");
+  it("resolves empty search string to /dashboard/inbox-v2", () => {
+    expect(resolveLegacyDashboardPath("")).toBe("/dashboard/inbox-v2");
   });
 
-  it("resolves unknown tab to /dashboard/inbox", () => {
-    expect(resolveLegacyDashboardPath("?tab=nonexistent_tab")).toBe("/dashboard/inbox");
+  it("resolves unknown tab to /dashboard/inbox-v2", () => {
+    expect(resolveLegacyDashboardPath("?tab=nonexistent_tab")).toBe("/dashboard/inbox-v2");
   });
 
-  it("resolves ?tab=conversations with extra unrelated params to /dashboard/inbox", () => {
-    expect(resolveLegacyDashboardPath("?tab=conversations&foo=bar")).toBe("/dashboard/inbox");
+  it("resolves ?tab=conversations with extra unrelated params to /dashboard/inbox-v2", () => {
+    expect(resolveLegacyDashboardPath("?tab=conversations&foo=bar")).toBe("/dashboard/inbox-v2");
   });
 
   it("resolves ?tab=settings with extra unrelated params (no submenu) to /dashboard/settings/web", () => {

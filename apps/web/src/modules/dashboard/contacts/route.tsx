@@ -1478,7 +1478,7 @@ function ContactsTab({
                         className="ct-action-btn"
                         disabled={!contact.linked_conversation_id}
                         title={contact.linked_conversation_id ? "Open chat" : "No chat linked"}
-                        onClick={() => { if (contact.linked_conversation_id) navigate(`/dashboard/inbox/${contact.linked_conversation_id}`); }}
+                        onClick={() => { if (contact.linked_conversation_id) navigate(`/dashboard/inbox-v2/${contact.linked_conversation_id}`); }}
                       >
                         <MessageIcon /> Message
                       </button>
@@ -1504,7 +1504,7 @@ function ContactsTab({
                               <button
                                 type="button"
                                 className="ct-dd-item"
-                                onClick={() => { navigate(`/dashboard/inbox/${contact.linked_conversation_id}`); setOpenRowId(null); }}
+                                onClick={() => { navigate(`/dashboard/inbox-v2/${contact.linked_conversation_id}`); setOpenRowId(null); }}
                               >
                                 💬 View history
                               </button>
@@ -1834,7 +1834,7 @@ function SegmentsTab({ token, customFields }: { token: string; customFields: Con
                                             type="button"
                                             className="ct-action-btn"
                                             disabled={!c.linked_conversation_id}
-                                            onClick={() => { if (c.linked_conversation_id) navigate(`/dashboard/inbox/${c.linked_conversation_id}`); }}
+                                            onClick={() => { if (c.linked_conversation_id) navigate(`/dashboard/inbox-v2/${c.linked_conversation_id}`); }}
                                           >
                                             <MessageIcon /> Message
                                           </button>

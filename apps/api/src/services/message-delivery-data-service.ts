@@ -1,6 +1,7 @@
 import { env } from "../config/env.js";
 import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { pool, withTransaction } from "../db/pool.js";
+import { realtimeHub } from "./realtime-hub.js";
 
 export type DeliveryAttemptStatus = "sending" | "sent" | "failed" | "retry_scheduled";
 export type DeliveryFailureCategory = "transient" | "permanent" | "business_logic" | "unknown";
@@ -1033,14 +1034,14 @@ export async function markWebhookStatusEventProcessed(eventId: string): Promise<
 }
 
 function shouldApplyConversationStatus(currentStatus: string | null, nextStatus: "sent" | "delivered" | "read" | "failed"): boolean {
-  if (!currentStatus) {
+  if (!currentStatus || currentStatus === "pending" || currentStatus === "sending" || currentStatus === "queued") {
     return true;
   }
-  if (currentStatus === "read") {
+  if (currentStatus === "read" || currentStatus === "failed") {
     return false;
   }
   if (nextStatus === "read") {
-    return currentStatus !== "read";
+    return currentStatus === "sent" || currentStatus === "delivered";
   }
   if (nextStatus === "delivered") {
     return currentStatus === "sent";
@@ -1048,7 +1049,7 @@ function shouldApplyConversationStatus(currentStatus: string | null, nextStatus:
   if (nextStatus === "failed") {
     return currentStatus === "sent";
   }
-  return currentStatus === "sent";
+  return false;
 }
 
 function shouldApplyCampaignStatus(currentStatus: CampaignDeliveryStatus, nextStatus: "sent" | "delivered" | "read" | "failed"): boolean {
@@ -1131,9 +1132,10 @@ export async function applyConversationDeliveryStatusUpdate(input: {
       : null;
   const normalizedErrorMessage = failure?.errorMessage ?? webhookFailureMessage;
 
-  await withTransaction(async (client) => {
+  const updatedMessage = await withTransaction(async (client) => {
     const rowResult = await client.query<{
       message_id: string;
+      conversation_id: string;
       user_id: string;
       phone_number: string;
       contact_id: string | null;
@@ -1143,6 +1145,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
     }>(
       `SELECT
          cm.id AS message_id,
+         cm.conversation_id,
          c.user_id,
          c.phone_number,
          ct.id AS contact_id,
@@ -1167,7 +1170,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
     );
     const row = firstRow(rowResult);
     if (!row || !shouldApplyConversationStatus(row.current_status, input.status)) {
-      return;
+      return null;
     }
 
     await client.query(
@@ -1203,7 +1206,23 @@ export async function applyConversationDeliveryStatusUpdate(input: {
       sentAt: row.sent_at,
       eventTimestamp: input.eventTimestamp ?? null
     });
+
+    return {
+      userId: row.user_id,
+      conversationId: row.conversation_id,
+      messageId: row.message_id
+    };
   });
+
+  if (updatedMessage) {
+    realtimeHub.broadcastMessageUpdated(updatedMessage.userId, {
+      conversationId: updatedMessage.conversationId,
+      messageId: updatedMessage.messageId,
+      deliveryStatus: input.status,
+      errorCode: input.errorCode ?? undefined,
+      errorMessage: normalizedErrorMessage ?? undefined
+    });
+  }
 }
 
 export async function applyCampaignDeliveryStatusUpdate(input: {

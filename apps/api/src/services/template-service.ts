@@ -803,7 +803,7 @@ export async function getMessageTemplate(userId: string, templateId: string): Pr
 
 export async function listTemplates(
   userId: string,
-  options?: { connectionId?: string; status?: TemplateStatus }
+  options?: { connectionId?: string; linkedNumber?: string; status?: TemplateStatus }
 ): Promise<MessageTemplate[]> {
   const params: unknown[] = [userId];
   let where = "WHERE mt.user_id = $1 AND wbc.status != 'disconnected'";
@@ -811,6 +811,13 @@ export async function listTemplates(
   if (options?.connectionId) {
     params.push(options.connectionId);
     where += ` AND mt.connection_id = $${params.length}`;
+  }
+  if (options?.linkedNumber) {
+    const linkedDigits = options.linkedNumber.replace(/\D/g, "");
+    if (linkedDigits) {
+      params.push(linkedDigits);
+      where += ` AND regexp_replace(COALESCE(wbc.linked_number, wbc.display_phone_number, ''), '\\D', '', 'g') = $${params.length}`;
+    }
   }
   if (options?.status) {
     params.push(options.status);

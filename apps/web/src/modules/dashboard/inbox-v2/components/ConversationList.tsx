@@ -17,6 +17,7 @@ interface Props {
   onSelectConv: (id: string) => void;
   onNew?: () => void;
   onCannedManage?: () => void;
+  onOpenFilters?: () => void;
 }
 
 function scoreToStage(score: number) {
@@ -53,7 +54,7 @@ function matchesSearch(conv: Conversation, query: string): boolean {
   return haystack.includes(q);
 }
 
-export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props) {
+export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFilters }: Props) {
   const { folder, setFolder, byId, ids, activeConvId, setActiveConv, labels, filters } = useConvStore();
   const [searchQ, setSearchQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -189,6 +190,13 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage }: Props)
     <div className="iv-convlist">
       <div className="iv-convlist-header">
         <div className="iv-convlist-title">
+          <button
+            type="button"
+            className="iv-mobile-action-btn iv-mobile-filter-btn"
+            onClick={onOpenFilters}
+          >
+            Filters
+          </button>
           Inbox
           <span className="iv-status-pill iv-status-open">{folderCounts.open ?? 0} open</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>

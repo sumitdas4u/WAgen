@@ -129,6 +129,34 @@ const DEFAULT_FILTERS: ConvFilters = {
   priority: "all"
 };
 
+function mergeMessage(existing: ConversationMessage[], message: ConversationMessage): ConversationMessage[] {
+  const echoId = message.echo_id?.trim() || null;
+  let inserted = false;
+  const merged: ConversationMessage[] = [];
+
+  for (const current of existing) {
+    const sameId = current.id === message.id;
+    const sameEcho = Boolean(echoId && current.echo_id === echoId);
+    const sameTempId = Boolean(echoId && current.id === `temp-${echoId}`);
+
+    if (sameId || sameEcho || sameTempId) {
+      if (!inserted) {
+        merged.push(message);
+        inserted = true;
+      }
+      continue;
+    }
+
+    merged.push(current);
+  }
+
+  if (!inserted) {
+    merged.push(message);
+  }
+
+  return merged;
+}
+
 export const useConvStore = create<ConvStore>((set) => ({
   byId: {},
   ids: [],
@@ -179,20 +207,51 @@ export const useConvStore = create<ConvStore>((set) => ({
 
   appendMessage: (convId, message) => set((s) => {
     const existing = s.messagesByConvId[convId] ?? [];
-    if (existing.some((m) => m.id === message.id)) return s;
-    return { messagesByConvId: { ...s.messagesByConvId, [convId]: [...existing, message] } };
+    const merged = mergeMessage(existing, message);
+    if (merged === existing) return s;
+    return { messagesByConvId: { ...s.messagesByConvId, [convId]: merged } };
   }),
 
   replaceOptimisticMessage: (convId, tempId, message) => set((s) => {
     const existing = s.messagesByConvId[convId] ?? [];
-    const replaced = existing.map((m) => m.id === tempId ? message : m);
+    const echoId = message.echo_id?.trim() || null;
+    let replacedAny = false;
+    const replaced = existing.reduce<ConversationMessage[]>((acc, current) => {
+      const sameTemp = current.id === tempId;
+      const sameId = current.id === message.id;
+      const sameEcho = Boolean(echoId && current.echo_id === echoId);
+      const sameTempEcho = Boolean(echoId && current.id === `temp-${echoId}`);
+
+      if (sameTemp || sameId || sameEcho || sameTempEcho) {
+        if (!replacedAny) {
+          acc.push(message);
+          replacedAny = true;
+        }
+        return acc;
+      }
+
+      acc.push(current);
+      return acc;
+    }, []);
+    if (!replacedAny) {
+      replaced.push(message);
+    }
     return { messagesByConvId: { ...s.messagesByConvId, [convId]: replaced } };
   }),
 
   patchMessageDelivery: (convId, msgId, status, errorCode, errorMsg) => set((s) => {
     const existing = s.messagesByConvId[convId] ?? [];
+    const hasMessage = existing.some((m) => m.id === msgId);
+    if (!hasMessage) return s;
     const patched = existing.map((m) =>
-      m.id === msgId ? { ...m, delivery_status: status, error_code: errorCode ?? m.error_code, error_message: errorMsg ?? m.error_message } : m
+      m.id === msgId
+        ? {
+            ...m,
+            delivery_status: status,
+            error_code: status === "failed" ? errorCode ?? m.error_code : null,
+            error_message: status === "failed" ? errorMsg ?? m.error_message : null
+          }
+        : m
     );
     return { messagesByConvId: { ...s.messagesByConvId, [convId]: patched } };
   }),

@@ -8,7 +8,7 @@ import type { DashboardIconName } from "../../shared/dashboard/module-contracts"
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "inbox-classic" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
+type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -45,13 +45,6 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "chats",
     title: "Chats",
     defaultModuleIds: ["inbox-v2"]
-  },
-  {
-    id: "inbox-classic",
-    label: "Inbox",
-    icon: "unanswered",
-    title: "Inbox (classic)",
-    defaultModuleIds: ["inbox"]
   },
   {
     id: "leads",
@@ -153,6 +146,7 @@ const ANALYTICS_MENU_ITEMS: AnalyticsNavItem[] = [
 ];
 
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
+  "inbox-v2": { label: "Chats", subtitle: "Live Inbox" },
   inbox: { label: "Chats", subtitle: "Live Inbox" },
   leads: { label: "Contacts", subtitle: "Customer Directory" },
   broadcast: { label: "Broadcast", subtitle: "Broadcast campaigns, audiences, and retargeting" },
@@ -242,7 +236,7 @@ function DashboardShellLayout() {
       const handle = item.handle as { moduleId?: string } | undefined;
       return Boolean(handle?.moduleId);
     });
-    return (match?.handle as { moduleId?: string } | undefined)?.moduleId ?? "inbox";
+    return (match?.handle as { moduleId?: string } | undefined)?.moduleId ?? "inbox-v2";
   }, [matches]);
 
   const featureFlags = bootstrap?.featureFlags ?? {};
@@ -267,8 +261,6 @@ function DashboardShellLayout() {
       to:
         item.id === "conversations"
           ? "/dashboard/inbox-v2"
-          : item.id === "inbox-classic"
-            ? "/dashboard/inbox"
           : item.id === "leads"
             ? "/dashboard/leads"
             : item.id === "broadcast"
@@ -285,10 +277,8 @@ function DashboardShellLayout() {
     }));
 
   const currentPrimaryNavId: PrimaryNavId =
-    currentModuleId === "inbox-v2"
+    currentModuleId === "inbox-v2" || currentModuleId === "inbox"
       ? "conversations"
-      : currentModuleId === "inbox"
-        ? "inbox-classic"
       : currentModuleId === "leads"
         ? "leads"
         : currentModuleId === "broadcast"
@@ -369,10 +359,11 @@ function DashboardShellLayout() {
   const hasConfiguredAgentProfile = Boolean(bootstrap?.agentSummary?.hasConfiguredProfile);
   const showAgentOffBanner = Boolean(bootstrap && !bootstrap.userSummary.aiActive && hasConfiguredAgentProfile);
 
-  const sectionMeta = SECTION_META[currentModuleId] ?? SECTION_META.inbox;
-  const dashboardHeaderTitle = currentModuleId === "inbox" ? "Chats" : sectionMeta.label;
+  const sectionMeta = SECTION_META[currentModuleId] ?? SECTION_META["inbox-v2"];
+  const isInboxModule = currentModuleId === "inbox-v2" || currentModuleId === "inbox";
+  const dashboardHeaderTitle = isInboxModule ? "Chats" : sectionMeta.label;
   const dashboardHeaderSubtitle =
-    currentModuleId === "inbox"
+    isInboxModule
       ? loading
         ? "Checking channel status."
         : isAnyChannelConnected
@@ -451,7 +442,7 @@ function DashboardShellLayout() {
           }
           id="dashboard-mobile-sidebar"
         >
-          <button className="clone-rail-logo dashboard-flat-brand" type="button" onClick={() => navigate("/dashboard/inbox")}>
+          <button className="clone-rail-logo dashboard-flat-brand" type="button" onClick={() => navigate("/dashboard/inbox-v2")}>
             <span className="clone-rail-icon">
               <DashboardIcon name="brand" />
             </span>

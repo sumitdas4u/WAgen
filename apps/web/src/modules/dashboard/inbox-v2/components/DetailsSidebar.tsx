@@ -79,9 +79,12 @@ function FieldRow({ label, value }: FieldRowProps) {
   );
 }
 
-interface Props { convId: string }
+interface Props {
+  convId: string;
+  onClose?: () => void;
+}
 
-export function DetailsSidebar({ convId }: Props) {
+export function DetailsSidebar({ convId, onClose }: Props) {
   const [openSections, setOpenSections] = useState<Set<string>>(getSavedSections);
   const [snoozeAt, setSnoozeAt] = useState("");
   const [pendingSnooze, setPendingSnooze] = useState(false);
@@ -165,6 +168,10 @@ export function DetailsSidebar({ convId }: Props) {
 
   return (
     <div className="iv-sidebar">
+      <div className="iv-mobile-panel-head">
+        <span>Contact details</span>
+        <button type="button" onClick={onClose} aria-label="Close details">×</button>
+      </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
           {/* Contact card */}
           <div className="iv-contact-card">

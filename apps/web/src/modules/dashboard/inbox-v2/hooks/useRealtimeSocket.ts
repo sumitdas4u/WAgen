@@ -150,12 +150,13 @@ export function useRealtimeSocket(token: string | null) {
             csat_sent_at: null,
             user_id: ""
           });
+          // Fetch fresh full data so the stub is replaced with complete conversation details
+          void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
           break;
         case "conversation.updated":
         case "conversation.status_changed":
         case "conversation.priority_changed": {
           const raw = envelope.data;
-          if (!s.byId[raw.id]) break; // ignore events for convs not in store (incomplete data)
           const lm = (raw as { last_message?: { text: string; sent_at: string } }).last_message;
           const update = {
             ...raw,
@@ -166,7 +167,11 @@ export function useRealtimeSocket(token: string | null) {
           if (raw.id === s.activeConvId) {
             delete (update as Record<string, unknown>).unread_count;
           }
+          // Optimistic update immediately so the row reflects the change
           s.upsertConv(update);
+          // Re-fetch the full list so new conversations appear, sort order is correct,
+          // and conversations not yet in the store are added (matches V1 behaviour)
+          void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
           break;
         }
         case "conversation.read":
