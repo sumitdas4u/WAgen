@@ -604,6 +604,15 @@ export async function markConversationRead(userId: string, conversationId: strin
        updated_at = NOW()`,
     [userId, conversationId]
   );
+  await pool.query(
+    `UPDATE agent_notifications
+     SET read_at = NOW()
+     WHERE user_id = $1
+       AND conversation_id = $2
+       AND read_at IS NULL`,
+    [userId, conversationId]
+  );
+  realtimeHub.broadcastConversationRead(userId, conversationId);
   void fanoutEvent(userId, "chats.update", {
     id: conversationId,
     unreadCount: 0

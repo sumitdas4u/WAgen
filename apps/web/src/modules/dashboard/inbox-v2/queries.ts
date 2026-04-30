@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { InfiniteData } from "@tanstack/react-query";
 import { useAuth } from "../../../lib/auth-context";
 import { useConvStore } from "./store/convStore";
+import { useNotificationStore } from "./store/notificationStore";
 import type { ConvPage } from "./api";
 import {
   fetchConvSnapshot,
@@ -124,6 +125,7 @@ export function useLabels() {
 export function useMarkRead() {
   const { token } = useAuth();
   const store = useConvStore();
+  const notifStore = useNotificationStore();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (convId: string) => postMarkRead(token!, convId),
@@ -149,6 +151,7 @@ export function useMarkRead() {
 
       // Also clear Zustand (V2's display layer reads from here)
       store.clearUnread(convId);
+      notifStore.markConversationRead(convId);
 
       return { previous };
     },
@@ -161,6 +164,8 @@ export function useMarkRead() {
     onSettled: () => {
       // Invalidate after success OR error to sync with server (same as V1)
       void qc.invalidateQueries({ queryKey: ["iv2-convs"] });
+      void qc.invalidateQueries({ queryKey: ["iv2-notifications"] });
+      void qc.invalidateQueries({ queryKey: ["iv2-notifications-unread"] });
     }
   });
 }

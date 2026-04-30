@@ -90,14 +90,25 @@ export function NotificationsPanel() {
     }
   }, [query.data, setNotifications]);
 
+  const invalidateNotificationQueries = () => {
+    void qc.invalidateQueries({ queryKey: ["iv2-notifications"] });
+    void qc.invalidateQueries({ queryKey: ["iv2-notifications-unread"] });
+  };
+
   const readGroupMut = useMutation({
     mutationFn: (ids: string[]) => Promise.all(ids.map((id) => markNotificationRead(token!, id))),
-    onSuccess: (_data, ids) => { markManyRead(ids); void qc.invalidateQueries({ queryKey: ["iv2-notifications"] }); }
+    onSuccess: (_data, ids) => {
+      markManyRead(ids);
+      invalidateNotificationQueries();
+    }
   });
 
   const readAllMut = useMutation({
     mutationFn: () => markAllNotificationsRead(token!),
-    onSuccess: () => { markAllRead(); void qc.invalidateQueries({ queryKey: ["iv2-notifications"] }); }
+    onSuccess: () => {
+      markAllRead();
+      invalidateNotificationQueries();
+    }
   });
 
   const { notifications } = useNotificationStore();
@@ -173,7 +184,7 @@ export function NotificationsPanel() {
 
 export function NotificationBell() {
   const { token } = useAuth();
-  const { unreadCount, setPanelOpen, panelOpen, setNotifications } = useNotificationStore();
+  const { unreadCount, setPanelOpen, panelOpen, setUnreadCount } = useNotificationStore();
 
   // Bootstrap unread count on mount
   const bootstrapQuery = useQuery({
@@ -185,9 +196,9 @@ export function NotificationBell() {
 
   useEffect(() => {
     if (bootstrapQuery.data) {
-      setNotifications([], bootstrapQuery.data.unreadCount);
+      setUnreadCount(bootstrapQuery.data.unreadCount);
     }
-  }, [bootstrapQuery.data, setNotifications]);
+  }, [bootstrapQuery.data, setUnreadCount]);
 
   return (
     <button

@@ -179,6 +179,9 @@ export function useRealtimeSocket(token: string | null) {
         }
         case "conversation.read":
           s.clearUnread(envelope.data.conversation_id);
+          notifRef.current.markConversationRead(envelope.data.conversation_id);
+          void qcRef.current.invalidateQueries({ queryKey: ["iv2-notifications"] });
+          void qcRef.current.invalidateQueries({ queryKey: ["iv2-notifications-unread"] });
           break;
         case "conversation.typing_on":
           s.setTyping(envelope.data.conversation_id, true);

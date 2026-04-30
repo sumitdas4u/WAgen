@@ -7,9 +7,11 @@ interface NotificationStore {
   panelOpen: boolean;
 
   setNotifications: (items: AgentNotification[], count: number) => void;
+  setUnreadCount: (count: number) => void;
   prependNotification: (n: AgentNotification) => void;
   markRead: (id: string) => void;
   markManyRead: (ids: string[]) => void;
+  markConversationRead: (conversationId: string) => void;
   markAllRead: () => void;
   setPanelOpen: (open: boolean) => void;
   incrementUnread: () => void;
@@ -21,10 +23,11 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
   panelOpen: false,
 
   setNotifications: (items, count) => set({ notifications: items, unreadCount: count }),
+  setUnreadCount: (count) => set({ unreadCount: Math.max(0, count) }),
 
   prependNotification: (n) => set((s) => ({
     notifications: [n, ...s.notifications].slice(0, 100),
-    unreadCount: s.unreadCount + 1
+    unreadCount: n.read_at ? s.unreadCount : s.unreadCount + 1
   })),
 
   markRead: (id) => set((s) => ({
@@ -39,6 +42,18 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
 
     return {
       notifications: s.notifications.map((n) => readIds.has(n.id) ? { ...n, read_at: n.read_at ?? readAt } : n),
+      unreadCount: Math.max(0, s.unreadCount - newlyReadCount)
+    };
+  }),
+
+  markConversationRead: (conversationId) => set((s) => {
+    const readAt = new Date().toISOString();
+    const newlyReadCount = s.notifications.filter((n) => n.conversation_id === conversationId && !n.read_at).length;
+
+    return {
+      notifications: s.notifications.map((n) =>
+        n.conversation_id === conversationId ? { ...n, read_at: n.read_at ?? readAt } : n
+      ),
       unreadCount: Math.max(0, s.unreadCount - newlyReadCount)
     };
   }),

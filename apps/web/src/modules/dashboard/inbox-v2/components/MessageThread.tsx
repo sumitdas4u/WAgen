@@ -70,6 +70,7 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
   const retryMsg = useRetryMessage();
   const [replyToMsg, setReplyToMsg] = useState<ConversationMessage | null>(null);
   const [showSuggestion, setShowSuggestion] = useState(true);
+  const lastReadSyncKeyRef = useRef<string | null>(null);
 
   const scrollToBottomNow = useCallback((behavior: ScrollBehavior = "auto") => {
     const el = scrollRef.current;
@@ -86,6 +87,7 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
     isAtBottomRef.current = true;
     didInitialScrollRef.current = null;
     pendingHistoryScrollRef.current = null;
+    lastReadSyncKeyRef.current = null;
   }, [convId]);
 
   const inboundCount = useMemo(
@@ -93,9 +95,15 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
     [messages]
   );
 
-  // Mirror V1: only fire when there are actual unread messages and no mutation in-flight
+  // Mirror V1: an open thread is read. Also catches new inbound messages while
+  // the active conversation's unread_count is intentionally kept at zero locally.
   useEffect(() => {
-    if ((conv?.unread_count ?? 0) <= 0 || markRead.isPending) return;
+    if (markRead.isPending) return;
+    const unreadCount = conv?.unread_count ?? 0;
+    if (unreadCount <= 0 && inboundCount <= 0) return;
+    const syncKey = `${convId}:${inboundCount}:${unreadCount}`;
+    if (lastReadSyncKeyRef.current === syncKey) return;
+    lastReadSyncKeyRef.current = syncKey;
     markRead.mutate(convId);
   }, [convId, inboundCount, conv?.unread_count, markRead.isPending]);
 

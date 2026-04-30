@@ -38,10 +38,13 @@ export async function agentNotificationsRoutes(fastify: FastifyInstance): Promis
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const result = await pool.query(
-        `UPDATE agent_notifications SET read_at = NOW() WHERE id = $1 AND user_id = $2 AND read_at IS NULL RETURNING id`,
+        `UPDATE agent_notifications
+         SET read_at = COALESCE(read_at, NOW())
+         WHERE id = $1 AND user_id = $2
+         RETURNING id`,
         [id, request.authUser.userId]
       );
-      if ((result.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Notification not found or already read" });
+      if ((result.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Notification not found" });
       return { ok: true };
     }
   );
