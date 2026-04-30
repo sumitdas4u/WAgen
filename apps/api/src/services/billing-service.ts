@@ -19,13 +19,34 @@ export interface PlanEntitlements {
   planCode: SubscriptionPlanCode;
   maxApiNumbers: number;
   maxAgentProfiles: number;
+  maxActiveFlows: number;
+  maxKnowledgeSources: number;
+  aiCreditsMonthly: number;
+  annualAmountInr: number;
   prioritySupport: boolean;
+  modules: {
+    inbox: boolean;
+    contacts: boolean;
+    billing: boolean;
+    qrChannel: boolean;
+    webWidget: boolean;
+    broadcast: boolean;
+    flows: boolean;
+    sequences: boolean;
+    webhooks: boolean;
+    apiChannel: boolean;
+    googleSheets: boolean;
+    googleCalendar: boolean;
+    apiAccess: boolean;
+  };
 }
 
 interface BillingPlanConfig {
   code: BillingPlanCode;
   label: string;
   amountInr: number;
+  annualAmountInr: number;
+  aiCreditsMonthly: number;
   totalCountDefault: number;
   trialDaysDefault: number;
   razorpayPlanId?: string;
@@ -36,6 +57,8 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     code: "starter",
     label: "Starter",
     amountInr: 799,
+    annualAmountInr: 7990,
+    aiCreditsMonthly: 300,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_STARTER_ID
@@ -44,6 +67,8 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     code: "pro",
     label: "Growth",
     amountInr: 1499,
+    annualAmountInr: 14990,
+    aiCreditsMonthly: 700,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_PRO_ID
@@ -52,6 +77,8 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     code: "business",
     label: "Pro",
     amountInr: 2999,
+    annualAmountInr: 29990,
+    aiCreditsMonthly: 1500,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_BUSINESS_ID
@@ -62,22 +89,98 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
   trial: {
     maxApiNumbers: 1,
     maxAgentProfiles: 3,
-    prioritySupport: false
+    maxActiveFlows: 0,
+    maxKnowledgeSources: 1,
+    aiCreditsMonthly: 50,
+    annualAmountInr: 0,
+    prioritySupport: false,
+    modules: {
+      inbox: true,
+      contacts: true,
+      billing: true,
+      qrChannel: true,
+      webWidget: true,
+      broadcast: true,
+      flows: false,
+      sequences: false,
+      webhooks: false,
+      apiChannel: false,
+      googleSheets: false,
+      googleCalendar: false,
+      apiAccess: false
+    }
   },
   starter: {
     maxApiNumbers: 1,
     maxAgentProfiles: 5,
-    prioritySupport: false
+    maxActiveFlows: 1,
+    maxKnowledgeSources: 2,
+    aiCreditsMonthly: 300,
+    annualAmountInr: 7990,
+    prioritySupport: false,
+    modules: {
+      inbox: true,
+      contacts: true,
+      billing: true,
+      qrChannel: true,
+      webWidget: true,
+      broadcast: true,
+      flows: true,
+      sequences: false,
+      webhooks: false,
+      apiChannel: false,
+      googleSheets: false,
+      googleCalendar: false,
+      apiAccess: false
+    }
   },
   pro: {
     maxApiNumbers: 1,
     maxAgentProfiles: 10,
-    prioritySupport: false
+    maxActiveFlows: 3,
+    maxKnowledgeSources: 5,
+    aiCreditsMonthly: 700,
+    annualAmountInr: 14990,
+    prioritySupport: false,
+    modules: {
+      inbox: true,
+      contacts: true,
+      billing: true,
+      qrChannel: true,
+      webWidget: true,
+      broadcast: true,
+      flows: true,
+      sequences: true,
+      webhooks: true,
+      apiChannel: true,
+      googleSheets: true,
+      googleCalendar: true,
+      apiAccess: false
+    }
   },
   business: {
     maxApiNumbers: 3,
     maxAgentProfiles: 30,
-    prioritySupport: true
+    maxActiveFlows: 25,
+    maxKnowledgeSources: 15,
+    aiCreditsMonthly: 1500,
+    annualAmountInr: 29990,
+    prioritySupport: true,
+    modules: {
+      inbox: true,
+      contacts: true,
+      billing: true,
+      qrChannel: true,
+      webWidget: true,
+      broadcast: true,
+      flows: true,
+      sequences: true,
+      webhooks: true,
+      apiChannel: true,
+      googleSheets: true,
+      googleCalendar: true,
+      apiAccess: true
+    }
   }
 };
 
@@ -733,7 +836,9 @@ export async function getUserPlanEntitlements(userId: string): Promise<PlanEntit
   const workspacePlan = workspacePlanResult.rows[0];
   if (workspacePlan) {
     const normalizedPlanCode = normalizeSubscriptionPlanCode(workspacePlan.code);
+    const configured = getPlanEntitlements(normalizedPlanCode);
     return {
+      ...configured,
       planCode: normalizedPlanCode,
       maxApiNumbers: Math.max(0, Number(workspacePlan.whatsapp_number_limit ?? 0)),
       maxAgentProfiles: Math.max(0, Number(workspacePlan.agent_limit ?? 0)),

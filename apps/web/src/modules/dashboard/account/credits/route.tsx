@@ -70,7 +70,7 @@ const TX_TYPE_LABELS: Record<string, string> = {
 export function Component() {
   const { token, refetchBootstrap } = useDashboardShell();
 
-  const [rechargeCredits, setRechargeCredits] = useState("100");
+  const [rechargeCredits, setRechargeCredits] = useState("120");
   const [rechargeInfo, setRechargeInfo] = useState<string | null>(null);
   const [rechargeError, setRechargeError] = useState<string | null>(null);
 
@@ -154,7 +154,7 @@ export function Component() {
         amount: orderRes.order.amountTotalPaise,
         currency: orderRes.order.currency,
         name: "WagenAI",
-        description: `${orderRes.order.credits} conversation credits`,
+        description: `${orderRes.order.credits} AI credits`,
         order_id: orderRes.order.razorpayOrderId,
         handler: () => {
           setRechargeInfo("Payment captured — waiting for confirmation…");
@@ -206,15 +206,15 @@ export function Component() {
   return (
     <div className="acc-page">
       <div className="acc-page-header">
-        <h1 className="acc-page-title">Message Credits</h1>
+        <h1 className="acc-page-title">AI Credits</h1>
       </div>
 
       {/* ── Balance overview ───────────────────────────────────────────────── */}
       <div className="acc-card">
         <div className="acc-card-head">
           <div>
-            <h2 className="acc-card-title">Credit balance</h2>
-            <p className="acc-card-subtitle">WhatsApp conversation credits for this billing period</p>
+            <h2 className="acc-card-title">AI credit balance</h2>
+            <p className="acc-card-subtitle">AI automation credits for this billing period</p>
           </div>
           {isCritical && (
             <span className="acc-plan-pill" style={{ background: "#ffe4e6", border: "1px solid #fecdd3", color: "#be123c" }}>
@@ -284,26 +284,26 @@ export function Component() {
       <div className="acc-card">
         <div className="acc-card-head">
           <div>
-            <h2 className="acc-card-title">Buy credits</h2>
-            <p className="acc-card-subtitle">One-time credit top-up via Razorpay · ₹5 per credit incl. GST</p>
+            <h2 className="acc-card-title">Buy AI credits</h2>
+            <p className="acc-card-subtitle">One-time AI automation top-up via Razorpay</p>
           </div>
         </div>
         <div className="acc-card-body">
           <div className="acc-recharge-presets">
-            {[100, 500, 1000, 5000].map((c) => (
+            {[120, 260, 600].map((c) => (
               <button
                 key={c}
                 type="button"
                 className={`acc-preset-btn${rechargeCredits === String(c) ? " is-active" : ""}`}
                 onClick={() => setRechargeCredits(String(c))}
               >
-                {c.toLocaleString()} credits
+                {c.toLocaleString()} AI credits
               </button>
             ))}
           </div>
           <div className="acc-form-row-inline" style={{ alignItems: "flex-end" }}>
             <div className="acc-form-row">
-              <label className="acc-label" htmlFor="crd-amount">Custom credits</label>
+              <label className="acc-label" htmlFor="crd-amount">AI credits</label>
               <input
                 id="crd-amount"
                 className="acc-input"

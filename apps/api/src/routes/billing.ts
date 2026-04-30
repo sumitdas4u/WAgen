@@ -42,6 +42,8 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
         code: plan.code,
         label: plan.label,
         amountInr: plan.amountInr,
+        annualAmountInr: plan.annualAmountInr,
+        aiCreditsMonthly: plan.aiCreditsMonthly,
         trialDaysDefault: plan.trialDaysDefault,
         totalCountDefault: plan.totalCountDefault,
         available: Boolean(plan.razorpayPlanId)

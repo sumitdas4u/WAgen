@@ -1,15 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createApiKey, listApiKeys, revokeApiKey } from "../services/api-key-service.js";
+import { buildPlanModulePreHandler } from "../services/plan-entitlement-service.js";
 
 const CreateKeySchema = z.object({
   name: z.string().trim().min(1).max(100)
 });
 
 export async function apiKeyRoutes(fastify: FastifyInstance): Promise<void> {
+  const requireApiAccess = buildPlanModulePreHandler("apiAccess");
+
   fastify.get(
     "/api/api-keys",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireApiAccess] },
     async (request) => {
       const keys = await listApiKeys(request.authUser.userId);
       return { keys };
@@ -18,7 +21,7 @@ export async function apiKeyRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/api-keys",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireApiAccess] },
     async (request, reply) => {
       const parsed = CreateKeySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -31,7 +34,7 @@ export async function apiKeyRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.delete(
     "/api/api-keys/:id",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireApiAccess] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const revoked = await revokeApiKey(request.authUser.userId, id);

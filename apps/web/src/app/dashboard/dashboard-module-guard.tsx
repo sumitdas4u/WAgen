@@ -31,6 +31,12 @@ function hasRequiredEntitlements(
   if (typeof required.maxAgentProfiles === "number" && current.maxAgentProfiles < required.maxAgentProfiles) {
     return false;
   }
+  if (typeof required.maxActiveFlows === "number" && (current.maxActiveFlows ?? 0) < required.maxActiveFlows) {
+    return false;
+  }
+  if (required.module && current.modules?.[required.module] === false) {
+    return false;
+  }
   if (required.prioritySupport && !current.prioritySupport) {
     return false;
   }

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { assertPlanModuleAccess, PlanUpgradeRequiredError } from "../services/plan-entitlement-service.js";
 import { processSequenceEvent } from "../services/sequence-event-service.js";
 import { listEnrollmentLogs } from "../services/sequence-log-service.js";
 import {
@@ -70,12 +71,26 @@ const SequenceEventSchema = z.object({
 });
 
 export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.get("/api/sequences", { preHandler: [fastify.requireAuth] }, async (request) => {
+  const requireSequencesModule = async (
+    request: Parameters<typeof fastify.requireAuth>[0],
+    reply: Parameters<typeof fastify.requireAuth>[1]
+  ) => {
+    try {
+      await assertPlanModuleAccess(request.authUser.userId, "sequences");
+    } catch (error) {
+      if (error instanceof PlanUpgradeRequiredError) {
+        return reply.status(403).send({ error: error.code, module: error.moduleKey, message: error.message });
+      }
+      throw error;
+    }
+  };
+
+  fastify.get("/api/sequences", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request) => {
     const sequences = await listSequences(request.authUser.userId);
     return { sequences };
   });
 
-  fastify.post("/api/sequences", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.post("/api/sequences", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const parsed = SequenceWriteSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid sequence payload" });
@@ -88,7 +103,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.get("/api/sequences/:sequenceId", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.get("/api/sequences/:sequenceId", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     const sequence = await getSequenceDetail(request.authUser.userId, sequenceId);
     if (!sequence) {
@@ -97,7 +112,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     return { sequence };
   });
 
-  fastify.patch("/api/sequences/:sequenceId", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.patch("/api/sequences/:sequenceId", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     const parsed = SequencePatchSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
@@ -114,7 +129,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.delete("/api/sequences/:sequenceId", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.delete("/api/sequences/:sequenceId", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     const deleted = await deleteSequence(request.authUser.userId, sequenceId);
     if (!deleted) {
@@ -123,7 +138,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  fastify.post("/api/sequences/:sequenceId/publish", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.post("/api/sequences/:sequenceId/publish", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     try {
       const sequence = await publishSequence(request.authUser.userId, sequenceId);
@@ -136,7 +151,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.post("/api/sequences/:sequenceId/pause", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.post("/api/sequences/:sequenceId/pause", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     const sequence = await pauseSequence(request.authUser.userId, sequenceId);
     if (!sequence) {
@@ -145,7 +160,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     return { sequence };
   });
 
-  fastify.post("/api/sequences/:sequenceId/resume", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.post("/api/sequences/:sequenceId/resume", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     try {
       const sequence = await resumeSequence(request.authUser.userId, sequenceId);
@@ -158,7 +173,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     }
   });
 
-  fastify.get("/api/sequences/:sequenceId/enrollments", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.get("/api/sequences/:sequenceId/enrollments", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     const parsed = EnrollmentQuerySchema.safeParse(request.query ?? {});
     if (!parsed.success) {
@@ -168,13 +183,13 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     return { enrollments };
   });
 
-  fastify.get("/api/enrollments/:enrollmentId/logs", { preHandler: [fastify.requireAuth] }, async (request) => {
+  fastify.get("/api/enrollments/:enrollmentId/logs", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request) => {
     const { enrollmentId } = request.params as { enrollmentId: string };
     const logs = await listEnrollmentLogs(request.authUser.userId, enrollmentId);
     return { logs };
   });
 
-  fastify.post("/api/sequences/events", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.post("/api/sequences/events", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const parsed = SequenceEventSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({ error: "Invalid sequence event payload" });
@@ -187,7 +202,7 @@ export async function sequenceRoutes(fastify: FastifyInstance): Promise<void> {
     return { ok: true, ...result };
   });
 
-  fastify.get("/api/sequences/:sequenceId/step-funnel", { preHandler: [fastify.requireAuth] }, async (request, reply) => {
+  fastify.get("/api/sequences/:sequenceId/step-funnel", { preHandler: [fastify.requireAuth, requireSequencesModule] }, async (request, reply) => {
     const { sequenceId } = request.params as { sequenceId: string };
     const rows = await getSequenceStepFunnel(request.authUser.userId, sequenceId);
     return { funnel: rows };

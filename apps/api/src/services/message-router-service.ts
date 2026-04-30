@@ -35,9 +35,9 @@ import { upsertRecipientSuppression, removeOptOutSuppression } from "./message-d
 import type { FlowMessagePayload } from "./outbound-message-types.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
-import { evaluateConversationCredit } from "./workspace-billing-service.js";
 import { fanoutEvent } from "./event-fanout-service.js";
 import { createBotAlertNotification } from "./agent-notification-service.js";
+import { AiTokensDepletedError, requireAiCredit } from "./ai-token-service.js";
 
 type UnifiedChannelType = "web" | "qr" | "api";
 
@@ -267,29 +267,6 @@ export async function processIncomingMessage(
   };
 
   // ── Credits gate ─────────────────────────────────────────────────────────────
-  const creditDecision = await evaluateConversationCredit({
-    userId: input.userId,
-    customerIdentifier: input.customerIdentifier,
-    channelType: input.channelType
-  });
-  if (!creditDecision.allowed) {
-    const pausedMessage = creditDecision.blockMessage ?? "Replies paused. Please upgrade your plan.";
-    await sendConversationFlowMessage({
-      userId: input.userId,
-      conversationId: conversation.id,
-      payload: { type: "text", text: pausedMessage }
-    });
-    latestConversationState = await getLatestConversationState(conversation.id, latestConversationState);
-    await notifyBotAlert(input.userId, conversation.id, "insufficient_credits");
-    return {
-      conversationId: conversation.id,
-      stage: latestConversationState.stage,
-      score: latestConversationState.score,
-      autoReplySent: true,
-      reason: "insufficient_credits"
-    };
-  }
-
   // ── Bot-loop detection (before flow runs) ────────────────────────────────────
   if (isBotLoopProtectedChannel(input.channelType)) {
     const activeFlowSession = await getActiveFlowSession(conversation.id);
@@ -493,8 +470,24 @@ export async function processIncomingMessage(
         },
         personality: channelAgentProfile.personality,
         custom_personality_prompt: channelAgentProfile.customPrompt
-      }
+    }
     : user;
+
+  try {
+    await requireAiCredit(input.userId, "chatbot_reply");
+  } catch (error) {
+    if (error instanceof AiTokensDepletedError) {
+      await notifyBotAlert(input.userId, conversation.id, "insufficient_credits");
+      return {
+        conversationId: conversation.id,
+        stage: latestConversationState.stage,
+        score: latestConversationState.score,
+        autoReplySent: false,
+        reason: "insufficient_credits"
+      };
+    }
+    throw error;
+  }
 
   const reply = await buildSalesReply({
     user: effectiveUser,

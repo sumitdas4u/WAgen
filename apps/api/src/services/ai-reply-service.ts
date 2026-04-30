@@ -1477,7 +1477,13 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   try {
     const response = await aiService.generateReply(systemPrompt, userPrompt);
     // Deduct tokens for a successful AI reply (fire-and-forget)
-    void chargeUser(input.user.id, "chatbot_reply");
+    void chargeUser(input.user.id, "chatbot_reply", {
+      module: "inbox",
+      model: response.model,
+      promptTokens: response.usage?.promptTokens ?? 0,
+      completionTokens: response.usage?.completionTokens ?? 0,
+      totalTokens: response.usage?.totalTokens ?? 0
+    });
 
     let finalText = allowSelfIntroduction ? response.content : stripRepeatedSelfIntroduction(response.content);
     const lastOutbound = resolveLastOutboundReply(historyForPrompt);
@@ -1527,7 +1533,13 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
         maxTokens: Math.max(160, Math.min(260, env.OPENAI_MAX_OUTPUT_TOKENS))
       });
       // Deduct for the retry attempt that succeeded
-      void chargeUser(input.user.id, "chatbot_reply");
+      void chargeUser(input.user.id, "chatbot_reply", {
+        module: "inbox",
+        model: retry.model,
+        promptTokens: retry.usage?.promptTokens ?? 0,
+        completionTokens: retry.usage?.completionTokens ?? 0,
+        totalTokens: retry.usage?.totalTokens ?? 0
+      });
 
       const retryText = allowSelfIntroduction ? retry.content : stripRepeatedSelfIntroduction(retry.content);
       return {

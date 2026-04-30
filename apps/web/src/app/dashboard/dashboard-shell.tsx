@@ -131,7 +131,7 @@ type AccountNavItem = {
 const ACCOUNT_MENU_ITEMS: AccountNavItem[] = [
   { moduleId: "account-details",      label: "Account Details",    icon: "account",     to: "/dashboard/account/details" },
   { moduleId: "account-subscription", label: "Subscription",       icon: "billing",     to: "/dashboard/account/subscription" },
-  { moduleId: "account-credits",      label: "Message Credits",    icon: "templates",   to: "/dashboard/account/credits" },
+  { moduleId: "account-credits",      label: "AI Credits",         icon: "templates",   to: "/dashboard/account/credits" },
   { moduleId: "account-ai-wallet",    label: "AI Wallet",          icon: "agents",      to: "/dashboard/account/ai-wallet" },
   { moduleId: "account-profile",      label: "Profile & Password", icon: "personality", to: "/dashboard/account/profile" },
   { moduleId: "account-users",        label: "Users & Teams",      icon: "leads",       to: "/dashboard/account/users" }
@@ -169,7 +169,7 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   "settings-webhooks": { label: "Settings", subtitle: "Configure generic webhook automations" },
   "account-details":      { label: "Account", subtitle: "Workspace name, timezone, and preferences" },
   "account-subscription": { label: "Account", subtitle: "Current plan, upgrades, and invoices" },
-  "account-credits":      { label: "Account", subtitle: "WhatsApp message credit balance and history" },
+  "account-credits":      { label: "Account", subtitle: "AI credit balance and history" },
   "account-ai-wallet":    { label: "Account", subtitle: "AI token usage and top-up packs" },
   "account-profile":      { label: "Account", subtitle: "Your profile and password" },
   "account-users":        { label: "Account", subtitle: "Team members and roles" }

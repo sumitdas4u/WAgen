@@ -145,7 +145,7 @@ export async function extractInboundMediaText(
         "Image analysis timed out"
       );
       if (userId) {
-        void chargeUser(userId, "image_analyze");
+        void chargeUser(userId, "image_analyze", { module: "media" });
       }
       const cleaned = normalizeExtractedText(description);
       const text = cleaned ? `[Image received]: ${limitText(cleaned)}` : "[Image received with no description available]";

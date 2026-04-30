@@ -245,7 +245,9 @@ async function classifyInboundMessage(input: {
       ? clamp(Math.round(confidenceRaw), 20, 99)
       : heuristic.confidence;
 
-    if (input.userId) void chargeUser(input.userId, "ai_intent_classify");
+    if (input.userId) {
+      void chargeUser(input.userId, "ai_intent_classify", { module: "inbox" });
+    }
     return { kind, confidence };
   } catch {
     return { kind: heuristic.kind, confidence: heuristic.confidence };
@@ -1493,7 +1495,15 @@ async function generateLeadSummary(
 
   try {
     const response = await aiService.generateReply(systemPrompt, userPrompt);
-    if (userId) void chargeUser(userId, "ai_lead_summary");
+    if (userId) {
+      void chargeUser(userId, "ai_lead_summary", {
+        module: "inbox",
+        model: response.model,
+        promptTokens: response.usage?.promptTokens ?? 0,
+        completionTokens: response.usage?.completionTokens ?? 0,
+        totalTokens: response.usage?.totalTokens ?? 0
+      });
+    }
     return { summary: response.content, model: response.model };
   } catch {
     return {

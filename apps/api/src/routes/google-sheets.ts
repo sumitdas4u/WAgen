@@ -12,6 +12,7 @@ import {
   listGoogleSpreadsheetSheets,
   renderGoogleSheetsOauthPopupPage
 } from "../services/google-sheets-service.js";
+import { buildPlanModulePreHandler } from "../services/plan-entitlement-service.js";
 
 const DisconnectSchema = z.object({
   connectionId: z.string().uuid().optional()
@@ -34,21 +35,23 @@ const CallbackQuerySchema = z.object({
 });
 
 export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
+  const requireGoogleSheets = buildPlanModulePreHandler("googleSheets");
+
   app.get(
     "/api/google/sheets/config",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async () => getGoogleSheetsConfig()
   );
 
   app.get(
     "/api/google/sheets/status",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async (request) => getGoogleSheetsStatus(request.authUser.userId)
   );
 
   app.get(
     "/api/google/sheets/connect/start",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async (request) => ({
       url: buildGoogleSheetsConnectUrl(request.authUser.userId)
     })
@@ -116,7 +119,7 @@ export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/api/google/sheets/disconnect",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async (request, reply) => {
       const parsed = DisconnectSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -133,7 +136,7 @@ export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/api/google/sheets/spreadsheets",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async (request, reply) => {
       const parsed = ConnectionQuerySchema.safeParse(request.query ?? {});
       if (!parsed.success) {
@@ -150,7 +153,7 @@ export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/api/google/sheets/spreadsheets/:spreadsheetId/sheets",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async (request, reply) => {
       const parsed = ConnectionQuerySchema.safeParse(request.query ?? {});
       const spreadsheetId = z.string().trim().min(1).safeParse(
@@ -171,7 +174,7 @@ export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/api/google/sheets/spreadsheets/:spreadsheetId/columns",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async (request, reply) => {
       const parsed = ColumnsQuerySchema.safeParse(request.query ?? {});
       const spreadsheetId = z.string().trim().min(1).safeParse(
@@ -194,7 +197,7 @@ export async function googleSheetsRoutes(app: FastifyInstance): Promise<void> {
   // Get connection info by ID — lets any user see who owns a stored connectionId
   app.get(
     "/api/google/sheets/connections/:id",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleSheets] },
     async (request, reply) => {
       const id = (request.params as { id?: string }).id ?? "";
       if (!id) return reply.status(400).send({ error: "Missing connection id" });

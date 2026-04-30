@@ -24,9 +24,9 @@ declare global {
 
 const PLAN_ORDER: BillingPlan["code"][] = ["starter", "pro", "business"];
 const PLAN_PITCHES: Record<BillingPlan["code"], string> = {
-  starter: "300 conversations/month - \u20b9799.",
-  pro: "600 conversations/month - \u20b91,499.",
-  business: "1,200 conversations/month - \u20b92,999."
+  starter: "Unlimited conversations + 300 AI credits/month - \u20b9799.",
+  pro: "Unlimited conversations + 700 AI credits/month - \u20b91,499.",
+  business: "Unlimited conversations + 1,500 AI credits/month - \u20b92,999."
 };
 const PLAN_FEATURES: Record<BillingPlan["code"], string[]> = {
   starter: ["1 WhatsApp Number", "Basic AI training", "24/7 auto-replies", "Email support"],

@@ -143,7 +143,7 @@ export async function ingestKnowledgeChunks(input: {
         const embedding = await aiService.embed(chunk.content);
         vectorLiteral = toVectorLiteral(embedding);
         // Charge one token per successfully embedded chunk
-        void chargeUser(input.userId, "kb_ingest_chunk");
+        void chargeUser(input.userId, "kb_ingest_chunk", { module: "knowledge" });
       } catch {
         vectorLiteral = ZERO_VECTOR;
       }
@@ -208,7 +208,7 @@ export async function retrieveKnowledge(input: {
   try {
     const embedding = await aiService.embed(input.query);
     // Deduct one token for the retrieval embed query
-    void chargeUser(input.userId, "rag_embed_query");
+    void chargeUser(input.userId, "rag_embed_query", { module: "knowledge" });
     const vectorLiteral = toVectorLiteral(embedding);
 
     const vectorResult = await pool.query<KnowledgeChunk>(

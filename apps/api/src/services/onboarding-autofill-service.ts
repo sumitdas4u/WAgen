@@ -186,7 +186,7 @@ export async function generateOnboardingDraft(userId: string, description: strin
 
   try {
     const raw = await aiService.generateJson(systemPrompt, userPrompt);
-    void chargeUser(userId, "onboarding_autofill");
+    void chargeUser(userId, "onboarding_autofill", { module: "onboarding" });
     return mergeDraft(raw);
   } catch {
     return fallbackDraft(description);

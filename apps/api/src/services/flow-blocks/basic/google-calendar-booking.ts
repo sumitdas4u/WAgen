@@ -857,7 +857,7 @@ async function parseSchedulingRequest(input: {
       slotDurationMinutes: input.slotDurationMinutes,
       promptSearchWindowHours: input.promptSearchWindowHours
     });
-    if (input.userId) void chargeUser(input.userId, "ai_agent_flow");
+    if (input.userId) void chargeUser(input.userId, "ai_agent_flow", { module: "flows" });
     return parsed;
   } catch {
     return null;

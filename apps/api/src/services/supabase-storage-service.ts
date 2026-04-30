@@ -44,16 +44,12 @@ async function storeInPostgres(
     if (!id) return null;
     const base = env.APP_BASE_URL.replace(/\/$/, "");
     return `${base}/api/media/${id}`;
-  } catch {
+  } catch (err) {
+    console.warn("[SupabaseStorage] storeInPostgres failed", err);
     return null;
   }
 }
 
-/**
- * Upload template header media to Supabase Storage (if configured) or fall back
- * to the local Postgres media_uploads table. Returns a publicly accessible URL,
- * or null on failure.
- */
 export async function uploadTemplateHeaderMedia(input: {
   userId: string;
   buffer: Buffer;
@@ -61,32 +57,20 @@ export async function uploadTemplateHeaderMedia(input: {
   filename?: string | null;
 }): Promise<string | null> {
   const ext = mediaExtension(input.mimeType);
-  const filename = input.filename?.trim() || `template-header-${Date.now()}.${ext}`;
   const supabase = getSupabaseClient();
+  if (!supabase) return null;
 
-  if (supabase) {
-    try {
-      const path = `templates/${input.userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error } = await supabase.storage
-        .from(env.SUPABASE_INBOUND_MEDIA_BUCKET)
-        .upload(path, input.buffer, {
-          contentType: input.mimeType,
-          upsert: false
-        });
-      if (error) {
-        console.warn("[SupabaseStorage] template header upload failed, falling back to Postgres", error.message);
-      } else {
-        const { data } = supabase.storage
-          .from(env.SUPABASE_INBOUND_MEDIA_BUCKET)
-          .getPublicUrl(path);
-        return data.publicUrl;
-      }
-    } catch (err) {
-      console.warn("[SupabaseStorage] unexpected error uploading template header, falling back to Postgres", err);
-    }
+  try {
+    const path = `templates/${input.userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage
+      .from(env.SUPABASE_INBOUND_MEDIA_BUCKET)
+      .upload(path, input.buffer, { contentType: input.mimeType, upsert: false });
+    if (error) return null;
+    const { data } = supabase.storage.from(env.SUPABASE_INBOUND_MEDIA_BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  } catch {
+    return null;
   }
-
-  return storeInPostgres(input.userId, input.buffer, input.mimeType, filename);
 }
 
 /**

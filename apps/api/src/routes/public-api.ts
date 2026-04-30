@@ -11,6 +11,7 @@ import {
   sendMetaTextMessage
 } from "../services/meta-whatsapp-service.js";
 import { validateFlowMessagePayload } from "../services/outbound-message-types.js";
+import { buildPlanModulePreHandler } from "../services/plan-entitlement-service.js";
 
 const SendTextSchema = z.object({
   to: z.string().trim().min(8).max(25),
@@ -36,10 +37,12 @@ const ContactsQuerySchema = z.object({
 });
 
 export async function publicApiRoutes(fastify: FastifyInstance): Promise<void> {
+  const requireApiAccess = buildPlanModulePreHandler("apiAccess");
+
   // List conversations
   fastify.get(
     "/v1/conversations",
-    { preHandler: [fastify.requireApiKeyAuth] },
+    { preHandler: [fastify.requireApiKeyAuth, requireApiAccess] },
     async (request) => {
       const conversations = await listConversations(request.authUser.userId);
       return { conversations };
@@ -49,7 +52,7 @@ export async function publicApiRoutes(fastify: FastifyInstance): Promise<void> {
   // Get messages for a conversation by phone number
   fastify.get(
     "/v1/conversations/:phone/messages",
-    { preHandler: [fastify.requireApiKeyAuth] },
+    { preHandler: [fastify.requireApiKeyAuth, requireApiAccess] },
     async (request, reply) => {
       const { phone } = request.params as { phone: string };
       const queryParsed = ConversationMessagesQuerySchema.safeParse(request.query);
@@ -74,7 +77,7 @@ export async function publicApiRoutes(fastify: FastifyInstance): Promise<void> {
   // List contacts
   fastify.get(
     "/v1/contacts",
-    { preHandler: [fastify.requireApiKeyAuth] },
+    { preHandler: [fastify.requireApiKeyAuth, requireApiAccess] },
     async (request, reply) => {
       const queryParsed = ContactsQuerySchema.safeParse(request.query);
       if (!queryParsed.success) {
@@ -92,7 +95,7 @@ export async function publicApiRoutes(fastify: FastifyInstance): Promise<void> {
   // Send a plain text message
   fastify.post(
     "/v1/messages/send-text",
-    { preHandler: [fastify.requireApiKeyAuth] },
+    { preHandler: [fastify.requireApiKeyAuth, requireApiAccess] },
     async (request, reply) => {
       const parsed = SendTextSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -114,7 +117,7 @@ export async function publicApiRoutes(fastify: FastifyInstance): Promise<void> {
   // Send any message type via FlowMessagePayload
   fastify.post(
     "/v1/messages/send",
-    { preHandler: [fastify.requireApiKeyAuth] },
+    { preHandler: [fastify.requireApiKeyAuth, requireApiAccess] },
     async (request, reply) => {
       const parsed = SendMessageSchema.safeParse(request.body);
       if (!parsed.success) {

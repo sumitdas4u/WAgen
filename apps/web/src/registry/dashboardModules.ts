@@ -38,6 +38,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     section: "main",
     lazyRoute: () => import("../modules/dashboard/templates/route"),
     featureFlag: "dashboard.templates",
+    requiredEntitlements: { module: "broadcast" },
     prefetchStrategy: "code+data",
     requiresAuth: true
   },
@@ -64,6 +65,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     section: "main",
     lazyRoute: () => import("../modules/dashboard/sequence/route"),
     featureFlag: "dashboard.sequence",
+    requiredEntitlements: { module: "sequences" },
     prefetchStrategy: "code+data",
     requiresAuth: true
   },
@@ -118,6 +120,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     lazyRoute: () => import("../modules/dashboard/studio/flows/route"),
     legacyAliases: ["bot_flows", "flow_builder"],
     featureFlag: "dashboard.studio.flows",
+    requiredEntitlements: { module: "flows" },
     prefetchStrategy: "code+data",
     requiresAuth: true
   },
@@ -213,6 +216,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     section: "settings",
     lazyRoute: () => import("../modules/dashboard/settings/api/route"),
     featureFlag: "dashboard.settings.api",
+    requiredEntitlements: { module: "apiChannel" },
     prefetchStrategy: "code+data",
     requiresAuth: true
   },
@@ -250,6 +254,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     icon: "settings",
     section: "settings",
     lazyRoute: () => import("../modules/dashboard/settings/webhooks/route"),
+    requiredEntitlements: { module: "webhooks" },
     prefetchStrategy: "code",
     requiresAuth: true
   },
@@ -282,8 +287,8 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     id: "account-credits",
     path: "account/credits",
     navTo: "/dashboard/account/credits",
-    navLabel: "Message Credits",
-    subtitle: "WhatsApp message credit balance and history",
+    navLabel: "AI Credits",
+    subtitle: "AI credit balance and history",
     icon: "templates",
     section: "account",
     lazyRoute: () => import("../modules/dashboard/account/credits/route"),

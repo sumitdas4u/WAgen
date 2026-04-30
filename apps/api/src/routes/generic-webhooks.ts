@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { assertPlanModuleAccess, PlanUpgradeRequiredError } from "../services/plan-entitlement-service.js";
 import {
   createGenericWebhookIntegration,
   createGenericWebhookWorkflow,
@@ -132,9 +133,23 @@ const WorkflowPatchSchema = WorkflowBodySchemaBase.partial().superRefine((value,
 });
 
 export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<void> {
+  const requireWebhooksModule = async (
+    request: Parameters<typeof fastify.requireAuth>[0],
+    reply: Parameters<typeof fastify.requireAuth>[1]
+  ) => {
+    try {
+      await assertPlanModuleAccess(request.authUser.userId, "webhooks");
+    } catch (error) {
+      if (error instanceof PlanUpgradeRequiredError) {
+        return reply.status(403).send({ error: error.code, module: error.moduleKey, message: error.message });
+      }
+      throw error;
+    }
+  };
+
   fastify.get(
     "/api/integrations/webhooks",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request) => {
       const integrations = await listGenericWebhookIntegrations(request.authUser.userId);
       return { integrations };
@@ -143,7 +158,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.post(
     "/api/integrations/webhooks",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const parsed = CreateIntegrationBodySchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -160,7 +175,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.get(
     "/api/integrations/webhooks/:integrationId",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const { integrationId } = request.params as { integrationId: string };
       const integration = await getGenericWebhookIntegration(request.authUser.userId, integrationId);
@@ -173,7 +188,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.patch(
     "/api/integrations/webhooks/:integrationId",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const { integrationId } = request.params as { integrationId: string };
       const parsed = IntegrationPatchSchema.safeParse(request.body ?? {});
@@ -190,7 +205,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.delete(
     "/api/integrations/webhooks/:integrationId",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const { integrationId } = request.params as { integrationId: string };
       const deleted = await deleteGenericWebhookIntegration(request.authUser.userId, integrationId);
@@ -203,7 +218,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.post(
     "/api/integrations/webhooks/:integrationId/rotate-secret",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const { integrationId } = request.params as { integrationId: string };
       const integration = await rotateGenericWebhookSecret(request.authUser.userId, integrationId);
@@ -216,7 +231,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.get(
     "/api/integrations/webhooks/:integrationId/workflows",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request) => {
       const { integrationId } = request.params as { integrationId: string };
       const workflows = await listGenericWebhookWorkflows(request.authUser.userId, integrationId);
@@ -226,7 +241,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.post(
     "/api/integrations/webhooks/:integrationId/workflows",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const { integrationId } = request.params as { integrationId: string };
       const parsed = WorkflowBodySchema.safeParse(request.body ?? {});
@@ -244,7 +259,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.patch(
     "/api/integrations/webhooks/:integrationId/workflows/:workflowId",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const { integrationId, workflowId } = request.params as { integrationId: string; workflowId: string };
       const parsed = WorkflowPatchSchema.safeParse(request.body ?? {});
@@ -265,7 +280,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.delete(
     "/api/integrations/webhooks/:integrationId/workflows/:workflowId",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request, reply) => {
       const { integrationId, workflowId } = request.params as { integrationId: string; workflowId: string };
       const deleted = await deleteGenericWebhookWorkflow(request.authUser.userId, integrationId, workflowId);
@@ -278,7 +293,7 @@ export async function genericWebhookRoutes(fastify: FastifyInstance): Promise<vo
 
   fastify.get(
     "/api/integrations/webhooks/:integrationId/logs",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireWebhooksModule] },
     async (request) => {
       const { integrationId } = request.params as { integrationId: string };
       const logs = await listGenericWebhookLogs(request.authUser.userId, integrationId);

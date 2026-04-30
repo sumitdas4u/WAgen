@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { createUser } from "../services/user-service.js";
+import { chargeUser, getTokenBalance, requireAiCredit } from "../services/ai-token-service.js";
 import {
   adjustWorkspaceCreditsByAdmin,
-  evaluateConversationCredit,
   getWorkspaceCreditsByUserId,
   renewDueWorkspaceCredits
 } from "../services/workspace-billing-service.js";
@@ -24,41 +24,25 @@ async function run(): Promise<void> {
     assert.equal(initial.totalCredits, env.TRIAL_CREDITS, "trial total credits mismatch");
     assert.equal(initial.remainingCredits, env.TRIAL_CREDITS, "trial remaining credits mismatch");
 
-    const first = await evaluateConversationCredit({
-      userId: user.id,
-      customerIdentifier: "919900000001"
-    });
-    assert.equal(first.allowed, true, "first conversation should be allowed");
-    assert.equal(first.deducted, true, "first conversation should deduct one credit");
-    assert.equal(first.remainingCredits, env.TRIAL_CREDITS - 1, "remaining should decrement by 1");
+    const initialAiBalance = await getTokenBalance(user.id);
+    assert.equal(initialAiBalance, 50, "trial AI credit balance mismatch");
 
-    const sameWindow = await evaluateConversationCredit({
-      userId: user.id,
-      customerIdentifier: "919900000001"
+    await requireAiCredit(user.id, "chatbot_reply");
+    const charged = await chargeUser(user.id, "chatbot_reply", "smoke-ai-reply", {
+      module: "inbox",
+      model: env.OPENAI_CHAT_MODEL,
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120
     });
-    assert.equal(sameWindow.allowed, true, "same-window conversation should be allowed");
-    assert.equal(sameWindow.deducted, false, "same-window conversation should not deduct credit");
+    assert.equal(charged.balanceAfter, initialAiBalance - 1, "AI reply should deduct one AI credit");
+
+    const afterConversationLikeActivity = await getWorkspaceCreditsByUserId(user.id);
     assert.equal(
-      sameWindow.remainingCredits,
-      env.TRIAL_CREDITS - 1,
-      "same-window conversation should not change credits"
+      afterConversationLikeActivity.remainingCredits,
+      initial.remainingCredits,
+      "conversation activity should not deduct workspace credits"
     );
-
-    await pool.query(
-      `UPDATE conversation_sessions
-       SET last_message_time = NOW() - (($2::int + 1)::text || ' hours')::interval
-       WHERE workspace_id = $1
-         AND customer_phone = $3`,
-      [first.workspaceId, env.CONVERSATION_WINDOW_HOURS, "919900000001"]
-    );
-
-    const nextWindow = await evaluateConversationCredit({
-      userId: user.id,
-      customerIdentifier: "919900000001"
-    });
-    assert.equal(nextWindow.allowed, true, "new 24h window should be allowed");
-    assert.equal(nextWindow.deducted, true, "new 24h window should deduct one credit");
-    assert.equal(nextWindow.remainingCredits, env.TRIAL_CREDITS - 2, "remaining should decrement again");
 
     await pool.query(
       `UPDATE credit_wallet
@@ -66,18 +50,11 @@ async function run(): Promise<void> {
            used_credits = 2,
            remaining_credits = 0
        WHERE workspace_id = $1`,
-      [first.workspaceId]
+      [initial.workspaceId]
     );
 
-    const blocked = await evaluateConversationCredit({
-      userId: user.id,
-      customerIdentifier: "919900000999"
-    });
-    assert.equal(blocked.allowed, false, "new conversation with zero credits should be blocked");
-    assert.equal(blocked.deducted, false, "blocked conversation should not deduct credits");
-
     const adjusted = await adjustWorkspaceCreditsByAdmin({
-      workspaceId: first.workspaceId,
+      workspaceId: initial.workspaceId,
       deltaCredits: 5,
       reason: "smoke test top-up"
     });
@@ -88,7 +65,7 @@ async function run(): Promise<void> {
        SET status = 'active',
            next_billing_date = NOW() - INTERVAL '1 day'
        WHERE workspace_id = $1`,
-      [first.workspaceId]
+      [initial.workspaceId]
     );
 
     const renewal = await renewDueWorkspaceCredits({ limit: 1000 });
@@ -101,6 +78,8 @@ async function run(): Promise<void> {
       afterRenewal.totalCredits,
       "renewal should reset remaining credits to total"
     );
+    const afterRenewalAiBalance = await getTokenBalance(user.id);
+    assert.equal(afterRenewalAiBalance, 300, "renewal should reset AI credits to plan quota");
 
     console.log("Workspace billing smoke test passed.");
   } finally {
@@ -116,4 +95,3 @@ run()
   .finally(async () => {
     await pool.end();
   });
-

@@ -10,6 +10,7 @@ import {
 } from "../services/flow-service.js";
 import { generateFlowDraft } from "../services/flow-draft-generator-service.js";
 import { requireAiCredit, AiTokensDepletedError, chargeUser } from "../services/ai-token-service.js";
+import { assertPlanModuleAccess, PlanUpgradeRequiredError } from "../services/plan-entitlement-service.js";
 import { pool } from "../db/pool.js";
 import { startFlowForConversation } from "../services/flow-engine-service.js";
 import { sendConversationFlowMessage } from "../services/channel-outbound-service.js";
@@ -56,6 +57,17 @@ function isBlockedHostname(hostname: string): boolean {
 }
 
 export async function flowRoutes(app: FastifyInstance) {
+  async function requireFlowsModule(req: { authUser?: { userId: string } }, reply: { status: (code: number) => { send: (payload: unknown) => unknown } }) {
+    try {
+      await assertPlanModuleAccess(req.authUser!.userId, "flows");
+    } catch (error) {
+      if (error instanceof PlanUpgradeRequiredError) {
+        return reply.status(403).send({ error: error.code, module: error.moduleKey, message: error.message });
+      }
+      throw error;
+    }
+  }
+
   const serializeFlow = (flow: Awaited<ReturnType<typeof getFlow>>) => {
     if (!flow) {
       return null;
@@ -99,7 +111,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { prompt?: string; channel?: "web" | "qr" | "api" } }>(
     "/api/flows/generate-draft",
-    { preHandler: app.requireAuth },
+    { preHandler: [app.requireAuth, requireFlowsModule] },
     async (req, reply) => {
       const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
       const channel = req.body?.channel;
@@ -122,7 +134,7 @@ export async function flowRoutes(app: FastifyInstance) {
       try {
         const draft = await generateFlowDraft({ prompt, channel });
         // Charge after successful generation (route owns billing, not service)
-        void chargeUser(req.authUser.userId, "flow_draft_generate");
+        void chargeUser(req.authUser.userId, "flow_draft_generate", { module: "flows" });
         return reply.send(draft);
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message || "Could not generate flow draft." });
@@ -132,7 +144,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>(
     "/api/flows/:id",
-    { preHandler: app.requireAuth },
+    { preHandler: [app.requireAuth, requireFlowsModule] },
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const flow = await getFlow(userId, req.params.id);
@@ -143,7 +155,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { name?: string; channel?: "web" | "qr" | "api"; connectionId?: string | null; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[] } }>(
     "/api/flows",
-    { preHandler: app.requireAuth },
+    { preHandler: [app.requireAuth, requireFlowsModule] },
     async (req, reply) => {
       const userId = req.authUser!.userId;
       try {
@@ -157,7 +169,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.put<{ Params: { id: string }; Body: { name?: string; connectionId?: string | null; nodes?: unknown[]; edges?: unknown[]; triggers?: unknown[]; isDefaultReply?: boolean } }>(
     "/api/flows/:id",
-    { preHandler: app.requireAuth },
+    { preHandler: [app.requireAuth, requireFlowsModule] },
     async (req, reply) => {
       const userId = req.authUser!.userId;
       try {
@@ -176,7 +188,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.delete<{ Params: { id: string } }>(
     "/api/flows/:id",
-    { preHandler: app.requireAuth },
+    { preHandler: [app.requireAuth, requireFlowsModule] },
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const deleted = await deleteFlow(userId, req.params.id);
@@ -187,7 +199,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string }; Body: { published: boolean } }>(
     "/api/flows/:id/publish",
-    { preHandler: app.requireAuth },
+    { preHandler: [app.requireAuth, requireFlowsModule] },
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const published = req.body?.published ?? true;
@@ -213,7 +225,7 @@ export async function flowRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string }; Body: { conversationId: string } }>(
     "/api/flows/:id/assign",
-    { preHandler: app.requireAuth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    { preHandler: [app.requireAuth, requireFlowsModule], config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
       const userId = req.authUser!.userId;
       const { conversationId } = req.body ?? {};

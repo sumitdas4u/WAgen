@@ -29,6 +29,8 @@ export type DashboardIconName =
 export interface DashboardEntitlementRequirement {
   maxApiNumbers?: number;
   maxAgentProfiles?: number;
+  maxActiveFlows?: number;
+  module?: keyof NonNullable<PlanEntitlements["modules"]>;
   prioritySupport?: boolean;
 }
 

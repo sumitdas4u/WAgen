@@ -216,12 +216,12 @@ function AutoRechargeForm({
       {draft.enabled && (
         <div className="acc-form-row-inline">
           <div className="acc-form-row">
-            <label className="acc-label" htmlFor="sub-threshold">Trigger threshold (credits)</label>
+            <label className="acc-label" htmlFor="sub-threshold">Trigger threshold (AI credits)</label>
             <input id="sub-threshold" className="acc-input" type="number" min={0} value={draft.thresholdCredits} onChange={(e) => setDraft((d) => ({ ...d, thresholdCredits: e.target.value }))} />
             <span className="acc-input-hint">Auto-recharge fires when balance drops below this</span>
           </div>
           <div className="acc-form-row">
-            <label className="acc-label" htmlFor="sub-recharge-credits">Recharge amount (credits)</label>
+            <label className="acc-label" htmlFor="sub-recharge-credits">AI recharge pack</label>
             <input id="sub-recharge-credits" className="acc-input" type="number" min={1} value={draft.rechargeCredits} onChange={(e) => setDraft((d) => ({ ...d, rechargeCredits: e.target.value }))} />
           </div>
           <div className="acc-form-row">

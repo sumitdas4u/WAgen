@@ -99,7 +99,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
   const [rechargeLoading, setRechargeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [rechargeCredits, setRechargeCredits] = useState<string>("100");
+  const [rechargeCredits, setRechargeCredits] = useState<string>("120");
 
   const [profileDraft, setProfileDraft] = useState({
     legalName: "",
@@ -116,7 +116,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
   const [autoDraft, setAutoDraft] = useState({
     enabled: false,
     thresholdCredits: "50",
-    rechargeCredits: "1000",
+    rechargeCredits: "260",
     maxRechargesPerDay: "1",
     gatewayCustomerId: "",
     gatewayTokenId: ""
@@ -231,7 +231,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
         amount: orderResponse.order.amountTotalPaise,
         currency: orderResponse.order.currency,
         name: "WagenAI",
-        description: `${orderResponse.order.credits} conversation credits recharge`,
+        description: `${orderResponse.order.credits} AI credits recharge`,
         order_id: orderResponse.order.razorpayOrderId,
         handler: () => {
           setInfo("Payment captured. Waiting for recharge confirmation...");
@@ -386,7 +386,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
         <div className="billing-recharge-header">
           <strong>Choose Recharge Amount</strong>
           <div className="billing-recharge-presets">
-            {[100, 500, 1000].map((credits) => (
+            {[120, 260, 600].map((credits) => (
               <button key={credits} type="button" onClick={() => setRechargeCredits(String(credits))}>
                 {credits.toLocaleString()} credits
               </button>
@@ -399,7 +399,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
             <input
               type="number"
               min={1}
-              placeholder="100 / 500 / 1000"
+              placeholder="120 / 260 / 600"
               value={rechargeCredits}
               onChange={(event) => setRechargeCredits(event.target.value)}
             />
@@ -533,7 +533,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
                 Enable Auto-Recharge
               </label>
               <label>Threshold Credits<input type="number" value={autoDraft.thresholdCredits} onChange={(event) => setAutoDraft((current) => ({ ...current, thresholdCredits: event.target.value }))} /></label>
-              <label>Recharge Credits<input type="number" value={autoDraft.rechargeCredits} onChange={(event) => setAutoDraft((current) => ({ ...current, rechargeCredits: event.target.value }))} /></label>
+              <label>AI Recharge Pack<input type="number" value={autoDraft.rechargeCredits} onChange={(event) => setAutoDraft((current) => ({ ...current, rechargeCredits: event.target.value }))} /></label>
               <label>Max per Day<input type="number" value={autoDraft.maxRechargesPerDay} onChange={(event) => setAutoDraft((current) => ({ ...current, maxRechargesPerDay: event.target.value }))} /></label>
               <label>Gateway Customer ID<input value={autoDraft.gatewayCustomerId} onChange={(event) => setAutoDraft((current) => ({ ...current, gatewayCustomerId: event.target.value }))} /></label>
               <label>Gateway Token ID<input value={autoDraft.gatewayTokenId} onChange={(event) => setAutoDraft((current) => ({ ...current, gatewayTokenId: event.target.value }))} /></label>

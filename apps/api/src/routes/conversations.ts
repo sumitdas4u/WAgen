@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { aiService } from "../services/ai-service.js";
-import { chargeUser } from "../services/ai-token-service.js";
+import { AiTokensDepletedError, chargeUser, requireAiCredit } from "../services/ai-token-service.js";
 import { queueApiConversationSend } from "../services/api-outbound-router-service.js";
 import { requireMetaConnection } from "../services/meta-whatsapp-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
@@ -1010,8 +1010,22 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         action === "rewrite"
           ? "You are a professional WhatsApp business messaging assistant. Rewrite the given message to be clearer, more professional, and friendly. Return only the rewritten message text with no explanation or prefix."
           : `You are a professional translator. Translate the given message to ${language ?? "English"}. Return only the translated text with no explanation or prefix.`;
+      try {
+        await requireAiCredit(request.authUser.userId, "ai_text_assist");
+      } catch (error) {
+        if (error instanceof AiTokensDepletedError) {
+          return reply.status(402).send({ error: "ai_tokens_depleted", message: error.message, balance: error.balance });
+        }
+        throw error;
+      }
       const result = await aiService.generateReply(systemPrompt, text, undefined, { temperature: 0.5 });
-      void chargeUser(request.authUser.userId, "ai_text_assist");
+      void chargeUser(request.authUser.userId, "ai_text_assist", {
+        module: "inbox",
+        model: result.model,
+        promptTokens: result.usage?.promptTokens ?? 0,
+        completionTokens: result.usage?.completionTokens ?? 0,
+        totalTokens: result.usage?.totalTokens ?? 0
+      });
       return { text: result.content.trim() };
     }
   );

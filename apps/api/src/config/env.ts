@@ -38,7 +38,7 @@ const BaseEnvSchema = z.object({
   RAZORPAY_PLAN_PRO_ID: z.string().optional(),
   RAZORPAY_PLAN_BUSINESS_ID: z.string().optional(),
   TRIAL_DAYS: z.coerce.number().int().positive().default(14),
-  TRIAL_CREDITS: z.coerce.number().int().nonnegative().default(200),
+  TRIAL_CREDITS: z.coerce.number().int().nonnegative().default(50),
   CONVERSATION_WINDOW_HOURS: z.coerce.number().int().positive().default(24),
   LOW_CREDIT_THRESHOLD: z.coerce.number().int().min(1).max(99).default(10),
   CREDIT_RENEWAL_CRON_ENABLED: z.enum(["true", "false"]).default("true"),

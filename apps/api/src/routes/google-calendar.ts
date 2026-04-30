@@ -10,6 +10,7 @@ import {
   listGoogleCalendars,
   renderGoogleCalendarOauthPopupPage
 } from "../services/google-calendar-service.js";
+import { buildPlanModulePreHandler } from "../services/plan-entitlement-service.js";
 
 const DisconnectSchema = z.object({
   connectionId: z.string().uuid().optional()
@@ -27,21 +28,23 @@ const CallbackQuerySchema = z.object({
 });
 
 export async function googleCalendarRoutes(app: FastifyInstance): Promise<void> {
+  const requireGoogleCalendar = buildPlanModulePreHandler("googleCalendar");
+
   app.get(
     "/api/google/calendar/config",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleCalendar] },
     async () => getGoogleCalendarConfig()
   );
 
   app.get(
     "/api/google/calendar/status",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleCalendar] },
     async (request) => getGoogleCalendarStatus(request.authUser.userId)
   );
 
   app.get(
     "/api/google/calendar/connect/start",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleCalendar] },
     async (request) => ({
       url: buildGoogleCalendarConnectUrl(request.authUser.userId)
     })
@@ -120,7 +123,7 @@ export async function googleCalendarRoutes(app: FastifyInstance): Promise<void> 
 
   app.post(
     "/api/google/calendar/disconnect",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleCalendar] },
     async (request, reply) => {
       const parsed = DisconnectSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -137,7 +140,7 @@ export async function googleCalendarRoutes(app: FastifyInstance): Promise<void> 
 
   app.get(
     "/api/google/calendar/calendars",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleCalendar] },
     async (request, reply) => {
       const parsed = ConnectionQuerySchema.safeParse(request.query ?? {});
       if (!parsed.success) {
@@ -155,7 +158,7 @@ export async function googleCalendarRoutes(app: FastifyInstance): Promise<void> 
   // Get connection info by ID — lets any user see who owns a stored connectionId
   app.get(
     "/api/google/calendar/connections/:id",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireGoogleCalendar] },
     async (request, reply) => {
       const id = (request.params as { id?: string }).id ?? "";
       if (!id) return reply.status(400).send({ error: "Missing connection id" });

@@ -149,7 +149,7 @@ export const aiAgentBlock: FlowBlockModule = {
           inputTemplate || "No input provided."
         );
         if (context.userId) {
-          void chargeUser(context.userId, "ai_agent_flow");
+          void chargeUser(context.userId, "ai_agent_flow", { module: "flows" });
         }
 
         return {
@@ -176,7 +176,13 @@ export const aiAgentBlock: FlowBlockModule = {
         inputTemplate || "No input provided."
       );
       if (context.userId) {
-        void chargeUser(context.userId, "ai_agent_flow");
+        void chargeUser(context.userId, "ai_agent_flow", {
+          module: "flows",
+          model: reply.model,
+          promptTokens: reply.usage?.promptTokens ?? 0,
+          completionTokens: reply.usage?.completionTokens ?? 0,
+          totalTokens: reply.usage?.totalTokens ?? 0
+        });
       }
 
       return {

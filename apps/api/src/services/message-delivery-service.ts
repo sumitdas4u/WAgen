@@ -433,9 +433,7 @@ export async function deliverCampaignMessage(input: {
   }
 
   const template = await getMessageTemplate(input.userId, input.campaign.template_id);
-  const contact = input.message.contact_id
-    ? await getContactByPhoneForUser(input.userId, input.message.phone_number)
-    : await getContactByPhoneForUser(input.userId, input.message.phone_number);
+  const contact = await getContactByPhoneForUser(input.userId, input.message.phone_number);
   const policy = await evaluateOutboundTemplatePolicy({
     userId: input.userId,
     phoneNumber: input.message.phone_number,

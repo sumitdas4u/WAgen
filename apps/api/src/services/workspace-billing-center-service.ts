@@ -362,6 +362,12 @@ function getPricePerCreditPaise(): number {
   return value;
 }
 
+const AI_RECHARGE_PACKS: Record<number, number> = {
+  120: 49_900,
+  260: 99_900,
+  600: 199_900
+};
+
 function getGstRatePercent(): number {
   const value = Number(env.BILLING_GST_RATE_PERCENT);
   if (!Number.isFinite(value) || value < 0) {
@@ -438,7 +444,7 @@ function toAutoRechargeSettings(row: AutoRechargeSettingsRow): AutoRechargeSetti
     workspaceId: row.workspace_id,
     enabled: row.enabled,
     thresholdCredits: toNonNegativeInteger(row.threshold_credits, 0),
-    rechargeCredits: toPositiveInteger(row.recharge_credits, 1000),
+    rechargeCredits: toPositiveInteger(row.recharge_credits, 260),
     maxRechargesPerDay: toPositiveInteger(row.max_recharges_per_day, 1),
     gatewayCustomerId: row.gateway_customer_id,
     gatewayTokenId: row.gateway_token_id,
@@ -497,7 +503,7 @@ function parseInvoiceLineItems(value: unknown): InvoiceLineItem[] {
 function buildRechargeLineItems(credits: number, totalPaise: number): InvoiceLineItem[] {
   return [
     {
-      label: `Recharge credits (${credits})`,
+      label: `AI credits recharge (${credits})`,
       quantity: credits,
       unitAmountPaise: Math.max(1, Math.round(totalPaise / Math.max(1, credits))),
       totalAmountPaise: totalPaise,
@@ -862,7 +868,7 @@ export async function getWorkspaceBillingOverview(userId: string): Promise<Works
     autoRecharge: {
       enabled: Boolean(row.auto_enabled),
       thresholdCredits: toNonNegativeInteger(row.auto_threshold_credits, 0),
-      rechargeCredits: toPositiveInteger(row.auto_recharge_credits, 1000),
+      rechargeCredits: toPositiveInteger(row.auto_recharge_credits, 260),
       maxRechargesPerDay: toPositiveInteger(row.auto_max_recharges_per_day, 1),
       lastTriggeredAt: row.auto_last_triggered_at,
       lastStatus: row.auto_last_status,
@@ -1269,7 +1275,7 @@ export async function upsertWorkspaceBillingProfile(
 
 export function computeRechargePriceForCredits(creditsInput: number): RechargeOrderPriceBreakdown & { credits: number } {
   const credits = toPositiveInteger(creditsInput);
-  const totalPaise = Math.max(100, Math.round(credits * getPricePerCreditPaise()));
+  const totalPaise = AI_RECHARGE_PACKS[credits] ?? Math.max(100, Math.round(credits * getPricePerCreditPaise()));
   const taxBreakdown = computeTaxBreakdown(totalPaise, getGstRatePercent());
   return {
     credits,
@@ -1696,7 +1702,7 @@ export async function upsertAutoRechargeSettings(
   const workspaceId = await getWorkspaceIdByUserId(userId);
   const enabled = Boolean(input.enabled);
   const thresholdCredits = toNonNegativeInteger(input.thresholdCredits, 0);
-  const rechargeCredits = toPositiveInteger(input.rechargeCredits, 1000);
+  const rechargeCredits = toPositiveInteger(input.rechargeCredits, 260);
   const maxRechargesPerDay = toPositiveInteger(input.maxRechargesPerDay, 1);
   const gatewayCustomerId = normalizeNullableText(input.gatewayCustomerId);
   const gatewayTokenId = normalizeNullableText(input.gatewayTokenId);

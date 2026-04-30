@@ -808,13 +808,6 @@ export async function markCampaignCompleted(campaignId: string): Promise<void> {
   );
 }
 
-export async function fetchQueuedCampaignMessages(
-  campaignId: string,
-  batchSize = 100
-): Promise<CampaignMessage[]> {
-  return claimQueuedCampaignMessages(campaignId, batchSize);
-}
-
 export async function claimQueuedCampaignMessages(
   campaignId: string,
   batchSize = 100

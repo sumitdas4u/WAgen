@@ -13,32 +13,76 @@
  * External callers should use chargeUser() instead of deductTokens() directly.
  */
 
+import { env } from "../config/env.js";
 import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
+import { estimateInrCost } from "./usage-cost-service.js";
+
+export const AI_CREDIT_GRACE_LIMIT = -5;
+
+type AiUsageMetadata = {
+  workspaceId?: string | null;
+  module?: string | null;
+  model?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  estimatedCreditsReserved?: number | null;
+  status?: "reserved" | "finalized" | "reversed" | "failed" | "credit";
+};
 
 // ── Action cost table ─────────────────────────────────────────────────────────
 export const AI_TOKEN_COSTS = {
-  chatbot_reply:        2,   // per inbound message handled by buildSalesReply
-  rag_embed_query:      1,   // per knowledge retrieval (embed + vector search)
-  kb_ingest_chunk:      1,   // per chunk stored during knowledge base ingestion
-  template_generate:   10,   // POST /api/meta/templates/ai-generate
-  onboarding_autofill: 10,   // POST /api/onboarding/autofill
-  flow_draft_generate: 15,   // POST /api/flows/generate-draft
-  ai_agent_flow:        3,   // per aiAgent flow-block execution / calendar booking parse
-  image_analyze:        5,   // per inbound image analysed
-  ai_text_assist:       3,   // per rewrite/translate in conversation editor
-  ai_lead_summary:      5,   // per lead conversation summary generated
-  ai_intent_classify:   1,   // per inbound message intent classification (LLM path)
+  auto_reply: 1,
+  flow_decision: 1,
+  lead_scoring: 1,
+  summary: 1,
+  translation: 1,
+  rewrite: 1,
+  campaign_personalization: 2,
+  rag_query: 1,
+  image_analysis: 4,
+  flow_generation: 8,
+  background_summary: 1,
+  background_tagging: 1,
+  rag_reindex: 1,
+
+  // Legacy action names kept while callers migrate to the clearer AIActionType names.
+  chatbot_reply: 1,
+  rag_embed_query: 1,
+  kb_ingest_chunk: 1,
+  template_generate: 8,
+  onboarding_autofill: 8,
+  flow_draft_generate: 8,
+  ai_agent_flow: 1,
+  image_analyze: 4,
+  ai_text_assist: 1,
+  ai_lead_summary: 1,
+  ai_intent_classify: 1,
 } as const;
 
 export type AiTokenAction = keyof typeof AI_TOKEN_COSTS;
+export type AIActionType =
+  | "auto_reply"
+  | "flow_decision"
+  | "lead_scoring"
+  | "summary"
+  | "translation"
+  | "rewrite"
+  | "campaign_personalization"
+  | "rag_query"
+  | "image_analysis"
+  | "flow_generation"
+  | "background_summary"
+  | "background_tagging"
+  | "rag_reindex";
 
 // ── Monthly quota per plan ────────────────────────────────────────────────────
 export const AI_TOKEN_PLAN_QUOTA: Record<string, number> = {
   trial:    50,
-  starter:  500,
-  pro:      2000,
-  business: 10000,
+  starter:  300,
+  pro:      700,
+  business: 1500,
 };
 
 // Hard-gated: creation features blocked at balance ≤ 0
@@ -47,6 +91,8 @@ const HARD_GATED_ACTIONS = new Set<AiTokenAction>([
   "flow_draft_generate",
   "onboarding_autofill",
   "kb_ingest_chunk",
+  "flow_generation",
+  "rag_reindex",
 ]);
 
 // ── Error types ───────────────────────────────────────────────────────────────
@@ -75,6 +121,69 @@ function assertValidAction(action: string): asserts action is AiTokenAction {
   }
 }
 
+function toNonNegativeInteger(value: number | null | undefined): number {
+  if (!Number.isFinite(Number(value))) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(Number(value)));
+}
+
+export function getCreditsForAction(action: AiTokenAction): number {
+  assertValidAction(action);
+  return AI_TOKEN_COSTS[action];
+}
+
+function estimateCreditsFromTokens(action: AiTokenAction, totalTokens: number): number {
+  const weightedActionCredits = getCreditsForAction(action);
+  const tokenCredits = Math.ceil(toNonNegativeInteger(totalTokens) / 8_000);
+  return Math.max(weightedActionCredits, tokenCredits || 1);
+}
+
+export function estimateRequiredCredits(
+  action: AiTokenAction | string,
+  input?: { estimatedTokens?: number | null }
+): number {
+  assertValidAction(action);
+  return estimateCreditsFromTokens(action, toNonNegativeInteger(input?.estimatedTokens));
+}
+
+async function getWorkspaceIdForUser(userId: string): Promise<string | null> {
+  const result = await pool.query<{ workspace_id: string | null }>(
+    `SELECT workspace_id FROM users WHERE id = $1 LIMIT 1`,
+    [userId]
+  );
+  return firstRow(result)?.workspace_id ?? null;
+}
+
+function defaultModuleForAction(action: AiTokenAction): string {
+  if (action.includes("flow")) return "flows";
+  if (action.includes("template")) return "templates";
+  if (action.includes("campaign")) return "campaigns";
+  if (action.includes("rag") || action.includes("kb_")) return "knowledge";
+  if (action.includes("image")) return "media";
+  if (action.includes("summary") || action.includes("intent") || action.includes("lead")) return "inbox";
+  if (action.includes("text") || action.includes("translation") || action.includes("rewrite")) return "inbox";
+  return "ai";
+}
+
+function resolveUsageMetadata(action: AiTokenAction, metadata?: AiUsageMetadata): Required<AiUsageMetadata> {
+  const promptTokens = toNonNegativeInteger(metadata?.promptTokens);
+  const completionTokens = toNonNegativeInteger(metadata?.completionTokens);
+  const totalTokens = toNonNegativeInteger(metadata?.totalTokens) || promptTokens + completionTokens;
+  const model = metadata?.model?.trim() || env.OPENAI_CHAT_MODEL;
+
+  return {
+    workspaceId: metadata?.workspaceId ?? null,
+    module: metadata?.module?.trim() || defaultModuleForAction(action),
+    model,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    estimatedCreditsReserved: toNonNegativeInteger(metadata?.estimatedCreditsReserved),
+    status: metadata?.status ?? "finalized"
+  };
+}
+
 // ── Core balance read ─────────────────────────────────────────────────────────
 
 export async function getTokenBalance(userId: string): Promise<number> {
@@ -92,11 +201,21 @@ export async function getTokenBalance(userId: string): Promise<number> {
  * For soft features (chatbot, RAG, agent, image): always passes through.
  * Call BEFORE any AI work begins so the caller gets an immediate 402.
  */
-export async function requireAiCredit(userId: string, action: AiTokenAction | string): Promise<void> {
+export async function requireAiCredit(
+  userId: string,
+  action: AiTokenAction | string,
+  creditsRequired?: number
+): Promise<void> {
   assertValidAction(action);
-  if (!HARD_GATED_ACTIONS.has(action as AiTokenAction)) return;
+  const required = Math.max(1, Math.floor(creditsRequired ?? getCreditsForAction(action)));
   const balance = await getTokenBalance(userId);
-  if (balance <= 0) throw new AiTokensDepletedError(balance);
+  if (balance - required < AI_CREDIT_GRACE_LIMIT) {
+    throw new AiTokensDepletedError(balance);
+  }
+
+  if (HARD_GATED_ACTIONS.has(action as AiTokenAction) && balance <= AI_CREDIT_GRACE_LIMIT) {
+    throw new AiTokensDepletedError(balance);
+  }
 }
 
 // ── Central charge function ───────────────────────────────────────────────────
@@ -118,10 +237,22 @@ export async function requireAiCredit(userId: string, action: AiTokenAction | st
 export async function chargeUser(
   userId: string,
   action: AiTokenAction,
-  referenceId?: string
+  referenceIdOrMetadata?: string | AiUsageMetadata,
+  maybeMetadata?: AiUsageMetadata
 ): Promise<{ balanceAfter: number }> {
   assertValidAction(action);
-  const cost = AI_TOKEN_COSTS[action];
+  const referenceId = typeof referenceIdOrMetadata === "string" ? referenceIdOrMetadata : undefined;
+  const metadata = typeof referenceIdOrMetadata === "object" ? referenceIdOrMetadata : maybeMetadata;
+  const resolvedMetadata = resolveUsageMetadata(action, metadata);
+  const cost = Math.max(
+    getCreditsForAction(action),
+    estimateCreditsFromTokens(action, resolvedMetadata.totalTokens ?? 0)
+  );
+  const estimatedCostInr = estimateInrCost(
+    resolvedMetadata.model,
+    resolvedMetadata.promptTokens ?? 0,
+    resolvedMetadata.completionTokens ?? 0
+  );
 
   const client = await pool.connect();
   try {
@@ -134,6 +265,7 @@ export async function chargeUser(
     );
     const current = firstRow(lockResult)?.ai_token_balance ?? 0;
     const newBalance = current - cost;
+    const workspaceId = resolvedMetadata.workspaceId ?? (await getWorkspaceIdForUser(userId));
 
     await client.query(
       `UPDATE users SET ai_token_balance = $1 WHERE id = $2`,
@@ -143,16 +275,79 @@ export async function chargeUser(
     // Idempotent ledger insert: if the same referenceId already exists, skip
     if (referenceId) {
       await client.query(
-        `INSERT INTO ai_token_ledger (user_id, amount, action_type, reference_id, balance_after)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO ai_token_ledger (
+           user_id,
+           workspace_id,
+           amount,
+           action_type,
+           module,
+           reference_id,
+           balance_after,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           model,
+           estimated_cost_inr,
+           estimated_credits_reserved,
+           credits_deducted,
+           status
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (user_id, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
-        [userId, -cost, action, referenceId, newBalance]
+        [
+          userId,
+          workspaceId,
+          -cost,
+          action,
+          resolvedMetadata.module,
+          referenceId,
+          newBalance,
+          resolvedMetadata.promptTokens,
+          resolvedMetadata.completionTokens,
+          resolvedMetadata.totalTokens,
+          resolvedMetadata.model,
+          estimatedCostInr,
+          resolvedMetadata.estimatedCreditsReserved,
+          cost,
+          resolvedMetadata.status
+        ]
       );
     } else {
       await client.query(
-        `INSERT INTO ai_token_ledger (user_id, amount, action_type, reference_id, balance_after)
-         VALUES ($1, $2, $3, NULL, $4)`,
-        [userId, -cost, action, newBalance]
+        `INSERT INTO ai_token_ledger (
+           user_id,
+           workspace_id,
+           amount,
+           action_type,
+           module,
+           reference_id,
+           balance_after,
+           prompt_tokens,
+           completion_tokens,
+           total_tokens,
+           model,
+           estimated_cost_inr,
+           estimated_credits_reserved,
+           credits_deducted,
+           status
+         )
+         VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [
+          userId,
+          workspaceId,
+          -cost,
+          action,
+          resolvedMetadata.module,
+          newBalance,
+          resolvedMetadata.promptTokens,
+          resolvedMetadata.completionTokens,
+          resolvedMetadata.totalTokens,
+          resolvedMetadata.model,
+          estimatedCostInr,
+          resolvedMetadata.estimatedCreditsReserved,
+          cost,
+          resolvedMetadata.status
+        ]
       );
     }
 

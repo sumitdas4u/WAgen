@@ -1036,6 +1036,9 @@ export async function renewDueWorkspaceCredits(options?: {
     const dueResult = await client.query<
       WorkspaceSubscriptionRow & {
         monthly_credits: number;
+        ai_tokens_monthly: number;
+        owner_id: string;
+        plan_code: WorkspacePlanCode;
       }
     >(
       `SELECT
@@ -1047,9 +1050,13 @@ export async function renewDueWorkspaceCredits(options?: {
          s.next_billing_date,
          s.payment_gateway_id,
          s.updated_at,
-         p.monthly_credits
+         p.monthly_credits,
+         p.ai_tokens_monthly,
+         p.code AS plan_code,
+         w.owner_id
        FROM subscriptions s
        JOIN plans p ON p.id = s.plan_id
+       JOIN workspaces w ON w.id = s.workspace_id
        WHERE s.status = 'active'
          AND s.next_billing_date IS NOT NULL
          AND s.next_billing_date <= $1::timestamptz
@@ -1062,6 +1069,7 @@ export async function renewDueWorkspaceCredits(options?: {
     let renewed = 0;
     for (const row of dueResult.rows) {
       const monthlyCredits = Math.max(0, Number(row.monthly_credits ?? 0));
+      const monthlyAiCredits = Math.max(0, Number(row.ai_tokens_monthly ?? monthlyCredits));
       const renewalReference = `renewal:${row.id}:${new Date(now).toISOString().slice(0, 10)}`;
 
       await client.query(
@@ -1082,9 +1090,34 @@ export async function renewDueWorkspaceCredits(options?: {
           "Monthly credit renewal",
           JSON.stringify({
             subscriptionId: row.id,
+            billingUnit: "ai_credit",
             renewedAt: now.toISOString()
           })
         ]
+      );
+
+      await client.query(
+        `UPDATE users
+         SET ai_token_balance = $1
+         WHERE id = $2`,
+        [monthlyAiCredits, row.owner_id]
+      );
+
+      await client.query(
+        `INSERT INTO ai_token_ledger (
+           user_id,
+           workspace_id,
+           amount,
+           action_type,
+           module,
+           reference_id,
+           balance_after,
+           credits_deducted,
+           status
+         )
+         VALUES ($1, $2, $3, 'plan_monthly_reset', 'billing', $4, $3, 0, 'credit')
+         ON CONFLICT (user_id, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+        [row.owner_id, row.workspace_id, monthlyAiCredits, `ai-${renewalReference}`]
       );
 
       await client.query(
