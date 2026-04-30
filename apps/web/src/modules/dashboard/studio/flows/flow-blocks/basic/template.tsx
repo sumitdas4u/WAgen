@@ -29,8 +29,7 @@ function TemplateNode({ id, data, selected }: NodeProps<TemplateData>) {
 
   useEffect(() => {
     patch({ headerMediaType: mediaTypeLabel ?? undefined });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaTypeLabel]);
+  }, [mediaTypeLabel]); // intentionally omit patch — stable ref from useNodePatch
 
   // Pre-fill headerMediaUrl from template default when template is selected and no override set
   useEffect(() => {
@@ -38,8 +37,7 @@ function TemplateNode({ id, data, selected }: NodeProps<TemplateData>) {
     if (defaultUrl && !data.headerMediaUrl) {
       patch({ headerMediaUrl: defaultUrl });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchedTemplate?.headerMediaUrl]);
+  }, [matchedTemplate?.headerMediaUrl]); // intentionally omit patch and data.headerMediaUrl — one-time pre-fill
 
   return (
     <div className={`fn-node fn-node-template${selected ? " selected" : ""}`}>
