@@ -1,10 +1,12 @@
 import {
   createContact,
+  deleteContact,
   downloadContactsTemplate,
   exportContactsWorkbook,
   fetchContacts,
   importContactsWorkbook,
   previewContactsImportWorkbook,
+  updateContact,
   type ContactImportColumnMapping,
   type ContactImportPreview,
   type ContactImportResult,
@@ -42,6 +44,27 @@ export function createManualContact(
   }
 ): Promise<ContactRecord> {
   return createContact(token, payload).then((response) => response.contact);
+}
+
+export function updateManualContact(
+  token: string,
+  contactId: string,
+  payload: {
+    name: string;
+    phone: string;
+    email?: string | null;
+    type?: ContactType;
+    tags?: string[];
+    sourceId?: string | null;
+    sourceUrl?: string | null;
+    customFields?: Record<string, string>;
+  }
+): Promise<ContactRecord> {
+  return updateContact(token, contactId, payload).then((response) => response.contact);
+}
+
+export function deleteManualContact(token: string, contactId: string): Promise<void> {
+  return deleteContact(token, contactId).then(() => undefined);
 }
 
 export function previewContactsWorkbookUpload(token: string, file: File): Promise<ContactImportPreview> {

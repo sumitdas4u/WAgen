@@ -131,8 +131,10 @@ export function DetailsSidebar({ convId, onClose }: Props) {
   const agentProfilesQuery = useQuery({
     queryKey: ["iv2-agent-profiles"],
     queryFn: () => fetchAgentProfiles(token!),
-    enabled: Boolean(token),
-    staleTime: 60_000
+    enabled: Boolean(token && openSections.has("conv-actions")),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false
   });
 
   const assignMut = useMutation({
@@ -149,28 +151,36 @@ export function DetailsSidebar({ convId, onClose }: Props) {
     queryKey: ["iv2-contact", convId],
     queryFn: () => fetchContactByConversation(token!, convId),
     enabled: Boolean(token && convId),
-    staleTime: 30_000
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false
   });
 
   const automationQuery = useQuery({
     queryKey: ["iv2-automation", convId],
     queryFn: () => fetchConversationAutomation(token!, convId),
-    enabled: Boolean(token && convId),
-    staleTime: 15_000
+    enabled: Boolean(token && convId && openSections.has("automation")),
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false
   });
 
   const timelineQuery = useQuery({
     queryKey: ["iv2-timeline", convId],
     queryFn: () => fetchConversationTimeline(token!, convId),
-    enabled: Boolean(token && convId),
-    staleTime: 15_000
+    enabled: Boolean(token && convId && openSections.has("timeline")),
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false
   });
 
   const fieldsQuery = useQuery({
     queryKey: ["iv2-contact-fields"],
     queryFn: () => listContactFields(token!),
     enabled: Boolean(token),
-    staleTime: 60_000
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false
   });
 
   const contact = contactQuery.data?.contact ?? null;

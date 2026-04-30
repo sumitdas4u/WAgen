@@ -22,6 +22,7 @@ import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
 import {
   createManualContact,
+  deleteManualContact,
   downloadContactsTemplate,
   exportContactsWorkbook,
   previewContactsWorkbookUpload,
@@ -30,6 +31,7 @@ import {
   type ContactImportResult,
   type ContactSourceType,
   type ContactType,
+  updateManualContact,
   uploadContactsWorkbook
 } from "./api";
 import { buildContactsQueryOptions, useContactsQuery } from "./queries";
@@ -43,6 +45,7 @@ type TabId = "contacts" | "segments";
 
 type ContactFormState = {
   name: string;
+  countryCode: string;
   phone: string;
   email: string;
   type: ContactType;
@@ -54,6 +57,7 @@ type ContactFormState = {
 
 const DEFAULT_FORM_STATE: ContactFormState = {
   name: "",
+  countryCode: "+91",
   phone: "",
   email: "",
   type: "lead",
@@ -180,6 +184,35 @@ function formatPhone(value: string): string {
   return digits ? `+${digits}` : value;
 }
 
+function hasCountryCode(value: string): boolean {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  return trimmed.startsWith("+") && digits.length >= 8 && digits.length <= 15;
+}
+
+function normalizeCountryCode(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  return digits ? `+${digits}` : "+91";
+}
+
+function buildPhoneWithCountryCode(countryCode: string, phone: string): string {
+  return `${normalizeCountryCode(countryCode)}${phone.replace(/\D/g, "")}`;
+}
+
+function splitPhoneForForm(value: string): { countryCode: string; phone: string } {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length > 10) {
+    return {
+      countryCode: `+${digits.slice(0, digits.length - 10)}`,
+      phone: digits.slice(-10)
+    };
+  }
+  return {
+    countryCode: "+91",
+    phone: digits
+  };
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const timestamp = Date.parse(value);
@@ -242,6 +275,23 @@ function renderFieldValue(fieldType: string, value: string | null): string {
   return value;
 }
 
+function buildFormStateFromContact(contact: ContactRecord): ContactFormState {
+  const phoneParts = splitPhoneForForm(contact.phone_number);
+  return {
+    name: contact.display_name ?? "",
+    countryCode: phoneParts.countryCode,
+    phone: phoneParts.phone,
+    email: contact.email ?? "",
+    type: contact.contact_type,
+    tags: contact.tags.join(", "),
+    sourceId: contact.source_id ?? "",
+    sourceUrl: contact.source_url ?? "",
+    customFields: Object.fromEntries(
+      (contact.custom_field_values ?? []).map((fieldValue) => [fieldValue.field_name, fieldValue.value ?? ""])
+    )
+  };
+}
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" width="14" height="14">
@@ -279,6 +329,14 @@ function TrashIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" width="14" height="14">
       <path d="M4 5h12M8 5V3h4v2M6 5l1 11h6l1-11" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="14" height="14">
+      <path d="M4 14.5V16h1.5L15 6.5 13.5 5 4 14.5ZM12.5 4 14 2.5 17.5 6 16 7.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -672,7 +730,8 @@ function ContactsImportModal({
 
 // ─── Add Contact Modal ────────────────────────────────────────────────────────
 
-function AddContactModal({
+function ContactModal({
+  mode,
   customFields,
   formState,
   setFormState,
@@ -681,6 +740,7 @@ function AddContactModal({
   onClose,
   onSave
 }: {
+  mode: "create" | "edit";
   customFields: ContactField[];
   formState: ContactFormState;
   setFormState: React.Dispatch<React.SetStateAction<ContactFormState>>;
@@ -699,7 +759,7 @@ function AddContactModal({
     <div className="ct-modal-backdrop" onClick={onClose}>
       <div className="ct-modal ct-modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="ct-modal-head">
-          <h3 className="ct-modal-title">Add Contact</h3>
+          <h3 className="ct-modal-title">{mode === "edit" ? "Edit Contact" : "Add Contact"}</h3>
           <button type="button" className="ct-modal-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
@@ -716,11 +776,22 @@ function AddContactModal({
             </label>
             <label className="ct-form-label">
               Phone *
-              <input
-                value={formState.phone}
-                onChange={(e) => setFormState((c) => ({ ...c, phone: e.target.value }))}
-                placeholder="+91 98765 43210"
-              />
+              <div className="ct-phone-input-row">
+                <input
+                  className="ct-country-code-input"
+                  value={formState.countryCode}
+                  onChange={(e) => setFormState((c) => ({ ...c, countryCode: normalizeCountryCode(e.target.value) }))}
+                  onBlur={(e) => setFormState((c) => ({ ...c, countryCode: normalizeCountryCode(e.target.value) }))}
+                  inputMode="tel"
+                  aria-label="Country code"
+                />
+                <input
+                  value={formState.phone}
+                  onChange={(e) => setFormState((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 14) }))}
+                  placeholder="9876543210"
+                  inputMode="tel"
+                />
+              </div>
             </label>
             <label className="ct-form-label">
               Email
@@ -818,7 +889,7 @@ function AddContactModal({
         <div className="ct-modal-footer">
           <button type="button" className="ct-modal-cancel" onClick={onClose}>Cancel</button>
           <button type="button" className="ct-modal-submit" disabled={submitting} onClick={onSave}>
-            {submitting ? "Saving…" : "Save Contact"}
+            {submitting ? "Saving…" : mode === "edit" ? "Update Contact" : "Save Contact"}
           </button>
         </div>
       </div>
@@ -843,10 +914,11 @@ function ContactsTab({
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
 
   // Per-row dropdown
   const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [expandedTagContactId, setExpandedTagContactId] = useState<string | null>(null);
 
   // Form / import state
   const [submitting, setSubmitting] = useState(false);
@@ -857,6 +929,7 @@ function ContactsTab({
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importMapping, setImportMapping] = useState<ContactImportColumnMapping>({});
   const [formState, setFormState] = useState<ContactFormState>(DEFAULT_FORM_STATE);
+  const [editingContact, setEditingContact] = useState<ContactRecord | null>(null);
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -924,8 +997,9 @@ function ContactsTab({
         setShowExportMenu(false);
         setShowImportMenu(false);
         setShowColumnsMenu(false);
-        setShowAddModal(false);
+        setShowContactModal(false);
         setOpenRowId(null);
+        setExpandedTagContactId(null);
       }
     };
     window.addEventListener("mousedown", closeMenus);
@@ -955,20 +1029,38 @@ function ContactsTab({
   const openAddModal = () => {
     setShowExportMenu(false);
     setShowImportMenu(false);
+    setOpenRowId(null);
+    setEditingContact(null);
     setFormState({ ...DEFAULT_FORM_STATE, customFields: {} });
-    setShowAddModal(true);
+    setShowContactModal(true);
+    setInfo(null);
+    setError(null);
+  };
+
+  const openEditModal = (contact: ContactRecord) => {
+    setShowExportMenu(false);
+    setShowImportMenu(false);
+    setOpenRowId(null);
+    setEditingContact(contact);
+    setFormState(buildFormStateFromContact(contact));
+    setShowContactModal(true);
     setInfo(null);
     setError(null);
   };
 
   const handleCreateContact = async () => {
+    const phone = buildPhoneWithCountryCode(formState.countryCode, formState.phone);
+    if (!hasCountryCode(phone)) {
+      setError("Phone number must include country code, for example +919876543210.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setInfo(null);
     try {
       await createManualContact(token, {
         name: formState.name,
-        phone: formState.phone,
+        phone,
         email: formState.email || undefined,
         type: formState.type,
         tags: normalizeTags(formState.tags),
@@ -979,10 +1071,83 @@ function ContactsTab({
         )
       });
       await invalidateContacts();
-      setShowAddModal(false);
+      setShowContactModal(false);
       setInfo("Contact added successfully.");
     } catch (submitError) {
       setError((submitError as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateContact = async () => {
+    if (!editingContact) return;
+    const phone = buildPhoneWithCountryCode(formState.countryCode, formState.phone);
+    if (!hasCountryCode(phone)) {
+      setError("Phone number must include country code, for example +919876543210.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await updateManualContact(token, editingContact.id, {
+        name: formState.name,
+        phone,
+        email: formState.email || null,
+        type: formState.type,
+        tags: normalizeTags(formState.tags),
+        sourceId: formState.sourceId || null,
+        sourceUrl: formState.sourceUrl || null,
+        customFields: Object.fromEntries(
+          Object.entries(formState.customFields).map(([key, value]) => [key, value.trim()])
+        )
+      });
+      await invalidateContacts();
+      setShowContactModal(false);
+      setEditingContact(null);
+      setInfo("Contact updated successfully.");
+    } catch (submitError) {
+      setError((submitError as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteContact = async (contact: ContactRecord) => {
+    setOpenRowId(null);
+    const label = contact.display_name || formatPhone(contact.phone_number);
+    if (!window.confirm(`Delete contact "${label}"? This cannot be undone.`)) return;
+
+    setSubmitting(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await deleteManualContact(token, contact.id);
+      setSelectedIds((current) => current.filter((id) => id !== contact.id));
+      await invalidateContacts();
+      setInfo("Contact deleted successfully.");
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected contact${selectedIds.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+
+    setSubmitting(true);
+    setError(null);
+    setInfo(null);
+    try {
+      await Promise.all(selectedIds.map((contactId) => deleteManualContact(token, contactId)));
+      setSelectedIds([]);
+      await invalidateContacts();
+      setInfo("Selected contacts deleted successfully.");
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
     } finally {
       setSubmitting(false);
     }
@@ -1196,6 +1361,12 @@ function ContactsTab({
           {/* Selected badge */}
           {selectedCount > 0 && (
             <span className="ct-selected-badge">{selectedCount} selected</span>
+          )}
+          {selectedCount > 0 && (
+            <button type="button" className="ct-toolbar-btn ct-danger-btn" disabled={submitting} onClick={() => void handleDeleteSelected()}>
+              <TrashIcon />
+              Delete selected
+            </button>
           )}
 
           {/* Columns picker */}
@@ -1432,10 +1603,29 @@ function ContactsTab({
                         return (
                           <td key={col.id}>
                             {contact.tags.length > 0 ? (
-                              <div className="ct-tags">
-                                {contact.tags.map((tag) => (
-                                  <span key={tag} className="ct-tag">{tag}</span>
+                              <div className={`ct-tags${expandedTagContactId === contact.id ? " is-expanded" : ""}`}>
+                                {(expandedTagContactId === contact.id ? contact.tags : contact.tags.slice(0, 2)).map((tag) => (
+                                  <span key={tag} className="ct-tag" title={tag}>{tag}</span>
                                 ))}
+                                {expandedTagContactId !== contact.id && contact.tags.length > 2 && (
+                                  <button
+                                    type="button"
+                                    className="ct-tag-more"
+                                    onClick={() => setExpandedTagContactId(contact.id)}
+                                    title={contact.tags.slice(2).join(", ")}
+                                  >
+                                    +{contact.tags.length - 2}
+                                  </button>
+                                )}
+                                {expandedTagContactId === contact.id && contact.tags.length > 2 && (
+                                  <button
+                                    type="button"
+                                    className="ct-tag-more"
+                                    onClick={() => setExpandedTagContactId(null)}
+                                  >
+                                    Show less
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               <span className="ct-cell-empty">—</span>
@@ -1496,6 +1686,13 @@ function ContactsTab({
                             <button
                               type="button"
                               className="ct-dd-item"
+                              onClick={() => openEditModal(contact)}
+                            >
+                              <EditIcon /> Edit contact
+                            </button>
+                            <button
+                              type="button"
+                              className="ct-dd-item"
                               onClick={() => { copyPhone(contact.phone_number); setOpenRowId(null); }}
                             >
                               📋 Copy phone
@@ -1509,6 +1706,14 @@ function ContactsTab({
                                 💬 View history
                               </button>
                             )}
+                            <div className="ct-dd-divider" />
+                            <button
+                              type="button"
+                              className="ct-dd-item ct-dd-item-danger"
+                              onClick={() => void handleDeleteContact(contact)}
+                            >
+                              <TrashIcon /> Delete contact
+                            </button>
                           </div>
                         )}
                       </div>
@@ -1549,15 +1754,19 @@ function ContactsTab({
       )}
 
       {/* ── Modals ── */}
-      {showAddModal && (
-        <AddContactModal
+      {showContactModal && (
+        <ContactModal
+          mode={editingContact ? "edit" : "create"}
           customFields={customFields}
           formState={formState}
           setFormState={setFormState}
           submitting={submitting}
           error={error}
-          onClose={() => setShowAddModal(false)}
-          onSave={() => void handleCreateContact()}
+          onClose={() => {
+            setShowContactModal(false);
+            setEditingContact(null);
+          }}
+          onSave={() => void (editingContact ? handleUpdateContact() : handleCreateContact())}
         />
       )}
 

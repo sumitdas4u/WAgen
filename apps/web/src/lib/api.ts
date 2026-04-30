@@ -1916,6 +1916,34 @@ export function createContact(
   });
 }
 
+export function updateContact(
+  token: string,
+  contactId: string,
+  payload: {
+    name?: string;
+    phone?: string;
+    email?: string | null;
+    type?: ContactType;
+    tags?: string[];
+    sourceId?: string | null;
+    sourceUrl?: string | null;
+    customFields?: Record<string, string>;
+  }
+) {
+  return apiRequest<{ contact: ContactRecord }>(`/api/contacts/${contactId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteContact(token: string, contactId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/contacts/${contactId}`, {
+    method: "DELETE",
+    token
+  });
+}
+
 export function fetchContactByConversation(token: string, conversationId: string) {
   return apiRequest<{ contact: ContactRecord }>(`/api/contacts/by-conversation/${conversationId}`, { token });
 }
@@ -1957,7 +1985,7 @@ export function exportContactsWorkbook(
   token: string,
   payload: {
     ids?: string[];
-    filters?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; limit?: number };
+    filters?: { q?: string; type?: ContactType; source?: ContactSourceType; tag?: string; consent?: string; limit?: number };
     columns?: string[];
   }
 ): Promise<{ blob: Blob; filename: string }> {

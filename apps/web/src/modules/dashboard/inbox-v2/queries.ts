@@ -37,7 +37,7 @@ export function useConversations(folder: ConvFolder, searchQ: string, filters: C
     queryFn: ({ pageParam }) =>
       fetchConvPage(token!, {
         cursor: pageParam as string | undefined,
-        limit: 50,
+        limit: 30,
         folder,
         q: searchQ || null,
         filters
@@ -45,7 +45,9 @@ export function useConversations(folder: ConvFolder, searchQ: string, filters: C
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: !!token,
-    staleTime: 30_000
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false
   });
 
   useEffect(() => {
@@ -81,7 +83,9 @@ export function useConversationFacets(folder: ConvFolder, searchQ: string, filte
       filters
     }),
     enabled: !!token,
-    staleTime: 15_000
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false
   });
 }
 
@@ -99,6 +103,8 @@ export function useConversation(convId: string | null) {
     },
     enabled: !!token && !!convId && !existing,
     staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     retry: 1
   });
 
@@ -121,7 +127,10 @@ export function useMessages(convId: string | null) {
       fetchConvMessages(token!, convId!, { before: pageParam as string | undefined, limit: 30 }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor ?? undefined : undefined),
-    enabled: !!token && !!convId
+    enabled: !!token && !!convId,
+    staleTime: 15_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false
   });
 
   useEffect(() => {
@@ -140,7 +149,10 @@ export function useLabels() {
   return useQuery({
     queryKey: ["iv2-labels"],
     queryFn: () => fetchLabels(token!).then((d) => { store.setLabels(d.labels); return d.labels; }),
-    enabled: !!token
+    enabled: !!token,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false
   });
 }
 
@@ -157,10 +169,10 @@ export function useMarkRead() {
       await qc.cancelQueries({ queryKey: ["iv2-convs"] });
 
       // Snapshot the current cache for rollback on error (same as V1)
-      const previous = qc.getQueryData<InfiniteData<ConvPage>>(["iv2-convs"]);
+      const previous = qc.getQueriesData<InfiniteData<ConvPage>>({ queryKey: ["iv2-convs"] });
 
       // Patch React Query cache directly — walk pages → items (same as V1)
-      qc.setQueryData<InfiniteData<ConvPage>>(["iv2-convs"], (current) => {
+      qc.setQueriesData<InfiniteData<ConvPage>>({ queryKey: ["iv2-convs"] }, (current) => {
         if (!current) return current;
         return {
           ...current,
@@ -182,7 +194,9 @@ export function useMarkRead() {
     onError: (_err, _convId, context) => {
       // Roll back the cache snapshot (same as V1)
       if (context?.previous) {
-        qc.setQueryData(["iv2-convs"], context.previous);
+        for (const [queryKey, data] of context.previous) {
+          qc.setQueryData(queryKey, data);
+        }
       }
     },
     onSettled: () => {

@@ -14,6 +14,8 @@ function toWsBase(url: string): string {
 
 const WS_BASE = toWsBase(API_URL);
 const MAX_LAST_MSG_CONVS = 20;
+const MAX_RECONNECT_RESYNC_CONVS = 5;
+const CONVERSATION_REFRESH_DEBOUNCE_MS = 750;
 
 function getLastMsgIds(): Record<string, string> {
   try {
@@ -62,12 +64,34 @@ export function useRealtimeSocket(token: string | null) {
     let ws: WebSocket | null = null;
     let retryDelay = 1_000;
     let destroyed = false;
+    let refreshTimer: number | null = null;
+    let hasOpenedOnce = false;
+
+    function scheduleConversationsRefresh() {
+      if (refreshTimer !== null) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
+      }, CONVERSATION_REFRESH_DEBOUNCE_MS);
+    }
 
 
     function resync() {
       const lastMsgIds = getLastMsgIds();
       const s = storeRef.current;
-      for (const convId of s.ids) {
+      const loadedMessageConvIds = Object.keys(s.messagesByConvId).filter((convId) => {
+        const messages = s.messagesByConvId[convId] ?? [];
+        return messages.length > 0;
+      });
+      const convIds = Array.from(
+        new Set([
+          s.activeConvId,
+          ...loadedMessageConvIds,
+          ...s.ids.slice(0, MAX_RECONNECT_RESYNC_CONVS)
+        ].filter((id): id is string => Boolean(id)))
+      ).slice(0, MAX_RECONNECT_RESYNC_CONVS);
+
+      for (const convId of convIds) {
         const lastId = lastMsgIds[convId];
         if (lastId) {
           void fetch(`${API_URL}/api/conversations/${convId}/messages/after?cursor=${encodeURIComponent(lastId)}`, {
@@ -150,8 +174,8 @@ export function useRealtimeSocket(token: string | null) {
             csat_sent_at: null,
             user_id: ""
           });
-          // Fetch fresh full data so the stub is replaced with complete conversation details
-          void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
+          // Fetch fresh full data so the stub is replaced with complete conversation details.
+          scheduleConversationsRefresh();
           break;
         case "conversation.updated":
         case "conversation.status_changed":
@@ -172,9 +196,7 @@ export function useRealtimeSocket(token: string | null) {
           // Skip invalidation for the active conversation — upsertConv already applied
           // the update, and markRead.onSettled handles its own refetch. Refetching here
           // would briefly restore unread_count from the server and break mark-as-read.
-          if (raw.id !== s.activeConvId) {
-            void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
-          }
+          if (raw.id !== s.activeConvId) scheduleConversationsRefresh();
           break;
         }
         case "conversation.read":
@@ -209,7 +231,7 @@ export function useRealtimeSocket(token: string | null) {
         case "contact.updated":
           // Invalidate contact/sidebar and list data so flow contact-field updates show immediately.
           void qcRef.current.invalidateQueries({ queryKey: ["iv2-contact", envelope.data.conversation_id] });
-          void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
+          scheduleConversationsRefresh();
           break;
         case "agent.notification":
           notifRef.current.prependNotification(envelope.data as AgentNotification);
@@ -228,9 +250,12 @@ export function useRealtimeSocket(token: string | null) {
 
       ws.onopen = () => {
         retryDelay = 1_000;
-        resync();
-        // Refresh conversation list on reconnect so unread counts and new convs are current
-        void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
+        if (hasOpenedOnce) {
+          resync();
+          // Refresh conversation list on reconnect so unread counts and new convs are current.
+          scheduleConversationsRefresh();
+        }
+        hasOpenedOnce = true;
       };
 
       ws.onmessage = (e) => handleMessage(e.data as string);
@@ -252,6 +277,7 @@ export function useRealtimeSocket(token: string | null) {
     return () => {
       destroyed = true;
       clearInterval(ping);
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       ws?.close();
     };
   }, [token]);

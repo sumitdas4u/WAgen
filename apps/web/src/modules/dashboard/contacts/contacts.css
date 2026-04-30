@@ -76,6 +76,8 @@
 .ct-toolbar-btn:hover { background: #f5f8ff; }
 .ct-toolbar-btn.is-active { background: #f0f4ff; border-color: #c7d6f7; color: #2563eb; }
 .ct-toolbar-btn svg { width: 14px; height: 14px; }
+.ct-toolbar-btn.ct-danger-btn { color: #be123c; border-color: #fecdd3; }
+.ct-toolbar-btn.ct-danger-btn:hover { background: #fff1f2; }
 
 .ct-icon-btn {
   appearance: none;
@@ -569,7 +571,23 @@
 .ct-source-dot.dot-manual { background: #94a3b8; }
 
 /* ── Tags ── */
-.ct-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.ct-tags-cell {
+  max-width: 260px;
+}
+
+.ct-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+  max-width: 260px;
+  overflow: hidden;
+}
+
+.ct-tags.is-expanded {
+  flex-wrap: wrap;
+  max-width: 320px;
+  overflow: visible;
+}
 
 .ct-tag {
   padding: 0.15rem 0.5rem;
@@ -580,8 +598,30 @@
   font-weight: 600;
   color: #475569;
   white-space: nowrap;
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ct-tag.tag-blue { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+
+.ct-tag-more {
+  appearance: none;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  cursor: pointer;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.15rem 0.5rem;
+  white-space: nowrap;
+}
+
+.ct-tag-more:hover {
+  background: #dbeafe;
+}
 
 /* ── Cell helpers ── */
 .ct-cell-empty {
@@ -1074,6 +1114,17 @@
   padding: 0.5rem 0.75rem;
   resize: vertical;
   min-height: 72px;
+}
+
+.ct-phone-input-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.ct-form-label input.ct-country-code-input {
+  text-align: center;
+  font-weight: 800;
 }
 
 .ct-form-divider {

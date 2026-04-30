@@ -814,6 +814,26 @@ function buildWebhookSubscriptionMetadata(attempt: WebhookSubscriptionAttempt, t
   };
 }
 
+function buildPhoneRegistrationMetadata(attempt: PhoneRegistrationAttempt, trigger: string): Record<string, unknown> {
+  return {
+    registration: {
+      ...attempt,
+      trigger,
+      attemptedAt: new Date().toISOString()
+    }
+  };
+}
+
+function getPhoneRegistrationFailureMessage(attempt: PhoneRegistrationAttempt): string | null {
+  if (attempt.success) {
+    return null;
+  }
+  if (attempt.reason === "missing_pin") {
+    return "WhatsApp number is not fully connected yet. Set META_PHONE_REGISTRATION_PIN in API env and reconnect this number.";
+  }
+  return `WhatsApp number registration failed: ${attempt.error ?? "unknown error"}`;
+}
+
 async function registerPhoneNumberIfConfigured(accessToken: string, phoneNumberId: string): Promise<PhoneRegistrationAttempt> {
   const pin = env.META_PHONE_REGISTRATION_PIN?.trim();
   if (!pin) {
@@ -1797,6 +1817,7 @@ async function refreshConnectionStatusFromMeta(
   const accessToken = decryptToken(row.access_token_encrypted);
   let snapshot = await fetchMetaStatusSnapshot(row, accessToken);
   const metadataPatch: Record<string, unknown> = {};
+  let registrationAttempt: PhoneRegistrationAttempt | null = null;
 
   // Auto-heal missing subscription on status refresh/reconnect.
   if (snapshot.webhookAppSubscribed === false) {
@@ -1811,6 +1832,17 @@ async function refreshConnectionStatusFromMeta(
     } else {
       console.warn(
         `[MetaStatusSync] webhook subscribe retry failed user=${row.user_id} wabaId=${row.waba_id}: ${subscriptionAttempt.error ?? "unknown error"}`
+      );
+    }
+  }
+
+  const existingRegistration = getRecord((row.metadata_json ?? {}).registration);
+  if (existingRegistration?.success !== true) {
+    registrationAttempt = await registerPhoneNumberIfConfigured(accessToken, row.phone_number_id);
+    Object.assign(metadataPatch, buildPhoneRegistrationMetadata(registrationAttempt, "status_refresh"));
+    if (!registrationAttempt.success) {
+      console.warn(
+        `[MetaStatusSync] phone registration retry failed user=${row.user_id} phoneNumberId=${row.phone_number_id}: ${getPhoneRegistrationFailureMessage(registrationAttempt) ?? "unknown error"}`
       );
     }
   }
@@ -1903,9 +1935,44 @@ async function refreshConnectionStatusFromMeta(
     }
   }
 
-  return persistMetaStatusSnapshot(row, snapshot, {
+  const persisted = await persistMetaStatusSnapshot(row, snapshot, {
     metadataPatch: Object.keys(metadataPatch).length > 0 ? metadataPatch : undefined
   });
+  if (registrationAttempt && !registrationAttempt.success) {
+    const pendingResult = await pool.query<MetaConnectionRow>(
+      `UPDATE whatsapp_business_connections
+       SET status = 'pending',
+           subscription_status = 'pending'
+       WHERE id = $1
+       RETURNING id,
+                 user_id,
+                 meta_business_id,
+                 waba_id,
+                 phone_number_id,
+                 display_phone_number,
+                 linked_number,
+                 access_token_encrypted,
+                 token_expires_at::text,
+                 enabled,
+                 subscription_status,
+                 status,
+                 billing_mode,
+                 billing_status,
+                 billing_owner_business_id,
+                 billing_attached_at::text,
+                 billing_error,
+                 billing_credit_line_id,
+                 billing_allocation_config_id,
+                 billing_currency,
+                 metadata_json,
+                 created_at::text,
+                 updated_at::text`,
+      [persisted.id]
+    );
+    return pendingResult.rows[0] ?? persisted;
+  }
+
+  return persisted;
 }
 
 export function getMetaBusinessConfig() {
@@ -2228,10 +2295,7 @@ export async function completeMetaEmbeddedSignup(
       source: "embedded_signup",
       connectedAt: new Date().toISOString(),
       ...buildWebhookSubscriptionMetadata(webhookSubscription, "embedded_signup"),
-      registration: {
-        ...registration,
-        attemptedAt: new Date().toISOString()
-      }
+      ...buildPhoneRegistrationMetadata(registration, "embedded_signup")
     }
   });
 
@@ -2252,15 +2316,12 @@ export async function completeMetaEmbeddedSignup(
   }
 
   const effectiveConnection = syncedConnection ?? connection;
+  const registrationFailureMessage = getPhoneRegistrationFailureMessage(registration);
+  if (registrationFailureMessage) {
+    throw new Error(registrationFailureMessage);
+  }
+
   if (effectiveConnection.status !== "connected") {
-    if (registration.reason === "missing_pin") {
-      throw new Error(
-        "WhatsApp number is not fully connected yet. Set META_PHONE_REGISTRATION_PIN in API env and reconnect this number."
-      );
-    }
-    if (registration.error) {
-      throw new Error(`WhatsApp number registration failed: ${registration.error}`);
-    }
     if (!webhookSubscription.success) {
       throw new Error(
         `Webhook subscription failed for this number: ${webhookSubscription.error ?? "unknown error"}. Please reconnect.`
@@ -2548,7 +2609,12 @@ async function resolveMetaSendConnectionRow(input: {
   }
 
   let resolvedRow = row;
-  if (resolvedRow.subscription_status !== "active" || resolvedRow.status !== "connected") {
+  const savedRegistration = getRecord((resolvedRow.metadata_json ?? {}).registration);
+  if (
+    resolvedRow.subscription_status !== "active" ||
+    resolvedRow.status !== "connected" ||
+    savedRegistration?.success !== true
+  ) {
     try {
       resolvedRow = await refreshConnectionStatusFromMeta(resolvedRow, { forceRefresh: true });
     } catch (error) {
@@ -2556,6 +2622,20 @@ async function resolveMetaSendConnectionRow(input: {
         `[MetaSend] pre-send status refresh failed user=${input.userId} phoneNumberId=${resolvedRow.phone_number_id}: ${(error as Error).message}`
       );
     }
+  }
+
+  if (resolvedRow.subscription_status !== "active" || resolvedRow.status !== "connected") {
+    const registration = getRecord((resolvedRow.metadata_json ?? {}).registration);
+    if (registration?.success === false) {
+      const reason = typeof registration.reason === "string" ? registration.reason : "failed";
+      const error = typeof registration.error === "string" ? registration.error : null;
+      throw new Error(
+        reason === "missing_pin"
+          ? "WhatsApp API number is not registered. Set META_PHONE_REGISTRATION_PIN in API env, then reconnect or refresh this number."
+          : `WhatsApp API number is not registered with Meta yet${error ? `: ${error}` : "."}`
+      );
+    }
+    throw new Error("WhatsApp API number is still pending Meta registration. Refresh status or reconnect this number before sending.");
   }
 
   return resolvedRow;

@@ -199,6 +199,14 @@ function normalizePhoneNumber(value: string | null | undefined): string | null {
   return digits;
 }
 
+function normalizePhoneNumberWithCountryCode(value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (!raw.startsWith("+")) {
+    return null;
+  }
+  return normalizePhoneNumber(raw);
+}
+
 function normalizeHeader(value: string | null | undefined): string {
   return String(value ?? "")
     .trim()
@@ -514,11 +522,14 @@ async function saveFieldValues(db: DbExecutor, contactId: string, customFields: 
   const entries = Object.entries(customFields).filter(([, v]) => v !== undefined && v !== null);
   if (entries.length === 0) return;
 
-  // Resolve field names to IDs in a single query
   const names = entries.map(([k]) => k);
   const fieldRows = await db.query<{ id: string; name: string }>(
-    `SELECT id, name FROM contact_fields WHERE name = ANY($1::text[])`,
-    [names]
+    `SELECT cf.id, cf.name
+     FROM contact_fields cf
+     JOIN contacts c ON c.user_id = cf.user_id
+     WHERE c.id = $1
+       AND cf.name = ANY($2::text[])`,
+    [contactId, names]
   );
   const nameToId = new Map(fieldRows.rows.map((r) => [r.name, r.id]));
 
@@ -1013,6 +1024,10 @@ export async function createManualContact(userId: string, input: CreateManualCon
   if (!displayName) {
     throw new Error("Name is required.");
   }
+  const phoneNumber = normalizePhoneNumberWithCountryCode(input.phoneNumber);
+  if (!phoneNumber) {
+    throw new Error("Phone number must include country code, for example +919876543210.");
+  }
 
   const result = await withTransaction(async (client) => {
     const upsertResult = await upsertContact(
@@ -1020,7 +1035,7 @@ export async function createManualContact(userId: string, input: CreateManualCon
       {
         userId,
         displayName,
-        phoneNumber: input.phoneNumber,
+        phoneNumber,
         email: input.email ?? undefined,
         contactType: input.contactType ?? "lead",
         tags: input.tags ?? [],
@@ -1048,6 +1063,126 @@ export async function createManualContact(userId: string, input: CreateManualCon
   };
   await emitSequenceContactEvent(hydratedResult);
   return hydratedResult;
+}
+
+export async function updateManualContact(
+  userId: string,
+  contactId: string,
+  input: {
+    displayName?: string;
+    phoneNumber?: string;
+    email?: string | null;
+    contactType?: ConversationKind;
+    tags?: string[];
+    sourceId?: string | null;
+    sourceUrl?: string | null;
+    customFields?: Record<string, string>;
+  }
+): Promise<Contact | null> {
+  const existingResult = await pool.query<Contact>(
+    `SELECT *
+     FROM contacts
+     WHERE user_id = $1
+       AND id = $2
+     LIMIT 1`,
+    [userId, contactId]
+  );
+  const existing = existingResult.rows[0] ?? null;
+  if (!existing) {
+    return null;
+  }
+
+  const nextPhone =
+    input.phoneNumber === undefined ? existing.phone_number : normalizePhoneNumberWithCountryCode(input.phoneNumber);
+  if (!nextPhone) {
+    throw new Error("Phone number must include country code, for example +919876543210.");
+  }
+
+  if (nextPhone !== existing.phone_number) {
+    const duplicate = await getContactByPhone(pool, userId, nextPhone);
+    if (duplicate && duplicate.id !== contactId) {
+      throw new Error("A contact with this phone number already exists.");
+    }
+  }
+
+  const nextDisplayName =
+    input.displayName === undefined ? existing.display_name : normalizeDisplayName(input.displayName);
+  if (!nextDisplayName) {
+    throw new Error("Name is required.");
+  }
+
+  const nextEmail = input.email === undefined ? existing.email : normalizeEmail(input.email);
+  const nextContactType = input.contactType ?? existing.contact_type;
+  const nextTags = input.tags === undefined ? existing.tags : normalizeTags(input.tags);
+  const nextSourceId = input.sourceId === undefined ? existing.source_id : input.sourceId?.trim() || null;
+  const nextSourceUrl = input.sourceUrl === undefined ? existing.source_url : input.sourceUrl?.trim() || null;
+  const linkedConversationId = await getConversationLinkByPhone(pool, userId, nextPhone, existing.linked_conversation_id);
+
+  const updated = await withTransaction(async (client) => {
+    const result = await client.query<Contact>(
+      `UPDATE contacts
+       SET display_name = $1,
+           phone_number = $2,
+           email = $3,
+           contact_type = $4,
+           tags = $5::text[],
+           source_id = $6,
+           source_url = $7,
+           linked_conversation_id = $8,
+           updated_at = NOW()
+       WHERE id = $9
+         AND user_id = $10
+       RETURNING *`,
+      [
+        nextDisplayName,
+        nextPhone,
+        nextEmail,
+        nextContactType,
+        nextTags,
+        nextSourceId,
+        nextSourceUrl,
+        linkedConversationId,
+        contactId,
+        userId
+      ]
+    );
+    const contact = result.rows[0];
+    if (!contact) {
+      return null;
+    }
+
+    if (input.customFields) {
+      await saveFieldValues(client, contact.id, input.customFields);
+    }
+
+    await syncConversationKindFromContact(client, {
+      userId,
+      phoneNumber: nextPhone,
+      contactType: nextContactType,
+      linkedConversationId
+    });
+
+    return contact;
+  });
+
+  if (!updated) {
+    return null;
+  }
+
+  const fieldValuesMap = await loadFieldValues(pool, [updated.id]);
+  const hydrated = { ...updated, custom_field_values: fieldValuesMap.get(updated.id) ?? [] };
+  await emitSequenceContactEvent({ contact: hydrated, action: "updated" });
+  return hydrated;
+}
+
+export async function deleteManualContact(userId: string, contactId: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM contacts
+     WHERE user_id = $1
+       AND id = $2`,
+    [userId, contactId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function upsertWebhookContact(input: {
