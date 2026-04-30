@@ -70,7 +70,8 @@ const ConversationsQuerySchema = z.object({
   assignment: z.enum(["all", "assigned", "unassigned"]).optional(),
   labelId: z.string().trim().optional(),
   leadKind: z.enum(["all", "lead", "feedback", "complaint", "other"]).optional(),
-  priority: z.enum(["all", "none", "low", "medium", "high", "urgent"]).optional()
+  priority: z.enum(["all", "none", "low", "medium", "high", "urgent"]).optional(),
+  stage: z.enum(["all", "hot", "warm", "cold"]).optional()
 });
 
 const ConversationMessagesQuerySchema = z.object({
@@ -103,6 +104,111 @@ function cleanTimelineDetail(value: unknown): string | null {
   return trimmed.length > 140 ? `${trimmed.slice(0, 137)}...` : trimmed;
 }
 
+type FacetDimension = "status" | "stage" | "channel" | "aiMode" | "assignment" | "labelId" | "leadKind" | "priority";
+
+function conversationFacetWhere(
+  options: z.infer<typeof ConversationsQuerySchema>,
+  values: unknown[],
+  omit?: FacetDimension
+): string {
+  const where = ["c.user_id = $1"];
+
+  const search = options.q?.trim();
+  if (search) {
+    values.push(`%${search}%`);
+    const param = `$${values.length}`;
+    where.push(`(
+      c.phone_number ILIKE ${param}
+      OR c.last_message ILIKE ${param}
+      OR COALESCE(ct.display_name, '') ILIKE ${param}
+    )`);
+  }
+
+  if (omit !== "status" && options.status && options.status !== "all") {
+    if (options.status === "pending") {
+      where.push(`c.status = 'open' AND COALESCE(crs.unread_count, 0) > 0`);
+    } else {
+      values.push(options.status);
+      where.push(`c.status = $${values.length}`);
+    }
+  }
+
+  if (omit !== "stage" && options.stage && options.stage !== "all") {
+    if (options.stage === "hot") where.push(`COALESCE(c.score, 0) >= 70`);
+    if (options.stage === "warm") where.push(`COALESCE(c.score, 0) >= 40 AND COALESCE(c.score, 0) < 70`);
+    if (options.stage === "cold") where.push(`COALESCE(c.score, 0) < 40`);
+  }
+
+  if (omit !== "channel" && options.channel && options.channel !== "all") {
+    values.push(options.channel);
+    where.push(`c.channel_type = $${values.length}`);
+  }
+
+  if (omit !== "aiMode" && options.aiMode && options.aiMode !== "all") {
+    where.push(
+      options.aiMode === "ai"
+        ? `COALESCE(c.ai_paused, FALSE) = FALSE AND COALESCE(c.manual_takeover, FALSE) = FALSE`
+        : `(COALESCE(c.ai_paused, FALSE) = TRUE OR COALESCE(c.manual_takeover, FALSE) = TRUE)`
+    );
+  }
+
+  if (omit !== "assignment" && options.assignment && options.assignment !== "all") {
+    where.push(
+      options.assignment === "assigned"
+        ? `c.assigned_agent_profile_id IS NOT NULL`
+        : `c.assigned_agent_profile_id IS NULL`
+    );
+  }
+
+  const labelId = options.labelId?.trim();
+  if (omit !== "labelId" && labelId && labelId !== "all") {
+    values.push(labelId);
+    where.push(`EXISTS (
+      SELECT 1 FROM conversation_labels cl
+      WHERE cl.conversation_id = c.id AND cl.label_id = $${values.length}::uuid
+    )`);
+  }
+
+  if (omit !== "leadKind" && options.leadKind && options.leadKind !== "all") {
+    values.push(options.leadKind);
+    where.push(`COALESCE(ct.contact_type, c.lead_kind) = $${values.length}`);
+  }
+
+  if (omit !== "priority" && options.priority && options.priority !== "all") {
+    values.push(options.priority);
+    where.push(`COALESCE(c.priority, 'none') = $${values.length}`);
+  }
+
+  return where.join(" AND ");
+}
+
+async function countConversationFacet(
+  userId: string,
+  options: z.infer<typeof ConversationsQuerySchema>,
+  groupSql: string,
+  omit?: FacetDimension
+): Promise<Record<string, number>> {
+  const values: unknown[] = [userId];
+  const where = conversationFacetWhere(options, values, omit);
+  const result = await pool.query<{ key: string; count: string }>(
+    `SELECT ${groupSql} AS key, COUNT(DISTINCT c.id)::text AS count
+     FROM conversations c
+     LEFT JOIN conversation_read_state crs
+       ON crs.conversation_id = c.id AND crs.user_id = c.user_id
+     LEFT JOIN contacts ct
+       ON ct.user_id = c.user_id
+      AND (
+        ct.linked_conversation_id = c.id
+        OR regexp_replace(ct.phone_number, '\\D', '', 'g') = regexp_replace(c.phone_number, '\\D', '', 'g')
+      )
+     WHERE ${where}
+     GROUP BY key`,
+    values
+  );
+
+  return Object.fromEntries(result.rows.map((row) => [row.key, Number(row.count)]));
+}
+
 export async function conversationRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/api/conversations",
@@ -133,7 +239,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         assignment: parsed.data.assignment,
         labelId: parsed.data.labelId,
         leadKind: parsed.data.leadKind,
-        priority: parsed.data.priority
+        priority: parsed.data.priority,
+        stage: parsed.data.stage
       });
 
       return {
@@ -177,6 +284,64 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         forceAll: parsed.data.forceAll
       });
       return { ok: true, ...result };
+    }
+  );
+
+  fastify.get(
+    "/api/conversations/facets",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = ConversationsQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid conversation facets query" });
+      }
+
+      const userId = request.authUser.userId;
+      const [folders, stages, channels] = await Promise.all([
+        countConversationFacet(
+          userId,
+          parsed.data,
+          `CASE
+             WHEN c.status = 'open' AND COALESCE(crs.unread_count, 0) > 0 THEN 'pending'
+             ELSE COALESCE(c.status, 'open')
+           END`,
+          "status"
+        ),
+        countConversationFacet(
+          userId,
+          parsed.data,
+          `CASE
+             WHEN COALESCE(c.score, 0) >= 70 THEN 'hot'
+             WHEN COALESCE(c.score, 0) >= 40 THEN 'warm'
+             ELSE 'cold'
+           END`,
+          "stage"
+        ),
+        countConversationFacet(userId, parsed.data, `COALESCE(c.channel_type, 'qr')`, "channel")
+      ]);
+
+      const total = Object.values(await countConversationFacet(userId, parsed.data, `'all'`, "status"))[0] ?? 0;
+      const open = await countConversationFacet(userId, { ...parsed.data, status: undefined }, `COALESCE(c.status, 'open')`, "status");
+
+      return {
+        folders: {
+          all: total,
+          open: open.open ?? 0,
+          pending: folders.pending ?? 0,
+          resolved: open.resolved ?? 0,
+          snoozed: open.snoozed ?? 0
+        },
+        stages: {
+          hot: stages.hot ?? 0,
+          warm: stages.warm ?? 0,
+          cold: stages.cold ?? 0
+        },
+        channels: {
+          api: channels.api ?? 0,
+          qr: channels.qr ?? 0,
+          web: channels.web ?? 0
+        }
+      };
     }
   );
 

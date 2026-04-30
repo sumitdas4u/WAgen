@@ -1222,6 +1222,7 @@ export async function listConversationsPage(
     labelId?: string | null;
     leadKind?: "all" | ConversationKind;
     priority?: "all" | "none" | "low" | "medium" | "high" | "urgent";
+    stage?: "all" | "hot" | "warm" | "cold";
   }
 ): Promise<
   PaginatedResult<
@@ -1267,6 +1268,12 @@ export async function listConversationsPage(
   if (options?.channel && options.channel !== "all") {
     values.push(options.channel);
     where.push(`c.channel_type = $${values.length}`);
+  }
+
+  if (options?.stage && options.stage !== "all") {
+    if (options.stage === "hot") where.push(`COALESCE(c.score, 0) >= 70`);
+    if (options.stage === "warm") where.push(`COALESCE(c.score, 0) >= 40 AND COALESCE(c.score, 0) < 70`);
+    if (options.stage === "cold") where.push(`COALESCE(c.score, 0) < 40`);
   }
 
   if (options?.aiMode && options.aiMode !== "all") {

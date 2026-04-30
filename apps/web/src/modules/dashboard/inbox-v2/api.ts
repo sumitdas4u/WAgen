@@ -55,10 +55,33 @@ export function fetchConvPage(token: string, params: {
   if (filters?.labelId && filters.labelId !== "all") sp.set("labelId", filters.labelId);
   if (filters?.leadKind && filters.leadKind !== "all") sp.set("leadKind", filters.leadKind);
   if (filters?.priority && filters.priority !== "all") sp.set("priority", filters.priority);
-  if (filters?.stage && filters.stage !== "all") {
-    // Stage is score-derived today, so it remains a client-side refinement.
-  }
+  if (filters?.stage && filters.stage !== "all") sp.set("stage", filters.stage);
   return apiFetch<ConvPage>(token, `/api/conversations?${sp}`);
+}
+
+export interface ConversationFacets {
+  folders: Record<"all" | "open" | "pending" | "resolved" | "snoozed", number>;
+  stages: Record<"hot" | "warm" | "cold", number>;
+  channels: Record<"api" | "qr" | "web", number>;
+}
+
+export function fetchConversationFacets(token: string, params: {
+  folder?: ConvFolder;
+  q?: string | null;
+  filters?: ConvFilters;
+}): Promise<ConversationFacets> {
+  const sp = new URLSearchParams();
+  if (params.folder && params.folder !== "all") sp.set("status", params.folder);
+  if (params.q) sp.set("q", params.q);
+  const filters = params.filters;
+  if (filters?.channel && filters.channel !== "all") sp.set("channel", filters.channel);
+  if (filters?.aiMode && filters.aiMode !== "all") sp.set("aiMode", filters.aiMode);
+  if (filters?.assignment && filters.assignment !== "all") sp.set("assignment", filters.assignment);
+  if (filters?.labelId && filters.labelId !== "all") sp.set("labelId", filters.labelId);
+  if (filters?.leadKind && filters.leadKind !== "all") sp.set("leadKind", filters.leadKind);
+  if (filters?.priority && filters.priority !== "all") sp.set("priority", filters.priority);
+  if (filters?.stage && filters.stage !== "all") sp.set("stage", filters.stage);
+  return apiFetch(token, `/api/conversations/facets?${sp}`);
 }
 
 export function fetchConversation(token: string, convId: string): Promise<{ conversation: Conversation }> {

@@ -1,5 +1,6 @@
 import { useConvStore } from "../store/convStore";
 import type { Conversation } from "../store/convStore";
+import { useConversationFacets } from "../queries";
 
 function scoreToStage(score: number): "hot" | "warm" | "cold" {
   if (score >= 70) return "hot";
@@ -57,14 +58,21 @@ interface Props { conversations: Conversation[] }
 const RESET_FILTERS = { stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all", leadKind: "all", priority: "all" } as const;
 
 export function LeadFiltersPanel({ conversations }: Props) {
-  const { filters, setFilters, labels } = useConvStore();
+  const { filters, setFilters, labels, folder } = useConvStore();
+  const facetsQuery = useConversationFacets(folder, "", filters);
 
-  const hotCount  = conversations.filter((c) => scoreToStage(c.score) === "hot").length;
-  const warmCount = conversations.filter((c) => scoreToStage(c.score) === "warm").length;
-  const coldCount = conversations.filter((c) => scoreToStage(c.score) === "cold").length;
-  const apiCount  = conversations.filter((c) => c.channel_type === "api").length;
-  const qrCount   = conversations.filter((c) => c.channel_type === "qr").length;
-  const webCount  = conversations.filter((c) => c.channel_type === "web").length;
+  const loadedHotCount  = conversations.filter((c) => scoreToStage(c.score) === "hot").length;
+  const loadedWarmCount = conversations.filter((c) => scoreToStage(c.score) === "warm").length;
+  const loadedColdCount = conversations.filter((c) => scoreToStage(c.score) === "cold").length;
+  const loadedApiCount  = conversations.filter((c) => c.channel_type === "api").length;
+  const loadedQrCount   = conversations.filter((c) => c.channel_type === "qr").length;
+  const loadedWebCount  = conversations.filter((c) => c.channel_type === "web").length;
+  const hotCount = facetsQuery.data?.stages.hot ?? loadedHotCount;
+  const warmCount = facetsQuery.data?.stages.warm ?? loadedWarmCount;
+  const coldCount = facetsQuery.data?.stages.cold ?? loadedColdCount;
+  const apiCount = facetsQuery.data?.channels.api ?? loadedApiCount;
+  const qrCount = facetsQuery.data?.channels.qr ?? loadedQrCount;
+  const webCount = facetsQuery.data?.channels.web ?? loadedWebCount;
 
   // isDefault only checks filters — folder (tabs) is independent
   const isDefault =

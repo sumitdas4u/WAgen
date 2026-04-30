@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useConvStore, type ConvFolder, type Conversation } from "../store/convStore";
-import { useConversations, useBulkAction } from "../queries";
+import { useConversations, useBulkAction, useConversationFacets } from "../queries";
 import { ConversationRow } from "./ConversationRow";
 import { NotificationBell } from "./NotificationsPanel";
 
@@ -18,12 +18,6 @@ interface Props {
   onNew?: () => void;
   onCannedManage?: () => void;
   onOpenFilters?: () => void;
-}
-
-function scoreToStage(score: number) {
-  if (score >= 70) return "hot";
-  if (score >= 40) return "warm";
-  return "cold";
 }
 
 function matchesSearch(conv: Conversation, query: string): boolean {
@@ -53,6 +47,7 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFi
   const bulkAction = useBulkAction();
 
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useConversations(folder, debouncedQ, filters);
+  const facetsQuery = useConversationFacets(folder, debouncedQ, filters);
   const showShimmer = isLoading && ids.length === 0;
 
   // Debounce search
@@ -64,7 +59,6 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFi
   const filteredIds = ids.filter((id) => {
     const c = byId[id];
     if (!c) return false;
-    if (filters.stage !== "all" && scoreToStage(c.score) !== filters.stage) return false;
     if (!matchesSearch(c, debouncedQ)) return false;
     return true;
   });
@@ -154,7 +148,7 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFi
     }
   }, [items, filteredIds.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const folderCounts = ids.reduce<Record<string, number>>((acc, id) => {
+  const loadedFolderCounts = ids.reduce<Record<string, number>>((acc, id) => {
     const conv = byId[id];
     if (!conv) return acc;
     const s = conv.status ?? "open";
@@ -166,6 +160,7 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFi
     }
     return acc;
   }, {});
+  const folderCounts = facetsQuery.data?.folders ?? loadedFolderCounts;
 
   return (
     <div className="iv-convlist">

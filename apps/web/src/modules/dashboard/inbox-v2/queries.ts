@@ -8,6 +8,7 @@ import type { ConvPage } from "./api";
 import type { ConvFilters, ConvFolder } from "./store/convStore";
 import {
   fetchConversation,
+  fetchConversationFacets,
   fetchConvPage,
   fetchConvMessages,
   fetchLabels,
@@ -67,6 +68,21 @@ export function useConversations(folder: ConvFolder, searchQ: string, filters: C
   }, [query.data]);
 
   return query;
+}
+
+export function useConversationFacets(folder: ConvFolder, searchQ: string, filters: ConvFilters) {
+  const { token } = useAuth();
+
+  return useQuery({
+    queryKey: ["iv2-conv-facets", folder, searchQ, filters],
+    queryFn: () => fetchConversationFacets(token!, {
+      folder,
+      q: searchQ || null,
+      filters
+    }),
+    enabled: !!token,
+    staleTime: 15_000
+  });
 }
 
 export function useConversation(convId: string | null) {
