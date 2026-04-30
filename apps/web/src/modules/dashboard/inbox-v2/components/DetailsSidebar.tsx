@@ -6,11 +6,14 @@ import { useSetStatus, useSetPriority, useSetLabels, useLabels } from "../querie
 import {
   fetchContactByConversation,
   fetchConversationAutomation,
+  fetchConversationTimeline,
   listContactFields,
   fetchAgentProfiles,
   patchAssignAgent,
   patchAiMode,
-  updateContact
+  updateContact,
+  type ConversationTimelineEvent,
+  type ConversationTimelineType
 } from "../api";
 import { useAuth } from "../../../../lib/auth-context";
 import { getAvatarColor } from "./ConversationRow";
@@ -77,6 +80,22 @@ function channelBadge(t: string) {
   return "Web";
 }
 
+function timelineIcon(type: ConversationTimelineType): string {
+  switch (type) {
+    case "conversation_started": return "ST";
+    case "inbound_message": return "IN";
+    case "human_reply": return "HU";
+    case "ai_reply": return "AI";
+    case "template_sent": return "TP";
+    case "broadcast_sent": return "BR";
+    case "sequence_started": return "SQ";
+    case "sequence_event": return "SQ";
+    case "flow_started": return "FL";
+    case "flow_event": return "FL";
+    default: return "--";
+  }
+}
+
 interface FieldRowProps { label: string; value: React.ReactNode }
 function FieldRow({ label, value }: FieldRowProps) {
   return (
@@ -136,6 +155,13 @@ export function DetailsSidebar({ convId, onClose }: Props) {
   const automationQuery = useQuery({
     queryKey: ["iv2-automation", convId],
     queryFn: () => fetchConversationAutomation(token!, convId),
+    enabled: Boolean(token && convId),
+    staleTime: 15_000
+  });
+
+  const timelineQuery = useQuery({
+    queryKey: ["iv2-timeline", convId],
+    queryFn: () => fetchConversationTimeline(token!, convId),
     enabled: Boolean(token && convId),
     staleTime: 15_000
   });
@@ -466,27 +492,24 @@ export function DetailsSidebar({ convId, onClose }: Props) {
           {/* Timeline */}
           <Accordion id="timeline" title="Timeline" open={openSections.has("timeline")} onToggle={() => toggleSection("timeline")}>
             <div className="iv-timeline">
-              {[
-                conv.created_at         && { icon: "💬", label: "Conversation started",  time: conv.created_at },
-                conv.last_message_at    && { icon: "📩", label: "Last message",           time: conv.last_message_at },
-                conv.last_ai_reply_at   && { icon: "🤖", label: "Last AI reply",          time: conv.last_ai_reply_at },
-                conv.agent_last_seen_at && { icon: "👁", label: "Agent last seen",        time: conv.agent_last_seen_at },
-              ]
-                .filter(Boolean)
-                .sort((a, b) => Date.parse((a as { time: string }).time) - Date.parse((b as { time: string }).time))
-                .map((ev, i) => {
-                  const e = ev as { icon: string; label: string; time: string };
-                  return (
-                    <div key={i} className="iv-timeline-item">
-                      <span className="iv-timeline-icon">{e.icon}</span>
-                      <div className="iv-timeline-body">
-                        <span className="iv-timeline-label">{e.label}</span>
-                        <span className="iv-timeline-time">{new Date(e.time).toLocaleString()}</span>
-                      </div>
+              {timelineQuery.isLoading ? (
+                <div className="iv-timeline-empty">Loading timeline...</div>
+              ) : timelineQuery.isError ? (
+                <div className="iv-timeline-empty">{(timelineQuery.error as Error).message || "Failed to load timeline"}</div>
+              ) : (timelineQuery.data?.events ?? []).length === 0 ? (
+                <div className="iv-timeline-empty">No timeline events yet.</div>
+              ) : (
+                (timelineQuery.data?.events ?? []).map((event: ConversationTimelineEvent) => (
+                  <div key={event.id} className={`iv-timeline-item iv-timeline-${event.type}`}>
+                    <span className="iv-timeline-icon">{timelineIcon(event.type)}</span>
+                    <div className="iv-timeline-body">
+                      <span className="iv-timeline-label">{event.label}</span>
+                      {event.detail && <span className="iv-timeline-detail">{event.detail}</span>}
+                      <span className="iv-timeline-time">{formatDateTime(event.occurred_at)}</span>
                     </div>
-                  );
-                })
-              }
+                  </div>
+                ))
+              )}
             </div>
           </Accordion>
       </div>

@@ -78,6 +78,31 @@ const ConversationMessagesQuerySchema = z.object({
   before: z.string().trim().min(1).optional()
 });
 
+type ConversationTimelineEvent = {
+  id: string;
+  type:
+    | "conversation_started"
+    | "inbound_message"
+    | "human_reply"
+    | "ai_reply"
+    | "template_sent"
+    | "broadcast_sent"
+    | "sequence_started"
+    | "sequence_event"
+    | "flow_started"
+    | "flow_event";
+  label: string;
+  detail: string | null;
+  occurred_at: string | Date;
+};
+
+function cleanTimelineDetail(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  return trimmed.length > 140 ? `${trimmed.slice(0, 137)}...` : trimmed;
+}
+
 export async function conversationRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     "/api/conversations",
@@ -242,6 +267,183 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       );
 
       return { automation: result.rows[0] ?? null };
+    }
+  );
+
+  fastify.get(
+    "/api/conversations/:conversationId/timeline",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const exists = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2`,
+        [conversationId, request.authUser.userId]
+      );
+
+      if ((exists.rowCount ?? 0) === 0) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+
+      const result = await pool.query<ConversationTimelineEvent>(
+        `WITH owned AS (
+           SELECT id, user_id, phone_number, created_at
+           FROM conversations
+           WHERE id = $1 AND user_id = $2
+         ),
+         contact_match AS (
+           SELECT ct.id
+           FROM contacts ct
+           JOIN owned o ON ct.user_id = o.user_id
+            AND (
+              ct.linked_conversation_id = o.id
+              OR regexp_replace(ct.phone_number, '\\D', '', 'g') = regexp_replace(o.phone_number, '\\D', '', 'g')
+            )
+           ORDER BY CASE WHEN ct.linked_conversation_id = o.id THEN 0 ELSE 1 END, ct.updated_at DESC
+           LIMIT 1
+         )
+         SELECT
+           'conversation-started' AS id,
+           'conversation_started' AS type,
+           'Conversation started' AS label,
+           NULL::text AS detail,
+           o.created_at AS occurred_at
+         FROM owned o
+
+         UNION ALL
+
+         SELECT
+           'message-' || cm.id::text AS id,
+           CASE
+             WHEN COALESCE(cm.source_type, 'manual') = 'broadcast' THEN 'broadcast_sent'
+             WHEN COALESCE(cm.source_type, 'manual') = 'sequence' THEN 'sequence_event'
+             WHEN COALESCE(cm.message_type, 'text') = 'template'
+               OR cm.message_content->>'type' = 'template'
+               OR cm.message_text ILIKE '[Template:%' THEN 'template_sent'
+             WHEN cm.direction = 'outbound' AND (COALESCE(cm.source_type, 'manual') = 'bot' OR cm.ai_model IS NOT NULL) THEN 'ai_reply'
+             WHEN cm.direction = 'outbound' THEN 'human_reply'
+             ELSE 'inbound_message'
+           END AS type,
+           CASE
+             WHEN COALESCE(cm.source_type, 'manual') = 'broadcast' THEN 'Broadcast sent'
+             WHEN COALESCE(cm.source_type, 'manual') = 'sequence' THEN 'Sequence message sent'
+             WHEN COALESCE(cm.message_type, 'text') = 'template'
+               OR cm.message_content->>'type' = 'template'
+               OR cm.message_text ILIKE '[Template:%' THEN 'Template sent'
+             WHEN cm.direction = 'outbound' AND (COALESCE(cm.source_type, 'manual') = 'bot' OR cm.ai_model IS NOT NULL) THEN 'AI replied'
+             WHEN cm.direction = 'outbound' THEN 'Human replied'
+             ELSE 'Customer replied'
+           END AS label,
+           COALESCE(
+             NULLIF(cm.message_content->>'templateName', ''),
+             NULLIF(cm.message_content->>'template_name', ''),
+             NULLIF(cm.payload_json->>'templateName', ''),
+             NULLIF(cm.sender_name, ''),
+             NULLIF(cm.message_text, '')
+           ) AS detail,
+           cm.created_at AS occurred_at
+         FROM conversation_messages cm
+         JOIN owned o ON o.id = cm.conversation_id
+
+         UNION ALL
+
+         SELECT
+           'flow-started-' || fs.id::text AS id,
+           'flow_started' AS type,
+           'Flow started' AS label,
+           COALESCE(NULLIF(f.name, ''), fs.flow_id::text) AS detail,
+           fs.created_at AS occurred_at
+         FROM flow_sessions fs
+         JOIN owned o ON o.id = fs.conversation_id
+         LEFT JOIN flows f ON f.id = fs.flow_id
+
+         UNION ALL
+
+         SELECT
+           'flow-status-' || fs.id::text AS id,
+           'flow_event' AS type,
+           CASE fs.status
+             WHEN 'waiting' THEN 'Flow waiting'
+             WHEN 'ai_mode' THEN 'Flow handed to AI'
+             WHEN 'completed' THEN 'Flow completed'
+             WHEN 'failed' THEN 'Flow failed'
+             ELSE 'Flow active'
+           END AS label,
+           COALESCE(NULLIF(f.name, ''), fs.waiting_for, fs.current_node_id, fs.flow_id::text) AS detail,
+           fs.updated_at AS occurred_at
+         FROM flow_sessions fs
+         JOIN owned o ON o.id = fs.conversation_id
+         LEFT JOIN flows f ON f.id = fs.flow_id
+         WHERE fs.updated_at > fs.created_at + INTERVAL '1 second'
+
+         UNION ALL
+
+         SELECT
+           'sequence-started-' || se.id::text AS id,
+           'sequence_started' AS type,
+           'Sequence started' AS label,
+           COALESCE(NULLIF(s.name, ''), se.sequence_id::text) AS detail,
+           se.entered_at AS occurred_at
+         FROM sequence_enrollments se
+         JOIN sequences s ON s.id = se.sequence_id
+         JOIN contact_match cmatch ON cmatch.id = se.contact_id
+         JOIN owned o ON o.user_id = s.user_id
+
+         UNION ALL
+
+         SELECT
+           'sequence-log-' || sl.id::text AS id,
+           'sequence_event' AS type,
+           CASE sl.status
+             WHEN 'sent' THEN 'Sequence step sent'
+             WHEN 'failed' THEN 'Sequence step failed'
+             WHEN 'stopped' THEN 'Sequence stopped'
+             WHEN 'skipped' THEN 'Sequence step skipped'
+             WHEN 'retrying' THEN 'Sequence retry scheduled'
+             ELSE 'Sequence updated'
+           END AS label,
+           COALESCE(NULLIF(sl.meta_json->>'templateName', ''), NULLIF(s.name, ''), sl.error_message) AS detail,
+           sl.created_at AS occurred_at
+         FROM sequence_logs sl
+         JOIN sequence_enrollments se ON se.id = sl.enrollment_id
+         JOIN sequences s ON s.id = sl.sequence_id
+         JOIN contact_match cmatch ON cmatch.id = se.contact_id
+         JOIN owned o ON o.user_id = s.user_id
+
+         UNION ALL
+
+         SELECT
+           'campaign-message-' || cmsg.id::text AS id,
+           'broadcast_sent' AS type,
+           CASE cmsg.status
+             WHEN 'queued' THEN 'Broadcast queued'
+             WHEN 'sending' THEN 'Broadcast sending'
+             WHEN 'sent' THEN 'Broadcast sent'
+             WHEN 'delivered' THEN 'Broadcast delivered'
+             WHEN 'read' THEN 'Broadcast read'
+             WHEN 'failed' THEN 'Broadcast failed'
+             ELSE 'Broadcast skipped'
+           END AS label,
+           c.name AS detail,
+           COALESCE(cmsg.sent_at, cmsg.delivered_at, cmsg.read_at, cmsg.updated_at, cmsg.created_at) AS occurred_at
+         FROM campaign_messages cmsg
+         JOIN campaigns c ON c.id = cmsg.campaign_id
+         JOIN owned o ON o.user_id = c.user_id
+         LEFT JOIN contact_match cmatch ON cmatch.id = cmsg.contact_id
+         WHERE cmatch.id IS NOT NULL
+            OR regexp_replace(cmsg.phone_number, '\\D', '', 'g') = regexp_replace(o.phone_number, '\\D', '', 'g')
+
+         ORDER BY occurred_at ASC
+         LIMIT 80`,
+        [conversationId, request.authUser.userId]
+      );
+
+      return {
+        events: result.rows.map((event) => ({
+          ...event,
+          detail: cleanTimelineDetail(event.detail),
+          occurred_at: event.occurred_at instanceof Date ? event.occurred_at.toISOString() : event.occurred_at
+        }))
+      };
     }
   );
 

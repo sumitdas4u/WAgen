@@ -1625,12 +1625,30 @@ select.cd-input { height: 36px; }
 }
 .iv-timeline-item:last-child { border-left-color: transparent; }
 .iv-timeline-icon {
-  font-size: 13px; position: absolute; left: -10px; top: 4px;
-  background: #fff; line-height: 1;
+  position: absolute; left: -14px; top: 4px;
+  width: 24px; height: 18px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #dbe6f3; background: #fff; color: #475569;
+  font-size: 8px; font-weight: 800; line-height: 1; letter-spacing: 0;
 }
 .iv-timeline-body { display: flex; flex-direction: column; gap: 1px; }
 .iv-timeline-label { font-size: 12px; font-weight: 600; color: #334155; }
+.iv-timeline-detail {
+  font-size: 11px; color: #64748b; line-height: 1.25;
+  overflow-wrap: anywhere;
+}
 .iv-timeline-time  { font-size: 10.5px; color: #94a3b8; }
+.iv-timeline-empty {
+  padding: 6px 0; font-size: 12px; color: #64748b;
+}
+.iv-timeline-ai_reply .iv-timeline-icon { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+.iv-timeline-human_reply .iv-timeline-icon { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
+.iv-timeline-template_sent .iv-timeline-icon { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.iv-timeline-broadcast_sent .iv-timeline-icon { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+.iv-timeline-sequence_started .iv-timeline-icon,
+.iv-timeline-sequence_event .iv-timeline-icon { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.iv-timeline-flow_started .iv-timeline-icon,
+.iv-timeline-flow_event .iv-timeline-icon { background: #faf5ff; color: #7e22ce; border-color: #e9d5ff; }
 
 /* Mobile inbox-v2 layout */
 @media (max-width: 768px) {

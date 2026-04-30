@@ -214,6 +214,30 @@ export function fetchConversationAutomation(token: string, convId: string): Prom
   return apiFetch(token, `/api/conversations/${convId}/automation`);
 }
 
+export type ConversationTimelineType =
+  | "conversation_started"
+  | "inbound_message"
+  | "human_reply"
+  | "ai_reply"
+  | "template_sent"
+  | "broadcast_sent"
+  | "sequence_started"
+  | "sequence_event"
+  | "flow_started"
+  | "flow_event";
+
+export interface ConversationTimelineEvent {
+  id: string;
+  type: ConversationTimelineType;
+  label: string;
+  detail: string | null;
+  occurred_at: string;
+}
+
+export function fetchConversationTimeline(token: string, convId: string): Promise<{ events: ConversationTimelineEvent[] }> {
+  return apiFetch(token, `/api/conversations/${convId}/timeline`);
+}
+
 // ── Agent assignment ──────────────────────────────────────────────────────
 
 export interface AgentProfile {
