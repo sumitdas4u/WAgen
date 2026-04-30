@@ -265,7 +265,13 @@ export async function buildApp() {
     app.log.error(error);
     if (!reply.sent) {
       const message = error instanceof Error ? error.message : "Internal server error";
-      reply.status(500).send({ error: message });
+      const maybeStatus = typeof error === "object" && error !== null && "statusCode" in error
+        ? (error as { statusCode?: unknown }).statusCode
+        : undefined;
+      const statusCode = typeof maybeStatus === "number" && maybeStatus >= 400 && maybeStatus < 600
+        ? maybeStatus
+        : 500;
+      reply.status(statusCode).send({ error: message });
     }
   });
 
