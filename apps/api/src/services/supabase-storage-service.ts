@@ -50,6 +50,46 @@ async function storeInPostgres(
 }
 
 /**
+ * Upload template header media to Supabase Storage (if configured) or fall back
+ * to the local Postgres media_uploads table. Returns a publicly accessible URL,
+ * or null on failure.
+ */
+export async function uploadTemplateHeaderMedia(input: {
+  userId: string;
+  buffer: Buffer;
+  mimeType: string;
+  filename?: string | null;
+}): Promise<string | null> {
+  const ext = mediaExtension(input.mimeType);
+  const filename = input.filename?.trim() || `template-header-${Date.now()}.${ext}`;
+  const supabase = getSupabaseClient();
+
+  if (supabase) {
+    try {
+      const path = `templates/${input.userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage
+        .from(env.SUPABASE_INBOUND_MEDIA_BUCKET)
+        .upload(path, input.buffer, {
+          contentType: input.mimeType,
+          upsert: false
+        });
+      if (error) {
+        console.warn("[SupabaseStorage] template header upload failed, falling back to Postgres", error.message);
+      } else {
+        const { data } = supabase.storage
+          .from(env.SUPABASE_INBOUND_MEDIA_BUCKET)
+          .getPublicUrl(path);
+        return data.publicUrl;
+      }
+    } catch (err) {
+      console.warn("[SupabaseStorage] unexpected error uploading template header, falling back to Postgres", err);
+    }
+  }
+
+  return storeInPostgres(input.userId, input.buffer, input.mimeType, filename);
+}
+
+/**
  * Upload inbound media buffer to Supabase Storage (if configured) or fall back
  * to the local Postgres media_uploads table. Returns a publicly accessible URL,
  * or null on failure.

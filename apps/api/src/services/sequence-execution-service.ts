@@ -27,7 +27,7 @@ import {
 } from "./sequence-queue-service.js";
 import { checkConnectionDailyCap, waitForRateLimit } from "./message-delivery-service.js";
 import { realtimeHub } from "./realtime-hub.js";
-import { dispatchTemplateMessage, getMessageTemplate } from "./template-service.js";
+import { dispatchTemplateMessage, getMessageTemplate, uploadMediaUrlToMetaId } from "./template-service.js";
 
 const MAX_MESSAGES_PER_CONTACT_PER_DAY = 20;
 const MIN_LOOP_GUARD_MS = 10_000;
@@ -476,6 +476,20 @@ export async function executeSequenceOutboundMessage(input: {
       connectionId: template.connectionId,
       linkedNumber: template.linkedNumber
     });
+
+    // Cache header media ID on first use so subsequent enrollments skip the download+upload.
+    const stepOverrides = step.media_overrides_json ?? {};
+    if (stepOverrides.headerMediaUrl && !stepOverrides.headerMediaId && sequence.connection_id) {
+      const mediaId = await uploadMediaUrlToMetaId(contact.user_id, sequence.connection_id, stepOverrides.headerMediaUrl);
+      if (mediaId) {
+        const updatedOverrides = { ...stepOverrides, headerMediaId: mediaId };
+        await pool.query(
+          `UPDATE sequence_steps SET media_overrides_json = $1 WHERE id = $2`,
+          [JSON.stringify(updatedOverrides), step.id]
+        );
+        step.media_overrides_json = updatedOverrides;
+      }
+    }
 
     const variableValues = resolveSequenceStepVariables(contact, step);
     const attempt = await recordDeliveryAttemptStart({

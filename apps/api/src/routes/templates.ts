@@ -71,7 +71,8 @@ const CreateTemplateSchema = z.object({
     .regex(/^[a-z0-9_]+$/, "Template name must be lowercase letters, digits, and underscores only"),
   category: z.enum(["MARKETING", "UTILITY", "AUTHENTICATION"]),
   language: z.string().trim().min(2).max(20).default("en_US"),
-  components: z.array(TemplateComponentSchema).min(1).max(10)
+  components: z.array(TemplateComponentSchema).min(1).max(10),
+  headerMediaUrl: z.string().url().optional().nullable()
 });
 
 const GenerateTemplateSchema = z.object({
@@ -108,7 +109,10 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
         });
       }
       try {
-        const template = await createTemplate(request.authUser.userId, parsed.data);
+        const template = await createTemplate(request.authUser.userId, {
+          ...parsed.data,
+          headerMediaUrl: parsed.data.headerMediaUrl ?? null
+        });
         return reply.status(201).send({ template });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to submit template.";
@@ -198,7 +202,7 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
           file.filename ?? null
         );
 
-        return { handle: result.handle };
+        return { handle: result.handle, mediaUrl: result.mediaUrl };
       } finally {
         await request.cleanRequestFiles();
       }

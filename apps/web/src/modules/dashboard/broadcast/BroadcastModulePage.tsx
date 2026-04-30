@@ -2919,12 +2919,26 @@ function VariableMappingStep({
           {headerMediaType ? (
             <div className="sch-section">
               <div className="sch-section-title">Media</div>
+              {selectedTemplate?.headerMediaUrl && !mediaOverrides.headerMediaUrl ? (
+                <div style={{ fontSize: "0.78rem", color: "#16a34a", marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  ✓ Using template default media
+                  <a
+                    href={selectedTemplate.headerMediaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "#2563eb", textDecoration: "underline", fontSize: "0.75rem" }}
+                  >
+                    preview
+                  </a>
+                </div>
+              ) : null}
               <p className="sch-section-desc">
-                This template requires a <strong>{headerMediaType.toLowerCase()}</strong> header.
-                Upload a file or enter a public URL.
+                {selectedTemplate?.headerMediaUrl
+                  ? `Template default will be used. Upload or enter a URL below to override.`
+                  : `This template requires a ${headerMediaType.toLowerCase()} header. Upload a file or enter a public URL.`}
               </p>
               <div className="sch-field-row">
-                <span className="sch-field-label">Upload file</span>
+                <span className="sch-field-label">Upload override</span>
                 <label style={{
                   display: "inline-flex", alignItems: "center", gap: "0.4rem",
                   height: "2.25rem", padding: "0 1rem",
@@ -2945,7 +2959,7 @@ function VariableMappingStep({
               </div>
               {mediaOverrides.headerMediaUrl ? (
                 <div style={{ fontSize: "0.78rem", color: "#16a34a", marginTop: "-0.25rem" }}>
-                  ✓ Media uploaded
+                  ✓ Override uploaded
                 </div>
               ) : null}
               <div className="sch-field-row">
@@ -2954,9 +2968,18 @@ function VariableMappingStep({
                   className="sch-input"
                   value={mediaOverrides.headerMediaUrl ?? ""}
                   onChange={(e) => setMediaOverrides((c) => ({ ...c, headerMediaUrl: e.target.value }))}
-                  placeholder="https://example.com/media.jpg"
+                  placeholder={selectedTemplate?.headerMediaUrl ? "Leave blank to use template default" : "https://example.com/media.jpg"}
                 />
               </div>
+              {mediaOverrides.headerMediaUrl ? (
+                <button
+                  type="button"
+                  onClick={() => setMediaOverrides((c) => { const next = { ...c }; delete next.headerMediaUrl; return next; })}
+                  style={{ fontSize: "0.75rem", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: "0.25rem" }}
+                >
+                  ✕ Clear override, use template default
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -2981,7 +3004,7 @@ function VariableMappingStep({
                     components={liveComponents.length ? liveComponents : selectedTemplate.components}
                     businessName={selectedTemplate.name}
                     headerMediaType={headerMediaType ?? undefined}
-                    headerMediaUrl={mediaOverrides.headerMediaUrl}
+                    headerMediaUrl={mediaOverrides.headerMediaUrl ?? selectedTemplate.headerMediaUrl ?? undefined}
                   />
                 </div>
               </>
@@ -3456,7 +3479,7 @@ function ScheduleStep({
                     components={livePreviewComponents.length ? livePreviewComponents : selectedTemplate.components}
                     businessName={(selectedTemplate as { displayPhoneNumber?: string }).displayPhoneNumber ?? selectedTemplate.name}
                     headerMediaType={headerMediaType ?? undefined}
-                    headerMediaUrl={mediaOverrides.headerMediaUrl}
+                    headerMediaUrl={mediaOverrides.headerMediaUrl ?? selectedTemplate.headerMediaUrl ?? undefined}
                   />
                 </div>
               </div>

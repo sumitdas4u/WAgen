@@ -8,6 +8,7 @@ import type { AnyNodeData, FlowNode } from "./types";
 
 interface FlowEditorCtx {
   token: string;
+  connectionId: string | null;
   contactFields: ContactField[];
   variableOptions: FlowEditorVariableOption[];
 }
@@ -22,12 +23,17 @@ export interface FlowEditorVariableOption {
 
 export const FlowEditorContext = createContext<FlowEditorCtx>({
   token: "",
+  connectionId: null,
   contactFields: [],
   variableOptions: []
 });
 
 export function useFlowEditorToken(): string {
   return useContext(FlowEditorContext).token;
+}
+
+export function useFlowEditorConnectionId(): string | null {
+  return useContext(FlowEditorContext).connectionId;
 }
 
 export function useFlowEditorVariableOptions(): FlowEditorVariableOption[] {

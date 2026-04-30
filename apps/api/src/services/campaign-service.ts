@@ -8,7 +8,7 @@ import {
   summarizeOutboundPolicyReasons,
   type OutboundPolicyReasonCode
 } from "./outbound-policy-service.js";
-import { getMessageTemplate, resolveTemplatePayload } from "./template-service.js";
+import { getMessageTemplate, resolveTemplatePayload, uploadMediaUrlToMetaId } from "./template-service.js";
 import { applyDateOffset, parseDateString, type DateOffset } from "../utils/date-offset.js";
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
@@ -425,6 +425,20 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   }
   await pool.query(`DELETE FROM campaign_messages WHERE campaign_id = $1`, [campaignId]);
 
+  // Pre-upload header media once at launch so every queued message uses the cached ID
+  // rather than downloading + re-uploading the same file once per recipient.
+  let effectiveMediaOverrides = campaign.media_overrides_json ?? {};
+  if (effectiveMediaOverrides.headerMediaUrl && !effectiveMediaOverrides.headerMediaId) {
+    const mediaId = await uploadMediaUrlToMetaId(userId, campaign.connection_id, effectiveMediaOverrides.headerMediaUrl);
+    if (mediaId) {
+      effectiveMediaOverrides = { ...effectiveMediaOverrides, headerMediaId: mediaId };
+      await pool.query(
+        `UPDATE campaigns SET media_overrides_json = $1 WHERE id = $2`,
+        [JSON.stringify(effectiveMediaOverrides), campaignId]
+      );
+    }
+  }
+
   let queuedCount = 0;
   let skippedCount = 0;
 
@@ -439,7 +453,7 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
     let errorMessage: string | null = null;
     let resolvedVariablesJson: Record<string, string> = {
       ...resolved.values,
-      ...(campaign.media_overrides_json ?? {})
+      ...effectiveMediaOverrides
     };
     const normalizedPhoneNumber = phoneNumber.replace(/\D/g, "");
     const suppression = suppressedRecipients.get(normalizedPhoneNumber);

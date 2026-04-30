@@ -1,6 +1,7 @@
 import { pool } from "../db/pool.js";
 import { aiService } from "./ai-service.js";
 import { chargeUser } from "./ai-token-service.js";
+import { uploadTemplateHeaderMedia } from "./supabase-storage-service.js";
 import {
   decryptToken,
   graphDelete,
@@ -47,6 +48,7 @@ export interface CreateTemplatePayload {
   category: TemplateCategory;
   language: string;
   components: TemplateComponent[];
+  headerMediaUrl?: string | null;
 }
 
 export interface GenerateTemplatePayload {
@@ -75,6 +77,7 @@ export interface MessageTemplate {
   metaRejectionReason: string | null;
   linkedNumber: string | null;
   displayPhoneNumber: string | null;
+  headerMediaUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +97,7 @@ interface MessageTemplateRow {
   meta_rejection_reason: string | null;
   linked_number: string | null;
   display_phone_number: string | null;
+  header_media_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -161,6 +165,7 @@ function mapTemplate(row: MessageTemplateRow): MessageTemplate {
     metaRejectionReason: row.meta_rejection_reason,
     linkedNumber: normalizePhoneDigits(row.linked_number),
     displayPhoneNumber: row.display_phone_number,
+    headerMediaUrl: row.header_media_url ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -785,6 +790,7 @@ export async function getMessageTemplate(userId: string, templateId: string): Pr
             wbc.phone_number_id,
             wbc.linked_number,
             wbc.display_phone_number,
+            mt.header_media_url,
             mt.created_at::text,
             mt.updated_at::text
      FROM message_templates mt
@@ -799,6 +805,18 @@ export async function getMessageTemplate(userId: string, templateId: string): Pr
     throw new Error("Template not found.");
   }
   return mapTemplate(row);
+}
+
+export async function setTemplateHeaderMediaUrl(
+  userId: string,
+  templateId: string,
+  mediaUrl: string | null
+): Promise<void> {
+  await pool.query(
+    `UPDATE message_templates SET header_media_url = $1, updated_at = NOW()
+     WHERE id = $2 AND user_id = $3`,
+    [mediaUrl, templateId, userId]
+  );
 }
 
 export async function listTemplates(
@@ -839,6 +857,7 @@ export async function listTemplates(
             wbc.phone_number_id,
             wbc.linked_number,
             wbc.display_phone_number,
+            mt.header_media_url,
             mt.created_at::text,
             mt.updated_at::text
      FROM message_templates mt
@@ -885,8 +904,8 @@ export async function createTemplate(
 
   const result = await pool.query<{ id: string }>(
     `INSERT INTO message_templates
-       (user_id, connection_id, template_id, name, category, language, status, components_json)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+       (user_id, connection_id, template_id, name, category, language, status, components_json, header_media_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
      RETURNING id`,
     [
       userId,
@@ -896,7 +915,8 @@ export async function createTemplate(
       (metaResponse.category ?? payload.category).toUpperCase(),
       payload.language,
       (metaResponse.status ?? "PENDING").toUpperCase(),
-      JSON.stringify(normalizedComponents)
+      JSON.stringify(normalizedComponents),
+      payload.headerMediaUrl ?? null
     ]
   );
 
@@ -1068,7 +1088,7 @@ Rules:
   const userPrompt = `Create a WhatsApp message template for: ${payload.prompt}`;
 
   const raw = await aiService.generateJson(systemPrompt, userPrompt);
-  void chargeUser(userId, "template_generate");
+  void chargeUser(userId, "template_generate", { module: "templates" });
 
   const suggestedName =
     typeof raw.suggestedName === "string"
@@ -1093,20 +1113,25 @@ export async function uploadTemplateMedia(
   fileBuffer: Buffer,
   mimeType: string,
   fileName?: string | null
-): Promise<{ handle: string }> {
+): Promise<{ handle: string; mediaUrl: string | null }> {
   if (!env.META_APP_ID?.trim()) {
     throw new Error("Meta app configuration is missing. Set META_APP_ID before uploading template media.");
   }
   const conn = await getConnectionForUser(userId, connectionId);
   const accessToken = decryptToken(conn.access_token_encrypted);
   const resolvedExtension = mimeType.split("/")[1] ?? "bin";
-  const uploadSession = await graphStartUploadSession(env.META_APP_ID.trim(), accessToken, {
-    fileName: fileName?.trim() || `template-sample.${resolvedExtension}`,
-    fileLength: fileBuffer.byteLength,
-    fileType: mimeType
-  });
+
+  const [uploadSession, mediaUrl] = await Promise.all([
+    graphStartUploadSession(env.META_APP_ID.trim(), accessToken, {
+      fileName: fileName?.trim() || `template-sample.${resolvedExtension}`,
+      fileLength: fileBuffer.byteLength,
+      fileType: mimeType
+    }),
+    uploadTemplateHeaderMedia({ userId, buffer: fileBuffer, mimeType, filename: fileName })
+  ]);
+
   const result = await graphUploadFileHandle(uploadSession.id, accessToken, fileBuffer, mimeType);
-  return { handle: result.h };
+  return { handle: result.h, mediaUrl };
 }
 
 async function rewriteUrlComponentsToMediaId(
@@ -1141,6 +1166,27 @@ async function rewriteUrlComponentsToMediaId(
       return component;
     })
   );
+}
+
+// Upload a public media URL to Meta's media API once and return the resulting integer ID string.
+// Used to pre-cache a media ID at campaign/sequence launch so per-message sends skip the download+upload.
+export async function uploadMediaUrlToMetaId(
+  userId: string,
+  connectionId: string,
+  mediaUrl: string
+): Promise<string | null> {
+  try {
+    const conn = await getConnectionForUser(userId, connectionId);
+    const accessToken = decryptToken(conn.access_token_encrypted);
+    const dlRes = await fetch(mediaUrl);
+    if (!dlRes.ok) return null;
+    const contentType = dlRes.headers.get("content-type") ?? "application/octet-stream";
+    const buffer = Buffer.from(await dlRes.arrayBuffer());
+    const uploaded = await graphPostMedia(conn.phone_number_id, accessToken, buffer, contentType);
+    return String(uploaded.id);
+  } catch {
+    return null;
+  }
 }
 
 export async function dispatchTemplateMessage(

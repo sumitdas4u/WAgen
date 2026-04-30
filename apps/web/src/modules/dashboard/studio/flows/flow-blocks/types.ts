@@ -151,6 +151,8 @@ export interface TemplateData {
   kind: "template";
   templateName: string;
   language: string;
+  headerMediaUrl?: string;
+  headerMediaType?: "image" | "video" | "document";
 }
 
 export interface RequestInterventionData {

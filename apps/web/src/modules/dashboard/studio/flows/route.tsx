@@ -694,7 +694,7 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
   };
 
   return (
-      <FlowEditorContext.Provider value={{ token, contactFields, variableOptions }}>
+      <FlowEditorContext.Provider value={{ token, connectionId: flow.connectionId ?? null, contactFields, variableOptions }}>
       <div className="fn-root">
       <div className="fn-topbar">
         <button className="fn-btn fn-btn-back" onClick={onBack}>

@@ -366,6 +366,8 @@ export interface BillingPlan {
   code: "starter" | "pro" | "business";
   label: string;
   amountInr: number;
+  annualAmountInr: number;
+  aiCreditsMonthly: number;
   trialDaysDefault: number;
   totalCountDefault: number;
   available: boolean;
@@ -375,7 +377,26 @@ export interface PlanEntitlements {
   planCode: "trial" | "starter" | "pro" | "business";
   maxApiNumbers: number;
   maxAgentProfiles: number;
+  maxActiveFlows?: number;
+  maxKnowledgeSources?: number;
+  aiCreditsMonthly?: number;
+  annualAmountInr?: number;
   prioritySupport: boolean;
+  modules?: {
+    inbox: boolean;
+    contacts: boolean;
+    billing: boolean;
+    qrChannel: boolean;
+    webWidget: boolean;
+    broadcast: boolean;
+    flows: boolean;
+    sequences: boolean;
+    webhooks: boolean;
+    apiChannel: boolean;
+    googleSheets: boolean;
+    googleCalendar: boolean;
+    apiAccess: boolean;
+  };
 }
 
 export interface BillingPaymentSummary {
@@ -2390,6 +2411,7 @@ export interface MessageTemplate {
   metaRejectionReason: string | null;
   linkedNumber: string | null;
   displayPhoneNumber: string | null;
+  headerMediaUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2400,6 +2422,7 @@ export interface CreateTemplatePayload {
   category: TemplateCategory;
   language: string;
   components: TemplateComponent[];
+  headerMediaUrl?: string | null;
 }
 
 export interface GeneratedTemplate {
@@ -2458,7 +2481,7 @@ export function uploadTemplateMedia(
 ) {
   const form = new FormData();
   form.append("file", file);
-  return apiRequest<{ handle: string }>(
+  return apiRequest<{ handle: string; mediaUrl: string | null }>(
     `/api/meta/templates/upload-media?connectionId=${encodeURIComponent(connectionId)}&mediaType=${encodeURIComponent(mediaType)}`,
     { method: "POST", token, body: form }
   );

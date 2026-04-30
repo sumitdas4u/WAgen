@@ -7,11 +7,15 @@ export const templateBlock: FlowBlockModule = {
     const templateName = String(context.node.data.templateName ?? "").trim();
     const language = String(context.node.data.language ?? "en").trim() || "en";
 
+    const headerMediaUrl = String(context.node.data.headerMediaUrl ?? "").trim() || undefined;
+    const headerMediaType = (context.node.data.headerMediaType as "image" | "video" | "document" | undefined) ?? "image";
+
     if (context.channel === "api_whatsapp" && templateName) {
       await context.sendReply({
         type: "template",
         templateName,
-        language
+        language,
+        ...(headerMediaUrl ? { headerMediaType, headerMediaUrl } : {})
       });
     } else {
       await context.sendReply({

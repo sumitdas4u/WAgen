@@ -630,6 +630,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const [headerHandle, setHeaderHandle] = useState(init?.headerHandle ?? "");
   const [requiresFreshMediaUpload, setRequiresFreshMediaUpload] = useState(init?.requiresFreshMediaUpload ?? false);
   const [headerImageUrl, setHeaderImageUrl] = useState<string | null>(null);
+  const [headerMediaUrl, setHeaderMediaUrl] = useState<string | null>(null);
   const [bodyText, setBodyText] = useState(init?.bodyText ?? "");
   const [footerText, setFooterText] = useState(init?.footerText ?? "");
   const [buttons, setButtons] = useState<Array<{ type: string; text: string; url?: string; phone?: string; coupon?: string }>>(init?.buttons ?? []);
@@ -718,6 +719,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     const buttonsComp = gen.components.find((c) => c.type === "BUTTONS");
     setHeaderHandle("");
     setHeaderImageUrl(null);
+    setHeaderMediaUrl(null);
     setRequiresFreshMediaUpload(false);
 
     if (header) {
@@ -794,7 +796,8 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
         name: name.trim(),
         category,
         language,
-        components
+        components,
+        headerMediaUrl: headerMediaUrl ?? null
       });
       onCreated(template);
     } catch (error) {
@@ -947,6 +950,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                     setHeaderText("");
                     setHeaderHandle("");
                     setHeaderImageUrl(null);
+                    setHeaderMediaUrl(null);
                     setRequiresFreshMediaUpload(false);
                   }}
                   style={{ accentColor: "#25d366" }}
@@ -1001,10 +1005,11 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                 token={token}
                 connectionId={connectionId}
                 mediaType={headerFormat as "IMAGE" | "VIDEO" | "DOCUMENT"}
-                onUploaded={(url, localPreviewUrl) => {
-                  setHeaderHandle(url);
+                onUploaded={(handle, localPreviewUrl, mediaUrl) => {
+                  setHeaderHandle(handle);
+                  setHeaderMediaUrl(mediaUrl);
                   setRequiresFreshMediaUpload(false);
-                  if (headerFormat === "IMAGE") setHeaderImageUrl(localPreviewUrl ?? url);
+                  if (headerFormat === "IMAGE") setHeaderImageUrl(localPreviewUrl ?? mediaUrl ?? null);
                 }}
               />
               {draftValidation.headerError && (

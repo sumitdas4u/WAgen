@@ -7,7 +7,7 @@ interface Props {
   token: string;
   connectionId: string;
   mediaType: MediaType;
-  onUploaded: (handle: string, localPreviewUrl?: string) => void;
+  onUploaded: (handle: string, localPreviewUrl: string | undefined, mediaUrl: string | null) => void;
 }
 
 const CONFIG: Record<MediaType, { accept: string; exts: string; maxMb: number; icon: string; label: string }> = {
@@ -15,21 +15,21 @@ const CONFIG: Record<MediaType, { accept: string; exts: string; maxMb: number; i
     accept: "image/jpeg,image/png",
     exts: ".jpg,.jpeg,.png",
     maxMb: 5,
-    icon: "[img]",
+    icon: "🖼️",
     label: "Image"
   },
   VIDEO: {
     accept: "video/mp4",
     exts: ".mp4",
     maxMb: 16,
-    icon: "[vid]",
+    icon: "🎬",
     label: "Video"
   },
   DOCUMENT: {
     accept: "application/pdf",
     exts: ".pdf",
     maxMb: 10,
-    icon: "[doc]",
+    icon: "📄",
     label: "Document"
   }
 };
@@ -66,7 +66,7 @@ export function MediaUploader({ token, connectionId, mediaType, onUploaded }: Pr
     setUploading(true);
     try {
       const uploaded = await uploadTemplateMedia(token, connectionId, mediaType, file);
-      onUploaded(uploaded.handle, localPreviewUrl);
+      onUploaded(uploaded.handle, localPreviewUrl, uploaded.mediaUrl);
       setUploaded(true);
     } catch (err) {
       setError((err as Error).message || "Upload failed.");

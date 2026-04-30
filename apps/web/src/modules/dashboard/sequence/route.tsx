@@ -1999,9 +1999,25 @@ function StepsEditor({
                         <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", marginTop: "12px", display: "grid", gap: "10px" }}>
                           <div>
                             <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>Template media</div>
-                            <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
-                              This header expects a {headerMediaType.toLowerCase()}. Upload to Supabase or paste a public URL.
-                            </div>
+                            {template?.headerMediaUrl && !mediaOverrides.headerMediaUrl ? (
+                              <div style={{ fontSize: "12px", color: "#16a34a", marginTop: "2px", display: "flex", alignItems: "center", gap: "6px" }}>
+                                ✓ Using template default media
+                                <a
+                                  href={template.headerMediaUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ color: "#2563eb", textDecoration: "underline" }}
+                                >
+                                  preview
+                                </a>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
+                                {template?.headerMediaUrl
+                                  ? "Template default will be used. Upload or enter a URL to override."
+                                  : `This header expects a ${headerMediaType.toLowerCase()}. Upload or paste a public URL.`}
+                              </div>
+                            )}
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
                             <label
@@ -2036,11 +2052,11 @@ function StepsEditor({
                               />
                             </label>
                             {mediaOverrides.headerMediaUrl ? (
-                              <span style={{ fontSize: "12px", color: "#16a34a", fontWeight: 600 }}>Media ready for preview</span>
+                              <span style={{ fontSize: "12px", color: "#16a34a", fontWeight: 600 }}>✓ Override set</span>
                             ) : null}
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Media URL</span>
+                            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>Override URL</span>
                             <input
                               className="seq-input"
                               value={mediaOverrides.headerMediaUrl ?? ""}
@@ -2050,9 +2066,18 @@ function StepsEditor({
                                   headerMediaUrl: e.target.value
                                 }
                               })}
-                              placeholder="https://example.com/header-media"
+                              placeholder={template?.headerMediaUrl ? "Leave blank to use template default" : "https://example.com/header-media"}
                             />
                           </div>
+                          {mediaOverrides.headerMediaUrl && template?.headerMediaUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => updateStep(idx, { mediaOverrides: { ...mediaOverrides, headerMediaUrl: "" } })}
+                              style={{ fontSize: "11px", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}
+                            >
+                              ✕ Clear override, use template default
+                            </button>
+                          ) : null}
                           {feedback ? (
                             <div style={{ fontSize: "12px", color: feedback.kind === "error" ? "#dc2626" : "#16a34a" }}>
                               {feedback.message}
@@ -2079,7 +2104,7 @@ function StepsEditor({
                               components={livePreviewComponents.length ? livePreviewComponents : template.components}
                               businessName={template.displayPhoneNumber ?? template.name}
                               headerMediaType={headerMediaType ?? undefined}
-                              headerMediaUrl={mediaOverrides.headerMediaUrl}
+                              headerMediaUrl={mediaOverrides.headerMediaUrl || template.headerMediaUrl || undefined}
                             />
                           </div>
                         </div>

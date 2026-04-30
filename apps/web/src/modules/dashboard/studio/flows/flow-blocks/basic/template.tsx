@@ -1,9 +1,45 @@
+import { useEffect, useMemo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
-import { NodeHeader, useNodePatch } from "../editor-shared";
+import { NodeHeader, useFlowEditorConnectionId, useFlowEditorToken, useNodePatch } from "../editor-shared";
+import { MediaUpload } from "../media-upload";
+import { useTemplatesQuery } from "../../../../templates/queries";
 import type { StudioFlowBlockDefinition, TemplateData } from "../types";
 
 function TemplateNode({ id, data, selected }: NodeProps<TemplateData>) {
   const { patch, del } = useNodePatch<TemplateData>(id);
+  const token = useFlowEditorToken();
+  const connectionId = useFlowEditorConnectionId();
+
+  const templatesQuery = useTemplatesQuery(token, { connectionId });
+
+  const matchedTemplate = useMemo(() => {
+    if (!templatesQuery.data || !data.templateName) return null;
+    return templatesQuery.data.find(
+      (t) => t.name.toLowerCase() === data.templateName.toLowerCase()
+    ) ?? null;
+  }, [templatesQuery.data, data.templateName]);
+
+  const headerMediaType = useMemo(() => {
+    const header = matchedTemplate?.components.find((c) => c.type === "HEADER");
+    const fmt = header?.format;
+    return fmt === "IMAGE" || fmt === "VIDEO" || fmt === "DOCUMENT" ? fmt : null;
+  }, [matchedTemplate]);
+
+  const mediaTypeLabel = headerMediaType ? headerMediaType.toLowerCase() as "image" | "video" | "document" : null;
+
+  useEffect(() => {
+    patch({ headerMediaType: mediaTypeLabel ?? undefined });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaTypeLabel]);
+
+  // Pre-fill headerMediaUrl from template default when template is selected and no override set
+  useEffect(() => {
+    const defaultUrl = matchedTemplate?.headerMediaUrl ?? null;
+    if (defaultUrl && !data.headerMediaUrl) {
+      patch({ headerMediaUrl: defaultUrl });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedTemplate?.headerMediaUrl]);
 
   return (
     <div className={`fn-node fn-node-template${selected ? " selected" : ""}`}>
@@ -34,6 +70,31 @@ function TemplateNode({ id, data, selected }: NodeProps<TemplateData>) {
             <option value="ar">Arabic (ar)</option>
           </select>
         </div>
+        {mediaTypeLabel ? (
+          <div className="fn-node-field">
+            <label className="fn-node-label">HEADER {headerMediaType}</label>
+            {matchedTemplate?.headerMediaUrl && data.headerMediaUrl === matchedTemplate.headerMediaUrl ? (
+              <div style={{ fontSize: "11px", color: "#16a34a", marginBottom: "4px" }}>
+                ✓ Using template default
+              </div>
+            ) : null}
+            <MediaUpload
+              mediaType={mediaTypeLabel}
+              currentUrl={data.headerMediaUrl}
+              onUrl={(url) => patch({ headerMediaUrl: url })}
+            />
+            {matchedTemplate?.headerMediaUrl && data.headerMediaUrl && data.headerMediaUrl !== matchedTemplate.headerMediaUrl ? (
+              <button
+                type="button"
+                className="nodrag"
+                onClick={() => patch({ headerMediaUrl: matchedTemplate.headerMediaUrl ?? "" })}
+                style={{ fontSize: "10px", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginTop: "2px" }}
+              >
+                ↩ Reset to template default
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <Handle type="source" position={Position.Right} id="out" className="fn-handle-out" />
     </div>
@@ -56,7 +117,8 @@ export const templateStudioBlock: StudioFlowBlockDefinition<TemplateData> = {
     return {
       kind: "template",
       templateName: "",
-      language: "en"
+      language: "en",
+      headerMediaUrl: ""
     };
   },
   NodeComponent: TemplateNode

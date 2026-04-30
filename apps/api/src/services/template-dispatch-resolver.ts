@@ -101,7 +101,8 @@ function getSpecialValue(specials: Record<string, string>, names: string[]): str
 function resolveHeaderMediaReference(
   component: TemplateComponent,
   specials: Record<string, string>,
-  missing: Set<string>
+  missing: Set<string>,
+  defaultMediaUrl?: string | null
 ): { kind: "id" | "link"; value: string } | null {
   const format = component.format as TemplateMediaFormat | undefined;
   if (!format) {
@@ -131,7 +132,10 @@ function resolveHeaderMediaReference(
     "header_preview_url"
   ]);
   const example = component.example as { header_handle?: string[]; header_url?: string[] } | undefined;
-  const fallback = explicitId ?? explicitUrl ?? example?.header_handle?.[0] ?? example?.header_url?.[0] ?? null;
+  // example.header_handle is a Meta template submission handle (e.g. "2:base64:base64"),
+  // valid only for template creation review — NOT a usable media reference for sending messages.
+  // Fall back to: explicit override → template default → example header_url (never the handle).
+  const fallback = explicitId ?? explicitUrl ?? defaultMediaUrl ?? example?.header_url?.[0] ?? null;
 
   if (!fallback?.trim()) {
     missing.add("headerMedia");
@@ -222,10 +226,10 @@ export function resolveTemplatePayload(
       }
 
       if (component.format === "IMAGE" || component.format === "VIDEO" || component.format === "DOCUMENT") {
-        const mediaReference = resolveHeaderMediaReference(component, specials, missing);
+        const mediaReference = resolveHeaderMediaReference(component, specials, missing, template.headerMediaUrl);
         const mediaType = component.format.toLowerCase() as "image" | "video" | "document";
         headerMediaType = mediaType;
-        headerMediaUrl = resolveHeaderPreviewUrl(component, specials);
+        headerMediaUrl = resolveHeaderPreviewUrl(component, specials) ?? template.headerMediaUrl ?? undefined;
 
         if (!headerMediaUrl && mediaReference?.kind === "link") {
           headerMediaUrl = mediaReference.value;
