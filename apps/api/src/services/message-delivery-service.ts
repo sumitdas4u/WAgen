@@ -592,7 +592,7 @@ export async function deliverCampaignMessage(input: {
     }
 
     return {
-      status: shouldRetry ? "retrying" : "failed",
+      status: nextRetryAt ? "retrying" : "failed",
       errorMessage: classification.errorMessage
     };
   }
