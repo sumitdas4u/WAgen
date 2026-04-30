@@ -10,6 +10,7 @@ import {
   fetchBroadcastReport,
   fetchBroadcastRetargetPreview,
   fetchBroadcasts,
+  fetchPublishedFlows,
   fetchSegmentContacts,
   importBroadcastAudienceWorkbook,
   launchCampaignDraft,
@@ -37,7 +38,6 @@ import { MetaConnectionSelector, isMetaConnectionActive } from "../../../shared/
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
 import { useDashboardShell } from "../../../shared/dashboard/shell-context";
 import { useAgentsQuery } from "../agents/queries";
-import { useInboxPublishedFlowsQuery } from "../inbox/queries";
 import { TemplatePreviewPanel } from "../templates/TemplatePreviewPanel";
 import { useTemplatesQuery } from "../templates/queries";
 import "./broadcast.css";
@@ -1152,7 +1152,10 @@ function BroadcastWizardPage({
     queryKey: dashboardQueryKeys.contactFields,
     queryFn: () => listContactFields(token).then((response) => response.fields)
   });
-  const publishedFlowsQuery = useInboxPublishedFlowsQuery(token);
+  const publishedFlowsQuery = useQuery({
+    queryKey: dashboardQueryKeys.inboxPublishedFlows,
+    queryFn: () => fetchPublishedFlows(token)
+  });
   const agentsQuery = useAgentsQuery(token);
 
   const [step, setStep] = useState<WizardStep>(1);

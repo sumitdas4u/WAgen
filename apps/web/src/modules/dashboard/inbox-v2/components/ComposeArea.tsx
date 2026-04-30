@@ -165,6 +165,14 @@ function isReplyGuideDismissed(): boolean {
   }
 }
 
+function formatWindowDuration(ms: number): string {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
 function dismissReplyGuide(): void {
   try {
     localStorage.setItem(REPLY_GUIDE_DISMISSED_KEY, "1");
@@ -208,19 +216,29 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
   const canManualReply = Boolean(conv && (conv.ai_paused || conv.manual_takeover || tookOver));
   const isApiChannel = conv?.channel_type === "api";
   const messages = useConvStore((s) => s.messagesByConvId[convId] ?? []);
-  const isWithinApiWindow = useMemo(() => {
-    if (!isApiChannel) return true;
-    const latestInbound = messages
+  const latestInboundAt = useMemo(
+    () => messages
       .filter((m) => m.direction === "inbound")
       .reduce<string | null>((latest, msg) => {
         if (!latest) return msg.created_at;
         return Date.parse(msg.created_at) > Date.parse(latest) ? msg.created_at : latest;
-      }, null);
-    if (!latestInbound) return false;
-    return Date.now() - Date.parse(latestInbound) <= 24 * 60 * 60 * 1000;
-  }, [isApiChannel, messages]);
+      }, null),
+    [messages]
+  );
+  const apiWindowRemainingMs = useMemo(() => {
+    if (!isApiChannel || !latestInboundAt) return 0;
+    return 24 * 60 * 60 * 1000 - (Date.now() - Date.parse(latestInboundAt));
+  }, [isApiChannel, latestInboundAt]);
+  const isWithinApiWindow = !isApiChannel || apiWindowRemainingMs > 0;
   const freeFormBlockedReason = isApiChannel && !isWithinApiWindow
     ? "24-hour WhatsApp window is closed. Send an approved template to reopen this chat."
+    : null;
+  const apiWindowLabel = isApiChannel
+    ? isWithinApiWindow
+      ? `WhatsApp reply window open for ${formatWindowDuration(apiWindowRemainingMs)}`
+      : latestInboundAt
+        ? "WhatsApp reply window closed"
+        : "No inbound message yet. Use an approved template to start."
     : null;
 
   // ── Queries ──────────────────────────────────────────────────────────────
@@ -807,8 +825,15 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
           )}
 
           {/* Textarea */}
-          {freeFormBlockedReason && mode === "reply" && (
-            <div className="iv-compose-policy">{freeFormBlockedReason}</div>
+          {isApiChannel && mode === "reply" && (
+            <div className="iv-compose-policy" style={{
+              borderColor: freeFormBlockedReason ? "#fed7aa" : "#bbf7d0",
+              color: freeFormBlockedReason ? "#9a3412" : "#166534",
+              background: freeFormBlockedReason ? "#fff7ed" : "#f0fdf4"
+            }}>
+              {freeFormBlockedReason ?? apiWindowLabel}
+              {freeFormBlockedReason && " Template is the allowed outbound path."}
+            </div>
           )}
           <div
             ref={editorRef}

@@ -5,9 +5,10 @@ import { useAuth } from "../../../lib/auth-context";
 import { useConvStore } from "./store/convStore";
 import { useNotificationStore } from "./store/notificationStore";
 import type { ConvPage } from "./api";
+import type { ConvFilters, ConvFolder } from "./store/convStore";
 import {
-  fetchConvSnapshot,
   fetchConversation,
+  fetchConvPage,
   fetchConvMessages,
   fetchLabels,
   postMarkRead,
@@ -26,13 +27,20 @@ import type { ConversationMessage } from "./store/convStore";
 
 // ── Conversations ─────────────────────────────────────────────────────────
 
-export function useConversations(_folder: string, _searchQ: string) {
+export function useConversations(folder: ConvFolder, searchQ: string, filters: ConvFilters) {
   const { token } = useAuth();
   const store = useConvStore();
 
   const query = useInfiniteQuery({
-    queryKey: ["iv2-convs"],
-    queryFn: () => fetchConvSnapshot(token!),
+    queryKey: ["iv2-convs", folder, searchQ, filters],
+    queryFn: ({ pageParam }) =>
+      fetchConvPage(token!, {
+        cursor: pageParam as string | undefined,
+        limit: 50,
+        folder,
+        q: searchQ || null,
+        filters
+      }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: !!token,

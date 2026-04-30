@@ -3,7 +3,15 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
 import { useSetStatus, useSetPriority, useSetLabels, useLabels } from "../queries";
-import { fetchContactByConversation, listContactFields, fetchAgentProfiles, patchAssignAgent, patchAiMode } from "../api";
+import {
+  fetchContactByConversation,
+  fetchConversationAutomation,
+  listContactFields,
+  fetchAgentProfiles,
+  patchAssignAgent,
+  patchAiMode,
+  updateContact
+} from "../api";
 import { useAuth } from "../../../../lib/auth-context";
 import { getAvatarColor } from "./ConversationRow";
 
@@ -88,6 +96,8 @@ export function DetailsSidebar({ convId, onClose }: Props) {
   const [openSections, setOpenSections] = useState<Set<string>>(getSavedSections);
   const [snoozeAt, setSnoozeAt] = useState("");
   const [pendingSnooze, setPendingSnooze] = useState(false);
+  const [editingTags, setEditingTags] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
 
   const { byId, labels } = useConvStore();
   const conv = byId[convId];
@@ -123,6 +133,13 @@ export function DetailsSidebar({ convId, onClose }: Props) {
     staleTime: 30_000
   });
 
+  const automationQuery = useQuery({
+    queryKey: ["iv2-automation", convId],
+    queryFn: () => fetchConversationAutomation(token!, convId),
+    enabled: Boolean(token && convId),
+    staleTime: 15_000
+  });
+
   const fieldsQuery = useQuery({
     queryKey: ["iv2-contact-fields"],
     queryFn: () => listContactFields(token!),
@@ -131,6 +148,7 @@ export function DetailsSidebar({ convId, onClose }: Props) {
   });
 
   const contact = contactQuery.data?.contact ?? null;
+  const automation = automationQuery.data?.automation ?? null;
   const fieldDefs = fieldsQuery.data?.fields ?? [];
   const fieldValues = contact?.custom_field_values ?? [];
   const valueMap = new Map(fieldValues.map((fv) => [fv.field_id, fv]));
@@ -143,7 +161,20 @@ export function DetailsSidebar({ convId, onClose }: Props) {
   useEffect(() => {
     setPendingSnooze(false);
     setSnoozeAt("");
+    setEditingTags(false);
   }, [convId]);
+
+  useEffect(() => {
+    setTagDraft((contact?.tags ?? []).join(", "));
+  }, [contact?.id, contact?.tags]);
+
+  const updateTagsMut = useMutation({
+    mutationFn: (tags: string[]) => updateContact(token!, contact!.id, { tags }),
+    onSuccess: async () => {
+      setEditingTags(false);
+      await contactQuery.refetch();
+    }
+  });
 
   const toggleSection = useCallback((id: string) => {
     setOpenSections((prev) => {
@@ -202,15 +233,53 @@ export function DetailsSidebar({ convId, onClose }: Props) {
             <FieldRow label="EMAIL" value={contact?.email ?? "Not captured yet"} />
             <FieldRow label="TYPE" value={contact?.contact_type ?? conv.lead_kind} />
 
-            {contact?.tags && contact.tags.length > 0 && (
+            {contact?.id && (
               <div className="iv-cf-row">
                 <div className="iv-cf-label">TAGS</div>
                 <div className="iv-cf-value">
-                  <div className="iv-tag-cloud">
-                    {contact.tags.map((tag) => (
-                      <span key={tag} className="iv-tag">{tag}</span>
-                    ))}
-                  </div>
+                  {editingTags ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <input
+                        value={tagDraft}
+                        onChange={(event) => setTagDraft(event.target.value)}
+                        placeholder="vip, follow-up, complaint"
+                        style={{ border: "1px solid #e2eaf4", borderRadius: 6, padding: "5px 7px", fontSize: 12 }}
+                      />
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          className="iv-btn-blue"
+                          style={{ fontSize: 11, padding: "3px 8px" }}
+                          disabled={updateTagsMut.isPending}
+                          onClick={() => updateTagsMut.mutate(
+                            tagDraft.split(",").map((tag) => tag.trim()).filter(Boolean)
+                          )}
+                        >
+                          {updateTagsMut.isPending ? "Saving..." : "Save tags"}
+                        </button>
+                        <button
+                          className="iv-bulk-btn"
+                          style={{ fontSize: 11, padding: "3px 8px" }}
+                          onClick={() => {
+                            setTagDraft((contact.tags ?? []).join(", "));
+                            setEditingTags(false);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div className="iv-tag-cloud">
+                        {contact.tags.length > 0
+                          ? contact.tags.map((tag) => <span key={tag} className="iv-tag">{tag}</span>)
+                          : <span style={{ color: "#94a3b8" }}>No tags yet</span>}
+                      </div>
+                      <button className="iv-bulk-btn" style={{ fontSize: 11, padding: "3px 8px", alignSelf: "flex-start" }} onClick={() => setEditingTags(true)}>
+                        Edit tags
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -351,6 +420,40 @@ export function DetailsSidebar({ convId, onClose }: Props) {
             </div>
             {conv.ai_paused && <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>⏸ AI paused — agents handle replies</div>}
             {!conv.ai_paused && <div style={{ fontSize: 11, color: "#22c55e", marginTop: 4 }}>🤖 AI active — auto-replies enabled</div>}
+          </Accordion>
+
+          <Accordion id="automation" title="Automation" open={openSections.has("automation")} onToggle={() => toggleSection("automation")} wagenVariant="purple">
+            {automationQuery.isLoading ? (
+              <div style={{ fontSize: 12, color: "#64748b" }}>Loading automation state...</div>
+            ) : automation ? (
+              <>
+                <div className="iv-acc-row"><span className="iv-acc-key">Flow</span><span className="iv-acc-val">{automation.flow_name ?? automation.flow_id.slice(-8)}</span></div>
+                <div className="iv-acc-row"><span className="iv-acc-key">Status</span><span className="iv-acc-val">{automation.status}</span></div>
+                <div className="iv-acc-row"><span className="iv-acc-key">Current</span><span className="iv-acc-val">{automation.current_node_id?.slice(-8) ?? "Not running"}</span></div>
+                {automation.waiting_for && (
+                  <div className="iv-acc-row"><span className="iv-acc-key">Waiting for</span><span className="iv-acc-val">{automation.waiting_for}</span></div>
+                )}
+                <div className="iv-acc-row"><span className="iv-acc-key">Updated</span><span className="iv-acc-val">{formatDateTime(automation.updated_at)}</span></div>
+                {automation.variables && Object.keys(automation.variables).length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="iv-cf-label" style={{ marginBottom: 4 }}>CAPTURED VARIABLES</div>
+                    <div style={{ display: "grid", gap: 4 }}>
+                      {Object.entries(automation.variables)
+                        .filter(([key, value]) => !key.startsWith("__") && typeof value !== "object")
+                        .slice(0, 8)
+                        .map(([key, value]) => (
+                          <div key={key} className="iv-acc-row">
+                            <span className="iv-acc-key">{key}</span>
+                            <span className="iv-acc-val">{String(value || "-").slice(0, 80)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: "#64748b" }}>No flow session has run for this conversation yet.</div>
+            )}
           </Accordion>
 
           {/* Conversation Info */}

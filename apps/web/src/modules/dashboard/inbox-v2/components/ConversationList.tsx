@@ -26,19 +26,6 @@ function scoreToStage(score: number) {
   return "cold";
 }
 
-function applyLeadFilters(conv: Conversation, filters: import("../store/convStore").ConvFilters): boolean {
-  if (filters.stage !== "all" && scoreToStage(conv.score) !== filters.stage) return false;
-  if (filters.channel !== "all" && conv.channel_type !== filters.channel) return false;
-  if (filters.assignment === "assigned" && !conv.assigned_agent_profile_id) return false;
-  if (filters.assignment === "unassigned" && conv.assigned_agent_profile_id) return false;
-  if (filters.aiMode === "ai" && (conv.ai_paused || conv.manual_takeover)) return false;
-  if (filters.aiMode === "human" && !conv.ai_paused && !conv.manual_takeover) return false;
-  if (filters.labelId !== "all" && !(conv.label_ids ?? []).includes(filters.labelId)) return false;
-  if (filters.leadKind !== "all" && conv.lead_kind !== filters.leadKind) return false;
-  if (filters.priority !== "all" && conv.priority !== filters.priority) return false;
-  return true;
-}
-
 function matchesSearch(conv: Conversation, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -65,7 +52,7 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFi
   const tabsAutoScrollSpeedRef = useRef(0);
   const bulkAction = useBulkAction();
 
-  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useConversations(folder, debouncedQ);
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useConversations(folder, debouncedQ, filters);
   const showShimmer = isLoading && ids.length === 0;
 
   // Debounce search
@@ -77,14 +64,8 @@ export function ConversationList({ onSelectConv, onNew, onCannedManage, onOpenFi
   const filteredIds = ids.filter((id) => {
     const c = byId[id];
     if (!c) return false;
-    if (folder === "pending") {
-      // Unread tab = open conversations the agent hasn't replied to yet
-      if (c.status !== "open" || (c.unread_count ?? 0) === 0) return false;
-    } else if (folder !== "all") {
-      if (c.status !== folder) return false;
-    }
+    if (filters.stage !== "all" && scoreToStage(c.score) !== filters.stage) return false;
     if (!matchesSearch(c, debouncedQ)) return false;
-    if (!applyLeadFilters(c, filters)) return false;
     return true;
   });
 

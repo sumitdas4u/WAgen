@@ -63,7 +63,14 @@ const LeadsSummarizeBodySchema = z.object({
 const ConversationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   cursor: z.string().trim().min(1).optional(),
-  q: z.string().trim().max(200).optional()
+  q: z.string().trim().max(200).optional(),
+  status: z.enum(["all", "open", "pending", "resolved", "snoozed"]).optional(),
+  channel: z.enum(["all", "web", "qr", "api"]).optional(),
+  aiMode: z.enum(["all", "ai", "human"]).optional(),
+  assignment: z.enum(["all", "assigned", "unassigned"]).optional(),
+  labelId: z.string().trim().optional(),
+  leadKind: z.enum(["all", "lead", "feedback", "complaint", "other"]).optional(),
+  priority: z.enum(["all", "none", "low", "medium", "high", "urgent"]).optional()
 });
 
 const ConversationMessagesQuerySchema = z.object({
@@ -94,7 +101,14 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       const result = await listConversationsPage(request.authUser.userId, {
         limit: parsed.data.limit,
         cursor: parsed.data.cursor,
-        search: parsed.data.q
+        search: parsed.data.q,
+        status: parsed.data.status,
+        channel: parsed.data.channel,
+        aiMode: parsed.data.aiMode,
+        assignment: parsed.data.assignment,
+        labelId: parsed.data.labelId,
+        leadKind: parsed.data.leadKind,
+        priority: parsed.data.priority
       });
 
       return {
@@ -182,6 +196,52 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         nextCursor: result.nextCursor,
         hasMore: result.hasMore
       };
+    }
+  );
+
+  fastify.get(
+    "/api/conversations/:conversationId/automation",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { conversationId } = request.params as { conversationId: string };
+      const exists = await getConversationForUser(request.authUser.userId, conversationId);
+      if (!exists) {
+        return reply.status(404).send({ error: "Conversation not found" });
+      }
+
+      const result = await pool.query<{
+        id: string;
+        flow_id: string;
+        flow_name: string | null;
+        status: string;
+        current_node_id: string | null;
+        waiting_for: string | null;
+        waiting_node_id: string | null;
+        variables: Record<string, unknown> | null;
+        updated_at: string;
+        created_at: string;
+      }>(
+        `SELECT fs.id,
+                fs.flow_id,
+                f.name AS flow_name,
+                fs.status,
+                fs.current_node_id,
+                fs.waiting_for,
+                fs.waiting_node_id,
+                fs.variables,
+                fs.updated_at::text,
+                fs.created_at::text
+         FROM flow_sessions fs
+         JOIN flows f ON f.id = fs.flow_id
+         WHERE fs.conversation_id = $1
+           AND f.user_id = $2
+         ORDER BY CASE WHEN fs.status IN ('active', 'waiting', 'ai_mode') THEN 0 ELSE 1 END,
+                  fs.updated_at DESC
+         LIMIT 1`,
+        [conversationId, request.authUser.userId]
+      );
+
+      return { automation: result.rows[0] ?? null };
     }
   );
 

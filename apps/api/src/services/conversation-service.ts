@@ -1215,6 +1215,13 @@ export async function listConversationsPage(
     limit?: number;
     cursor?: string | null;
     search?: string | null;
+    status?: "all" | "open" | "pending" | "resolved" | "snoozed";
+    channel?: "all" | "web" | "qr" | "api";
+    aiMode?: "all" | "ai" | "human";
+    assignment?: "all" | "assigned" | "unassigned";
+    labelId?: string | null;
+    leadKind?: "all" | ConversationKind;
+    priority?: "all" | "none" | "low" | "medium" | "high" | "urgent";
   }
 ): Promise<
   PaginatedResult<
@@ -1246,6 +1253,55 @@ export async function listConversationsPage(
       OR LOWER(COALESCE(ct.display_name, '')) LIKE ${searchParam}
       OR LOWER(COALESCE(ct.email, '')) LIKE ${searchParam}
     )`);
+  }
+
+  if (options?.status && options.status !== "all") {
+    if (options.status === "pending") {
+      where.push(`c.status = 'open' AND COALESCE(crs.unread_count, 0) > 0`);
+    } else {
+      values.push(options.status);
+      where.push(`c.status = $${values.length}`);
+    }
+  }
+
+  if (options?.channel && options.channel !== "all") {
+    values.push(options.channel);
+    where.push(`c.channel_type = $${values.length}`);
+  }
+
+  if (options?.aiMode && options.aiMode !== "all") {
+    where.push(
+      options.aiMode === "ai"
+        ? `COALESCE(c.ai_paused, FALSE) = FALSE AND COALESCE(c.manual_takeover, FALSE) = FALSE`
+        : `(COALESCE(c.ai_paused, FALSE) = TRUE OR COALESCE(c.manual_takeover, FALSE) = TRUE)`
+    );
+  }
+
+  if (options?.assignment && options.assignment !== "all") {
+    where.push(
+      options.assignment === "assigned"
+        ? `c.assigned_agent_profile_id IS NOT NULL`
+        : `c.assigned_agent_profile_id IS NULL`
+    );
+  }
+
+  const labelId = options?.labelId?.trim();
+  if (labelId && labelId !== "all") {
+    values.push(labelId);
+    where.push(`EXISTS (
+      SELECT 1 FROM conversation_labels cl
+      WHERE cl.conversation_id = c.id AND cl.label_id = $${values.length}::uuid
+    )`);
+  }
+
+  if (options?.leadKind && options.leadKind !== "all") {
+    values.push(options.leadKind);
+    where.push(`COALESCE(ct.contact_type, c.lead_kind) = $${values.length}`);
+  }
+
+  if (options?.priority && options.priority !== "all") {
+    values.push(options.priority);
+    where.push(`COALESCE(c.priority, 'none') = $${values.length}`);
   }
 
   if (cursor) {

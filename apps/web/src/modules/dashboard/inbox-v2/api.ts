@@ -1,10 +1,16 @@
 import { API_URL } from "../../../lib/api";
-import type { Conversation, ConversationMessage, Label } from "./store/convStore";
+import type { Conversation, ConversationMessage, ConvFilters, ConvFolder, Label } from "./store/convStore";
 
 async function apiFetch<T>(token: string, path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  if (options?.body !== undefined && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options?.headers }
+    headers
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -33,18 +39,25 @@ export async function fetchConvSnapshot(token: string): Promise<ConvPage> {
 export function fetchConvPage(token: string, params: {
   cursor?: string | null;
   limit?: number;
-  folder?: string;
+  folder?: ConvFolder;
   q?: string | null;
+  filters?: ConvFilters;
 }): Promise<ConvPage> {
   const sp = new URLSearchParams();
   if (params.cursor) sp.set("cursor", params.cursor);
   if (params.limit) sp.set("limit", String(params.limit));
-  // "pending" tab = open conversations with unread messages (client-side filter)
-  // send "open" to server so we get the right pool
-  if (params.folder && params.folder !== "all") {
-    sp.set("status", params.folder === "pending" ? "open" : params.folder);
-  }
+  if (params.folder && params.folder !== "all") sp.set("status", params.folder);
   if (params.q) sp.set("q", params.q);
+  const filters = params.filters;
+  if (filters?.channel && filters.channel !== "all") sp.set("channel", filters.channel);
+  if (filters?.aiMode && filters.aiMode !== "all") sp.set("aiMode", filters.aiMode);
+  if (filters?.assignment && filters.assignment !== "all") sp.set("assignment", filters.assignment);
+  if (filters?.labelId && filters.labelId !== "all") sp.set("labelId", filters.labelId);
+  if (filters?.leadKind && filters.leadKind !== "all") sp.set("leadKind", filters.leadKind);
+  if (filters?.priority && filters.priority !== "all") sp.set("priority", filters.priority);
+  if (filters?.stage && filters.stage !== "all") {
+    // Stage is score-derived today, so it remains a client-side refinement.
+  }
   return apiFetch<ConvPage>(token, `/api/conversations?${sp}`);
 }
 
@@ -171,6 +184,34 @@ export function fetchContactByConversation(token: string, convId: string): Promi
 
 export function listContactFields(token: string): Promise<{ fields: ContactField[] }> {
   return apiFetch(token, `/api/contact-fields`);
+}
+
+export function updateContact(
+  token: string,
+  contactId: string,
+  payload: Partial<{ name: string; email: string | null; type: string; tags: string[] }>
+): Promise<{ contact: Pick<ContactRecord, "id" | "display_name" | "email" | "contact_type" | "tags"> }> {
+  return apiFetch(token, `/api/contacts/${contactId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export interface ConversationAutomation {
+  id: string;
+  flow_id: string;
+  flow_name: string | null;
+  status: "active" | "waiting" | "ai_mode" | "completed" | "failed";
+  current_node_id: string | null;
+  waiting_for: string | null;
+  waiting_node_id: string | null;
+  variables: Record<string, unknown> | null;
+  updated_at: string;
+  created_at: string;
+}
+
+export function fetchConversationAutomation(token: string, convId: string): Promise<{ automation: ConversationAutomation | null }> {
+  return apiFetch(token, `/api/conversations/${convId}/automation`);
 }
 
 // ── Agent assignment ──────────────────────────────────────────────────────
