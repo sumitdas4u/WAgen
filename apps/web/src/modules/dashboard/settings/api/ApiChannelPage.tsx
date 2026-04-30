@@ -133,6 +133,7 @@ export function ApiChannelPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showInactiveChannels, setShowInactiveChannels] = useState(false);
+  const [showMetaPrerequisites, setShowMetaPrerequisites] = useState(false);
   const [defaultReplyConfig, setDefaultReplyConfig] = useState<ChannelDefaultReplyConfig | null>(null);
   const [defaultReplyFlows, setDefaultReplyFlows] = useState<PublishedFlowSummary[]>([]);
   const [defaultReplySaving, setDefaultReplySaving] = useState(false);
@@ -679,6 +680,52 @@ export function ApiChannelPage() {
                 Disconnect
               </button>
             </>
+          ) : null}
+        </div>
+        <div className="api-prerequisites">
+          <button
+            type="button"
+            className="api-prerequisites-link"
+            onClick={() => setShowMetaPrerequisites((current) => !current)}
+            aria-expanded={showMetaPrerequisites}
+            aria-controls="meta-prerequisites-panel"
+          >
+            Pre-Requisites Meta
+          </button>
+          {showMetaPrerequisites ? (
+            <div id="meta-prerequisites-panel" className="api-prerequisites-panel">
+              <div>
+                <h4>Required before connecting</h4>
+                <ul>
+                  <li><strong>Phone number:</strong> Not actively used on WhatsApp, or you must have the 2-step verification PIN. It must receive OTP by SMS or call.</li>
+                  <li><strong>Website:</strong> Live, public, HTTPS enabled, and showing business name, services or products, and contact details.</li>
+                  <li><strong>Facebook Business Page:</strong> Page created with profile image, cover image, business details, and a name matching your brand.</li>
+                  <li><strong>Meta Business Account:</strong> Business added in Meta Business Manager and connected to the Facebook page.</li>
+                  <li><strong>Business documents:</strong> GST certificate for India, or equivalent registration proof, plus address proof.</li>
+                  <li><strong>Domain email:</strong> Use a domain email such as info@yourdomain.com. Gmail or Yahoo can reduce approval quality.</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4>Recommended for approval</h4>
+                <ul>
+                  <li><strong>Business verification:</strong> Complete verification in Meta Business Manager to unlock higher messaging limits.</li>
+                  <li><strong>Display name match:</strong> Match the display name across website, Facebook page, and documents.</li>
+                  <li><strong>Privacy policy:</strong> Add a website page explaining data usage and contact information.</li>
+                  <li><strong>Use case:</strong> Be ready to explain customer support, order updates, notifications, or marketing use.</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4>Common issues</h4>
+                <ul>
+                  <li>Number already used on WhatsApp may ask for the 2-step verification PIN.</li>
+                  <li>If OTP is not received, the number cannot be registered.</li>
+                  <li>Name mismatch can cause display name rejection.</li>
+                  <li>No website, weak website, or missing HTTPS can fail verification.</li>
+                </ul>
+              </div>
+            </div>
           ) : null}
         </div>
         <p className="tiny-note">

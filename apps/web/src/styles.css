@@ -3512,6 +3512,62 @@
   font-size: 0.84rem;
 }
 
+.api-prerequisites {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+}
+
+.api-prerequisites-link {
+  border: 0;
+  background: transparent;
+  color: #1d56ae;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.api-prerequisites-link:hover {
+  color: #143d7c;
+}
+
+.api-prerequisites-panel {
+  width: 100%;
+  border: 1px solid #d5dfec;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.api-prerequisites-panel h4 {
+  margin: 0 0 0.4rem;
+  color: #1f2d48;
+  font-size: 0.95rem;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+.api-prerequisites-panel ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #4b607c;
+  font-size: 0.86rem;
+  line-height: 1.48;
+}
+
+.api-prerequisites-panel li + li {
+  margin-top: 0.32rem;
+}
+
+.api-prerequisites-panel strong {
+  color: #20314c;
+}
+
 .api-profile-tabs {
   display: flex;
   flex-wrap: wrap;
