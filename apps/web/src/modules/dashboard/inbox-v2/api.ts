@@ -154,7 +154,7 @@ export function postMessage(token: string, convId: string, params: SendMessagePa
   });
 }
 
-export function postRetry(token: string, convId: string, msgId: string): Promise<{ ok: boolean }> {
+export function postRetry(token: string, convId: string, msgId: string): Promise<{ ok: boolean; queued?: boolean; retryCount?: number }> {
   return apiFetch(token, `/api/conversations/${convId}/messages/${msgId}/retry`, { method: "POST" });
 }
 

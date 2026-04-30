@@ -24,6 +24,7 @@ import {
 } from "../services/conversation-notes-service.js";
 import { realtimeHub } from "../services/realtime-hub.js";
 import { createAgentNotification } from "../services/agent-notification-service.js";
+import { retryConversationOutboundMessage } from "../services/outbound-message-service.js";
 
 const ToggleSchema = z.object({
   enabled: z.boolean().optional(),
@@ -1133,33 +1134,27 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     async (request, reply) => {
       const { conversationId, messageId } = request.params as { conversationId: string; messageId: string };
 
-      const msgResult = await pool.query<{ retry_count: number; delivery_status: string }>(
-        `SELECT m.retry_count, m.delivery_status
-         FROM conversation_messages m
-         JOIN conversations c ON c.id = m.conversation_id
-         WHERE m.id = $1 AND m.conversation_id = $2 AND c.user_id = $3
-         LIMIT 1`,
-        [messageId, conversationId, request.authUser.userId]
-      );
-      if ((msgResult.rowCount ?? 0) === 0) return reply.status(404).send({ error: "Message not found" });
+      try {
+        const result = await retryConversationOutboundMessage({
+          userId: request.authUser.userId,
+          conversationId,
+          messageId
+        });
 
-      const { retry_count, delivery_status } = msgResult.rows[0];
-      if (delivery_status !== "failed") return reply.status(400).send({ error: "Message is not in failed state" });
-      if (retry_count >= 3) return reply.status(400).send({ error: "Max retries exceeded. Contact support." });
-
-      await pool.query(
-        `UPDATE conversation_messages
-         SET delivery_status = 'sent', retry_count = retry_count + 1, error_code = NULL, error_message = NULL
-         WHERE id = $1`,
-        [messageId]
-      );
-
-      realtimeHub.broadcastMessageUpdated(request.authUser.userId, {
-        messageId,
-        conversationId,
-        deliveryStatus: "sent"
-      });
-      return { ok: true };
+        realtimeHub.broadcastMessageUpdated(request.authUser.userId, {
+          messageId,
+          conversationId,
+          deliveryStatus: result.deliveryStatus,
+          retryCount: result.retryCount
+        });
+        return { ok: true, queued: true, retryCount: result.retryCount };
+      } catch (error) {
+        const message = (error as Error).message;
+        if (message.toLowerCase().includes("not found")) {
+          return reply.status(404).send({ error: message });
+        }
+        return reply.status(400).send({ error: message });
+      }
     }
   );
 

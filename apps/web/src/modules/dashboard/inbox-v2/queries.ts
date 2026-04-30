@@ -232,8 +232,13 @@ export function useSendMessage() {
 
 export function useRetryMessage() {
   const { token } = useAuth();
+  const store = useConvStore();
   return useMutation({
-    mutationFn: ({ convId, msgId }: { convId: string; msgId: string }) => postRetry(token!, convId, msgId)
+    mutationFn: ({ convId, msgId }: { convId: string; msgId: string }) => postRetry(token!, convId, msgId),
+    onSuccess: (data, variables) => {
+      const retryCount = "retryCount" in data && typeof data.retryCount === "number" ? data.retryCount : undefined;
+      store.patchMessageDelivery(variables.convId, variables.msgId, "pending", undefined, undefined, retryCount);
+    }
   });
 }
 

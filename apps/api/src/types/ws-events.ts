@@ -32,9 +32,10 @@ export interface MessageCreatedPayload {
 export interface MessageUpdatedPayload {
   messageId: string;
   conversationId: string;
-  deliveryStatus: "sent" | "delivered" | "read" | "failed";
+  deliveryStatus: "pending" | "sent" | "delivered" | "read" | "failed";
   errorCode?: string;
   errorMessage?: string;
+  retryCount?: number;
 }
 
 export interface ConversationStatusChangedPayload {

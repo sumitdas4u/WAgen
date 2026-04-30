@@ -121,8 +121,8 @@ export function useRealtimeSocket(token: string | null) {
           break;
         }
         case "message.updated": {
-          const { messageId, conversationId, deliveryStatus, errorCode, errorMessage } = envelope.data;
-          s.patchMessageDelivery(conversationId, messageId, deliveryStatus, errorCode, errorMessage);
+          const { messageId, conversationId, deliveryStatus, errorCode, errorMessage, retryCount } = envelope.data;
+          s.patchMessageDelivery(conversationId, messageId, deliveryStatus, errorCode, errorMessage, retryCount);
           break;
         }
         case "conversation.created":

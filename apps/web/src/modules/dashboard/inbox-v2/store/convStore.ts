@@ -109,7 +109,7 @@ interface ConvStore {
   prependMessages: (convId: string, messages: ConversationMessage[]) => void;
   appendMessage: (convId: string, message: ConversationMessage) => void;
   replaceOptimisticMessage: (convId: string, tempId: string, message: ConversationMessage) => void;
-  patchMessageDelivery: (convId: string, msgId: string, status: MsgDeliveryStatus, errorCode?: string, errorMsg?: string) => void;
+  patchMessageDelivery: (convId: string, msgId: string, status: MsgDeliveryStatus, errorCode?: string, errorMsg?: string, retryCount?: number) => void;
 
   setNotes: (convId: string, notes: ConversationMessage[]) => void;
   appendNote: (convId: string, note: ConversationMessage) => void;
@@ -239,7 +239,7 @@ export const useConvStore = create<ConvStore>((set) => ({
     return { messagesByConvId: { ...s.messagesByConvId, [convId]: replaced } };
   }),
 
-  patchMessageDelivery: (convId, msgId, status, errorCode, errorMsg) => set((s) => {
+  patchMessageDelivery: (convId, msgId, status, errorCode, errorMsg, retryCount) => set((s) => {
     const existing = s.messagesByConvId[convId] ?? [];
     const hasMessage = existing.some((m) => m.id === msgId);
     if (!hasMessage) return s;
@@ -249,7 +249,8 @@ export const useConvStore = create<ConvStore>((set) => ({
             ...m,
             delivery_status: status,
             error_code: status === "failed" ? errorCode ?? m.error_code : null,
-            error_message: status === "failed" ? errorMsg ?? m.error_message : null
+            error_message: status === "failed" ? errorMsg ?? m.error_message : null,
+            retry_count: typeof retryCount === "number" ? retryCount : m.retry_count
           }
         : m
     );

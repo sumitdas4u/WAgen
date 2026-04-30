@@ -171,6 +171,10 @@ function buildConversationJobPayload(type: "conversation_api" | "conversation_qr
   return { type, messageId } as OutboundJobPayload;
 }
 
+function isConversationJobType(type: OutboundMessageType): type is "conversation_api" | "conversation_qr" | "conversation_web" | "template_api" {
+  return type === "conversation_api" || type === "conversation_qr" || type === "conversation_web" || type === "template_api";
+}
+
 function parseUsage(row: OutboundMessageRow): OutboundConversationUsage {
   return row.usage_json as OutboundConversationUsage;
 }
@@ -520,6 +524,31 @@ async function broadcastConversationUpdate(conversationId: string, summaryText: 
     score: conversation.score,
     stage: conversation.stage
   });
+}
+
+async function loadOutboundMessageForConversationRetry(input: {
+  userId: string;
+  conversationId: string;
+  messageId: string;
+}): Promise<OutboundMessageRow | null> {
+  const result = await pool.query<OutboundMessageRow>(
+    `SELECT om.*
+     FROM conversation_messages cm
+     JOIN outbound_messages om
+       ON om.conversation_id = cm.conversation_id
+      AND (
+        om.id = NULLIF(cm.echo_id, '')::uuid
+        OR om.provider_message_id = cm.wamid
+      )
+     WHERE cm.id = $1
+       AND cm.conversation_id = $2
+       AND om.user_id = $3
+       AND om.type IN ('conversation_api', 'conversation_qr', 'conversation_web', 'template_api')
+     ORDER BY om.updated_at DESC
+     LIMIT 1`,
+    [input.messageId, input.conversationId, input.userId]
+  );
+  return firstRow(result);
 }
 
 async function attachConversationProviderMessageId(row: OutboundMessageRow, providerMessageId: string | null): Promise<void> {
@@ -991,6 +1020,107 @@ export async function queueGenericWebhookOutboundMessage(input: {
     variableValues: input.variableValues ?? {}
   });
   await enqueueOutboundJob({ type: "generic_webhook", logId: input.logId }, row.job_key, row.scheduled_at);
+}
+
+export async function retryConversationOutboundMessage(input: {
+  userId: string;
+  conversationId: string;
+  messageId: string;
+  maxRetries?: number;
+}): Promise<{ retryCount: number; deliveryStatus: "pending"; outboundMessageId: string }> {
+  const maxRetries = input.maxRetries ?? 3;
+  const result = await pool.query<{
+    retry_count: number;
+    delivery_status: string;
+    direction: string;
+  }>(
+    `SELECT m.retry_count, m.delivery_status, m.direction
+     FROM conversation_messages m
+     JOIN conversations c ON c.id = m.conversation_id
+     WHERE m.id = $1
+       AND m.conversation_id = $2
+       AND c.user_id = $3
+     LIMIT 1`,
+    [input.messageId, input.conversationId, input.userId]
+  );
+  const message = firstRow(result);
+  if (!message) {
+    throw new Error("Message not found");
+  }
+  if (message.direction !== "outbound") {
+    throw new Error("Only outbound messages can be retried.");
+  }
+  if (message.delivery_status !== "failed") {
+    throw new Error("Message is not in failed state.");
+  }
+  if (Number(message.retry_count ?? 0) >= maxRetries) {
+    throw new Error("Max retries exceeded. Contact support.");
+  }
+
+  const outbound = await loadOutboundMessageForConversationRetry(input);
+  if (!outbound) {
+    throw new Error("Original outbound queue record was not found for this message.");
+  }
+  if (!isConversationJobType(outbound.type)) {
+    throw new Error("This message type cannot be retried from Inbox.");
+  }
+
+  const retryCount = Number(message.retry_count ?? 0) + 1;
+  await pool.query(
+    `UPDATE conversation_messages
+     SET delivery_status = 'pending',
+         retry_count = retry_count + 1,
+         error_code = NULL,
+         error_message = NULL
+     WHERE id = $1`,
+    [input.messageId]
+  );
+
+  await updateOutboundMessageState({
+    id: outbound.id,
+    status: "queued",
+    errorMessage: null
+  });
+  await pool.query(
+    `UPDATE outbound_messages
+     SET scheduled_at = NOW(),
+         attempt_count = 0,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [outbound.id]
+  );
+
+  const queue =
+    outbound.type === "conversation_qr"
+      ? getOutboundQrExecutionQueue()
+      : getOutboundExecutionQueue();
+  if (!queue) {
+    throw new Error("Outbound execution queue is unavailable because REDIS_URL is not configured.");
+  }
+  const normalizedJobKey = toBullMqSafeJobId(outbound.job_key);
+  const existingJob = await queue.getJob(normalizedJobKey);
+  if (existingJob) {
+    try {
+      await existingJob.remove();
+    } catch (error) {
+      const state = await existingJob.getState().catch(() => "unknown");
+      if (state === "active" || state === "waiting" || state === "delayed") {
+        return {
+          retryCount,
+          deliveryStatus: "pending",
+          outboundMessageId: outbound.id
+        };
+      }
+      throw error;
+    }
+  }
+  await enqueueOutboundJob(buildConversationJobPayload(outbound.type, outbound.id), outbound.job_key, null);
+
+  return {
+    retryCount,
+    deliveryStatus: "pending",
+    outboundMessageId: outbound.id
+  };
 }
 
 export function startOutboundWorker(): void {
