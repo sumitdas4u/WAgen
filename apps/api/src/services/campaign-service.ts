@@ -53,6 +53,8 @@ export interface Campaign {
   failed_count: number;
   skipped_count: number;
   enforce_marketing_policy: boolean;
+  smart_retry_enabled: boolean;
+  smart_retry_until: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +91,8 @@ export interface CreateCampaignInput {
   mediaOverrides?: CampaignMediaOverrides;
   scheduledAt?: string | null;
   enforceMarketingPolicy?: boolean;
+  smartRetryEnabled?: boolean;
+  smartRetryUntil?: string | null;
 }
 
 export interface CampaignLaunchPreview {
@@ -281,9 +285,11 @@ export async function createCampaign(userId: string, input: CreateCampaignInput)
        audience_source_json,
        media_overrides_json,
        scheduled_at,
-       enforce_marketing_policy
+       enforce_marketing_policy,
+       smart_retry_enabled,
+       smart_retry_until
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16)
      RETURNING *`,
     [
       userId,
@@ -299,7 +305,9 @@ export async function createCampaign(userId: string, input: CreateCampaignInput)
       JSON.stringify(input.audienceSource ?? {}),
       JSON.stringify(input.mediaOverrides ?? {}),
       input.scheduledAt ?? null,
-      input.enforceMarketingPolicy ?? true
+      input.enforceMarketingPolicy ?? true,
+      input.smartRetryEnabled ?? false,
+      input.smartRetryUntil ?? null
     ]
   );
   return result.rows[0]!;
@@ -324,7 +332,7 @@ export async function getCampaign(userId: string, campaignId: string): Promise<C
 export async function updateCampaign(
   userId: string,
   campaignId: string,
-  patch: Partial<Pick<CreateCampaignInput, "name" | "broadcastType" | "connectionId" | "templateId" | "templateVariables" | "targetSegmentId" | "sourceCampaignId" | "retargetStatus" | "audienceSource" | "mediaOverrides" | "scheduledAt" | "enforceMarketingPolicy">>
+  patch: Partial<Pick<CreateCampaignInput, "name" | "broadcastType" | "connectionId" | "templateId" | "templateVariables" | "targetSegmentId" | "sourceCampaignId" | "retargetStatus" | "audienceSource" | "mediaOverrides" | "scheduledAt" | "enforceMarketingPolicy" | "smartRetryEnabled" | "smartRetryUntil">>
 ): Promise<Campaign | null> {
   const current = await getCampaign(userId, campaignId);
   if (!current || (current.status !== "draft" && current.status !== "scheduled")) {
@@ -352,7 +360,9 @@ export async function updateCampaign(
            ELSE 'draft'
          END,
          scheduled_at = COALESCE($13, scheduled_at),
-         enforce_marketing_policy = COALESCE($14, enforce_marketing_policy)
+         enforce_marketing_policy = COALESCE($14, enforce_marketing_policy),
+         smart_retry_enabled = COALESCE($15, smart_retry_enabled),
+         smart_retry_until = COALESCE($16::timestamptz, smart_retry_until)
      WHERE user_id = $1
        AND id = $2
      RETURNING *`,
@@ -370,7 +380,9 @@ export async function updateCampaign(
       patch.audienceSource != null ? JSON.stringify(patch.audienceSource) : null,
       patch.mediaOverrides != null ? JSON.stringify(patch.mediaOverrides) : null,
       patch.scheduledAt ?? null,
-      patch.enforceMarketingPolicy ?? null
+      patch.enforceMarketingPolicy ?? null,
+      patch.smartRetryEnabled ?? null,
+      patch.smartRetryUntil ?? null
     ]
   );
   return result.rows[0] ?? null;

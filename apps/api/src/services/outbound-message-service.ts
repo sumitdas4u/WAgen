@@ -124,6 +124,8 @@ interface CampaignExecutionRow {
   failed_count: number;
   skipped_count: number;
   enforce_marketing_policy: boolean;
+  smart_retry_enabled: boolean;
+  smart_retry_until: string | null;
   campaign_created_at: string;
   campaign_updated_at: string;
   sender_name: string | null;
@@ -441,6 +443,8 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
        c.failed_count,
        c.skipped_count,
        c.enforce_marketing_policy,
+       c.smart_retry_enabled,
+       c.smart_retry_until,
        c.created_at AS campaign_created_at,
        c.updated_at AS campaign_updated_at,
        u.name AS sender_name
@@ -478,6 +482,8 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
     failed_count: row.failed_count,
     skipped_count: row.skipped_count,
     enforce_marketing_policy: row.enforce_marketing_policy ?? true,
+    smart_retry_enabled: row.smart_retry_enabled ?? false,
+    smart_retry_until: row.smart_retry_until ?? null,
     created_at: row.campaign_created_at,
     updated_at: row.campaign_updated_at
   };

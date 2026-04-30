@@ -26,11 +26,14 @@ import {
   applySequenceDeliveryStatusUpdate,
   claimWebhookStatusEvent,
   classifyDeliveryFailure,
+  isSmartRetryableCode,
   markDeliveryAttemptFailure,
   markDeliveryAttemptSuccess,
   markWebhookStatusEventProcessed,
+  MAX_SMART_RETRIES,
   recordDeliveryAttemptStart,
   retryDelayMs,
+  smartRetryDelayMs,
   upsertRecipientSuppression
 } from "./message-delivery-data-service.js";
 import { sendMetaFlowMessageDirect } from "./meta-whatsapp-service.js";
@@ -530,8 +533,25 @@ export async function deliverCampaignMessage(input: {
     return { status: "sent" };
   } catch (error) {
     const classification = classifyDeliveryFailure(error);
-    const shouldRetry = classification.category === "transient" && classification.retryable && input.message.retry_count < MAX_RETRIES;
-    const nextRetryAt = shouldRetry ? new Date(Date.now() + retryDelayMs(input.message.retry_count)) : null;
+
+    // Smart retry: schedule at 6h → 12h → 24h for ecosystem-throttled codes (e.g. 131049).
+    let nextRetryAt: Date | null = null;
+    if (
+      input.campaign.smart_retry_enabled &&
+      isSmartRetryableCode(classification.errorCode) &&
+      input.message.retry_count < MAX_SMART_RETRIES
+    ) {
+      const delayMs = smartRetryDelayMs(input.message.retry_count);
+      const candidate = new Date(Date.now() + delayMs);
+      const retryUntilBoundary = input.campaign.smart_retry_until
+        ? new Date(input.campaign.smart_retry_until)
+        : null;
+      if (!retryUntilBoundary || candidate <= retryUntilBoundary) {
+        nextRetryAt = candidate;
+      }
+    } else if (classification.category === "transient" && classification.retryable && input.message.retry_count < MAX_RETRIES) {
+      nextRetryAt = new Date(Date.now() + retryDelayMs(input.message.retry_count));
+    }
 
     await markCampaignMessageFailed(
       input.message.id,

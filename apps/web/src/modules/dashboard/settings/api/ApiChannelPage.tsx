@@ -631,30 +631,36 @@ export function ApiChannelPage() {
               <div><h3>Name Approval</h3><p>{formatMetaStatusLabel(nameStatus, "Pending")}</p></div>
             </div>
 
-            <div className="api-setup-alert">
-              <strong>Facebook Business Verification — {formatMetaStatusLabel(businessVerificationStatus, "Pending")}</strong>
-              <p>
-                {businessVerificationPending
-                  ? "Please complete Meta business verification to unlock higher messaging limits and stable deliverability."
-                  : "Business verification is in a healthy state. Keep profile and compliance details updated in Meta."}
-              </p>
-            </div>
+            {businessVerificationPending ? (
+              <div className="api-setup-alert">
+                <strong>Facebook Business Verification — {formatMetaStatusLabel(businessVerificationStatus, "Pending")}</strong>
+                <p>
+                  Complete Meta business verification to unlock higher messaging limits and stable deliverability.{" "}
+                  <a href="https://business.facebook.com/settings/security" target="_blank" rel="noopener noreferrer" style={{ color: "#8c5f07", fontWeight: 600 }}>
+                    Go to Meta Business Manager →
+                  </a>
+                </p>
+              </div>
+            ) : null}
 
             <div className="clone-channel-meta">
               <div><h3>Channel</h3><p>{channelEnabled ? "Active" : "Inactive"}</p></div>
-              <div><h3>Connection</h3><p>{selectedConnection?.status ?? "connected"}</p></div>
+              <div><h3>Connection</h3><p>{selectedConnection?.status ?? "Unknown"}</p></div>
               <div><h3>Message Limit</h3><p>{formatMetaStatusLabel(messagingLimitTier)}</p></div>
               <div><h3>Last Meta Sync</h3><p>{lastMetaSyncLabel ?? "Not synced"}</p></div>
+              {sharedBillingSupported ? (
+                <>
+                  <div><h3>Billing Mode</h3><p>{formatMetaStatusLabel(selectedConnection?.billingMode, "Partner")}</p></div>
+                  <div><h3>Billing Status</h3><p>{billingStatusLabel}</p></div>
+                  <div><h3>Currency</h3><p>{selectedConnection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}</p></div>
+                </>
+              ) : null}
             </div>
 
-            {(selectedConnection?.billingError || sharedBillingSupported) ? (
+            {selectedConnection?.billingError ? (
               <div className="api-setup-alert">
-                <strong>Billing</strong>
-                <p>
-                  {selectedConnection?.billingError
-                    ? selectedConnection.billingError
-                    : `Mode: ${formatMetaStatusLabel(selectedConnection?.billingMode, sharedBillingSupported ? "Partner" : "None")} | Status: ${billingStatusLabel} | Currency: ${selectedConnection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}`}
-                </p>
+                <strong>Billing Issue</strong>
+                <p>{selectedConnection.billingError}</p>
               </div>
             ) : null}
           </>

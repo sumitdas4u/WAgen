@@ -461,10 +461,10 @@ function TrashIcon() {
 
 function BroadcastListPage({ token }: { token: string }) {
   const navigate = useNavigate();
+  const { bootstrap } = useDashboardShell();
   const [search, setSearch] = useState("");
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const [page, setPage] = useState(1);
-  const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "all">("7d");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<Campaign["status"][]>([]);
@@ -556,12 +556,6 @@ function BroadcastListPage({ token }: { token: string }) {
     setSelectedStatuses([]);
   };
 
-  const DATE_RANGE_LABELS: Record<typeof dateRange, string> = {
-    "7d": "Past 7 days",
-    "30d": "Past 30 days",
-    "90d": "Past 90 days",
-    "all": "All time"
-  };
 
   const overviewStats = [
     { label: "Recipients", value: summary?.recipients ?? 0, pctVal: null, icon: "👥" },
@@ -594,18 +588,6 @@ function BroadcastListPage({ token }: { token: string }) {
       <div className="bl-overview-card">
         <div className="bl-overview-head">
           <span className="bl-overview-title">Overview</span>
-          <div className="bl-date-range-tabs">
-            {(["7d", "30d", "90d", "all"] as const).map((range) => (
-              <button
-                key={range}
-                type="button"
-                className={`bl-date-tab ${dateRange === range ? "is-active" : ""}`}
-                onClick={() => setDateRange(range)}
-              >
-                {DATE_RANGE_LABELS[range]}
-              </button>
-            ))}
-          </div>
         </div>
         <div className="bl-overview-stats">
           {overviewStats.map((stat) => (
@@ -837,7 +819,7 @@ function BroadcastListPage({ token }: { token: string }) {
                   </td>
                   <td>
                     <div className="bl-created-cell">
-                      <div className="bl-created-name">Sumit Das</div>
+                      <div className="bl-created-name">{bootstrap?.userSummary.name ?? ""}</div>
                       <div className="bl-created-date">{formatDateTime(broadcast.created_at)}</div>
                     </div>
                   </td>
@@ -1351,7 +1333,11 @@ function BroadcastWizardPage({
               },
         mediaOverrides,
         scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
-        enforceMarketingPolicy: policyEnabled
+        enforceMarketingPolicy: policyEnabled,
+        smartRetryEnabled: retryEnabled && retryType === "smart",
+        smartRetryUntil: retryEnabled && retryType === "smart" && retryUntil
+          ? new Date(retryUntil).toISOString()
+          : null
       });
 
       if (!launchNow) {
@@ -3195,6 +3181,8 @@ function ScheduleStep({
     }
   }, []);
 
+  const { bootstrap } = useDashboardShell();
+  const credits = bootstrap?.creditsSummary;
   const replyConfigValid = replyMode !== "flow" || Boolean(replyFlowId);
   const totalPreview = Math.max(sampleContacts.length, 1);
   const safeIndex = Math.min(previewIndex, totalPreview - 1);
@@ -3220,13 +3208,15 @@ function ScheduleStep({
           <div className="sch-form-col">
 
             {/* Limit info banner */}
-            <div className="sch-info-banner">
-              <span className="sch-info-icon">&#9432;</span>
-              <span>
-                0 broadcast messages sent in the last 24 hours for a limit of 250 messages per day.
-                You can send another <strong>250 messages</strong> for now.
-              </span>
-            </div>
+            {credits && (
+              <div className="sch-info-banner">
+                <span className="sch-info-icon">&#9432;</span>
+                <span>
+                  {credits.used_credits} broadcast message{credits.used_credits !== 1 ? "s" : ""} sent in the last 24 hours for a limit of {credits.total_credits} messages per day.
+                  You can send another <strong>{credits.remaining_credits} message{credits.remaining_credits !== 1 ? "s" : ""}</strong> for now.
+                </span>
+              </div>
+            )}
 
             {/* Broadcast details */}
             <div className="sch-section">

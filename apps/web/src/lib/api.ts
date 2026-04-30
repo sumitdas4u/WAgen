@@ -2538,6 +2538,8 @@ export interface Campaign {
   read_count: number;
   failed_count: number;
   skipped_count: number;
+  smart_retry_enabled: boolean;
+  smart_retry_until: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2756,6 +2758,8 @@ export function createCampaignDraft(
     mediaOverrides?: CampaignMediaOverrides;
     scheduledAt?: string | null;
     enforceMarketingPolicy?: boolean;
+    smartRetryEnabled?: boolean;
+    smartRetryUntil?: string | null;
   }
 ) {
   return apiRequest<{ campaign: Campaign }>("/api/campaigns", {
@@ -2781,6 +2785,8 @@ export function updateCampaignDraft(
     mediaOverrides: CampaignMediaOverrides;
     scheduledAt: string | null;
     enforceMarketingPolicy: boolean;
+    smartRetryEnabled: boolean;
+    smartRetryUntil: string | null;
   }>
 ) {
   return apiRequest<{ campaign: Campaign }>(`/api/campaigns/${campaignId}`, {

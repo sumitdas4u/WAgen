@@ -144,6 +144,24 @@ const BUSINESS_LOGIC_META_CODES = new Set(["132000", "132001", "131051"]);
 const HEALTHY_ECOSYSTEM_META_CODES = new Set(["131049"]);
 const INVALID_NUMBER_META_CODES = new Set(["133010"]);
 
+// Codes that benefit from retrying after hours (smart retry: 6h → 12h → 24h).
+// 131049: "healthy ecosystem" — Meta throttles marketing messages temporarily; lifting after a cool-down.
+const SMART_RETRYABLE_META_CODES = new Set(["131049"]);
+export const MAX_SMART_RETRIES = 3;
+
+export function isSmartRetryableCode(errorCode?: string | null): boolean {
+  return Boolean(errorCode && SMART_RETRYABLE_META_CODES.has(errorCode));
+}
+
+export function smartRetryDelayMs(retryCount: number): number {
+  switch (retryCount) {
+    case 0: return 6 * 60 * 60_000;
+    case 1: return 12 * 60 * 60_000;
+    case 2: return 24 * 60 * 60_000;
+    default: return 0;
+  }
+}
+
 function normalizePhoneDigits(value: string | null | undefined): string | null {
   if (!value) {
     return null;

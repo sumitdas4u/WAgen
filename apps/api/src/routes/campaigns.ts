@@ -61,7 +61,9 @@ const CreateCampaignBodySchema = z.object({
   audienceSource: z.record(z.string(), z.unknown()).optional(),
   mediaOverrides: z.record(z.string(), z.string()).optional(),
   scheduledAt: z.string().datetime({ offset: true }).optional().nullable(),
-  enforceMarketingPolicy: z.boolean().optional()
+  enforceMarketingPolicy: z.boolean().optional(),
+  smartRetryEnabled: z.boolean().optional(),
+  smartRetryUntil: z.string().datetime({ offset: true }).optional().nullable()
 });
 
 const UpdateCampaignBodySchema = CreateCampaignBodySchema.partial();
@@ -103,7 +105,9 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
         retargetStatus: parsed.data.retargetStatus ?? null,
         audienceSource: parsed.data.audienceSource ?? {},
         mediaOverrides: parsed.data.mediaOverrides ?? {},
-        scheduledAt: parsed.data.scheduledAt ?? null
+        scheduledAt: parsed.data.scheduledAt ?? null,
+        smartRetryEnabled: parsed.data.smartRetryEnabled ?? false,
+        smartRetryUntil: parsed.data.smartRetryUntil ?? null
       });
       return reply.status(201).send({ campaign });
     }
@@ -170,7 +174,9 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
         retargetStatus: parsed.data.retargetStatus ?? undefined,
         audienceSource: parsed.data.audienceSource ?? undefined,
         mediaOverrides: parsed.data.mediaOverrides ?? undefined,
-        scheduledAt: parsed.data.scheduledAt ?? undefined
+        scheduledAt: parsed.data.scheduledAt ?? undefined,
+        smartRetryEnabled: parsed.data.smartRetryEnabled,
+        smartRetryUntil: parsed.data.smartRetryUntil ?? undefined
       });
       if (!campaign) {
         return reply.status(404).send({ error: "Campaign not found or not in draft state" });
