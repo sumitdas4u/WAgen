@@ -207,8 +207,9 @@ export function useRealtimeSocket(token: string | null) {
             s.upsertConv({ id: envelope.data.id, assigned_agent_profile_id: envelope.data.agent_id });
           break;
         case "contact.updated":
-          // Invalidate contact query so sidebar refetches updated info
+          // Invalidate contact/sidebar and list data so flow contact-field updates show immediately.
           void qcRef.current.invalidateQueries({ queryKey: ["iv2-contact", envelope.data.conversation_id] });
+          void qcRef.current.invalidateQueries({ queryKey: ["iv2-convs"] });
           break;
         case "agent.notification":
           notifRef.current.prependNotification(envelope.data as AgentNotification);

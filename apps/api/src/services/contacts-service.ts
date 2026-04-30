@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from "pg";
 import ExcelJS from "exceljs";
 import { pool, withTransaction } from "../db/pool.js";
 import { fanoutEvent } from "./event-fanout-service.js";
+import { realtimeHub } from "./realtime-hub.js";
 import type {
   Contact,
   ContactFieldValue,
@@ -1191,6 +1192,7 @@ export async function updateContactFieldValueFromFlow(input: {
       return null;
     }
 
+    const linkedConversationId = input.conversationId || contact.linked_conversation_id || null;
     const op = input.operation;
     const rawValue = String(input.value ?? "").trim();
 
@@ -1214,7 +1216,7 @@ export async function updateContactFieldValueFromFlow(input: {
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
-        linkedConversationId: contact.linked_conversation_id
+        linkedConversationId
       });
     } else if (fieldKey === "name") {
       contact = await updateContact(client, contact.id, {
@@ -1226,7 +1228,7 @@ export async function updateContactFieldValueFromFlow(input: {
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
-        linkedConversationId: contact.linked_conversation_id
+        linkedConversationId
       });
     } else if (fieldKey === "email") {
       const nextEmailValue = applyTextOperation(contact.email, rawValue, op);
@@ -1239,7 +1241,7 @@ export async function updateContactFieldValueFromFlow(input: {
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
-        linkedConversationId: contact.linked_conversation_id
+        linkedConversationId
       });
     } else if (fieldKey === "phone") {
       const nextPhoneValue = applyTextOperation(contact.phone_number, rawValue, op);
@@ -1251,7 +1253,7 @@ export async function updateContactFieldValueFromFlow(input: {
                linked_conversation_id = COALESCE($2, linked_conversation_id),
                updated_at = NOW()
            WHERE id = $3`,
-          [normalizedPhone, contact.linked_conversation_id, contact.id]
+          [normalizedPhone, linkedConversationId, contact.id]
         );
         contact = await getContactByPhone(client, input.userId, normalizedPhone);
       }
@@ -1267,7 +1269,7 @@ export async function updateContactFieldValueFromFlow(input: {
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
-        linkedConversationId: contact.linked_conversation_id
+        linkedConversationId
       });
     } else if (fieldKey === "source") {
       const nextSourceValue = applyTextOperation(contact.source_type, rawValue, op);
@@ -1281,7 +1283,7 @@ export async function updateContactFieldValueFromFlow(input: {
         sourceType: normalizedSource,
         sourceId: contact.source_id,
         sourceUrl: contact.source_url,
-        linkedConversationId: contact.linked_conversation_id
+        linkedConversationId
       });
     } else if (fieldKey === "source_id") {
       contact = await updateContact(client, contact.id, {
@@ -1293,7 +1295,7 @@ export async function updateContactFieldValueFromFlow(input: {
         sourceType: contact.source_type,
         sourceId: applyTextOperation(contact.source_id, rawValue, op),
         sourceUrl: contact.source_url,
-        linkedConversationId: contact.linked_conversation_id
+        linkedConversationId
       });
     } else if (fieldKey === "source_url") {
       contact = await updateContact(client, contact.id, {
@@ -1305,7 +1307,7 @@ export async function updateContactFieldValueFromFlow(input: {
         sourceType: contact.source_type,
         sourceId: contact.source_id,
         sourceUrl: applyTextOperation(contact.source_url, rawValue, op),
-        linkedConversationId: contact.linked_conversation_id
+        linkedConversationId
       });
     } else if (fieldKey.startsWith("custom.")) {
       const fieldName = fieldKey.slice("custom.".length).trim();
@@ -1321,7 +1323,7 @@ export async function updateContactFieldValueFromFlow(input: {
              ON cfv.field_id = cf.id
             AND cfv.contact_id = $2
            WHERE cf.user_id = $1
-             AND cf.name = $3
+             AND (cf.name = $3 OR cf.id::text = $3)
            LIMIT 1`,
           [input.userId, contact.id, fieldName]
         );
@@ -1340,6 +1342,15 @@ export async function updateContactFieldValueFromFlow(input: {
              DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
             [contact.id, customField.id, nextValue]
           );
+          const touched = await client.query<Contact>(
+            `UPDATE contacts
+             SET linked_conversation_id = COALESCE($2, linked_conversation_id),
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [contact.id, linkedConversationId]
+          );
+          contact = touched.rows[0] ?? contact;
         }
       }
     }
@@ -1347,6 +1358,13 @@ export async function updateContactFieldValueFromFlow(input: {
     if (!contact) {
       return null;
     }
+
+    await syncConversationKindFromContact(client, {
+      userId: input.userId,
+      phoneNumber: contact.phone_number,
+      contactType: contact.contact_type,
+      linkedConversationId: input.conversationId || contact.linked_conversation_id
+    });
 
     const fieldValuesMap = await loadFieldValues(client, [contact.id]);
     return {
@@ -1357,6 +1375,20 @@ export async function updateContactFieldValueFromFlow(input: {
 
   if (result) {
     await emitSequenceContactEvent({ action: "updated", contact: result });
+    void fanoutEvent(input.userId, "contacts.update", {
+      id: result.id,
+      phoneNumber: result.phone_number,
+      displayName: result.display_name,
+      action: "updated"
+    });
+    const conversationId = input.conversationId || result.linked_conversation_id;
+    if (conversationId) {
+      realtimeHub.broadcast(input.userId, "contact.updated", {
+        conversation_id: conversationId,
+        name: result.display_name ?? "",
+        phone: result.phone_number
+      });
+    }
   }
 
   return result;
