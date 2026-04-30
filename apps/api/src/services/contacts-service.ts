@@ -526,7 +526,7 @@ async function saveFieldValues(db: DbExecutor, contactId: string, customFields: 
   const fieldRows = await db.query<{ id: string; name: string }>(
     `SELECT cf.id, cf.name
      FROM contact_fields cf
-     JOIN contacts c ON c.user_id = cf.user_id
+     JOIN contacts c ON c.user_id::text = cf.user_id
      WHERE c.id = $1
        AND cf.name = ANY($2::text[])`,
     [contactId, names]
