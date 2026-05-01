@@ -284,7 +284,7 @@ describe("DashboardModuleGuard", () => {
         </DashboardShellContextProvider>
       </MemoryRouter>
     );
-    expect(screen.getByText("Checking access")).toBeInTheDocument();
+    expect(screen.queryByText("Checking access")).not.toBeInTheDocument();
     expect(screen.queryByText("Module content")).not.toBeInTheDocument();
   });
 });
