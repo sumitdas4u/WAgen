@@ -58,7 +58,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Starter",
     amountInr: 799,
     annualAmountInr: 7990,
-    aiCreditsMonthly: 300,
+    aiCreditsMonthly: 750,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_STARTER_ID
@@ -68,7 +68,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Growth",
     amountInr: 1499,
     annualAmountInr: 14990,
-    aiCreditsMonthly: 700,
+    aiCreditsMonthly: 2000,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_PRO_ID
@@ -78,7 +78,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Pro",
     amountInr: 2999,
     annualAmountInr: 29990,
-    aiCreditsMonthly: 1500,
+    aiCreditsMonthly: 5000,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_BUSINESS_ID
@@ -91,7 +91,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
     maxAgentProfiles: 3,
     maxActiveFlows: 0,
     maxKnowledgeSources: 1,
-    aiCreditsMonthly: 50,
+    aiCreditsMonthly: 150,
     annualAmountInr: 0,
     prioritySupport: false,
     modules: {
@@ -104,7 +104,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
       flows: false,
       sequences: false,
       webhooks: false,
-      apiChannel: false,
+      apiChannel: true,
       googleSheets: false,
       googleCalendar: false,
       apiAccess: false
@@ -115,7 +115,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
     maxAgentProfiles: 5,
     maxActiveFlows: 1,
     maxKnowledgeSources: 2,
-    aiCreditsMonthly: 300,
+    aiCreditsMonthly: 750,
     annualAmountInr: 7990,
     prioritySupport: false,
     modules: {
@@ -128,7 +128,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
       flows: true,
       sequences: false,
       webhooks: false,
-      apiChannel: false,
+      apiChannel: true,
       googleSheets: false,
       googleCalendar: false,
       apiAccess: false
@@ -139,7 +139,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
     maxAgentProfiles: 10,
     maxActiveFlows: 3,
     maxKnowledgeSources: 5,
-    aiCreditsMonthly: 700,
+    aiCreditsMonthly: 2000,
     annualAmountInr: 14990,
     prioritySupport: false,
     modules: {
@@ -163,7 +163,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
     maxAgentProfiles: 30,
     maxActiveFlows: 25,
     maxKnowledgeSources: 15,
-    aiCreditsMonthly: 1500,
+    aiCreditsMonthly: 2500,
     annualAmountInr: 29990,
     prioritySupport: true,
     modules: {

@@ -1,8 +1,66 @@
 import "./../account.css";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../../../lib/auth-context";
-import { fetchAiWallet, type AiWalletStatus, type AiLedgerRow, type AiUsageByAction, type AiUsageByDay } from "../../../../lib/api";
+import { useMutation } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import {
+  createWorkspaceBillingRechargeOrder,
+  fetchAiWallet,
+  fetchWorkspaceBillingOverview,
+  fetchWorkspaceBillingTransactions,
+  type AiLedgerRow,
+  type AiUsageByAction,
+  type AiUsageByDay,
+  type AiWalletStatus
+} from "../../../../lib/api";
+import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => {
+      open: () => void;
+      on: (event: string, handler: (payload: unknown) => void) => void;
+    };
+  }
+}
+
+function fmtInr(paise: number | null): string {
+  return ((paise ?? 0) / 100).toLocaleString("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2
+  });
+}
+
+async function loadRazorpayScript(): Promise<boolean> {
+  if (window.Razorpay) return true;
+  const existing = document.querySelector<HTMLScriptElement>(
+    'script[src="https://checkout.razorpay.com/v1/checkout.js"]'
+  );
+  if (existing) {
+    return new Promise((resolve) => {
+      existing.addEventListener("load", () => resolve(Boolean(window.Razorpay)), { once: true });
+      existing.addEventListener("error", () => resolve(false), { once: true });
+    });
+  }
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve(Boolean(window.Razorpay));
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+const AI_RECHARGE_PACK_PRICES: Record<number, number> = {
+  120: 49_900,
+  260: 99_900,
+  600: 199_900
+};
+const AI_RECHARGE_PACKS = Object.keys(AI_RECHARGE_PACK_PRICES).map(Number);
 
 const ACTION_LABELS: Record<string, string> = {
   chatbot_reply:        "Chatbot reply",
@@ -107,8 +165,8 @@ function BalanceMeter({ status }: { status: AiWalletStatus }) {
 }
 
 export function Component() {
-  const { token, user } = useAuth();
-  const navigate = useNavigate();
+  const { token, refetchBootstrap } = useDashboardShell();
+
   const [status, setStatus] = useState<AiWalletStatus | null>(null);
   const [ledger, setLedger] = useState<AiLedgerRow[]>([]);
   const [usageByAction, setUsageByAction] = useState<AiUsageByAction[]>([]);
@@ -116,7 +174,11 @@ export function Component() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [rechargeCredits, setRechargeCredits] = useState("120");
+  const [rechargeInfo, setRechargeInfo] = useState<string | null>(null);
+  const [rechargeError, setRechargeError] = useState<string | null>(null);
+
+  const loadWallet = () => {
     if (!token) return;
     setLoading(true);
     fetchAiWallet(token)
@@ -128,23 +190,92 @@ export function Component() {
       })
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [token]);
+  };
 
-  const planCode = status?.planCode ?? user?.subscription_plan ?? "trial";
+  useEffect(() => {
+    loadWallet();
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const planCode = status?.planCode ?? "trial";
   const pillClass = `acc-plan-pill plan-${planCode}`;
+
+  const breakdown = useMemo(() => {
+    const requestedCredits = Math.floor(Number(rechargeCredits) || 0);
+    const credits = AI_RECHARGE_PACK_PRICES[requestedCredits] ? requestedCredits : 120;
+    const totalPaise = AI_RECHARGE_PACK_PRICES[credits] ?? AI_RECHARGE_PACK_PRICES[120]!;
+    const taxablePaise = Math.round(totalPaise / 1.18);
+    const gstPaise = totalPaise - taxablePaise;
+    return { credits, totalPaise, taxablePaise, gstPaise };
+  }, [rechargeCredits]);
+
+  const rechargeMutation = useMutation({
+    mutationFn: () =>
+      createWorkspaceBillingRechargeOrder(token, { credits: breakdown.credits }),
+    onSuccess: async (orderRes) => {
+      const baselineBalance = status?.balance ?? 0;
+      const loaded = await loadRazorpayScript();
+      if (!loaded || !window.Razorpay) {
+        setRechargeError("Unable to load Razorpay checkout");
+        return;
+      }
+      const razorpay = new window.Razorpay({
+        key: orderRes.order.keyId,
+        amount: orderRes.order.amountTotalPaise,
+        currency: orderRes.order.currency,
+        name: "WagenAI",
+        description: `${orderRes.order.credits} AI credits`,
+        order_id: orderRes.order.razorpayOrderId,
+        handler: () => {
+          setRechargeInfo("Payment captured — waiting for confirmation…");
+          void (async () => {
+            for (let i = 0; i < 12; i++) {
+              try {
+                const [latestOverview, latestTx] = await Promise.all([
+                  fetchWorkspaceBillingOverview(token),
+                  fetchWorkspaceBillingTransactions(token, {
+                    type: "recharge_order",
+                    limit: 10
+                  })
+                ]);
+                const settled = latestTx.items.some(
+                  (item) =>
+                    item.referenceId === orderRes.order.razorpayOrderId &&
+                    (item.status ?? "").toLowerCase() === "paid"
+                );
+                const latestRemaining =
+                  latestOverview.overview.aiCredits?.remaining ?? latestOverview.overview.credits.remaining;
+                const increased = latestRemaining > baselineBalance;
+                if (settled || increased) {
+                  await refetchBootstrap();
+                  loadWallet();
+                  setRechargeInfo("Recharge successful. Credits updated.");
+                  return;
+                }
+              } catch {
+                // keep polling
+              }
+              await sleep(2500);
+            }
+            await refetchBootstrap();
+            loadWallet();
+            setRechargeInfo("Payment captured. Credits will update shortly.");
+          })();
+        },
+        theme: { color: "#111827" }
+      });
+      razorpay.on("payment.failed", (evt) => {
+        const p = evt as { error?: { description?: string } };
+        setRechargeError(p.error?.description ?? "Payment failed");
+      });
+      razorpay.open();
+    },
+    onError: (e) => setRechargeError((e as Error).message)
+  });
 
   return (
     <div className="acc-page">
       <div className="acc-page-header">
         <h1 className="acc-page-title">AI Credits</h1>
-        <div className="acc-header-actions">
-          <button
-            style={{ appearance: "none", height: "2.2rem", padding: "0 0.75rem", border: "1px solid #e2eaf4", borderRadius: "8px", background: "#fff", font: "inherit", fontSize: "0.8rem", fontWeight: 600, color: "#122033", cursor: "pointer" }}
-            onClick={() => navigate("/dashboard/billing")}
-          >
-            Upgrade plan
-          </button>
-        </div>
       </div>
 
       {/* ── Balance card ─────────────────────────────────────────────────── */}
@@ -198,6 +329,65 @@ export function Component() {
             </div>
           </>
         ) : null}
+      </div>
+
+      {/* ── Buy AI credits (recharge) ─────────────────────────────────────── */}
+      <div className="acc-card">
+        <div className="acc-card-head">
+          <div>
+            <h2 className="acc-card-title">Buy AI credits</h2>
+            <p className="acc-card-subtitle">One-time AI automation top-up via Razorpay</p>
+          </div>
+        </div>
+        <div className="acc-card-body">
+          <div className="acc-recharge-presets">
+            {AI_RECHARGE_PACKS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`acc-preset-btn${rechargeCredits === String(c) ? " is-active" : ""}`}
+                onClick={() => setRechargeCredits(String(c))}
+              >
+                {c.toLocaleString()} AI credits
+              </button>
+            ))}
+          </div>
+          <div className="acc-form-row-inline" style={{ alignItems: "flex-end" }}>
+            <div className="acc-form-row">
+              <label className="acc-label" htmlFor="aiw-amount">AI recharge pack</label>
+              <select
+                id="aiw-amount"
+                className="acc-input"
+                value={rechargeCredits}
+                onChange={(e) => setRechargeCredits(e.target.value)}
+              >
+                {AI_RECHARGE_PACKS.map((credits) => (
+                  <option key={credits} value={credits}>{credits.toLocaleString()} AI credits</option>
+                ))}
+              </select>
+            </div>
+            <div className="acc-recharge-breakdown">
+              <span>Taxable: <strong>{fmtInr(breakdown.taxablePaise)}</strong></span>
+              <span>GST (18%): <strong>{fmtInr(breakdown.gstPaise)}</strong></span>
+              <span className="acc-breakdown-total">Total: <strong>{fmtInr(breakdown.totalPaise)}</strong></span>
+            </div>
+          </div>
+          {rechargeError && <p className="acc-save-error">{rechargeError}</p>}
+          {rechargeInfo && <p className="acc-save-success">{rechargeInfo}</p>}
+          <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0 }}>
+            <button
+              className="acc-save-btn"
+              onClick={() => {
+                setRechargeError(null);
+                setRechargeInfo(null);
+                rechargeMutation.mutate();
+              }}
+              disabled={rechargeMutation.isPending}
+            >
+              {rechargeMutation.isPending ? "Opening…" : `Pay ${fmtInr(breakdown.totalPaise)} via Razorpay`}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── Usage by action ──────────────────────────────────────────────── */}

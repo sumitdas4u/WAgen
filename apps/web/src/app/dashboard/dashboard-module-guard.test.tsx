@@ -22,7 +22,7 @@ function createBootstrap(): DashboardBootstrapResponse {
       maxAgentProfiles: 1,
       maxActiveFlows: 1,
       maxKnowledgeSources: 2,
-      aiCreditsMonthly: 300,
+      aiCreditsMonthly: 750,
       annualAmountInr: 7990,
       prioritySupport: false,
       modules: {
@@ -35,7 +35,7 @@ function createBootstrap(): DashboardBootstrapResponse {
         flows: true,
         sequences: false,
         webhooks: false,
-        apiChannel: false,
+        apiChannel: true,
         googleSheets: false,
         googleCalendar: false,
         apiAccess: false

@@ -89,6 +89,10 @@ const dashboardChildren: RouteObject[] = [
     path: "contacts/:contactId",
     lazy: lazyComponent(() => import("../modules/dashboard/inbox-v2/pages/ContactDetailPage"), "ContactDetailPage")
   },
+  {
+    path: "account/credits",
+    element: <Navigate to="/dashboard/account/ai-wallet" replace />
+  },
   ...dashboardModules.map((definition) => ({
     path: definition.path,
     async lazy() {

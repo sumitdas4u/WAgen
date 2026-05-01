@@ -216,7 +216,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     section: "settings",
     lazyRoute: () => import("../modules/dashboard/settings/api/route"),
     featureFlag: "dashboard.settings.api",
-    requiredEntitlements: { module: "apiChannel" },
     prefetchStrategy: "code+data",
     requiresAuth: true
   },
@@ -280,18 +279,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     icon: "billing",
     section: "account",
     lazyRoute: () => import("../modules/dashboard/account/subscription/route"),
-    prefetchStrategy: "code",
-    requiresAuth: true
-  },
-  {
-    id: "account-credits",
-    path: "account/credits",
-    navTo: "/dashboard/account/credits",
-    navLabel: "AI Credits",
-    subtitle: "AI credit balance and history",
-    icon: "templates",
-    section: "account",
-    lazyRoute: () => import("../modules/dashboard/account/credits/route"),
     prefetchStrategy: "code",
     requiresAuth: true
   },

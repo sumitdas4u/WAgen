@@ -94,7 +94,7 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     label: "Account",
     icon: "account",
     title: "Account",
-    defaultModuleIds: ["account-details", "account-subscription", "account-credits", "account-ai-wallet", "account-profile", "account-users"]
+    defaultModuleIds: ["account-details", "account-subscription", "account-ai-wallet", "account-profile", "account-users"]
   }
 ];
 
@@ -132,7 +132,6 @@ type AccountNavItem = {
 const ACCOUNT_MENU_ITEMS: AccountNavItem[] = [
   { moduleId: "account-details",      label: "Account Details",    icon: "account",     to: "/dashboard/account/details" },
   { moduleId: "account-subscription", label: "Subscription",       icon: "billing",     to: "/dashboard/account/subscription" },
-  { moduleId: "account-credits",      label: "AI Credits",         icon: "templates",   to: "/dashboard/account/credits" },
   { moduleId: "account-ai-wallet",    label: "AI Credits",         icon: "agents",      to: "/dashboard/account/ai-wallet" },
   { moduleId: "account-profile",      label: "Profile & Password", icon: "personality", to: "/dashboard/account/profile" },
   { moduleId: "account-users",        label: "Users & Teams",      icon: "leads",       to: "/dashboard/account/users" }
@@ -170,7 +169,6 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   "settings-webhooks": { label: "Settings", subtitle: "Configure generic webhook automations" },
   "account-details":      { label: "Account", subtitle: "Workspace name, timezone, and preferences" },
   "account-subscription": { label: "Account", subtitle: "Current plan, upgrades, and invoices" },
-  "account-credits":      { label: "Account", subtitle: "AI credit balance and history" },
   "account-ai-wallet":    { label: "Account", subtitle: "AI credit usage and top-up packs" },
   "account-profile":      { label: "Account", subtitle: "Your profile and password" },
   "account-users":        { label: "Account", subtitle: "Team members and roles" }
@@ -390,7 +388,7 @@ function DashboardShellLayout() {
   const isAccountSection = currentModuleId.startsWith("account-");
   const visibleSettingsItems = SETTINGS_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
   const visibleAccountItems = ACCOUNT_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
-  const showBillingActions = isModuleEnabled("account-credits") || isModuleEnabled("billing");
+  const showBillingActions = isModuleEnabled("account-ai-wallet") || isModuleEnabled("billing");
 
   const renderSubSidebar = (title: string, items: Array<{ moduleId: string; label: string; icon: DashboardIconName; to: string }>) => (
     <section className="chatbot-studio-shell dashboard-flat-studio">
@@ -550,7 +548,7 @@ function DashboardShellLayout() {
                 <button
                   type="button"
                   className={bootstrap?.creditsSummary.low_credit ? "credits-chip credits-chip-low" : "credits-chip"}
-                  onClick={() => navigate("/dashboard/account/credits")}
+                  onClick={() => navigate("/dashboard/account/ai-wallet")}
                   title="Open Credits"
                 >
                   Credits: {workspaceCreditsLabel}

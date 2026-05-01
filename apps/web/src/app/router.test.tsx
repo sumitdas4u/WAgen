@@ -28,8 +28,8 @@ vi.mock("../components/dashboard-billing-center", () => ({
   DashboardBillingCenter: () => <div>Billing module</div>
 }));
 
-vi.mock("../modules/dashboard/account/credits/route", () => ({
-  Component: () => <div>Credits module</div>
+vi.mock("../modules/dashboard/account/ai-wallet/route", () => ({
+  Component: () => <div>AI Wallet module</div>
 }));
 
 vi.mock("../modules/dashboard/contacts/route", () => ({
@@ -64,7 +64,7 @@ const starterModules = {
   flows: true,
   sequences: false,
   webhooks: false,
-  apiChannel: false,
+  apiChannel: true,
   googleSheets: false,
   googleCalendar: false,
   apiAccess: false
@@ -95,7 +95,7 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
       maxAgentProfiles: 1,
       maxActiveFlows: 1,
       maxKnowledgeSources: 2,
-      aiCreditsMonthly: 300,
+      aiCreditsMonthly: 750,
       annualAmountInr: 7990,
       prioritySupport: false,
       modules: starterModules
@@ -241,13 +241,13 @@ describe("dashboard router", () => {
     });
   });
 
-  it("redirects billing deep links to account credits", async () => {
+  it("redirects billing deep links to ai wallet", async () => {
     const { router } = renderRoute("/dashboard/billing");
 
     expect(await screen.findByRole("heading", { level: 1, name: "Account" })).toBeInTheDocument();
-    expect(screen.getByText("Credits module")).toBeInTheDocument();
+    expect(screen.getByText("AI Wallet module")).toBeInTheDocument();
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/dashboard/account/credits");
+      expect(router.state.location.pathname).toBe("/dashboard/account/ai-wallet");
     });
   });
 
@@ -260,7 +260,7 @@ describe("dashboard router", () => {
           planCode: "pro",
           maxActiveFlows: 3,
           maxKnowledgeSources: 5,
-          aiCreditsMonthly: 700,
+          aiCreditsMonthly: 2000,
           annualAmountInr: 14990,
           modules: growthModules
         }
@@ -282,7 +282,7 @@ describe("dashboard router", () => {
           planCode: "pro",
           maxActiveFlows: 3,
           maxKnowledgeSources: 5,
-          aiCreditsMonthly: 700,
+          aiCreditsMonthly: 2000,
           annualAmountInr: 14990,
           modules: growthModules
         }
@@ -301,7 +301,7 @@ describe("dashboard router", () => {
     renderRoute("/dashboard/billing", legacyBootstrap as DashboardBootstrapResponse);
 
     expect(await screen.findByRole("heading", { level: 1, name: "Account" })).toBeInTheDocument();
-    expect(screen.getByText("Credits module")).toBeInTheDocument();
+    expect(screen.getByText("AI Wallet module")).toBeInTheDocument();
     expect(screen.queryByText("Unexpected Application Error!")).not.toBeInTheDocument();
   });
 
@@ -366,7 +366,7 @@ describe("dashboard router", () => {
     const user = userEvent.setup();
     renderRoute("/dashboard/billing");
 
-    await screen.findByText("Credits module");
+    await screen.findByText("AI Wallet module");
     await user.hover(screen.getAllByRole("link", { name: /Contacts/i })[0]);
 
     await waitFor(() => {

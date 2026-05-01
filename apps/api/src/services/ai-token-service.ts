@@ -104,10 +104,10 @@ export type AIActionType =
 
 // ── Monthly quota per plan ────────────────────────────────────────────────────
 export const AI_TOKEN_PLAN_QUOTA: Record<string, number> = {
-  trial:    50,
-  starter:  300,
-  pro:      700,
-  business: 1500,
+  trial:    150,
+  starter:  750,
+  pro:      2000,
+  business: 2500,
 };
 
 // Hard-gated: creation features blocked at balance ≤ 0
@@ -457,7 +457,7 @@ export async function chargeUser(
 export async function deductTokens(
   userId: string,
   action: AiTokenAction | string,
-  cost: number,        // ignored — cost is sourced from AI_TOKEN_COSTS inside chargeUser
+  _cost: number,       // ignored — cost is sourced from AI_TOKEN_COSTS inside chargeUser
   referenceId?: string
 ): Promise<{ balanceAfter: number }> {
   // Validate action before delegating
