@@ -101,12 +101,10 @@ function getSpecialValue(specials: Record<string, string>, names: string[]): str
 function resolveHeaderMediaReference(
   component: TemplateComponent,
   specials: Record<string, string>,
-  missing: Set<string>,
   defaultMediaUrl?: string | null
 ): { kind: "id" | "link"; value: string } | null {
   const format = component.format as TemplateMediaFormat | undefined;
   if (!format) {
-    missing.add("headerMedia");
     return null;
   }
 
@@ -137,8 +135,10 @@ function resolveHeaderMediaReference(
   // Fall back to: explicit override → template default → example header_url (never the handle).
   const fallback = explicitId ?? explicitUrl ?? defaultMediaUrl ?? example?.header_url?.[0] ?? null;
 
+  // No URL/ID found — return null without marking as missing.
+  // Meta already stores the approved image for static image headers; omitting the header
+  // component from the send request causes Meta to use it automatically.
   if (!fallback?.trim()) {
-    missing.add("headerMedia");
     return null;
   }
 
@@ -226,7 +226,7 @@ export function resolveTemplatePayload(
       }
 
       if (component.format === "IMAGE" || component.format === "VIDEO" || component.format === "DOCUMENT") {
-        const mediaReference = resolveHeaderMediaReference(component, specials, missing, template.headerMediaUrl);
+        const mediaReference = resolveHeaderMediaReference(component, specials, template.headerMediaUrl);
         const mediaType = component.format.toLowerCase() as "image" | "video" | "document";
         headerMediaType = mediaType;
         headerMediaUrl = resolveHeaderPreviewUrl(component, specials) ?? template.headerMediaUrl ?? undefined;

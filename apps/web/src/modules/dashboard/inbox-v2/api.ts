@@ -414,6 +414,7 @@ export interface MessageTemplate {
   components: TemplateComponent[];
   metaRejectionReason: string | null;
   linkedNumber: string | null;
+  headerMediaUrl: string | null;
 }
 
 export function fetchApprovedTemplates(token: string, linkedNumber?: string | null): Promise<MessageTemplate[]> {

@@ -44,8 +44,8 @@ interface AttachedFile {
 }
 
 type TemplateDialogField =
-  | { key: string; label: string; kind: "text"; placeholder: string }
-  | { key: string; label: string; kind: "media"; mediaType: TemplateMediaType; description: string };
+  | { key: string; label: string; kind: "text"; placeholder: string; optional?: boolean }
+  | { key: string; label: string; kind: "media"; mediaType: TemplateMediaType; description: string; optional?: boolean };
 
 interface TemplateDialogUpload {
   fileName: string;
@@ -73,7 +73,8 @@ function buildTemplateDialogFields(t: MessageTemplate): TemplateDialogField[] {
       label: `${config.label} header`,
       kind: "media",
       mediaType: header.format,
-      description: `Upload ${config.extensions.join(", ")} up to ${config.maxMb}MB.`
+      description: `Upload ${config.extensions.join(", ")} up to ${config.maxMb}MB. Leave empty to use the template's default image.`,
+      optional: true
     });
   }
 
@@ -671,7 +672,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
               <div className="iv-tvd-fields">
                 {templateVarsDialog.fields.map((field) => (
                   <div key={field.key} className="iv-tvd-field">
-                    <label className="iv-tvd-label">{field.label}</label>
+                    <label className="iv-tvd-label">{field.label}{field.optional && <span style={{ fontWeight: 400, color: "#94a3b8", marginLeft: 4 }}>(optional)</span>}</label>
                     {field.kind === "media" ? (
                       <div className={`iv-tvd-upload${templateVarsDialog.values[field.key] ? " uploaded" : ""}`}>
                         <span>{field.description}</span>
@@ -714,7 +715,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
               <button className="iv-tvd-cancel" onClick={() => setTemplateVarsDialog(null)}>Cancel</button>
               <button
                 className="iv-tvd-send"
-                disabled={sendTemplateMut.isPending || Boolean(templateUploadingFieldKey) || templateVarsDialog.fields.some((field) => !templateVarsDialog.values[field.key]?.trim())}
+                disabled={sendTemplateMut.isPending || Boolean(templateUploadingFieldKey) || templateVarsDialog.fields.some((field) => !field.optional && !templateVarsDialog.values[field.key]?.trim())}
                 onClick={() => sendTemplateMut.mutate({
                   templateId: templateVarsDialog.template.id,
                   vars: templateVarsDialog.values

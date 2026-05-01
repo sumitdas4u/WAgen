@@ -72,9 +72,9 @@ function TemplateNode({ id, data, selected }: NodeProps<TemplateData>) {
           <div className="fn-node-field">
             <label className="fn-node-label">HEADER {headerMediaType}</label>
             {matchedTemplate?.headerMediaUrl && data.headerMediaUrl === matchedTemplate.headerMediaUrl ? (
-              <div style={{ fontSize: "11px", color: "#16a34a", marginBottom: "4px" }}>
-                ✓ Using template default
-              </div>
+              <div style={{ fontSize: "11px", color: "#16a34a", marginBottom: "4px" }}>✓ Using template default</div>
+            ) : !data.headerMediaUrl ? (
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>Optional — leave empty to use the approved image.</div>
             ) : null}
             <MediaUpload
               mediaType={mediaTypeLabel}

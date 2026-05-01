@@ -2015,7 +2015,7 @@ function StepsEditor({
                               <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
                                 {template?.headerMediaUrl
                                   ? "Template default will be used. Upload or enter a URL to override."
-                                  : `This header expects a ${headerMediaType.toLowerCase()}. Upload or paste a public URL.`}
+                                  : `This template has a ${headerMediaType.toLowerCase()} header. Leave empty to use the approved image, or upload/paste a URL to override.`}
                               </div>
                             )}
                           </div>

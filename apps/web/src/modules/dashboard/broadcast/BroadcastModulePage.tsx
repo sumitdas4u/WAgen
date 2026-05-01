@@ -2935,7 +2935,7 @@ function VariableMappingStep({
               <p className="sch-section-desc">
                 {selectedTemplate?.headerMediaUrl
                   ? `Template default will be used. Upload or enter a URL below to override.`
-                  : `This template requires a ${headerMediaType.toLowerCase()} header. Upload a file or enter a public URL.`}
+                  : `This template has a ${headerMediaType.toLowerCase()} header. Leave empty to use the approved image, or upload/paste a URL to override.`}
               </p>
               <div className="sch-field-row">
                 <span className="sch-field-label">Upload override</span>

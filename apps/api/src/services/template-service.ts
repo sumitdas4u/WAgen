@@ -1157,7 +1157,7 @@ async function rewriteUrlComponentsToMediaId(
           const uploaded = await graphPostMedia(phoneNumberId, accessToken, buffer, contentType);
           return {
             ...component,
-            parameters: [{ ...param, [mt]: { id: uploaded.id } }]
+            parameters: [{ ...param, [mt]: { id: Number(uploaded.id) } }]
           };
         } catch {
           // keep link as-is if upload fails

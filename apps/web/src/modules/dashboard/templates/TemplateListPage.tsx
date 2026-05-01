@@ -267,7 +267,7 @@ function TestTemplateModal({ template, token, onClose }: { template: MessageTemp
           {/* Preview */}
           <div style={{ width: 240, flexShrink: 0 }}>
             <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#122033", marginBottom: "0.5rem" }}>{template.name}</div>
-            <TemplatePreviewPanel components={filled} />
+            <TemplatePreviewPanel components={filled} headerMediaUrl={template.headerMediaUrl ?? undefined} />
           </div>
 
           {/* Variables */}
@@ -386,7 +386,7 @@ function ViewModal({ template, onClose }: { template: MessageTemplate; onClose: 
             <StatusPill status={template.status} />
             <CatPill cat={template.category} />
           </div>
-          <TemplatePreviewPanel components={template.components} />
+          <TemplatePreviewPanel components={template.components} headerMediaUrl={template.headerMediaUrl ?? undefined} />
         </div>
       </div>
     </div>
