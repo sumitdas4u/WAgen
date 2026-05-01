@@ -9,7 +9,7 @@ import {
   updateFlow
 } from "../services/flow-service.js";
 import { generateFlowDraft } from "../services/flow-draft-generator-service.js";
-import { requireAiCredit, AiTokensDepletedError, chargeUser } from "../services/ai-token-service.js";
+import { requireAiCredit, AiTokensDepletedError, chargeUser, estimateTextTokens } from "../services/ai-token-service.js";
 import { assertPlanModuleAccess, PlanUpgradeRequiredError } from "../services/plan-entitlement-service.js";
 import { pool } from "../db/pool.js";
 import { startFlowForConversation } from "../services/flow-engine-service.js";
@@ -123,7 +123,9 @@ export async function flowRoutes(app: FastifyInstance) {
       }
 
       try {
-        await requireAiCredit(req.authUser.userId, "flow_draft_generate");
+        await requireAiCredit(req.authUser.userId, "flow_draft_generate", {
+          estimatedTokens: estimateTextTokens(prompt) + 1_000
+        });
       } catch (e) {
         if (e instanceof AiTokensDepletedError) {
           return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });

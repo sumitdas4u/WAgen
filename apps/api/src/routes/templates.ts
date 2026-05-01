@@ -12,7 +12,7 @@ import {
   uploadTemplateMedia,
   type TemplateStatus
 } from "../services/template-service.js";
-import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
+import { requireAiCredit, AiTokensDepletedError, estimateTextTokens } from "../services/ai-token-service.js";
 
 type TemplateUploadMediaType = "IMAGE" | "VIDEO" | "DOCUMENT";
 
@@ -145,7 +145,9 @@ export async function templateRoutes(fastify: FastifyInstance): Promise<void> {
         });
       }
       try {
-        await requireAiCredit(request.authUser.userId, "template_generate");
+        await requireAiCredit(request.authUser.userId, "template_generate", {
+          estimatedTokens: estimateTextTokens(parsed.data.prompt) + 1_500
+        });
       } catch (e) {
         if (e instanceof AiTokensDepletedError) {
           return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });

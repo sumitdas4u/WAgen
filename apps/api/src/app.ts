@@ -8,6 +8,7 @@ import fastifyRawBody from "fastify-raw-body";
 import { randomUUID } from "node:crypto";
 import { env } from "./config/env.js";
 import { validateApiKey } from "./services/api-key-service.js";
+import { AiTokenLimitExceededError, AiTokensDepletedError } from "./services/ai-token-service.js";
 import { registerMetrics } from "./observability/metrics.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -264,6 +265,24 @@ export async function buildApp() {
   app.setErrorHandler((error, _, reply) => {
     app.log.error(error);
     if (!reply.sent) {
+      if (error instanceof AiTokensDepletedError) {
+        return reply.status(402).send({
+          error: error.code,
+          message: error.message,
+          balance: error.balance
+        });
+      }
+
+      if (error instanceof AiTokenLimitExceededError) {
+        return reply.status(413).send({
+          error: error.code,
+          message: "This AI request is too large. Reduce the prompt or input size and try again.",
+          action: error.action,
+          estimatedTokens: error.estimatedTokens,
+          maxTokens: error.maxTokens
+        });
+      }
+
       const message = error instanceof Error ? error.message : "Internal server error";
       const maybeStatus = typeof error === "object" && error !== null && "statusCode" in error
         ? (error as { statusCode?: unknown }).statusCode

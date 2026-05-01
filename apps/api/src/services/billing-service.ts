@@ -699,7 +699,7 @@ async function syncUserPlan(userId: string, planCode: string, status: string): P
        WHERE id = $2`,
       [planCode, userId]
     );
-    // Credit monthly AI tokens whenever a plan becomes active (activation or renewal)
+    // Credit monthly AI credits whenever a plan becomes active (activation or renewal)
     void creditMonthlyTokens(userId, planCode, `plan-activation-${userId}-${Date.now()}`);
     return;
   }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import {
+  AI_RECHARGE_PACK_CREDITS,
   createWorkspaceRechargeOrder,
   disableAutoRecharge,
   generateWorkspaceInvoicePdf,
@@ -46,6 +47,9 @@ const BillingProfileSchema = z.object({
 
 const RechargeOrderSchema = z.object({
   credits: z.coerce.number().int().min(1).max(1_000_000)
+    .refine((value) => AI_RECHARGE_PACK_CREDITS.includes(value), {
+      message: `Choose a standard AI recharge pack: ${AI_RECHARGE_PACK_CREDITS.join(", ")}`
+    })
 });
 
 const AutoRechargeSchema = z.object({
@@ -55,6 +59,9 @@ const AutoRechargeSchema = z.object({
   maxRechargesPerDay: z.coerce.number().int().min(1).max(100),
   gatewayCustomerId: z.string().max(255).optional().nullable(),
   gatewayTokenId: z.string().max(255).optional().nullable()
+}).refine((value) => AI_RECHARGE_PACK_CREDITS.includes(value.rechargeCredits), {
+  path: ["rechargeCredits"],
+  message: `Choose a standard AI recharge pack: ${AI_RECHARGE_PACK_CREDITS.join(", ")}`
 });
 
 const InvoicesQuerySchema = z.object({

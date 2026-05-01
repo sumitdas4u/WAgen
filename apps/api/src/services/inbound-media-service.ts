@@ -3,7 +3,7 @@ import * as baileys from "@whiskeysockets/baileys";
 import pdfParse from "pdf-parse";
 import { env } from "../config/env.js";
 import { aiService } from "./ai-service.js";
-import { chargeUser } from "./ai-token-service.js";
+import { chargeUser, requireAiCredit } from "./ai-token-service.js";
 import { uploadInboundMedia } from "./supabase-storage-service.js";
 
 function unwrapMessageContent(message: NonNullable<WAMessage["message"]>): NonNullable<WAMessage["message"]> {
@@ -139,6 +139,9 @@ export async function extractInboundMediaText(
       : null;
 
     try {
+      if (userId) {
+        await requireAiCredit(userId, "image_analyze", { estimatedTokens: 2_000 });
+      }
       const description = await withTimeout(
         aiService.analyzeImage(media, mimeType),
         env.INBOUND_MEDIA_TIMEOUT_MS,

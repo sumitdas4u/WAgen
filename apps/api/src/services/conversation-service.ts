@@ -11,7 +11,7 @@ import {
 } from "./conversation-insight-service.js";
 import { estimateInrCost, estimateUsdCost, normalizeModelName } from "./usage-cost-service.js";
 import { aiService } from "./ai-service.js";
-import { chargeUser } from "./ai-token-service.js";
+import { chargeUser, estimateTextTokens, requireAiCredit } from "./ai-token-service.js";
 import { createAgentNotification } from "./agent-notification-service.js";
 import { resolveAgentProfileForChannel, type AgentProfileRecord } from "./agent-profile-service.js";
 import { extractCapturedProfileDetails, reconcileContactPhone, syncConversationContact } from "./contacts-service.js";
@@ -221,6 +221,15 @@ async function classifyInboundMessage(input: {
   }
 
   try {
+    if (input.userId) {
+      await requireAiCredit(input.userId, "ai_intent_classify", {
+        estimatedTokens:
+          estimateTextTokens(input.message) +
+          estimateTextTokens(input.agentProfile?.taskDescription) +
+          500
+      });
+    }
+
     const payload = await aiService.generateJson(
       [
         "Classify customer chat intent.",
@@ -1494,6 +1503,12 @@ async function generateLeadSummary(
   ].join("\n");
 
   try {
+    if (userId) {
+      await requireAiCredit(userId, "ai_lead_summary", {
+        estimatedTokens: estimateTextTokens(clipped) + 700
+      });
+    }
+
     const response = await aiService.generateReply(systemPrompt, userPrompt);
     if (userId) {
       void chargeUser(userId, "ai_lead_summary", {

@@ -11,7 +11,7 @@ import {
 } from "../services/knowledge-ingestion-service.js";
 import { createFileIngestionJobs, listIngestionJobs } from "../services/knowledge-ingestion-jobs-service.js";
 import { deleteKnowledgeSource, getKnowledgeStats, listKnowledgeChunks, listKnowledgeSources } from "../services/rag-service.js";
-import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
+import { requireAiCredit, AiTokensDepletedError, estimateTextTokens } from "../services/ai-token-service.js";
 
 const ManualSchema = z.object({
   text: z.string().min(20),
@@ -67,7 +67,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       try {
-        await requireAiCredit(request.authUser.userId, "kb_ingest_chunk");
+        await requireAiCredit(request.authUser.userId, "kb_ingest_chunk", {
+          estimatedTokens: estimateTextTokens(parsed.data.text)
+        });
       } catch (e) {
         if (e instanceof AiTokensDepletedError) {
           return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });

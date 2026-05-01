@@ -15,7 +15,10 @@ import {
   upsertAutoRechargeSettings,
   upsertWorkspaceBillingProfile
 } from "../services/workspace-billing-center-service.js";
-import { getWorkspaceIdByUserId } from "../services/workspace-billing-service.js";
+import {
+  adjustWorkspaceCreditsByAdmin,
+  getWorkspaceIdByUserId
+} from "../services/workspace-billing-service.js";
 
 async function run(): Promise<void> {
   const suffix = randomUUID().slice(0, 8);
@@ -70,7 +73,7 @@ async function run(): Promise<void> {
          currency,
          metadata_json
        )
-       VALUES ($1, $2, $3, 'created', 1000, 49900, 42288, 7612, 18, 'INR', '{}'::jsonb)`,
+       VALUES ($1, $2, $3, 'created', 120, 49900, 42288, 7612, 18, 'INR', '{}'::jsonb)`,
       [workspaceId, user.id, fakeOrderId]
     );
 
@@ -80,6 +83,41 @@ async function run(): Promise<void> {
       event: "payment.captured"
     });
     assert.equal(paymentResult.workspaceId, workspaceId, "recharge webhook workspace mismatch");
+    const balanceAfterRecharge = await pool.query<{ ai_token_balance: number }>(
+      `SELECT ai_token_balance FROM users WHERE id = $1`,
+      [user.id]
+    );
+    assert.equal(
+      balanceAfterRecharge.rows[0]?.ai_token_balance,
+      170,
+      "recharge should add AI credits to user wallet"
+    );
+    const rechargeLedger = await pool.query<{ action_type: string; amount: number }>(
+      `SELECT action_type, amount
+       FROM ai_token_ledger
+       WHERE user_id = $1
+         AND reference_id = $2
+       LIMIT 1`,
+      [user.id, `ai-pay_smoke_${suffix}`]
+    );
+    assert.equal(rechargeLedger.rows[0]?.action_type, "recharge_purchase", "recharge AI ledger action mismatch");
+    assert.equal(rechargeLedger.rows[0]?.amount, 120, "recharge AI ledger amount mismatch");
+
+    await adjustWorkspaceCreditsByAdmin({
+      workspaceId,
+      deltaCredits: 25,
+      reason: "smoke admin AI adjustment"
+    });
+    const adminLedger = await pool.query<{ amount: number }>(
+      `SELECT amount
+       FROM ai_token_ledger
+       WHERE user_id = $1
+         AND action_type = 'admin_adjustment'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [user.id]
+    );
+    assert.equal(adminLedger.rows[0]?.amount, 25, "admin adjustment should add AI ledger credits");
 
     await issueSubscriptionInvoiceFromPayment({
       userId: user.id,
@@ -103,10 +141,10 @@ async function run(): Promise<void> {
     const autoSaved = await upsertAutoRechargeSettings(user.id, {
       enabled: false,
       thresholdCredits: 100,
-      rechargeCredits: 2000,
+      rechargeCredits: 260,
       maxRechargesPerDay: 2
     });
-    assert.equal(autoSaved.rechargeCredits, 2000, "auto recharge credits mismatch");
+    assert.equal(autoSaved.rechargeCredits, 260, "auto recharge credits mismatch");
 
     const autoDisabled = await disableAutoRecharge(user.id);
     assert.equal(autoDisabled.enabled, false, "auto recharge should be disabled");

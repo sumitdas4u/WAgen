@@ -1,5 +1,5 @@
 import { aiService } from "../../ai-service.js";
-import { chargeUser } from "../../ai-token-service.js";
+import { AiTokenLimitExceededError, AiTokensDepletedError, chargeUser, estimateTextTokens, requireAiCredit } from "../../ai-token-service.js";
 import { getNextNodeId, interpolate } from "../helpers.js";
 import type { FlowBlockModule, FlowVariables } from "../types.js";
 
@@ -135,6 +135,22 @@ export const aiAgentBlock: FlowBlockModule = {
     }
     if (!instructions) {
       return fail("AI Agent instructions are required.");
+    }
+
+    if (context.userId) {
+      try {
+        await requireAiCredit(context.userId, "ai_agent_flow", {
+          estimatedTokens: estimateTextTokens(instructions) + estimateTextTokens(inputTemplate) + 1_000
+        });
+      } catch (error) {
+        if (error instanceof AiTokensDepletedError) {
+          return fail("AI credits exhausted.");
+        }
+        if (error instanceof AiTokenLimitExceededError) {
+          return fail("AI request is too large.");
+        }
+        throw error;
+      }
     }
 
     try {

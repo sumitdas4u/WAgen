@@ -1,7 +1,7 @@
 import { pool, withTransaction } from "../db/pool.js";
 import { aiService } from "./ai-service.js";
 import { toVectorLiteral } from "../utils/index.js";
-import { chargeUser } from "./ai-token-service.js";
+import { chargeUser, estimateTextTokens, requireAiCredit } from "./ai-token-service.js";
 
 export interface KnowledgeChunk {
   id: string;
@@ -206,6 +206,9 @@ export async function retrieveKnowledge(input: {
   };
 
   try {
+    await requireAiCredit(input.userId, "rag_embed_query", {
+      estimatedTokens: estimateTextTokens(input.query)
+    });
     const embedding = await aiService.embed(input.query);
     // Deduct one token for the retrieval embed query
     void chargeUser(input.userId, "rag_embed_query", { module: "knowledge" });

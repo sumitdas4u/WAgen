@@ -19,6 +19,10 @@ const ACTION_LABELS: Record<string, string> = {
   plan_monthly_reset:   "Monthly reset",
   plan_signup_credit:   "Signup credit",
   plan_activation:      "Plan activation",
+  recharge_purchase:    "Recharge purchase",
+  admin_adjustment:     "Admin adjustment",
+  admin_reset:          "Admin reset",
+  billing_migration_backfill: "Billing migration backfill",
 };
 
 function fmtAction(action: string) {
@@ -29,24 +33,29 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 }
 
+function creditsUsed(row: AiUsageByAction | AiUsageByDay): number {
+  return row.credits_used ?? row.tokens_used;
+}
+
 function DailyChart({ data }: { data: AiUsageByDay[] }) {
   if (data.length === 0) return null;
-  const max = Math.max(...data.map(d => d.tokens_used), 1);
+  const max = Math.max(...data.map(d => creditsUsed(d)), 1);
   return (
     <div className="acc-card">
       <div className="acc-card-head">
-        <h2 className="acc-card-title">Daily token burn</h2>
+        <h2 className="acc-card-title">Daily AI credit usage</h2>
         <span style={{ fontSize: "0.75rem", color: "#5f6f86" }}>Last 30 days</span>
       </div>
       <div className="acc-card-body" style={{ paddingBottom: "1.5rem" }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "80px", overflowX: "auto" }}>
           {data.map(d => {
-            const h = Math.max(4, Math.round((d.tokens_used / max) * 80));
+            const used = creditsUsed(d);
+            const h = Math.max(4, Math.round((used / max) * 80));
             const label = d.day.slice(5); // MM-DD
             return (
               <div
                 key={d.day}
-                title={`${d.day}: ${d.tokens_used.toLocaleString()} tokens (${d.calls} calls)`}
+                title={`${d.day}: ${used.toLocaleString()} AI credits (${d.calls} calls)`}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", flex: "1 0 18px", minWidth: "18px", cursor: "default" }}
               >
                 <div
@@ -67,7 +76,7 @@ function DailyChart({ data }: { data: AiUsageByDay[] }) {
           })}
         </div>
         <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "#5f6f86" }}>
-          Total: <strong>{data.reduce((s, d) => s + d.tokens_used, 0).toLocaleString()}</strong> tokens across <strong>{data.reduce((s, d) => s + d.calls, 0).toLocaleString()}</strong> calls in the last 30 days
+          Total: <strong>{data.reduce((s, d) => s + creditsUsed(d), 0).toLocaleString()}</strong> AI credits across <strong>{data.reduce((s, d) => s + d.calls, 0).toLocaleString()}</strong> calls in the last 30 days
         </p>
       </div>
     </div>
@@ -127,7 +136,7 @@ export function Component() {
   return (
     <div className="acc-page">
       <div className="acc-page-header">
-        <h1 className="acc-page-title">AI Wallet</h1>
+        <h1 className="acc-page-title">AI Credits</h1>
         <div className="acc-header-actions">
           <button
             style={{ appearance: "none", height: "2.2rem", padding: "0 0.75rem", border: "1px solid #e2eaf4", borderRadius: "8px", background: "#fff", font: "inherit", fontSize: "0.8rem", fontWeight: 600, color: "#122033", cursor: "pointer" }}
@@ -142,8 +151,8 @@ export function Component() {
       <div className="acc-card">
         <div className="acc-card-head">
           <div>
-            <h2 className="acc-card-title">AI token balance</h2>
-            <p className="acc-card-subtitle">Monthly AI token usage across all models and channels</p>
+            <h2 className="acc-card-title">AI credit balance</h2>
+            <p className="acc-card-subtitle">Monthly AI automation credits across all models and channels</p>
           </div>
           <span className={pillClass}>{planCode}</span>
         </div>
@@ -158,12 +167,12 @@ export function Component() {
               <BalanceMeter status={status} />
               {status.isLow && (
                 <p style={{ margin: 0, fontSize: "0.8rem", color: "#b45309", fontWeight: 600 }}>
-                  ⚠ Your AI token balance is running low. Consider upgrading your plan.
+                  Your AI credit balance is running low. Recharge or consider upgrading your plan.
                 </p>
               )}
               {!status.canUseAiGeneration && (
                 <p style={{ margin: 0, fontSize: "0.8rem", color: "#be123c", fontWeight: 600 }}>
-                  AI generation features are locked. Upgrade your plan or wait for the monthly reset.
+                  AI generation features are locked. Recharge, upgrade your plan, or wait for the monthly reset.
                 </p>
               )}
             </div>
@@ -204,7 +213,7 @@ export function Component() {
                 <tr style={{ background: "#fafbfd", borderBottom: "1px solid #edf2f7" }}>
                   <th style={{ padding: "0.65rem 1.25rem", textAlign: "left", fontSize: "0.64rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5f6f86" }}>Feature</th>
                   <th style={{ padding: "0.65rem 1.25rem", textAlign: "right", fontSize: "0.64rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5f6f86" }}>Calls</th>
-                  <th style={{ padding: "0.65rem 1.25rem", textAlign: "right", fontSize: "0.64rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5f6f86" }}>Tokens used</th>
+                  <th style={{ padding: "0.65rem 1.25rem", textAlign: "right", fontSize: "0.64rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5f6f86" }}>AI credits used</th>
                 </tr>
               </thead>
               <tbody>
@@ -212,7 +221,7 @@ export function Component() {
                   <tr key={row.action_type} style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td style={{ padding: "0.7rem 1.25rem", fontSize: "0.84rem", fontWeight: 500, color: "#334155" }}>{fmtAction(row.action_type)}</td>
                     <td style={{ padding: "0.7rem 1.25rem", textAlign: "right", fontSize: "0.84rem", color: "#5f6f86" }}>{row.calls.toLocaleString()}</td>
-                    <td style={{ padding: "0.7rem 1.25rem", textAlign: "right", fontSize: "0.84rem", fontWeight: 700, color: "#122033" }}>{row.tokens_used.toLocaleString()}</td>
+                    <td style={{ padding: "0.7rem 1.25rem", textAlign: "right", fontSize: "0.84rem", fontWeight: 700, color: "#122033" }}>{creditsUsed(row).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -224,7 +233,7 @@ export function Component() {
       {/* ── Daily chart ──────────────────────────────────────────────────── */}
       {!loading && <DailyChart data={usageByDay} />}
 
-      {/* ── Token ledger ─────────────────────────────────────────────────── */}
+      {/* ── AI credit ledger ─────────────────────────────────────────────── */}
       {!loading && ledger.length > 0 && (
         <div className="acc-card">
           <div className="acc-card-head">
@@ -265,7 +274,7 @@ export function Component() {
       {!loading && !error && ledger.length === 0 && (
         <div className="acc-card">
           <div className="acc-card-body" style={{ textAlign: "center", color: "#5f6f86", fontSize: "0.85rem" }}>
-            <p style={{ margin: 0 }}>No AI activity yet. Start using the chatbot, templates, or flows to see token usage here.</p>
+            <p style={{ margin: 0 }}>No AI activity yet. Start using the chatbot, templates, or flows to see AI credit usage here.</p>
           </div>
         </div>
       )}

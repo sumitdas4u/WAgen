@@ -37,7 +37,7 @@ import { realtimeHub } from "./realtime-hub.js";
 import { getUserById } from "./user-service.js";
 import { fanoutEvent } from "./event-fanout-service.js";
 import { createBotAlertNotification } from "./agent-notification-service.js";
-import { AiTokensDepletedError, requireAiCredit } from "./ai-token-service.js";
+import { AiTokenLimitExceededError, AiTokensDepletedError, estimateTextTokens, requireAiCredit } from "./ai-token-service.js";
 
 type UnifiedChannelType = "web" | "qr" | "api";
 
@@ -74,6 +74,7 @@ export interface ProcessIncomingMessageResult {
     | "cooldown"
     | "missing_channel_adapter"
     | "insufficient_credits"
+    | "ai_request_too_large"
     | "flow_error"
     | "no_matching_flow"
     | "default_reply_manual";
@@ -95,6 +96,8 @@ function botAlertMessage(reason: ProcessIncomingMessageResult["reason"]): string
   switch (reason) {
     case "insufficient_credits":
       return "Automation replied with the plan limit message. Review billing or plan limits.";
+    case "ai_request_too_large":
+      return "Automation skipped AI because the request was too large. Reduce prompt history or input size.";
     case "external_bot_detected":
       return "Automation was paused because another bot appears to be replying in this chat.";
     case "sender_is_agent_number":
@@ -474,7 +477,13 @@ export async function processIncomingMessage(
     : user;
 
   try {
-    await requireAiCredit(input.userId, "chatbot_reply");
+    await requireAiCredit(input.userId, "chatbot_reply", {
+      estimatedTokens:
+        estimateTextTokens(normalizedMessage) +
+        estimateTextTokens(JSON.stringify(history)) +
+        estimateTextTokens(JSON.stringify(effectiveUser.business_basics ?? {})) +
+        1_500
+    });
   } catch (error) {
     if (error instanceof AiTokensDepletedError) {
       await notifyBotAlert(input.userId, conversation.id, "insufficient_credits");
@@ -484,6 +493,16 @@ export async function processIncomingMessage(
         score: latestConversationState.score,
         autoReplySent: false,
         reason: "insufficient_credits"
+      };
+    }
+    if (error instanceof AiTokenLimitExceededError) {
+      await notifyBotAlert(input.userId, conversation.id, "ai_request_too_large");
+      return {
+        conversationId: conversation.id,
+        stage: latestConversationState.stage,
+        score: latestConversationState.score,
+        autoReplySent: false,
+        reason: "ai_request_too_large"
       };
     }
     throw error;

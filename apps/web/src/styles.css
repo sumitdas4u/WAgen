@@ -10096,7 +10096,8 @@ select:focus {
   color: #31413a;
 }
 
-.billing-recharge-row input {
+.billing-recharge-row input,
+.billing-recharge-row select {
   min-width: 180px;
   border: 1px solid #cfdcd2;
   border-radius: 8px;

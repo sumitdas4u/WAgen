@@ -20,7 +20,26 @@ function createBootstrap(): DashboardBootstrapResponse {
       planCode: "starter",
       maxApiNumbers: 1,
       maxAgentProfiles: 1,
-      prioritySupport: false
+      maxActiveFlows: 1,
+      maxKnowledgeSources: 2,
+      aiCreditsMonthly: 300,
+      annualAmountInr: 7990,
+      prioritySupport: false,
+      modules: {
+        inbox: true,
+        contacts: true,
+        billing: true,
+        qrChannel: true,
+        webWidget: true,
+        broadcast: true,
+        flows: true,
+        sequences: false,
+        webhooks: false,
+        apiChannel: false,
+        googleSheets: false,
+        googleCalendar: false,
+        apiAccess: false
+      }
     },
     featureFlags: {},
     creditsSummary: {
@@ -248,7 +267,7 @@ describe("DashboardModuleGuard", () => {
 
   // ── Null bootstrap edge case ───────────────────────────────────────────────
 
-  it("allows access when bootstrap is null (entitlement check skipped)", () => {
+  it("waits for bootstrap before rendering entitlement-gated modules", () => {
     render(
       <MemoryRouter future={{ v7_relativeSplatPath: true }}>
         <DashboardShellContextProvider
@@ -265,6 +284,7 @@ describe("DashboardModuleGuard", () => {
         </DashboardShellContextProvider>
       </MemoryRouter>
     );
-    expect(screen.getByText("Module content")).toBeInTheDocument();
+    expect(screen.getByText("Checking access")).toBeInTheDocument();
+    expect(screen.queryByText("Module content")).not.toBeInTheDocument();
   });
 });

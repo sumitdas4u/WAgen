@@ -6,6 +6,7 @@ import { dashboardModules } from "../../registry/dashboardModules";
 import { DashboardIcon } from "../../shared/dashboard/icons";
 import type { DashboardIconName } from "../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
+import { isDashboardModuleAccessible } from "./dashboard-module-guard";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
 type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
@@ -132,7 +133,7 @@ const ACCOUNT_MENU_ITEMS: AccountNavItem[] = [
   { moduleId: "account-details",      label: "Account Details",    icon: "account",     to: "/dashboard/account/details" },
   { moduleId: "account-subscription", label: "Subscription",       icon: "billing",     to: "/dashboard/account/subscription" },
   { moduleId: "account-credits",      label: "AI Credits",         icon: "templates",   to: "/dashboard/account/credits" },
-  { moduleId: "account-ai-wallet",    label: "AI Wallet",          icon: "agents",      to: "/dashboard/account/ai-wallet" },
+  { moduleId: "account-ai-wallet",    label: "AI Credits",         icon: "agents",      to: "/dashboard/account/ai-wallet" },
   { moduleId: "account-profile",      label: "Profile & Password", icon: "personality", to: "/dashboard/account/profile" },
   { moduleId: "account-users",        label: "Users & Teams",      icon: "leads",       to: "/dashboard/account/users" }
 ];
@@ -170,7 +171,7 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   "account-details":      { label: "Account", subtitle: "Workspace name, timezone, and preferences" },
   "account-subscription": { label: "Account", subtitle: "Current plan, upgrades, and invoices" },
   "account-credits":      { label: "Account", subtitle: "AI credit balance and history" },
-  "account-ai-wallet":    { label: "Account", subtitle: "AI token usage and top-up packs" },
+  "account-ai-wallet":    { label: "Account", subtitle: "AI credit usage and top-up packs" },
   "account-profile":      { label: "Account", subtitle: "Your profile and password" },
   "account-users":        { label: "Account", subtitle: "Team members and roles" }
 };
@@ -245,7 +246,14 @@ function DashboardShellLayout() {
     if (!definition) {
       return false;
     }
-    return definition.featureFlag ? featureFlags[definition.featureFlag] !== false : true;
+    const flagEnabled = definition.featureFlag ? featureFlags[definition.featureFlag] !== false : true;
+    if (!flagEnabled) {
+      return false;
+    }
+    if (!bootstrap) {
+      return true;
+    }
+    return isDashboardModuleAccessible(definition, bootstrap);
   };
 
   const visibleStudioItems = STUDIO_MENU_ITEMS.filter((item) => isModuleEnabled(item.moduleId));
@@ -296,6 +304,9 @@ function DashboardShellLayout() {
   const handleModulePrefetch = async (moduleId: string) => {
     const module = dashboardModules.find((definition) => definition.id === moduleId);
     if (!module?.prefetchStrategy || prefetchedModuleIds.current.has(module.id)) {
+      return;
+    }
+    if (bootstrap && !isDashboardModuleAccessible(module, bootstrap)) {
       return;
     }
 

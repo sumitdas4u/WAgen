@@ -67,6 +67,13 @@ const TX_TYPE_LABELS: Record<string, string> = {
   invoice: "Invoice"
 };
 
+const AI_RECHARGE_PACK_PRICES: Record<number, number> = {
+  120: 49_900,
+  260: 99_900,
+  600: 199_900
+};
+const AI_RECHARGE_PACKS = Object.keys(AI_RECHARGE_PACK_PRICES).map(Number);
+
 export function Component() {
   const { token, refetchBootstrap } = useDashboardShell();
 
@@ -116,10 +123,13 @@ export function Component() {
 
   const overview = overviewQuery.data;
   const usage = usageQuery.data;
+  const monthlyAiCredits = overview?.aiCredits?.monthly ?? overview?.credits.total ?? 0;
+  const remainingAiCredits = overview?.aiCredits?.remaining ?? overview?.credits.remaining ?? 0;
+  const usedAiCredits = Math.max(0, monthlyAiCredits - remainingAiCredits);
 
   const creditPct = overview
-    ? overview.credits.total > 0
-      ? Math.round((overview.credits.remaining / overview.credits.total) * 100)
+    ? monthlyAiCredits > 0
+      ? Math.round((remainingAiCredits / monthlyAiCredits) * 100)
       : 0
     : 0;
 
@@ -127,8 +137,9 @@ export function Component() {
   const isCritical = creditPct < 5;
 
   const breakdown = useMemo(() => {
-    const credits = Math.max(1, Math.floor(Number(rechargeCredits) || 0));
-    const totalPaise = Math.max(100, Math.round(credits * 500));
+    const requestedCredits = Math.floor(Number(rechargeCredits) || 0);
+    const credits = AI_RECHARGE_PACK_PRICES[requestedCredits] ? requestedCredits : 120;
+    const totalPaise = AI_RECHARGE_PACK_PRICES[credits] ?? AI_RECHARGE_PACK_PRICES[120]!;
     const taxablePaise = Math.round(totalPaise / 1.18);
     const gstPaise = totalPaise - taxablePaise;
     return { credits, totalPaise, taxablePaise, gstPaise };
@@ -143,7 +154,7 @@ export function Component() {
     mutationFn: () =>
       createWorkspaceBillingRechargeOrder(token, { credits: breakdown.credits }),
     onSuccess: async (orderRes) => {
-      const baselineRemaining = overview?.credits.remaining ?? 0;
+      const baselineRemaining = overview?.aiCredits?.remaining ?? overview?.credits.remaining ?? 0;
       const loaded = await loadRazorpayScript();
       if (!loaded || !window.Razorpay) {
         setRechargeError("Unable to load Razorpay checkout");
@@ -173,7 +184,9 @@ export function Component() {
                     item.referenceId === orderRes.order.razorpayOrderId &&
                     (item.status ?? "").toLowerCase() === "paid"
                 );
-                const increased = latestOverview.overview.credits.remaining > baselineRemaining;
+                const latestRemaining =
+                  latestOverview.overview.aiCredits?.remaining ?? latestOverview.overview.credits.remaining;
+                const increased = latestRemaining > baselineRemaining;
                 if (settled || increased) {
                   await overviewQuery.refetch();
                   await refetchBootstrap();
@@ -231,7 +244,7 @@ export function Component() {
           <>
             {isCritical || isLow ? (
               <div className="acc-warning-banner" style={{ margin: "0 1.25rem" }}>
-                Only {overview.credits.remaining.toLocaleString()} credits remaining.{" "}
+                {overview.aiCredits?.lowCreditMessage ?? `Only ${remainingAiCredits.toLocaleString()} AI credits remaining.`}{" "}
                 {isCritical ? "Recharge now to avoid disruption." : "Consider topping up soon."}
               </div>
             ) : null}
@@ -244,24 +257,24 @@ export function Component() {
                   />
                 </div>
                 <div className="acc-credit-labels">
-                  <span>{overview.credits.remaining.toLocaleString()} remaining</span>
+                  <span>{remainingAiCredits.toLocaleString()} remaining</span>
                   <span>{creditPct}%</span>
-                  <span>{overview.credits.total.toLocaleString()} total</span>
+                  <span>{monthlyAiCredits.toLocaleString()} monthly</span>
                 </div>
               </div>
             </div>
             <div className="acc-stats-row">
               <div className="acc-stat-cell">
                 <p className="acc-stat-label">Total (period)</p>
-                <p className="acc-stat-value">{overview.credits.total.toLocaleString()}</p>
+                <p className="acc-stat-value">{monthlyAiCredits.toLocaleString()}</p>
               </div>
               <div className="acc-stat-cell">
                 <p className="acc-stat-label">Used</p>
-                <p className="acc-stat-value">{overview.credits.used.toLocaleString()}</p>
+                <p className="acc-stat-value">{usedAiCredits.toLocaleString()}</p>
               </div>
               <div className="acc-stat-cell">
                 <p className="acc-stat-label">Remaining</p>
-                <p className="acc-stat-value">{overview.credits.remaining.toLocaleString()}</p>
+                <p className="acc-stat-value">{remainingAiCredits.toLocaleString()}</p>
               </div>
               <div className="acc-stat-cell">
                 <p className="acc-stat-label">Auto-recharge</p>
@@ -290,7 +303,7 @@ export function Component() {
         </div>
         <div className="acc-card-body">
           <div className="acc-recharge-presets">
-            {[120, 260, 600].map((c) => (
+            {AI_RECHARGE_PACKS.map((c) => (
               <button
                 key={c}
                 type="button"
@@ -303,15 +316,17 @@ export function Component() {
           </div>
           <div className="acc-form-row-inline" style={{ alignItems: "flex-end" }}>
             <div className="acc-form-row">
-              <label className="acc-label" htmlFor="crd-amount">AI credits</label>
-              <input
+              <label className="acc-label" htmlFor="crd-amount">AI recharge pack</label>
+              <select
                 id="crd-amount"
                 className="acc-input"
-                type="number"
-                min={1}
                 value={rechargeCredits}
                 onChange={(e) => setRechargeCredits(e.target.value)}
-              />
+              >
+                {AI_RECHARGE_PACKS.map((credits) => (
+                  <option key={credits} value={credits}>{credits.toLocaleString()} AI credits</option>
+                ))}
+              </select>
             </div>
             <div className="acc-recharge-breakdown">
               <span>Taxable: <strong>{fmtInr(breakdown.taxablePaise)}</strong></span>

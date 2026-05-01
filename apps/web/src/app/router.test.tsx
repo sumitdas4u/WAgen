@@ -54,6 +54,31 @@ vi.mock("../modules/dashboard/sequence/route", () => ({
   prefetchData: mockSequencePrefetchData
 }));
 
+const starterModules = {
+  inbox: true,
+  contacts: true,
+  billing: true,
+  qrChannel: true,
+  webWidget: true,
+  broadcast: true,
+  flows: true,
+  sequences: false,
+  webhooks: false,
+  apiChannel: false,
+  googleSheets: false,
+  googleCalendar: false,
+  apiAccess: false
+};
+
+const growthModules = {
+  ...starterModules,
+  sequences: true,
+  webhooks: true,
+  apiChannel: true,
+  googleSheets: true,
+  googleCalendar: true
+};
+
 function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): DashboardBootstrapResponse {
   return {
     userSummary: {
@@ -68,7 +93,12 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
       planCode: "starter",
       maxApiNumbers: 1,
       maxAgentProfiles: 1,
-      prioritySupport: false
+      maxActiveFlows: 1,
+      maxKnowledgeSources: 2,
+      aiCreditsMonthly: 300,
+      annualAmountInr: 7990,
+      prioritySupport: false,
+      modules: starterModules
     },
     featureFlags: {
       "dashboard.inbox": true,
@@ -222,7 +252,20 @@ describe("dashboard router", () => {
   });
 
   it("renders the sequence module on /dashboard/sequence", async () => {
-    const { router } = renderRoute("/dashboard/sequence");
+    const { router } = renderRoute(
+      "/dashboard/sequence",
+      createBootstrap({
+        planEntitlements: {
+          ...createBootstrap().planEntitlements,
+          planCode: "pro",
+          maxActiveFlows: 3,
+          maxKnowledgeSources: 5,
+          aiCreditsMonthly: 700,
+          annualAmountInr: 14990,
+          modules: growthModules
+        }
+      })
+    );
 
     expect(await screen.findByText("Sequence module")).toBeInTheDocument();
     await waitFor(() => {
@@ -231,7 +274,20 @@ describe("dashboard router", () => {
   });
 
   it("renders the sequence report route on /dashboard/sequence/:id/report", async () => {
-    const { router } = renderRoute("/dashboard/sequence/abc123/report");
+    const { router } = renderRoute(
+      "/dashboard/sequence/abc123/report",
+      createBootstrap({
+        planEntitlements: {
+          ...createBootstrap().planEntitlements,
+          planCode: "pro",
+          maxActiveFlows: 3,
+          maxKnowledgeSources: 5,
+          aiCreditsMonthly: 700,
+          annualAmountInr: 14990,
+          modules: growthModules
+        }
+      })
+    );
 
     expect(await screen.findByText("Sequence module")).toBeInTheDocument();
     await waitFor(() => {

@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import type { PropsWithChildren } from "react";
 import type { DashboardModuleDefinition } from "../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
+import type { DashboardBootstrapResponse } from "../../shared/dashboard/contracts";
 import type { PlanEntitlements } from "../../lib/api";
 
 const PLAN_ORDER: Record<PlanEntitlements["planCode"], number> = {
@@ -34,13 +35,37 @@ function hasRequiredEntitlements(
   if (typeof required.maxActiveFlows === "number" && (current.maxActiveFlows ?? 0) < required.maxActiveFlows) {
     return false;
   }
-  if (required.module && current.modules?.[required.module] === false) {
+  if (required.module && current.modules?.[required.module] !== true) {
     return false;
   }
   if (required.prioritySupport && !current.prioritySupport) {
     return false;
   }
   return true;
+}
+
+function requiresKnownEntitlements(definition: DashboardModuleDefinition): boolean {
+  return Boolean(definition.requiredPlan || definition.requiredEntitlements);
+}
+
+export function isDashboardModuleAccessible(
+  definition: DashboardModuleDefinition,
+  bootstrap: DashboardBootstrapResponse | null
+): boolean {
+  if (!bootstrap) {
+    return !requiresKnownEntitlements(definition);
+  }
+
+  const featureFlags = bootstrap.featureFlags ?? {};
+  const flagEnabled = definition.featureFlag ? featureFlags[definition.featureFlag] !== false : true;
+  if (!flagEnabled) {
+    return false;
+  }
+
+  return (
+    hasRequiredPlan(bootstrap.planEntitlements.planCode, definition.requiredPlan) &&
+    hasRequiredEntitlements(bootstrap.planEntitlements, definition.requiredEntitlements)
+  );
 }
 
 function ModuleMessage({
@@ -88,13 +113,16 @@ export function DashboardModuleGuard({
     );
   }
 
-  const currentPlan = bootstrap?.planEntitlements.planCode ?? "trial";
-  const planAllowed = hasRequiredPlan(currentPlan, definition.requiredPlan);
-  const entitlementAllowed = bootstrap
-    ? hasRequiredEntitlements(bootstrap.planEntitlements, definition.requiredEntitlements)
-    : true;
+  if (!bootstrap && requiresKnownEntitlements(definition)) {
+    return (
+      <ModuleMessage
+        title="Checking access"
+        body="We are checking your subscription before opening this module."
+      />
+    );
+  }
 
-  if (!planAllowed || !entitlementAllowed) {
+  if (!isDashboardModuleAccessible(definition, bootstrap)) {
     return (
       <ModuleMessage
         title="Upgrade required"

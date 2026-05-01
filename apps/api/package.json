@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "meta:unsubscribe:all": "tsx src/scripts/meta-unsubscribe-all.ts",
     "meta:detach:creditlines": "tsx src/scripts/detach-credit-lines-all.ts",

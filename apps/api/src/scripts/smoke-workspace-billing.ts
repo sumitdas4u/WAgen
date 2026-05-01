@@ -36,6 +36,30 @@ async function run(): Promise<void> {
       totalTokens: 120
     });
     assert.equal(charged.balanceAfter, initialAiBalance - 1, "AI reply should deduct one AI credit");
+    const duplicateCharge = await chargeUser(user.id, "chatbot_reply", "smoke-ai-reply", {
+      module: "inbox",
+      model: env.OPENAI_CHAT_MODEL,
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120
+    });
+    assert.equal(
+      duplicateCharge.balanceAfter,
+      charged.balanceAfter,
+      "retry with the same reference should not double deduct AI credits"
+    );
+
+    const parallelReference = `smoke-ai-parallel-${suffix}`;
+    await Promise.all([
+      chargeUser(user.id, "chatbot_reply", parallelReference, { module: "inbox" }),
+      chargeUser(user.id, "chatbot_reply", parallelReference, { module: "inbox" })
+    ]);
+    const afterParallelRetry = await getTokenBalance(user.id);
+    assert.equal(
+      afterParallelRetry,
+      charged.balanceAfter - 1,
+      "parallel retries with one reference should deduct once"
+    );
 
     const afterConversationLikeActivity = await getWorkspaceCreditsByUserId(user.id);
     assert.equal(

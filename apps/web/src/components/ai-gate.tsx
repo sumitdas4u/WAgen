@@ -8,7 +8,7 @@ interface AiGateProps {
 }
 
 /**
- * Wraps any AI-generation UI. When the user has no AI tokens left the children
+ * Wraps any AI-generation UI. When the user has no AI credits left the children
  * are hidden and an upgrade prompt is shown in their place.
  */
 export function AiGate({ children, message }: AiGateProps) {

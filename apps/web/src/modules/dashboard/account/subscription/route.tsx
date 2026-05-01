@@ -24,6 +24,12 @@ const PLAN_LABELS: Record<string, string> = {
   pro: "Pro",
   business: "Business"
 };
+const AI_RECHARGE_PACKS = [120, 260, 600];
+
+function normalizeRechargePack(value: string): number {
+  const parsed = Math.floor(Number(value) || 0);
+  return AI_RECHARGE_PACKS.includes(parsed) ? parsed : 260;
+}
 
 function fmtInr(paise: number | null): string {
   return ((paise ?? 0) / 100).toLocaleString("en-IN", {
@@ -177,7 +183,7 @@ function AutoRechargeForm({
       upsertWorkspaceAutoRechargeSettings(token, {
         enabled: draft.enabled,
         thresholdCredits: Math.max(0, Math.floor(Number(draft.thresholdCredits) || 0)),
-        rechargeCredits: Math.max(1, Math.floor(Number(draft.rechargeCredits) || 1)),
+        rechargeCredits: normalizeRechargePack(draft.rechargeCredits),
         maxRechargesPerDay: Math.max(1, Math.floor(Number(draft.maxRechargesPerDay) || 1)),
         gatewayCustomerId: draft.gatewayCustomerId || null,
         gatewayTokenId: draft.gatewayTokenId || null
@@ -222,7 +228,11 @@ function AutoRechargeForm({
           </div>
           <div className="acc-form-row">
             <label className="acc-label" htmlFor="sub-recharge-credits">AI recharge pack</label>
-            <input id="sub-recharge-credits" className="acc-input" type="number" min={1} value={draft.rechargeCredits} onChange={(e) => setDraft((d) => ({ ...d, rechargeCredits: e.target.value }))} />
+            <select id="sub-recharge-credits" className="acc-input" value={draft.rechargeCredits} onChange={(e) => setDraft((d) => ({ ...d, rechargeCredits: e.target.value }))}>
+              {AI_RECHARGE_PACKS.map((credits) => (
+                <option key={credits} value={credits}>{credits} AI credits</option>
+              ))}
+            </select>
           </div>
           <div className="acc-form-row">
             <label className="acc-label" htmlFor="sub-max-per-day">Max recharges per day</label>

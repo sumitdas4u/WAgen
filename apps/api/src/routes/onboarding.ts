@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getUserById, setAgentActive, updateBusinessBasics, updatePersonality } from "../services/user-service.js";
 import { generateOnboardingDraft } from "../services/onboarding-autofill-service.js";
 import { buildSalesReply } from "../services/ai-reply-service.js";
-import { requireAiCredit, AiTokensDepletedError } from "../services/ai-token-service.js";
+import { requireAiCredit, AiTokensDepletedError, estimateTextTokens } from "../services/ai-token-service.js";
 
 const BusinessSchema = z.object({
   companyName: z.string().trim().max(120).optional().default(""),
@@ -76,7 +76,9 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
       }
 
       try {
-        await requireAiCredit(request.authUser.userId, "onboarding_autofill");
+        await requireAiCredit(request.authUser.userId, "onboarding_autofill", {
+          estimatedTokens: estimateTextTokens(parsed.data.description) + 1_500
+        });
       } catch (e) {
         if (e instanceof AiTokensDepletedError) {
           return reply.status(402).send({ error: "ai_tokens_depleted", message: e.message, balance: e.balance });

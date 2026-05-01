@@ -13,6 +13,7 @@ interface WorkspacePlanRow {
   name: string;
   price_monthly: number;
   monthly_credits: number;
+  ai_tokens_monthly?: number | null;
   agent_limit: number;
   whatsapp_number_limit: number;
   status: "active" | "inactive";
@@ -129,6 +130,24 @@ function normalizePlanCode(value: unknown): WorkspacePlanCode {
   return "starter";
 }
 
+function resolveMonthlyAiCredits(plan: WorkspacePlanRow | null, subscriptionStatus: WorkspaceSubscriptionStatus): number {
+  if (subscriptionStatus === "trial") {
+    return Math.max(0, env.TRIAL_CREDITS);
+  }
+  if (plan?.ai_tokens_monthly !== undefined && plan.ai_tokens_monthly !== null) {
+    return Math.max(0, Number(plan.ai_tokens_monthly));
+  }
+  switch (plan?.code) {
+    case "business":
+      return 1500;
+    case "pro":
+      return 700;
+    case "starter":
+    default:
+      return 300;
+  }
+}
+
 function resolveWorkspaceName(user: Pick<UserRow, "name" | "email" | "business_type">): string {
   const fromBusinessType = user.business_type?.trim();
   if (fromBusinessType) {
@@ -210,7 +229,7 @@ function clamp(value: number, min: number, max: number): number {
 
 async function getWorkspacePlanByCode(client: PoolClient, code: WorkspacePlanCode): Promise<WorkspacePlanRow | null> {
   const result = await client.query<WorkspacePlanRow>(
-    `SELECT id, code, name, price_monthly, monthly_credits, agent_limit, whatsapp_number_limit, status, created_at, updated_at
+    `SELECT id, code, name, price_monthly, monthly_credits, ai_tokens_monthly, agent_limit, whatsapp_number_limit, status, created_at, updated_at
      FROM plans
      WHERE code = $1
      LIMIT 1`,
@@ -357,7 +376,7 @@ async function ensureWorkspaceSubscription(
 
 async function getWorkspacePlanById(client: PoolClient, planId: string): Promise<WorkspacePlanRow | null> {
   const result = await client.query<WorkspacePlanRow>(
-    `SELECT id, code, name, price_monthly, monthly_credits, agent_limit, whatsapp_number_limit, status, created_at, updated_at
+    `SELECT id, code, name, price_monthly, monthly_credits, ai_tokens_monthly, agent_limit, whatsapp_number_limit, status, created_at, updated_at
      FROM plans
      WHERE id = $1
      LIMIT 1`,
@@ -400,6 +419,15 @@ async function ensureWalletForWorkspace(
      VALUES ($1, $2, 0, $2, NOW())
      RETURNING id, workspace_id, total_credits, used_credits, remaining_credits, last_reset_date, updated_at`,
     [workspace.id, seedCredits]
+  );
+
+  const seedAiCredits = resolveMonthlyAiCredits(plan, subscription.status);
+  await client.query(
+    `UPDATE users
+     SET ai_token_balance = $2
+     WHERE id = $1
+       AND ai_token_balance = 0`,
+    [workspace.owner_id, seedAiCredits]
   );
 
   await client.query(
@@ -529,7 +557,7 @@ export async function getWorkspaceCreditsByUserId(userId: string): Promise<Works
 export async function listPlans(options?: { includeInactive?: boolean }): Promise<WorkspacePlan[]> {
   const includeInactive = Boolean(options?.includeInactive);
   const result = await pool.query<WorkspacePlanRow>(
-    `SELECT id, code, name, price_monthly, monthly_credits, agent_limit, whatsapp_number_limit, status, created_at, updated_at
+    `SELECT id, code, name, price_monthly, monthly_credits, ai_tokens_monthly, agent_limit, whatsapp_number_limit, status, created_at, updated_at
      FROM plans
      WHERE ($1::boolean = TRUE OR status = 'active')
      ORDER BY price_monthly ASC, created_at ASC`,
@@ -540,7 +568,7 @@ export async function listPlans(options?: { includeInactive?: boolean }): Promis
 
 export async function getPlanByCode(code: WorkspacePlanCode): Promise<WorkspacePlan | null> {
   const result = await pool.query<WorkspacePlanRow>(
-    `SELECT id, code, name, price_monthly, monthly_credits, agent_limit, whatsapp_number_limit, status, created_at, updated_at
+    `SELECT id, code, name, price_monthly, monthly_credits, ai_tokens_monthly, agent_limit, whatsapp_number_limit, status, created_at, updated_at
      FROM plans
      WHERE code = $1
      LIMIT 1`,
@@ -572,7 +600,7 @@ export async function createPlan(input: {
        status
      )
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, code, name, price_monthly, monthly_credits, agent_limit, whatsapp_number_limit, status, created_at, updated_at`,
+     RETURNING id, code, name, price_monthly, monthly_credits, ai_tokens_monthly, agent_limit, whatsapp_number_limit, status, created_at, updated_at`,
     [
       code,
       input.name.trim(),
@@ -598,7 +626,7 @@ export async function updatePlan(
   }
 ): Promise<WorkspacePlan> {
   const currentResult = await pool.query<WorkspacePlanRow>(
-    `SELECT id, code, name, price_monthly, monthly_credits, agent_limit, whatsapp_number_limit, status, created_at, updated_at
+    `SELECT id, code, name, price_monthly, monthly_credits, ai_tokens_monthly, agent_limit, whatsapp_number_limit, status, created_at, updated_at
      FROM plans
      WHERE id = $1
      LIMIT 1`,
@@ -618,7 +646,7 @@ export async function updatePlan(
          whatsapp_number_limit = $6,
          status = $7
      WHERE id = $1
-     RETURNING id, code, name, price_monthly, monthly_credits, agent_limit, whatsapp_number_limit, status, created_at, updated_at`,
+     RETURNING id, code, name, price_monthly, monthly_credits, ai_tokens_monthly, agent_limit, whatsapp_number_limit, status, created_at, updated_at`,
     [
       planId,
       patch.name?.trim() || current.name,
@@ -1356,12 +1384,23 @@ export async function adjustWorkspaceCreditsByAdmin(input: {
   }
 
   return withTransaction(async (client) => {
-    const walletResult = await client.query<CreditWalletRow>(
-      `SELECT id, workspace_id, total_credits, used_credits, remaining_credits, last_reset_date, updated_at
-       FROM credit_wallet
-       WHERE workspace_id = $1
+    const walletResult = await client.query<CreditWalletRow & { owner_id: string; ai_token_balance: number }>(
+      `SELECT
+         cw.id,
+         cw.workspace_id,
+         cw.total_credits,
+         cw.used_credits,
+         cw.remaining_credits,
+         cw.last_reset_date,
+         cw.updated_at,
+         w.owner_id,
+         u.ai_token_balance
+       FROM credit_wallet cw
+       JOIN workspaces w ON w.id = cw.workspace_id
+       JOIN users u ON u.id = w.owner_id
+       WHERE cw.workspace_id = $1
        LIMIT 1
-       FOR UPDATE`,
+       FOR UPDATE OF cw, u`,
       [input.workspaceId]
     );
     const wallet = walletResult.rows[0];
@@ -1373,6 +1412,8 @@ export async function adjustWorkspaceCreditsByAdmin(input: {
     const nextRemaining = clamp(wallet.remaining_credits + delta, 0, nextTotal);
     const nextUsed = Math.max(0, nextTotal - nextRemaining);
     const effectiveDelta = nextRemaining - wallet.remaining_credits;
+    const nextAiBalance = Math.max(0, Number(wallet.ai_token_balance ?? 0) + effectiveDelta);
+    const referenceId = `admin-adjustment:${input.workspaceId}:${Date.now()}`;
 
     const updatedWalletResult = await client.query<CreditWalletRow>(
       `UPDATE credit_wallet
@@ -1390,6 +1431,30 @@ export async function adjustWorkspaceCreditsByAdmin(input: {
     }
 
     await client.query(
+      `UPDATE users
+       SET ai_token_balance = $2
+       WHERE id = $1`,
+      [wallet.owner_id, nextAiBalance]
+    );
+
+    await client.query(
+      `INSERT INTO ai_token_ledger (
+         user_id,
+         workspace_id,
+         amount,
+         action_type,
+         module,
+         reference_id,
+         balance_after,
+         credits_deducted,
+         status
+       )
+       VALUES ($1, $2, $3, 'admin_adjustment', 'billing', $4, $5, 0, 'credit')
+       ON CONFLICT (user_id, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+      [wallet.owner_id, input.workspaceId, effectiveDelta, `ai-${referenceId}`, nextAiBalance]
+    );
+
+    await client.query(
       `INSERT INTO credit_transactions (
          workspace_id,
          type,
@@ -1403,12 +1468,14 @@ export async function adjustWorkspaceCreditsByAdmin(input: {
       [
         input.workspaceId,
         effectiveDelta,
-        `admin-adjustment:${input.workspaceId}:${Date.now()}`,
+        referenceId,
         input.reason ?? "Admin credit adjustment",
         input.adminUserId ?? null,
         JSON.stringify({
           requestedDelta: delta,
-          effectiveDelta
+          effectiveDelta,
+          aiBalanceBefore: Number(wallet.ai_token_balance ?? 0),
+          aiBalanceAfter: nextAiBalance
         })
       ]
     );
@@ -1428,6 +1495,16 @@ export async function adjustWorkspaceCreditsByAdmin(input: {
         JSON.stringify({
           requestedDelta: delta,
           effectiveDelta,
+          walletBefore: {
+            totalCredits: wallet.total_credits,
+            remainingCredits: wallet.remaining_credits
+          },
+          walletAfter: {
+            totalCredits: nextTotal,
+            remainingCredits: nextRemaining
+          },
+          aiBalanceBefore: Number(wallet.ai_token_balance ?? 0),
+          aiBalanceAfter: nextAiBalance,
           reason: input.reason ?? null
         })
       ]
@@ -1483,6 +1560,34 @@ export async function resetWorkspaceWalletByAdmin(input: {
       [workspace.id, monthlyCredits]
     );
     const wallet = updatedWalletResult.rows[0];
+    if (!wallet) {
+      throw new Error("Failed to reset wallet");
+    }
+    const resetReference = `admin-wallet-reset:${workspace.id}:${Date.now()}`;
+
+    await client.query(
+      `UPDATE users
+       SET ai_token_balance = $2
+       WHERE id = $1`,
+      [workspace.owner_id, monthlyCredits]
+    );
+
+    await client.query(
+      `INSERT INTO ai_token_ledger (
+         user_id,
+         workspace_id,
+         amount,
+         action_type,
+         module,
+         reference_id,
+         balance_after,
+         credits_deducted,
+         status
+       )
+       VALUES ($1, $2, $3, 'admin_reset', 'billing', $4, $3, 0, 'credit')
+       ON CONFLICT (user_id, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+      [workspace.owner_id, workspace.id, monthlyCredits, `ai-${resetReference}`]
+    );
 
     await client.query(
       `INSERT INTO credit_transactions (
@@ -1498,11 +1603,12 @@ export async function resetWorkspaceWalletByAdmin(input: {
       [
         workspace.id,
         monthlyCredits,
-        `admin-wallet-reset:${workspace.id}:${Date.now()}`,
+        resetReference,
         input.reason ?? "Admin wallet reset",
         input.adminUserId ?? null,
         JSON.stringify({
-          source: "admin_reset"
+          source: "admin_reset",
+          aiBalanceAfter: monthlyCredits
         })
       ]
     );
@@ -1522,7 +1628,9 @@ export async function resetWorkspaceWalletByAdmin(input: {
         workspace.id,
         workspace.owner_id,
         JSON.stringify({
-          reason: input.reason ?? null
+          reason: input.reason ?? null,
+          resetToPlanCredits: monthlyCredits,
+          aiBalanceAfter: monthlyCredits
         })
       ]
     );

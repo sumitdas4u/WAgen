@@ -5,7 +5,7 @@ import {
   type GoogleCalendarEventResult
 } from "../../google-calendar-service.js";
 import { aiService } from "../../ai-service.js";
-import { chargeUser } from "../../ai-token-service.js";
+import { chargeUser, estimateTextTokens, requireAiCredit } from "../../ai-token-service.js";
 import {
   buildChoicePrompt,
   getNextNodeId,
@@ -833,6 +833,12 @@ async function parseSchedulingRequest(input: {
 
   try {
     const now = new Date().toISOString();
+    if (input.userId) {
+      await requireAiCredit(input.userId, "ai_agent_flow", {
+        estimatedTokens: estimateTextTokens(input.message) + 1_000
+      });
+    }
+
     const raw = await aiService.generateJson(
       [
         "You convert booking date/time replies into JSON for a calendar scheduler.",

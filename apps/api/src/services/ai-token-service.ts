@@ -7,8 +7,8 @@
  *     concurrent requests.
  *  3. Ledger rows with a reference_id are idempotent — duplicate charges for
  *     the same reference are silently ignored (UNIQUE constraint).
- *  4. Hard-gated features are blocked before any AI work starts (requireAiCredit).
- *  5. Soft features (chatbot, RAG, agent) are never blocked but still deducted.
+ *  4. AI features should be checked before work starts (requireAiCredit).
+ *  5. The central charge path refuses to push wallets beyond the grace buffer.
  *
  * External callers should use chargeUser() instead of deductTokens() directly.
  */
@@ -19,6 +19,26 @@ import { pool } from "../db/pool.js";
 import { estimateInrCost } from "./usage-cost-service.js";
 
 export const AI_CREDIT_GRACE_LIMIT = -5;
+const TOKENS_PER_AI_CREDIT = 8_000;
+const DEFAULT_MAX_TOKENS_PER_ACTION = 8_000;
+const MAX_TOKENS_PER_ACTION: Partial<Record<AiTokenAction, number>> = {
+  chatbot_reply: 8_000,
+  auto_reply: 8_000,
+  ai_agent_flow: 8_000,
+  rag_query: 12_000,
+  rag_embed_query: 2_000,
+  kb_ingest_chunk: 4_000,
+  template_generate: 6_000,
+  onboarding_autofill: 6_000,
+  flow_draft_generate: 10_000,
+  flow_generation: 10_000,
+  image_analyze: 12_000,
+  image_analysis: 12_000,
+  ai_text_assist: 4_000,
+  ai_lead_summary: 8_000,
+  summary: 8_000,
+  ai_intent_classify: 4_000,
+};
 
 type AiUsageMetadata = {
   workspaceId?: string | null;
@@ -29,6 +49,11 @@ type AiUsageMetadata = {
   totalTokens?: number | null;
   estimatedCreditsReserved?: number | null;
   status?: "reserved" | "finalized" | "reversed" | "failed" | "credit";
+};
+
+type AiCreditRequirementInput = {
+  creditsRequired?: number | null;
+  estimatedTokens?: number | null;
 };
 
 // ── Action cost table ─────────────────────────────────────────────────────────
@@ -100,7 +125,7 @@ export class AiTokensDepletedError extends Error {
   readonly code = "ai_tokens_depleted";
   readonly balance: number;
   constructor(balance: number) {
-    super("AI tokens depleted. Upgrade your plan or wait for the monthly reset.");
+    super("AI credits depleted. Recharge, upgrade your plan, or wait for the monthly reset.");
     this.name = "AiTokensDepletedError";
     this.balance = balance;
   }
@@ -121,6 +146,21 @@ function assertValidAction(action: string): asserts action is AiTokenAction {
   }
 }
 
+export class AiTokenLimitExceededError extends Error {
+  readonly code = "ai_token_limit_exceeded";
+  readonly action: AiTokenAction;
+  readonly maxTokens: number;
+  readonly estimatedTokens: number;
+
+  constructor(action: AiTokenAction, estimatedTokens: number, maxTokens: number) {
+    super(`AI action "${action}" exceeds the max token guard.`);
+    this.name = "AiTokenLimitExceededError";
+    this.action = action;
+    this.estimatedTokens = estimatedTokens;
+    this.maxTokens = maxTokens;
+  }
+}
+
 function toNonNegativeInteger(value: number | null | undefined): number {
   if (!Number.isFinite(Number(value))) {
     return 0;
@@ -135,8 +175,26 @@ export function getCreditsForAction(action: AiTokenAction): number {
 
 function estimateCreditsFromTokens(action: AiTokenAction, totalTokens: number): number {
   const weightedActionCredits = getCreditsForAction(action);
-  const tokenCredits = Math.ceil(toNonNegativeInteger(totalTokens) / 8_000);
+  const tokenCredits = Math.ceil(toNonNegativeInteger(totalTokens) / TOKENS_PER_AI_CREDIT);
   return Math.max(weightedActionCredits, tokenCredits || 1);
+}
+
+export function getMaxTokensForAction(action: AiTokenAction | string): number {
+  assertValidAction(action);
+  return MAX_TOKENS_PER_ACTION[action] ?? DEFAULT_MAX_TOKENS_PER_ACTION;
+}
+
+export function assertMaxTokensForAction(
+  action: AiTokenAction | string,
+  estimatedTokens: number | null | undefined
+): void {
+  assertValidAction(action);
+  const normalizedTokens = toNonNegativeInteger(estimatedTokens);
+  if (normalizedTokens === 0) return;
+  const maxTokens = getMaxTokensForAction(action);
+  if (normalizedTokens > maxTokens) {
+    throw new AiTokenLimitExceededError(action, normalizedTokens, maxTokens);
+  }
 }
 
 export function estimateRequiredCredits(
@@ -144,15 +202,14 @@ export function estimateRequiredCredits(
   input?: { estimatedTokens?: number | null }
 ): number {
   assertValidAction(action);
+  assertMaxTokensForAction(action, input?.estimatedTokens);
   return estimateCreditsFromTokens(action, toNonNegativeInteger(input?.estimatedTokens));
 }
 
-async function getWorkspaceIdForUser(userId: string): Promise<string | null> {
-  const result = await pool.query<{ workspace_id: string | null }>(
-    `SELECT workspace_id FROM users WHERE id = $1 LIMIT 1`,
-    [userId]
-  );
-  return firstRow(result)?.workspace_id ?? null;
+export function estimateTextTokens(value: string | null | undefined): number {
+  const text = String(value ?? "").trim();
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
 }
 
 function defaultModuleForAction(action: AiTokenAction): string {
@@ -197,17 +254,25 @@ export async function getTokenBalance(userId: string): Promise<number> {
 // ── Gate check ────────────────────────────────────────────────────────────────
 
 /**
- * For hard-gated features: throw AiTokensDepletedError if balance ≤ 0.
- * For soft features (chatbot, RAG, agent, image): always passes through.
  * Call BEFORE any AI work begins so the caller gets an immediate 402.
  */
 export async function requireAiCredit(
   userId: string,
   action: AiTokenAction | string,
-  creditsRequired?: number
+  requirement?: number | AiCreditRequirementInput
 ): Promise<void> {
   assertValidAction(action);
-  const required = Math.max(1, Math.floor(creditsRequired ?? getCreditsForAction(action)));
+  const estimatedTokens =
+    typeof requirement === "object" ? toNonNegativeInteger(requirement.estimatedTokens) : 0;
+  assertMaxTokensForAction(action, estimatedTokens);
+  const required = Math.max(
+    1,
+    Math.floor(
+      typeof requirement === "number"
+        ? requirement
+        : requirement?.creditsRequired ?? estimateRequiredCredits(action, { estimatedTokens })
+    )
+  );
   const balance = await getTokenBalance(userId);
   if (balance - required < AI_CREDIT_GRACE_LIMIT) {
     throw new AiTokensDepletedError(balance);
@@ -221,7 +286,7 @@ export async function requireAiCredit(
 // ── Central charge function ───────────────────────────────────────────────────
 
 /**
- * chargeUser() — the ONE place to deduct AI tokens.
+ * chargeUser() — the ONE place to deduct AI credits.
  *
  * - Validates the action is known.
  * - Opens a transaction, locks the user row, deducts, inserts ledger.
@@ -258,14 +323,35 @@ export async function chargeUser(
   try {
     await client.query("BEGIN");
 
-    // Lock the row so concurrent requests queue up here
-    const lockResult = await client.query<{ ai_token_balance: number }>(
-      `SELECT ai_token_balance FROM users WHERE id = $1 FOR UPDATE`,
+    // Lock the row so concurrent requests for this user's wallet queue here.
+    const lockResult = await client.query<{ ai_token_balance: number; workspace_id: string | null }>(
+      `SELECT ai_token_balance, workspace_id FROM users WHERE id = $1 FOR UPDATE`,
       [userId]
     );
-    const current = firstRow(lockResult)?.ai_token_balance ?? 0;
+    const lockedUser = firstRow(lockResult);
+    const current = lockedUser?.ai_token_balance ?? 0;
+    const workspaceId = resolvedMetadata.workspaceId ?? lockedUser?.workspace_id ?? null;
+
+    if (referenceId) {
+      const existing = await client.query<{ balance_after: number }>(
+        `SELECT balance_after
+         FROM ai_token_ledger
+         WHERE user_id = $1 AND reference_id = $2
+         LIMIT 1`,
+        [userId, referenceId]
+      );
+      if (firstRow(existing)) {
+        await client.query("COMMIT");
+        return { balanceAfter: current };
+      }
+    }
+
+    if (current - cost < AI_CREDIT_GRACE_LIMIT) {
+      await client.query("COMMIT");
+      return { balanceAfter: current };
+    }
+
     const newBalance = current - cost;
-    const workspaceId = resolvedMetadata.workspaceId ?? (await getWorkspaceIdForUser(userId));
 
     await client.query(
       `UPDATE users SET ai_token_balance = $1 WHERE id = $2`,
@@ -474,7 +560,7 @@ export async function creditSignupTokens(userId: string): Promise<void> {
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
 /**
- * Token status summary for the AI Wallet page.
+ * AI credit status summary for the AI Credits page.
  */
 export async function getTokenStatus(userId: string, planCode: string): Promise<{
   balance: number;
@@ -495,7 +581,7 @@ export async function getTokenStatus(userId: string, planCode: string): Promise<
 }
 
 /**
- * Paginated ledger for the AI Wallet page (most recent first).
+ * Paginated AI credit ledger for the AI Credits page (most recent first).
  */
 export async function getTokenLedger(
   userId: string,
@@ -523,14 +609,16 @@ export async function getTokenLedger(
 
 /**
  * Usage grouped by action type for the last N days (debits only).
+ * tokens_used is kept as a compatibility alias for older clients; values are AI credits.
  */
 export async function getTokenUsageByAction(
   userId: string,
   days = 30
-): Promise<Array<{ action_type: string; tokens_used: number; calls: number }>> {
+): Promise<Array<{ action_type: string; credits_used: number; tokens_used: number; calls: number }>> {
   const result = await pool.query(
     `SELECT
        action_type,
+       ABS(SUM(amount))::int AS credits_used,
        ABS(SUM(amount))::int AS tokens_used,
        COUNT(*)::int         AS calls
      FROM ai_token_ledger
@@ -538,23 +626,25 @@ export async function getTokenUsageByAction(
        AND amount < 0
        AND created_at >= NOW() - ($2 || ' days')::interval
      GROUP BY action_type
-     ORDER BY tokens_used DESC`,
+     ORDER BY credits_used DESC`,
     [userId, days]
   );
   return result.rows;
 }
 
 /**
- * Daily token burn for the last N days — use this to build usage charts.
+ * Daily AI credit burn for the last N days.
+ * tokens_used is kept as a compatibility alias for older clients; values are AI credits.
  * Returns one row per day; days with zero usage are omitted.
  */
 export async function getTokenUsageByDay(
   userId: string,
   days = 30
-): Promise<Array<{ day: string; tokens_used: number; calls: number }>> {
+): Promise<Array<{ day: string; credits_used: number; tokens_used: number; calls: number }>> {
   const result = await pool.query(
     `SELECT
        DATE_TRUNC('day', created_at)::date::text AS day,
+       ABS(SUM(amount))::int                     AS credits_used,
        ABS(SUM(amount))::int                     AS tokens_used,
        COUNT(*)::int                             AS calls
      FROM ai_token_ledger

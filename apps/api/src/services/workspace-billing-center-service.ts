@@ -86,11 +86,13 @@ interface WorkspaceBillingOverviewRow {
   plan_name: string | null;
   plan_price_monthly: number | null;
   plan_monthly_credits: number | null;
+  plan_ai_tokens_monthly: number | null;
   subscription_status: string | null;
   next_billing_date: string | null;
   total_credits: number | null;
   used_credits: number | null;
   remaining_credits: number | null;
+  ai_token_balance: number | null;
   auto_enabled: boolean | null;
   auto_threshold_credits: number | null;
   auto_recharge_credits: number | null;
@@ -170,6 +172,12 @@ export interface WorkspaceBillingOverview {
     total: number;
     used: number;
     remaining: number;
+  };
+  aiCredits: {
+    monthly: number;
+    remaining: number;
+    low: boolean;
+    lowCreditMessage: string | null;
   };
   autoRecharge: {
     enabled: boolean;
@@ -367,6 +375,14 @@ const AI_RECHARGE_PACKS: Record<number, number> = {
   260: 99_900,
   600: 199_900
 };
+
+export const AI_RECHARGE_PACK_CREDITS = Object.freeze(
+  Object.keys(AI_RECHARGE_PACKS).map((value) => Number(value)).sort((a, b) => a - b)
+);
+
+export function isStandardAIRechargePack(credits: number): boolean {
+  return Object.prototype.hasOwnProperty.call(AI_RECHARGE_PACKS, Math.floor(Number(credits)));
+}
 
 function getGstRatePercent(): number {
   const value = Number(env.BILLING_GST_RATE_PERCENT);
@@ -655,11 +671,13 @@ async function getWorkspaceBillingOverviewByWorkspaceId(workspaceId: string): Pr
        p.name AS plan_name,
        p.price_monthly AS plan_price_monthly,
        p.monthly_credits AS plan_monthly_credits,
+       p.ai_tokens_monthly AS plan_ai_tokens_monthly,
        s.status AS subscription_status,
        s.next_billing_date,
        cw.total_credits,
        cw.used_credits,
        cw.remaining_credits,
+       u.ai_token_balance,
        ars.enabled AS auto_enabled,
        ars.threshold_credits AS auto_threshold_credits,
        ars.recharge_credits AS auto_recharge_credits,
@@ -668,6 +686,7 @@ async function getWorkspaceBillingOverviewByWorkspaceId(workspaceId: string): Pr
        ars.last_status AS auto_last_status,
        ars.failure_count AS auto_failure_count
      FROM workspaces w
+     JOIN users u ON u.id = w.owner_id
      LEFT JOIN plans p ON p.id = w.plan_id
      LEFT JOIN subscriptions s ON s.workspace_id = w.id
      LEFT JOIN credit_wallet cw ON cw.workspace_id = w.id
@@ -827,6 +846,21 @@ async function applyRechargeCreditsInTransaction(input: {
     return;
   }
 
+  const workspaceResult = await input.client.query<{ owner_id: string; ai_token_balance: number }>(
+    `SELECT w.owner_id, u.ai_token_balance
+     FROM workspaces w
+     JOIN users u ON u.id = w.owner_id
+     WHERE w.id = $1
+     LIMIT 1
+     FOR UPDATE OF u`,
+    [input.workspaceId]
+  );
+  const workspace = workspaceResult.rows[0];
+  if (!workspace) {
+    throw new Error("Workspace owner not found");
+  }
+  const nextAiBalance = toNonNegativeInteger(workspace.ai_token_balance, 0) + credits;
+
   await input.client.query(
     `INSERT INTO credit_wallet (
        workspace_id,
@@ -842,11 +876,39 @@ async function applyRechargeCreditsInTransaction(input: {
        updated_at = NOW()`,
     [input.workspaceId, credits]
   );
+
+  await input.client.query(
+    `UPDATE users
+     SET ai_token_balance = $2
+     WHERE id = $1`,
+    [workspace.owner_id, nextAiBalance]
+  );
+
+  await input.client.query(
+    `INSERT INTO ai_token_ledger (
+       user_id,
+       workspace_id,
+       amount,
+       action_type,
+       module,
+       reference_id,
+       balance_after,
+       credits_deducted,
+       status
+     )
+     VALUES ($1, $2, $3, 'recharge_purchase', 'billing', $4, $5, 0, 'credit')
+     ON CONFLICT (user_id, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+    [workspace.owner_id, input.workspaceId, credits, `ai-${input.referenceId}`, nextAiBalance]
+  );
 }
 
 export async function getWorkspaceBillingOverview(userId: string): Promise<WorkspaceBillingOverview> {
   const workspaceId = await getWorkspaceIdByUserId(userId);
   const row = await getWorkspaceBillingOverviewByWorkspaceId(workspaceId);
+  const monthlyAiCredits = toNonNegativeInteger(row.plan_ai_tokens_monthly ?? row.plan_monthly_credits, 0);
+  const remainingAiCredits = toNonNegativeInteger(row.ai_token_balance, 0);
+  const aiLowCredit =
+    monthlyAiCredits > 0 && remainingAiCredits / monthlyAiCredits < 0.1;
   return {
     workspaceId: row.workspace_id,
     workspaceName: row.workspace_name,
@@ -864,6 +926,14 @@ export async function getWorkspaceBillingOverview(userId: string): Promise<Works
       total: toNonNegativeInteger(row.total_credits, 0),
       used: toNonNegativeInteger(row.used_credits, 0),
       remaining: toNonNegativeInteger(row.remaining_credits, 0)
+    },
+    aiCredits: {
+      monthly: monthlyAiCredits,
+      remaining: remainingAiCredits,
+      low: aiLowCredit,
+      lowCreditMessage: aiLowCredit
+        ? `Only ${remainingAiCredits} AI credits left. Recharge or upgrade to keep automation running.`
+        : null
     },
     autoRecharge: {
       enabled: Boolean(row.auto_enabled),
@@ -1275,7 +1345,10 @@ export async function upsertWorkspaceBillingProfile(
 
 export function computeRechargePriceForCredits(creditsInput: number): RechargeOrderPriceBreakdown & { credits: number } {
   const credits = toPositiveInteger(creditsInput);
-  const totalPaise = AI_RECHARGE_PACKS[credits] ?? Math.max(100, Math.round(credits * getPricePerCreditPaise()));
+  const totalPaise = AI_RECHARGE_PACKS[credits];
+  if (!totalPaise) {
+    throw new Error(`Invalid AI recharge pack. Choose one of: ${AI_RECHARGE_PACK_CREDITS.join(", ")} credits.`);
+  }
   const taxBreakdown = computeTaxBreakdown(totalPaise, getGstRatePercent());
   return {
     credits,
@@ -1709,6 +1782,9 @@ export async function upsertAutoRechargeSettings(
 
   if (enabled && (!gatewayCustomerId || !gatewayTokenId)) {
     throw new Error("gatewayCustomerId and gatewayTokenId are required when auto-recharge is enabled");
+  }
+  if (!isStandardAIRechargePack(rechargeCredits)) {
+    throw new Error(`Invalid AI recharge pack. Choose one of: ${AI_RECHARGE_PACK_CREDITS.join(", ")} credits.`);
   }
 
   const result = await pool.query<AutoRechargeSettingsRow>(

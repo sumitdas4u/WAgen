@@ -714,12 +714,14 @@ export interface AiLedgerRow {
 
 export interface AiUsageByAction {
   action_type: string;
+  credits_used?: number;
   tokens_used: number;
   calls: number;
 }
 
 export interface AiUsageByDay {
   day: string;
+  credits_used?: number;
   tokens_used: number;
   calls: number;
 }
@@ -891,6 +893,12 @@ export interface WorkspaceBillingOverview {
     total: number;
     used: number;
     remaining: number;
+  };
+  aiCredits?: {
+    monthly: number;
+    remaining: number;
+    low: boolean;
+    lowCreditMessage: string | null;
   };
   autoRecharge: {
     enabled: boolean;

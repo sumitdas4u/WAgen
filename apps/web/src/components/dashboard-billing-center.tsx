@@ -33,6 +33,13 @@ declare global {
 
 type BillingSubTab = "usage" | "transactions" | "billing";
 
+const AI_RECHARGE_PACK_PRICES: Record<number, number> = {
+  120: 49_900,
+  260: 99_900,
+  600: 199_900
+};
+const AI_RECHARGE_PACKS = Object.keys(AI_RECHARGE_PACK_PRICES).map(Number);
+
 interface DashboardBillingCenterProps {
   token: string;
   onCreditsRefresh?: () => Promise<void> | void;
@@ -194,8 +201,11 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
   }, [loadTransactions, transactionsType]);
 
   const lowCreditWarning = useMemo(() => {
-    const total = overview?.credits.total ?? 0;
-    const remaining = overview?.credits.remaining ?? 0;
+    if (overview?.aiCredits?.lowCreditMessage) {
+      return overview.aiCredits.lowCreditMessage;
+    }
+    const total = overview?.aiCredits?.monthly ?? overview?.credits.total ?? 0;
+    const remaining = overview?.aiCredits?.remaining ?? overview?.credits.remaining ?? 0;
     if (total <= 0) {
       return null;
     }
@@ -207,13 +217,15 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
   }, [overview]);
 
   const rechargeBreakdown = useMemo(() => {
-    const credits = Math.max(1, Math.floor(Number(rechargeCredits) || 0));
-    const unitPaise = 500;
-    const totalPaise = Math.max(100, Math.round(credits * unitPaise));
+    const requestedCredits = Math.floor(Number(rechargeCredits) || 0);
+    const credits = AI_RECHARGE_PACK_PRICES[requestedCredits] ? requestedCredits : 120;
+    const totalPaise = AI_RECHARGE_PACK_PRICES[credits] ?? AI_RECHARGE_PACK_PRICES[120]!;
     const taxablePaise = Math.round(totalPaise / 1.18);
     const gstPaise = totalPaise - taxablePaise;
     return { credits, totalPaise, taxablePaise, gstPaise };
   }, [rechargeCredits]);
+  const monthlyAiCredits = overview?.aiCredits?.monthly ?? overview?.credits.total ?? 0;
+  const remainingAiCredits = overview?.aiCredits?.remaining ?? overview?.credits.remaining ?? 0;
 
   const handleRecharge = async () => {
     setRechargeLoading(true);
@@ -365,7 +377,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
       <article className="billing-center-summary">
         <div>
           <p className="billing-kicker">Credit Balance</p>
-          <h2>{overview ? `${overview.credits.remaining} / ${overview.credits.total}` : "-- / --"}</h2>
+          <h2>{overview ? `${remainingAiCredits} / ${monthlyAiCredits}` : "-- / --"}</h2>
           <p className="tiny-note">
             Plan: {overview?.plan.name ?? "-"} | Next renewal: {formatDateTime(overview?.subscription.nextBillingDate ?? null)}
           </p>
@@ -386,7 +398,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
         <div className="billing-recharge-header">
           <strong>Choose Recharge Amount</strong>
           <div className="billing-recharge-presets">
-            {[120, 260, 600].map((credits) => (
+            {AI_RECHARGE_PACKS.map((credits) => (
               <button key={credits} type="button" onClick={() => setRechargeCredits(String(credits))}>
                 {credits.toLocaleString()} credits
               </button>
@@ -395,14 +407,15 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
         </div>
         <div className="billing-recharge-row">
           <label>
-            Credits
-            <input
-              type="number"
-              min={1}
-              placeholder="120 / 260 / 600"
+            AI recharge pack
+            <select
               value={rechargeCredits}
               onChange={(event) => setRechargeCredits(event.target.value)}
-            />
+            >
+              {AI_RECHARGE_PACKS.map((credits) => (
+                <option key={credits} value={credits}>{credits.toLocaleString()} AI credits</option>
+              ))}
+            </select>
           </label>
           <div className="billing-recharge-meta">
             <small>Taxable: {formatInrFromPaise(rechargeBreakdown.taxablePaise)}</small>
