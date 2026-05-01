@@ -1,9 +1,9 @@
-import { NavLink } from "react-router-dom";
 import type { PropsWithChildren } from "react";
 import type { DashboardModuleDefinition } from "../../shared/dashboard/module-contracts";
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import type { DashboardBootstrapResponse } from "../../shared/dashboard/contracts";
 import type { PlanEntitlements } from "../../lib/api";
+import { ModuleNoPermission } from "../../components/module-no-permission";
 
 const PLAN_ORDER: Record<PlanEntitlements["planCode"], number> = {
   trial: 0,
@@ -68,77 +68,22 @@ export function isDashboardModuleAccessible(
   );
 }
 
-function ModuleMessage({
-  title,
-  body,
-  ctaLabel,
-  ctaTo
-}: {
-  title: string;
-  body: string;
-  ctaLabel?: string;
-  ctaTo?: string;
-}) {
-  return (
-    <section className="finance-shell">
-      <article className="finance-panel">
-        <h2>{title}</h2>
-        <p>{body}</p>
-        {ctaLabel && ctaTo ? (
-          <div className="clone-hero-actions">
-            <NavLink className="primary-btn" to={ctaTo}>
-              {ctaLabel}
-            </NavLink>
-          </div>
-        ) : null}
-      </article>
-    </section>
-  );
-}
-
 export function DashboardModuleGuard({
   definition,
   children
 }: PropsWithChildren<{ definition: DashboardModuleDefinition }>) {
   const { bootstrap } = useDashboardShell();
-  const featureFlags = bootstrap?.featureFlags ?? {};
-  const flagEnabled = definition.featureFlag ? featureFlags[definition.featureFlag] !== false : true;
 
-  if (!flagEnabled) {
-    return (
-      <ModuleMessage
-        title="Module unavailable"
-        body="This module is currently disabled by feature flags for this environment."
-      />
-    );
+  // Bootstrap still loading — render children immediately, no wait
+  if (!bootstrap) {
+    return <>{children}</>;
   }
 
-  if (!bootstrap && requiresKnownEntitlements(definition)) {
-    return (
-      <div style={{ position: "relative", minHeight: "100%" }}>
-        <div style={{
-          position: "absolute",
-          top: 0, left: 0, right: 0,
-          height: 3,
-          background: "linear-gradient(90deg, #6366f1 0%, #a78bfa 50%, #6366f1 100%)",
-          backgroundSize: "200% 100%",
-          animation: "progressFlow 1.4s linear infinite",
-          zIndex: 10
-        }} />
-      </div>
-    );
+  // Bootstrap loaded and access confirmed — render page
+  if (isDashboardModuleAccessible(definition, bootstrap)) {
+    return <>{children}</>;
   }
 
-  if (!isDashboardModuleAccessible(definition, bootstrap)) {
-    return (
-      <ModuleMessage
-        title="Upgrade required"
-        body="Your current subscription does not include this module. Upgrade your plan to unlock access."
-        ctaLabel="Open billing"
-        ctaTo="/dashboard/billing"
-      />
-    );
-  }
-
-  return <>{children}</>;
+  // Bootstrap loaded and access denied — show single reusable placeholder
+  return <ModuleNoPermission />;
 }

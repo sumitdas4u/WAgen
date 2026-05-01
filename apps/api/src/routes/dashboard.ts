@@ -9,6 +9,13 @@ import { whatsappSessionManager } from "../services/whatsapp-session-manager.js"
 import { getMetaBusinessStatus } from "../services/meta-whatsapp-service.js";
 import { getWorkspaceCreditsByUserId } from "../services/workspace-billing-service.js";
 import { getAgentProfileSummary } from "../services/agent-profile-service.js";
+import { InMemoryCache } from "../utils/cache.js";
+
+const bootstrapCache = new InMemoryCache<object>(20_000);
+
+export function invalidateBootstrapCache(userId: string): void {
+  bootstrapCache.delete(userId);
+}
 
 const UsageQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(120).optional(),
@@ -46,20 +53,24 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
     "/api/dashboard/bootstrap",
     { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
-      const user = await getUserById(request.authUser.userId);
+      const userId = request.authUser.userId;
+      const cached = bootstrapCache.get(userId);
+      if (cached) return cached;
+
+      const user = await getUserById(userId);
       if (!user) {
         return reply.status(404).send({ error: "User not found" });
       }
 
       const [planEntitlements, credits, whatsapp, metaApi, agentSummary] = await Promise.all([
-        getUserPlanEntitlements(request.authUser.userId),
-        getWorkspaceCreditsByUserId(request.authUser.userId),
-        whatsappSessionManager.getStatus(request.authUser.userId),
-        getMetaBusinessStatus(request.authUser.userId),
-        getAgentProfileSummary(request.authUser.userId)
+        getUserPlanEntitlements(userId),
+        getWorkspaceCreditsByUserId(userId),
+        whatsappSessionManager.getStatus(userId),
+        getMetaBusinessStatus(userId),
+        getAgentProfileSummary(userId)
       ]);
 
-      return {
+      const response = {
         userSummary: {
           id: user.id,
           name: user.name,
@@ -93,6 +104,9 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
           anyConnected: user.ai_active || whatsapp.status === "connected" || metaApi.connected
         }
       };
+
+      bootstrapCache.set(userId, response);
+      return response;
     }
   );
 

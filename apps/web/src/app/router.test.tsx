@@ -358,7 +358,7 @@ describe("dashboard router", () => {
       })
     );
 
-    expect(await screen.findByText("Module unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Upgrade your plan")).toBeInTheDocument();
     expect(screen.queryByText("Test module")).not.toBeInTheDocument();
   });
 

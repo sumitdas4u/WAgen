@@ -131,7 +131,7 @@ describe("DashboardModuleGuard", () => {
   it("renders an upgrade-required state for plan-restricted modules", () => {
     renderGuard(makeDefinition({ requiredPlan: "pro" }));
     // starter < pro → blocked
-    expect(screen.getByText("Upgrade required")).toBeInTheDocument();
+    expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open billing" })).toHaveAttribute("href", "/dashboard/billing");
     expect(screen.queryByText("Module content")).not.toBeInTheDocument();
   });
@@ -142,7 +142,7 @@ describe("DashboardModuleGuard", () => {
       { planEntitlements: { planCode: "starter", maxApiNumbers: 1, maxAgentProfiles: 1, prioritySupport: false } }
     );
     expect(screen.getByText("Module content")).toBeInTheDocument();
-    expect(screen.queryByText("Upgrade required")).not.toBeInTheDocument();
+    expect(screen.queryByText("Upgrade your plan")).not.toBeInTheDocument();
   });
 
   it("renders content when current plan exceeds the required plan", () => {
@@ -163,7 +163,7 @@ describe("DashboardModuleGuard", () => {
       makeDefinition({ requiredPlan: "pro" }),
       { planEntitlements: { planCode: "trial", maxApiNumbers: 0, maxAgentProfiles: 0, prioritySupport: false } }
     );
-    expect(screen.getByText("Upgrade required")).toBeInTheDocument();
+    expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
   });
 
   it("allows business plan on any plan-gated module", () => {
@@ -181,7 +181,7 @@ describe("DashboardModuleGuard", () => {
       makeDefinition({ featureFlag: "dashboard.some.feature" }),
       { featureFlags: { "dashboard.some.feature": false } }
     );
-    expect(screen.getByText("Module unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
     expect(screen.queryByText("Module content")).not.toBeInTheDocument();
   });
 
@@ -205,7 +205,7 @@ describe("DashboardModuleGuard", () => {
       makeDefinition({ requiredEntitlements: { maxApiNumbers: 3 } }),
       { planEntitlements: { planCode: "starter", maxApiNumbers: 1, maxAgentProfiles: 1, prioritySupport: false } }
     );
-    expect(screen.getByText("Upgrade required")).toBeInTheDocument();
+    expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
     expect(screen.queryByText("Module content")).not.toBeInTheDocument();
   });
 
@@ -222,7 +222,7 @@ describe("DashboardModuleGuard", () => {
       makeDefinition({ requiredEntitlements: { maxAgentProfiles: 5 } }),
       { planEntitlements: { planCode: "starter", maxApiNumbers: 1, maxAgentProfiles: 1, prioritySupport: false } }
     );
-    expect(screen.getByText("Upgrade required")).toBeInTheDocument();
+    expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
   });
 
   it("allows module when maxAgentProfiles entitlement is met", () => {
@@ -238,7 +238,7 @@ describe("DashboardModuleGuard", () => {
       makeDefinition({ requiredEntitlements: { prioritySupport: true } }),
       { planEntitlements: { planCode: "pro", maxApiNumbers: 2, maxAgentProfiles: 3, prioritySupport: false } }
     );
-    expect(screen.getByText("Upgrade required")).toBeInTheDocument();
+    expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
   });
 
   it("allows module when prioritySupport entitlement is met", () => {
@@ -254,7 +254,7 @@ describe("DashboardModuleGuard", () => {
       makeDefinition({ requiredEntitlements: { maxApiNumbers: 3, prioritySupport: true } }),
       { planEntitlements: { planCode: "pro", maxApiNumbers: 3, maxAgentProfiles: 3, prioritySupport: false } }
     );
-    expect(screen.getByText("Upgrade required")).toBeInTheDocument();
+    expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
   });
 
   it("allows when all multiple entitlements are met", () => {
@@ -285,6 +285,6 @@ describe("DashboardModuleGuard", () => {
       </MemoryRouter>
     );
     expect(screen.queryByText("Checking access")).not.toBeInTheDocument();
-    expect(screen.queryByText("Module content")).not.toBeInTheDocument();
+    expect(screen.getByText("Module content")).toBeInTheDocument();
   });
 });

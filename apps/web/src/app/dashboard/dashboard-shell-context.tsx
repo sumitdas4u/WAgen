@@ -25,7 +25,9 @@ export function DashboardShellDataProvider({ children }: PropsWithChildren) {
 
   const bootstrapQuery = useQuery({
     queryKey: dashboardQueryKeys.bootstrap,
-    queryFn: () => fetchDashboardBootstrap(token)
+    queryFn: () => fetchDashboardBootstrap(token),
+    staleTime: 30_000,
+    gcTime: 5 * 60_000
   });
 
   const value = useMemo<DashboardShellContextValue>(
