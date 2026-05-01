@@ -194,7 +194,7 @@ export function Component() {
 
   useEffect(() => {
     loadWallet();
-  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const planCode = status?.planCode ?? "trial";
   const pillClass = `acc-plan-pill plan-${planCode}`;
