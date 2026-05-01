@@ -53,6 +53,7 @@ export const dashboardQueryKeys = {
   analyticsRoot: dashboardAnalyticsRoot,
   broadcastRoot: dashboardBroadcastRoot,
   broadcasts: [...dashboardBroadcastRoot, "list"] as const,
+  broadcastDailyCap: (connectionId: string) => [...dashboardBroadcastRoot, "daily-cap", connectionId] as const,
   broadcastSummary: [...dashboardBroadcastRoot, "summary"] as const,
   broadcastReport: (campaignId: string, status: string, page: number) =>
     [...dashboardBroadcastRoot, "report", campaignId, status, page] as const,

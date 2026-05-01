@@ -10,6 +10,7 @@ import {
   listMetaBusinessConnections,
   getMetaBusinessStatus,
   handleMetaWebhookPayload,
+  requireMetaConnection,
   sendMetaMessage,
   setMetaBusinessChannelEnabled,
   sendMetaTextMessage,
@@ -17,8 +18,8 @@ import {
   uploadMetaBusinessProfileLogo,
   verifyMetaWebhookSignature
 } from "../services/meta-whatsapp-service.js";
+import { checkConnectionDailyCap } from "../services/message-delivery-service.js";
 import { validateFlowMessagePayload } from "../services/outbound-message-types.js";
-import { buildPlanModulePreHandler } from "../services/plan-entitlement-service.js";
 import { applyTemplateWebhookUpdate } from "../services/template-service.js";
 import { readFile } from "node:fs/promises";
 
@@ -111,11 +112,9 @@ async function handleWebhookVerificationRequest(request: import("fastify").Fasti
 }
 
 export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
-  const requireApiChannel = buildPlanModulePreHandler("apiChannel");
-
   fastify.get(
     "/api/meta/business/config",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async () => {
       return getMetaBusinessConfig();
     }
@@ -123,7 +122,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.get(
     "/api/meta/business/status",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request) => {
       const query = request.query as Record<string, string | undefined>;
       const forceRefreshRaw = (query.forceRefresh ?? "").toLowerCase();
@@ -134,7 +133,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.get(
     "/api/meta/business/connections",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request) => {
       const query = request.query as Record<string, string | undefined>;
       const forceRefreshRaw = (query.forceRefresh ?? "").toLowerCase();
@@ -149,7 +148,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/meta/business/complete",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       if (!consumeRateLimit(`meta-complete:${request.authUser.userId}`, 20)) {
         return reply.status(429).send({ error: "Rate limit exceeded. Try again in a minute." });
@@ -167,7 +166,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/meta/business/disconnect",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       const parsed = DisconnectSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -184,7 +183,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/meta/business/channel",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       const parsed = ChannelStatusSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -207,7 +206,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.get(
     "/api/meta/business/profile",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       const parsed = BusinessProfileQuerySchema.safeParse(request.query ?? {});
       if (!parsed.success) {
@@ -221,7 +220,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/meta/business/profile",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       const parsed = BusinessProfileUpdateSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -245,7 +244,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/meta/business/profile/logo",
-    { preHandler: [fastify.requireAuth, requireApiChannel], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request: import("fastify").FastifyRequest, reply) => {
       const parsed = BusinessProfileQuerySchema.safeParse(request.query ?? {});
       if (!parsed.success) {
@@ -284,9 +283,30 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  fastify.get(
+    "/api/meta/business/daily-cap",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const query = request.query as Record<string, string | undefined>;
+      const connectionId = query.connectionId?.trim();
+      if (!connectionId) {
+        return reply.status(400).send({ error: "connectionId is required" });
+      }
+
+      await requireMetaConnection(request.authUser.userId, connectionId, { allowDisconnected: true });
+      const result = await checkConnectionDailyCap(connectionId);
+      return {
+        sentToday: result.sentToday,
+        cap: result.cap,
+        remaining: Math.max(0, result.cap - result.sentToday),
+        exceeded: result.exceeded
+      };
+    }
+  );
+
   fastify.post(
     "/api/meta/business/send-text",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       if (!consumeRateLimit(`meta-send:${request.authUser.userId}`, 60)) {
         return reply.status(429).send({ error: "Rate limit exceeded. Try again in a minute." });
@@ -311,7 +331,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post(
     "/api/meta/business/send-message",
-    { preHandler: [fastify.requireAuth, requireApiChannel] },
+    { preHandler: [fastify.requireAuth] },
     async (request, reply) => {
       if (!consumeRateLimit(`meta-send:${request.authUser.userId}`, 60)) {
         return reply.status(429).send({ error: "Rate limit exceeded. Try again in a minute." });

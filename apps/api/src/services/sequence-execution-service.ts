@@ -8,7 +8,7 @@ import {
 } from "./message-delivery-data-service.js";
 import { getContactByPhoneForUser, markContactTemplateOutboundActivity } from "./contacts-service.js";
 import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
-import { evaluateOutboundTemplatePolicy, summarizeOutboundPolicyReasons } from "./outbound-policy-service.js";
+import { evaluateOutboundTemplatePolicy, recordFrequencyCapSend, summarizeOutboundPolicyReasons } from "./outbound-policy-service.js";
 import { queueSequenceOutboundMessage } from "./outbound-message-service.js";
 import { evaluateSequenceConditions } from "./sequence-condition-service.js";
 import { appendSequenceLog } from "./sequence-log-service.js";
@@ -424,6 +424,7 @@ export async function executeSequenceOutboundMessage(input: {
     const policy = await evaluateOutboundTemplatePolicy({
       userId: contact.user_id,
       phoneNumber: contact.phone_number,
+      templateId: step.message_template_id,
       category: template.category,
       contact: freshContact,
       marketingEnabled: true
@@ -445,6 +446,37 @@ export async function executeSequenceOutboundMessage(input: {
       await clearSequenceEnrollmentQueueState(enrollment.id);
       return { status: "failed", errorMessage: policyMessage };
     }
+
+    // Frequency cap routing — reroute, never drop
+    let activeTemplateId = step.message_template_id;
+    let activeTemplate = template;
+    if (policy.frequencyCapDecision.action === "variant") {
+      activeTemplateId = policy.frequencyCapDecision.variantTemplateId;
+      activeTemplate = await getMessageTemplate(contact.user_id, activeTemplateId);
+    } else if (policy.frequencyCapDecision.action === "delay") {
+      const delayUntil = policy.frequencyCapDecision.delayUntil;
+      const capMessage = `24h marketing frequency cap reached. Scheduled to retry at ${delayUntil}.`;
+      await updateSequenceEnrollment(enrollment.id, {
+        status: "active",
+        nextRunAt: delayUntil,
+        lastExecutedAt: now.toISOString(),
+        lastDeliveryStatus: "failed"
+      });
+      await appendSequenceLog({
+        enrollmentId: enrollment.id,
+        sequenceId: sequence.id,
+        stepId: step.id,
+        status: "skipped",
+        errorMessage: capMessage
+      });
+      await enqueueSequenceEnrollment({ enrollmentId: enrollment.id, nextRunAt: delayUntil, kind: "run" });
+      return { status: "retrying", errorMessage: capMessage };
+    }
+
+    // Update delivery tracking vars in case we swapped to a variant template
+    deliveryConnectionId = activeTemplate.connectionId ?? null;
+    deliveryLinkedNumber = activeTemplate.linkedNumber ?? null;
+    deliveryPhoneNumberId = activeTemplate.phoneNumberId ?? null;
 
     if (template.connectionId) {
       const dailyCap = await checkConnectionDailyCap(template.connectionId);
@@ -495,21 +527,21 @@ export async function executeSequenceOutboundMessage(input: {
     const attempt = await recordDeliveryAttemptStart({
       userId: contact.user_id,
       phoneNumber: contact.phone_number,
-      connectionId: template.connectionId,
-      linkedNumber: template.linkedNumber,
-      phoneNumberId: template.phoneNumberId,
+      connectionId: activeTemplate.connectionId,
+      linkedNumber: activeTemplate.linkedNumber,
+      phoneNumberId: activeTemplate.phoneNumberId,
       messageKind: "sequence_template",
       attemptNumber: enrollment.retry_count + 1,
       payload: {
-        templateId: template.id,
-        templateName: template.name,
-        language: template.language
+        templateId: activeTemplate.id,
+        templateName: activeTemplate.name,
+        language: activeTemplate.language
       }
     });
     deliveryAttemptId = attempt.id;
 
     const sent = await dispatchTemplateMessage(contact.user_id, {
-      templateId: step.message_template_id,
+      templateId: activeTemplateId,
       to: contact.phone_number,
       variableValues
     });
@@ -522,6 +554,9 @@ export async function executeSequenceOutboundMessage(input: {
       linkedNumber: sent.connection.linkedNumber,
       phoneNumberId: sent.connection.phoneNumberId
     });
+    if (freshContact?.id) {
+      await recordFrequencyCapSend(freshContact.id, activeTemplate.id);
+    }
     await markContactTemplateOutboundActivity(contact.user_id, contact.phone_number, template.category);
     const conversation = await getOrCreateConversation(contact.user_id, contact.phone_number, {
       channelType: "api",

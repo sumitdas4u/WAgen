@@ -8,7 +8,9 @@ import {
   formatFlowLocationSummary
 } from "./flow-input-codec.js";
 import { processIncomingMessage } from "./message-router-service.js";
-import { upsertWebhookContact } from "./contacts-service.js";
+import { getContactByPhoneForUser, upsertWebhookContact } from "./contacts-service.js";
+import { findSuppressedRecipients } from "./message-delivery-data-service.js";
+import { evaluateHardBlocks } from "./outbound-policy-service.js";
 import { getUserPlanEntitlements } from "./billing-service.js";
 import {
   adaptPayloadForChannel,
@@ -2577,6 +2579,22 @@ export async function sendMetaTextMessage(input: {
   phoneNumberId?: string;
   webhookUrl?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection }> {
+  const normalizedTo = input.to.replace(/\D/g, "");
+  const [contact, suppressionMap] = await Promise.all([
+    getContactByPhoneForUser(input.userId, normalizedTo),
+    findSuppressedRecipients(input.userId, [normalizedTo])
+  ]);
+  const suppression = suppressionMap.get(normalizedTo) ?? null;
+  const hardBlocks = evaluateHardBlocks({
+    category: "UTILITY",
+    suppression,
+    globalOptOut: !!contact?.global_opt_out_at,
+    marketingEnabled: true
+  });
+  if (hardBlocks.codes.length > 0) {
+    throw new Error(`Message blocked: ${hardBlocks.codes.join(", ")}`);
+  }
+
   const sent = await sendMetaTextDirect(input);
   const conversation = await getOrCreateConversation(input.userId, sent.to, {
     channelType: "api",
@@ -3132,6 +3150,22 @@ export async function sendMetaMessage(input: {
   phoneNumberId?: string;
   webhookUrl?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection; summaryText: string }> {
+  const normalizedTo = input.to.replace(/\D/g, "");
+  const [contact, suppressionMap] = await Promise.all([
+    getContactByPhoneForUser(input.userId, normalizedTo),
+    findSuppressedRecipients(input.userId, [normalizedTo])
+  ]);
+  const suppression = suppressionMap.get(normalizedTo) ?? null;
+  const hardBlocks = evaluateHardBlocks({
+    category: "UTILITY",
+    suppression,
+    globalOptOut: !!contact?.global_opt_out_at,
+    marketingEnabled: true
+  });
+  if (hardBlocks.codes.length > 0) {
+    throw new Error(`Message blocked: ${hardBlocks.codes.join(", ")}`);
+  }
+
   const sent = await sendMetaFlowMessageDirect(input);
   const conversation = await getOrCreateConversation(input.userId, sent.to, {
     channelType: "api",

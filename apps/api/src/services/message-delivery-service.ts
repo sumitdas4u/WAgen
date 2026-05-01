@@ -38,7 +38,9 @@ import {
 } from "./message-delivery-data-service.js";
 import { sendMetaFlowMessageDirect } from "./meta-whatsapp-service.js";
 import {
+  evaluateHardBlocks,
   evaluateOutboundTemplatePolicy,
+  recordFrequencyCapSend,
   summarizeOutboundPolicyReasons
 } from "./outbound-policy-service.js";
 import type { FlowMessagePayload } from "./outbound-message-types.js";
@@ -188,6 +190,25 @@ export async function sendTrackedApiConversationFlowMessage(input: {
   };
 }): Promise<{ messageId: string | null }> {
   const lastInboundContact = await getContactByPhoneForUser(input.userId, input.conversation.phone_number);
+
+  // Hard blocks apply to freeform sends too (opt-out, suppression)
+  const { findSuppressedRecipients } = await import("./message-delivery-data-service.js");
+  const normalizedPhone = input.conversation.phone_number.replace(/\D/g, "");
+  const suppression = normalizedPhone
+    ? (await findSuppressedRecipients(input.userId, [normalizedPhone])).get(normalizedPhone) ?? null
+    : null;
+  const hardBlocks = evaluateHardBlocks({
+    category: "UTILITY", // freeform is non-MARKETING — only opt-out/blocked suppression applies
+    suppression,
+    globalOptOut: !!lastInboundContact?.global_opt_out_at,
+    marketingEnabled: true
+  });
+  if (hardBlocks.codes.length > 0) {
+    throw new Error(hardBlocks.codes.includes("global_opt_out")
+      ? "Contact has opted out of business messaging."
+      : "Recipient is suppressed and cannot receive messages.");
+  }
+
   const lastInboundAt = lastInboundContact?.last_incoming_message_at
     ? Date.parse(lastInboundContact.last_incoming_message_at)
     : Number.NaN;
@@ -301,6 +322,7 @@ export async function deliverConversationTemplateMessage(input: {
   const policy = await evaluateOutboundTemplatePolicy({
     userId: input.userId,
     phoneNumber: conversation.phone_number,
+    templateId: template.id,
     category: template.category,
     contact,
     marketingEnabled: true
@@ -309,10 +331,25 @@ export async function deliverConversationTemplateMessage(input: {
     throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
   }
 
-  if (template.connectionId) {
-    const dailyCap = await checkConnectionDailyCap(template.connectionId);
+  // Frequency cap — reroute, never drop
+  let activeTemplateId = input.templateId;
+  if (policy.frequencyCapDecision.action === "variant") {
+    activeTemplateId = policy.frequencyCapDecision.variantTemplateId;
+  } else if (policy.frequencyCapDecision.action === "delay") {
+    const until = new Date(policy.frequencyCapDecision.delayUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    throw new Error(`This marketing template was already sent to this contact within 24 hours. Next send available at ${until} UTC. No variant template is configured for automatic rerouting.`);
+  }
+
+  const activeTemplate = activeTemplateId !== input.templateId
+    ? await getMessageTemplate(input.userId, activeTemplateId)
+    : template;
+
+  if (activeTemplate.connectionId) {
+    const dailyCap = await checkConnectionDailyCap(activeTemplate.connectionId);
     if (dailyCap.exceeded) {
-      throw new Error(`Daily tier limit (${dailyCap.cap}) reached for this connection.`);
+      const nextReset = new Date();
+      nextReset.setUTCHours(24, 0, 0, 0);
+      throw new Error(`Daily Meta tier limit (${dailyCap.cap}) reached. Limit resets at midnight UTC (${nextReset.toUTCString()}).`);
     }
   }
 
@@ -320,15 +357,15 @@ export async function deliverConversationTemplateMessage(input: {
     userId: input.userId,
     conversationId: conversation.id,
     phoneNumber: conversation.phone_number,
-    connectionId: template.connectionId,
-    linkedNumber: template.linkedNumber,
-    phoneNumberId: template.phoneNumberId,
+    connectionId: activeTemplate.connectionId,
+    linkedNumber: activeTemplate.linkedNumber,
+    phoneNumberId: activeTemplate.phoneNumberId,
     messageKind: "conversation_template",
     attemptNumber: 1,
     payload: {
-      templateId: template.id,
-      templateName: template.name,
-      language: template.language,
+      templateId: activeTemplate.id,
+      templateName: activeTemplate.name,
+      language: activeTemplate.language,
       variableKeys: Object.keys(input.variableValues ?? {})
     }
   });
@@ -336,12 +373,12 @@ export async function deliverConversationTemplateMessage(input: {
   try {
     await waitForRateLimit({
       userId: input.userId,
-      connectionId: template.connectionId,
-      linkedNumber: template.linkedNumber
+      connectionId: activeTemplate.connectionId,
+      linkedNumber: activeTemplate.linkedNumber
     });
 
     const result = await dispatchTemplateMessage(input.userId, {
-      templateId: input.templateId,
+      templateId: activeTemplateId,
       to: conversation.phone_number,
       variableValues: input.variableValues,
       expectedLinkedNumber: conversation.channel_linked_number
@@ -371,6 +408,10 @@ export async function deliverConversationTemplateMessage(input: {
     await markContactTemplateOutboundActivity(input.userId, conversation.phone_number, result.template.category);
     await setConversationManualAndPaused(input.userId, conversation.id);
 
+    if (contact?.id) {
+      await recordFrequencyCapSend(contact.id, activeTemplate.id);
+    }
+
     realtimeHub.broadcast(input.userId, "conversation.updated", {
       conversationId: conversation.id,
       phoneNumber: conversation.phone_number,
@@ -391,12 +432,12 @@ export async function deliverConversationTemplateMessage(input: {
       attemptId: attempt.id,
       userId: input.userId,
       classification,
-      connectionId: template.connectionId,
-      linkedNumber: template.linkedNumber,
-      phoneNumberId: template.phoneNumberId,
+      connectionId: activeTemplate.connectionId,
+      linkedNumber: activeTemplate.linkedNumber,
+      phoneNumberId: activeTemplate.phoneNumberId,
       response: {
-        templateId: template.id,
-        templateName: template.name
+        templateId: activeTemplate.id,
+        templateName: activeTemplate.name
       }
     });
 
@@ -437,6 +478,7 @@ export async function deliverCampaignMessage(input: {
   const policy = await evaluateOutboundTemplatePolicy({
     userId: input.userId,
     phoneNumber: input.message.phone_number,
+    templateId: template.id,
     category: template.category,
     contact,
     marketingEnabled: true,
@@ -447,6 +489,19 @@ export async function deliverCampaignMessage(input: {
     await markCampaignMessageFailed(input.message.id, "POLICY_BLOCK", policyMessage, true);
     return { status: "failed", errorMessage: policyMessage };
   }
+
+  // Frequency cap — reroute, never drop
+  let activeTemplateId = input.campaign.template_id;
+  if (policy.frequencyCapDecision.action === "variant") {
+    activeTemplateId = policy.frequencyCapDecision.variantTemplateId;
+  } else if (policy.frequencyCapDecision.action === "delay") {
+    await deferCampaignMessageToNextDay(input.message.id);
+    return { status: "retrying", errorMessage: `24h marketing frequency cap reached. Deferred to next day.` };
+  }
+
+  const activeTemplate = activeTemplateId !== input.campaign.template_id
+    ? await getMessageTemplate(input.userId, activeTemplateId)
+    : template;
 
   if (input.campaign.connection_id) {
     const dailyCap = await checkConnectionDailyCap(input.campaign.connection_id);
@@ -462,15 +517,15 @@ export async function deliverCampaignMessage(input: {
     campaignMessageId: input.message.id,
     contactId: input.message.contact_id,
     phoneNumber: input.message.phone_number,
-    connectionId: template.connectionId,
-    linkedNumber: template.linkedNumber,
-    phoneNumberId: template.phoneNumberId,
+    connectionId: activeTemplate.connectionId,
+    linkedNumber: activeTemplate.linkedNumber,
+    phoneNumberId: activeTemplate.phoneNumberId,
     messageKind: "campaign_template",
     attemptNumber: input.message.retry_count + 1,
     payload: {
-      templateId: template.id,
-      templateName: template.name,
-      language: template.language,
+      templateId: activeTemplate.id,
+      templateName: activeTemplate.name,
+      language: activeTemplate.language,
       resolvedVariables: input.message.resolved_variables_json ?? {}
     }
   });
@@ -478,12 +533,12 @@ export async function deliverCampaignMessage(input: {
   try {
     await waitForRateLimit({
       userId: input.userId,
-      connectionId: template.connectionId,
-      linkedNumber: template.linkedNumber
+      connectionId: activeTemplate.connectionId,
+      linkedNumber: activeTemplate.linkedNumber
     });
 
     const sent = await dispatchTemplateMessage(input.userId, {
-      templateId: input.campaign.template_id,
+      templateId: activeTemplateId,
       to: input.message.phone_number,
       variableValues: input.message.resolved_variables_json ?? {}
     });
@@ -517,6 +572,10 @@ export async function deliverCampaignMessage(input: {
       sent.messageId ?? null
     );
     await markContactTemplateOutboundActivity(input.userId, input.message.phone_number, sent.template.category);
+
+    if (contact?.id) {
+      await recordFrequencyCapSend(contact.id, activeTemplate.id);
+    }
 
     realtimeHub.broadcast(input.userId, "conversation.updated", {
       conversationId: conversation.id,
@@ -563,13 +622,13 @@ export async function deliverCampaignMessage(input: {
       userId: input.userId,
       classification,
       nextRetryAt: nextRetryAt?.toISOString() ?? null,
-      connectionId: template.connectionId,
-      linkedNumber: template.linkedNumber,
-      phoneNumberId: template.phoneNumberId,
+      connectionId: activeTemplate.connectionId,
+      linkedNumber: activeTemplate.linkedNumber,
+      phoneNumberId: activeTemplate.phoneNumberId,
       campaignId: input.campaign.id,
       response: {
-        templateId: template.id,
-        templateName: template.name
+        templateId: activeTemplate.id,
+        templateName: activeTemplate.name
       }
     });
 
@@ -583,8 +642,8 @@ export async function deliverCampaignMessage(input: {
         metadata: {
           campaignId: input.campaign.id,
           campaignMessageId: input.message.id,
-          templateId: template.id,
-          templateName: template.name
+          templateId: activeTemplate.id,
+          templateName: activeTemplate.name
         }
       });
     }

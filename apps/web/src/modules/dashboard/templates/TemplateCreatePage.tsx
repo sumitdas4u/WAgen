@@ -640,6 +640,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   const [nameError, setNameError] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [headerFooterSanitizeNotice, setHeaderFooterSanitizeNotice] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState(() => resolveDefaultConnectionId(availableConnections));
 
@@ -772,6 +773,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
   }
 
   async function handleSubmit() {
+    setHasAttemptedSubmit(true);
     if (!connectionId) {
       setFormError("Connect a Meta WhatsApp number before submitting this template.");
       return;
@@ -877,11 +879,6 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             {category === "AUTHENTICATION" && (
               <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>
                 Authentication templates use Meta&apos;s separate authentication-template format and are not supported here yet.
-              </div>
-            )}
-            {complianceWarnings.length > 0 && (
-              <div style={{ marginTop: "8px", fontSize: "12px", color: "#92400e", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "8px", padding: "8px 10px" }}>
-                {complianceWarnings[0]}
               </div>
             )}
           </div>
@@ -1128,7 +1125,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
                 setFormError(null);
               }
             }}
-            placeholder="Plain text only. Avoid emojis and variables here."
+            placeholder={category === "MARKETING" ? "e.g. Reply STOP to unsubscribe" : "Plain text only. Avoid emojis and variables here."}
             style={{
               width: "100%",
               borderRadius: "8px",
@@ -1141,6 +1138,11 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
           <div style={{ marginTop: "8px", fontSize: "12px", color: draftValidation.footerError ? "#dc2626" : "#64748b" }}>
             {draftValidation.footerError ?? "Meta commonly rejects footer text with emojis or variables. Keep the footer plain."}
           </div>
+          {category === "MARKETING" && (
+            <div style={{ marginTop: "8px", fontSize: "12px", color: "#92400e", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "6px", padding: "6px 10px" }}>
+              Marketing templates should include a clear opt-out instruction such as &quot;Reply STOP to unsubscribe&quot;.
+            </div>
+          )}
         </div>
 
         {headerFooterSanitizeNotice && (
@@ -1332,9 +1334,9 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
             {formError ?? submitError ?? formatTemplateCreateError(createMutation.error)}
           </div>
         )}
-        {!formError && !submitError && !createMutation.isError && !isValid && (
+        {hasAttemptedSubmit && !formError && !submitError && !createMutation.isError && !isValid && !createMutation.isPending && (
           <div style={{ padding: "12px", borderRadius: "8px", background: "#fff7ed", color: "#9a3412", border: "1px solid #fdba74", fontSize: "13px" }}>
-            Fill all required fields and fix the highlighted inputs before submitting this template.
+            {draftValidation.formError ?? "Fill all required fields and fix the highlighted inputs before submitting this template."}
           </div>
         )}
         {createMutation.isPending && (
@@ -1357,15 +1359,8 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
           </button>
           <button
             type="button"
-            onClick={() => setShowAI(true)}
-            style={{ padding: "10px 20px", borderRadius: "8px", border: "1.5px solid #25d366", background: "#f0fdf4", color: "#166534", cursor: "pointer", fontWeight: 600, fontSize: "14px" }}
-          >
-            Generate with AI ✨
-          </button>
-          <button
-            type="button"
             onClick={handleSubmit}
-            disabled={!isValid}
+            disabled={createMutation.isPending}
             style={{
               marginLeft: "auto",
               padding: "10px 24px",
@@ -1375,7 +1370,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
               border: "none",
               fontWeight: 700,
               fontSize: "14px",
-              cursor: isValid ? "pointer" : "not-allowed"
+              cursor: createMutation.isPending ? "not-allowed" : "pointer"
             }}
           >
             {createMutation.isPending ? "Submitting..." : "Submit Template"}
@@ -1395,6 +1390,15 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
           </div>
         ) : (
           <TemplatePreviewPanel components={previewComponents} businessName={connectionName} headerImageUrl={headerImageUrl ?? undefined} />
+        )}
+        {!showAI && (
+          <button
+            type="button"
+            onClick={() => setShowAI(true)}
+            style={{ marginTop: "12px", width: "100%", padding: "10px 20px", borderRadius: "8px", border: "1.5px solid #25d366", background: "#f0fdf4", color: "#166534", cursor: "pointer", fontWeight: 600, fontSize: "14px" }}
+          >
+            Generate with AI ✨
+          </button>
         )}
       </div>
     </div>

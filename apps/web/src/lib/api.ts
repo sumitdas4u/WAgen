@@ -1367,6 +1367,13 @@ export function setMetaBusinessChannelEnabled(
   });
 }
 
+export function fetchMetaDailyCap(token: string, connectionId: string) {
+  return apiRequest<{ sentToday: number; cap: number; remaining: number; exceeded: boolean }>(
+    `/api/meta/business/daily-cap?connectionId=${encodeURIComponent(connectionId)}`,
+    { token }
+  );
+}
+
 export function fetchMetaBusinessProfile(token: string, options?: { connectionId?: string }) {
   const params = new URLSearchParams();
   if (options?.connectionId) {

@@ -10,6 +10,7 @@ import {
   fetchBroadcastReport,
   fetchBroadcastRetargetPreview,
   fetchBroadcasts,
+  fetchMetaDailyCap,
   fetchPublishedFlows,
   fetchSegmentContacts,
   importBroadcastAudienceWorkbook,
@@ -1591,6 +1592,8 @@ function BroadcastWizardPage({
 
         {step === 4 ? (
           <ScheduleStep
+            token={token}
+            connectionId={selectedConnectionId}
             name={name}
             onNameChange={setName}
             sendMode={sendMode}
@@ -3114,6 +3117,8 @@ function TestBroadcastModal({
 }
 
 function ScheduleStep({
+  token,
+  connectionId,
   name,
   onNameChange,
   sendMode,
@@ -3187,6 +3192,8 @@ function ScheduleStep({
   onLaunch: () => void;
   onSendTest: (phones: string[]) => void;
   saving: boolean;
+  token: string;
+  connectionId: string;
 }) {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [showTestModal, setShowTestModal] = useState(false);
@@ -3204,8 +3211,13 @@ function ScheduleStep({
     }
   }, []);
 
-  const { bootstrap } = useDashboardShell();
-  const credits = bootstrap?.creditsSummary;
+  const dailyCapQuery = useQuery({
+    queryKey: dashboardQueryKeys.broadcastDailyCap(connectionId),
+    queryFn: () => fetchMetaDailyCap(token, connectionId),
+    enabled: Boolean(connectionId),
+    refetchInterval: 60_000
+  });
+  const dailyCap = dailyCapQuery.data;
   const replyConfigValid = replyMode !== "flow" || Boolean(replyFlowId);
   const totalPreview = Math.max(sampleContacts.length, 1);
   const safeIndex = Math.min(previewIndex, totalPreview - 1);
@@ -3231,12 +3243,14 @@ function ScheduleStep({
           <div className="sch-form-col">
 
             {/* Limit info banner */}
-            {credits && (
-              <div className="sch-info-banner">
+            {dailyCap && (
+              <div className={`sch-info-banner${dailyCap.exceeded ? " sch-info-banner--warn" : ""}`}>
                 <span className="sch-info-icon">&#9432;</span>
                 <span>
-                  {credits.used_credits} broadcast message{credits.used_credits !== 1 ? "s" : ""} sent in the last 24 hours for a limit of {credits.total_credits} messages per day.
-                  You can send another <strong>{credits.remaining_credits} message{credits.remaining_credits !== 1 ? "s" : ""}</strong> for now.
+                  {dailyCap.sentToday} broadcast message{dailyCap.sentToday !== 1 ? "s" : ""} sent today for a Meta tier limit of {dailyCap.cap.toLocaleString()} messages per day.
+                  {dailyCap.exceeded
+                    ? " Daily limit reached — messages will be deferred to tomorrow."
+                    : <> You can send another <strong>{dailyCap.remaining.toLocaleString()} message{dailyCap.remaining !== 1 ? "s" : ""}</strong> today.</>}
                 </span>
               </div>
             )}
@@ -3361,11 +3375,10 @@ function ScheduleStep({
               <div className="sch-policy-row">
                 <div>
                   <div className="sch-policy-title">
-                    Follow WhatsApp Business Policy{" "}
-                    <a href="#" className="sch-learn-more">Learn more &#8599;</a>
+                    Exclude Opted-out data
                   </div>
                   <div className="sch-policy-desc">
-                    We&apos;ll only message contacts those who have opted in for marketing messages.
+                    Skip users who have opted out from future campaign
                   </div>
                 </div>
                 <label className="sch-toggle">

@@ -102,13 +102,20 @@ export async function publicApiRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Invalid payload." });
       }
 
-      const result = await sendMetaTextMessage({
-        userId: request.authUser.userId,
-        to: parsed.data.to,
-        text: parsed.data.text,
-        phoneNumberId: parsed.data.phoneNumberId,
-        webhookUrl: parsed.data.webhookUrl ?? null
-      });
+      let result;
+      try {
+        result = await sendMetaTextMessage({
+          userId: request.authUser.userId,
+          to: parsed.data.to,
+          text: parsed.data.text,
+          phoneNumberId: parsed.data.phoneNumberId,
+          webhookUrl: parsed.data.webhookUrl ?? null
+        });
+      } catch (error) {
+        const msg = (error as Error).message;
+        if (msg.startsWith("Message blocked:")) return reply.status(403).send({ error: msg });
+        throw error;
+      }
 
       return { ok: true, messageId: result.messageId };
     }
@@ -131,13 +138,20 @@ export async function publicApiRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: (error as Error).message });
       }
 
-      const result = await sendMetaMessage({
-        userId: request.authUser.userId,
-        to: parsed.data.to,
-        payload,
-        phoneNumberId: parsed.data.phoneNumberId,
-        webhookUrl: parsed.data.webhookUrl ?? null
-      });
+      let result;
+      try {
+        result = await sendMetaMessage({
+          userId: request.authUser.userId,
+          to: parsed.data.to,
+          payload,
+          phoneNumberId: parsed.data.phoneNumberId,
+          webhookUrl: parsed.data.webhookUrl ?? null
+        });
+      } catch (error) {
+        const msg = (error as Error).message;
+        if (msg.startsWith("Message blocked:")) return reply.status(403).send({ error: msg });
+        throw error;
+      }
 
       return { ok: true, messageId: result.messageId, summaryText: result.summaryText };
     }
