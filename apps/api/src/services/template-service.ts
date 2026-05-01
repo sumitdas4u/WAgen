@@ -967,10 +967,16 @@ export async function syncAllTemplates(userId: string): Promise<MessageTemplate[
     }
 
     for (const template of metaTemplates) {
+      const headerComp = Array.isArray(template.components)
+        ? template.components.find((c) => c.type === "HEADER")
+        : undefined;
+      const headerUrlFromMeta: string | null =
+        (headerComp as { example?: { header_url?: string[] } } | undefined)?.example?.header_url?.[0] ?? null;
+
       await pool.query(
         `INSERT INTO message_templates
-           (user_id, connection_id, template_id, name, category, language, status, quality_score, components_json, meta_rejection_reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+           (user_id, connection_id, template_id, name, category, language, status, quality_score, components_json, meta_rejection_reason, header_media_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)
          ON CONFLICT (connection_id, name, language)
            WHERE status <> 'DISABLED'
          DO UPDATE SET
@@ -983,6 +989,7 @@ export async function syncAllTemplates(userId: string): Promise<MessageTemplate[
                THEN EXCLUDED.components_json
              ELSE message_templates.components_json
            END,
+           header_media_url = COALESCE(EXCLUDED.header_media_url, message_templates.header_media_url),
            meta_rejection_reason = EXCLUDED.meta_rejection_reason,
            updated_at = NOW()`,
         [
@@ -995,7 +1002,8 @@ export async function syncAllTemplates(userId: string): Promise<MessageTemplate[
           template.status.toUpperCase(),
           template.quality_score?.score ?? null,
           JSON.stringify(Array.isArray(template.components) ? template.components : []),
-          template.rejected_reason ?? null
+          template.rejected_reason ?? null,
+          headerUrlFromMeta
         ]
       );
     }
