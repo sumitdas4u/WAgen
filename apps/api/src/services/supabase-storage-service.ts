@@ -57,20 +57,25 @@ export async function uploadTemplateHeaderMedia(input: {
   filename?: string | null;
 }): Promise<string | null> {
   const ext = mediaExtension(input.mimeType);
+  const filename = input.filename?.trim() || `template-header-${Date.now()}.${ext}`;
   const supabase = getSupabaseClient();
-  if (!supabase) return null;
 
-  try {
-    const path = `templates/${input.userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage
-      .from(env.SUPABASE_INBOUND_MEDIA_BUCKET)
-      .upload(path, input.buffer, { contentType: input.mimeType, upsert: false });
-    if (error) return null;
-    const { data } = supabase.storage.from(env.SUPABASE_INBOUND_MEDIA_BUCKET).getPublicUrl(path);
-    return data.publicUrl;
-  } catch {
-    return null;
+  if (supabase) {
+    try {
+      const path = `templates/${input.userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage
+        .from(env.SUPABASE_INBOUND_MEDIA_BUCKET)
+        .upload(path, input.buffer, { contentType: input.mimeType, upsert: false });
+      if (!error) {
+        const { data } = supabase.storage.from(env.SUPABASE_INBOUND_MEDIA_BUCKET).getPublicUrl(path);
+        return data.publicUrl;
+      }
+    } catch {
+      // fall through to Postgres
+    }
   }
+
+  return storeInPostgres(input.userId, input.buffer, input.mimeType, filename);
 }
 
 /**
