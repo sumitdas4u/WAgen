@@ -673,7 +673,7 @@ export function TemplateCreatePage({ token, metaStatus, onBack, onCreated, prefi
     buttons,
     variableMapping
   });
-  const complianceWarnings = getTemplateComplianceWarnings({
+  const _complianceWarnings = getTemplateComplianceWarnings({
     category,
     headerText,
     bodyText,
