@@ -970,8 +970,12 @@ export async function syncAllTemplates(userId: string): Promise<MessageTemplate[
       const headerComp = Array.isArray(template.components)
         ? template.components.find((c) => c.type === "HEADER")
         : undefined;
+      const headerExample = (headerComp as { example?: { header_url?: string[]; header_handle?: string[] } } | undefined)?.example;
+      const headerHandleVal = headerExample?.header_handle?.[0];
       const headerUrlFromMeta: string | null =
-        (headerComp as { example?: { header_url?: string[] } } | undefined)?.example?.header_url?.[0] ?? null;
+        headerExample?.header_url?.[0] ??
+        (headerHandleVal && /^https?:\/\//i.test(headerHandleVal) ? headerHandleVal : null) ??
+        null;
 
       await pool.query(
         `INSERT INTO message_templates

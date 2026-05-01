@@ -130,10 +130,14 @@ function resolveHeaderMediaReference(
     "header_preview_url"
   ]);
   const example = component.example as { header_handle?: string[]; header_url?: string[] } | undefined;
-  // example.header_handle is a Meta template submission handle (e.g. "2:base64:base64"),
-  // valid only for template creation review — NOT a usable media reference for sending messages.
-  // Fall back to: explicit override → template default → example header_url (never the handle).
-  const fallback = explicitId ?? explicitUrl ?? defaultMediaUrl ?? example?.header_url?.[0] ?? null;
+  // For APPROVED templates, Meta replaces the upload handle in header_handle with an actual CDN URL.
+  // Use it as a fallback — but only if it looks like a real URL, not a raw submission handle.
+  const exampleHandleUrl = example?.header_handle?.[0];
+  const exampleMediaUrl =
+    example?.header_url?.[0] ??
+    (exampleHandleUrl && /^https?:\/\//i.test(exampleHandleUrl) ? exampleHandleUrl : null) ??
+    null;
+  const fallback = explicitId ?? explicitUrl ?? (defaultMediaUrl?.trim() || null) ?? exampleMediaUrl ?? null;
 
   // No URL/ID found — return null without marking as missing.
   // Meta already stores the approved image for static image headers; omitting the header
