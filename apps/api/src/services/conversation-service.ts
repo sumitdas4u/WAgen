@@ -652,6 +652,16 @@ export async function trackInboundMessage(
     assignedAgentProfileId: agentProfile?.id ?? null
   });
 
+  // Reopen resolved conversations when a real user message arrives —
+  // keep it open until a human manually resolves it.
+  if (conversation.status === "resolved") {
+    await pool.query(
+      `UPDATE conversations SET status = 'open', updated_at = NOW() WHERE id = $1`,
+      [conversation.id]
+    );
+    realtimeHub.broadcastConversationStatusChanged(userId, { id: conversation.id, status: "open" });
+  }
+
   const classification = await classifyInboundMessage({
     message,
     agentProfile,
@@ -2096,6 +2106,19 @@ export async function setConversationManualAndPaused(userId: string, conversatio
        AND (manual_takeover = FALSE OR ai_paused = FALSE)`,
     [conversationId, userId]
   );
+}
+
+export async function setConversationResolved(userId: string, conversationId: string): Promise<void> {
+  const result = await pool.query<{ id: string }>(
+    `UPDATE conversations
+     SET status = 'resolved', updated_at = NOW()
+     WHERE id = $1 AND user_id = $2 AND status != 'resolved'
+     RETURNING id`,
+    [conversationId, userId]
+  );
+  if ((result.rowCount ?? 0) > 0) {
+    realtimeHub.broadcastConversationStatusChanged(userId, { id: conversationId, status: "resolved" });
+  }
 }
 
 import { InMemoryCache } from "../utils/cache.js";

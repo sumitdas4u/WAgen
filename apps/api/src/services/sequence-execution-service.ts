@@ -7,7 +7,7 @@ import {
   recordDeliveryAttemptStart
 } from "./message-delivery-data-service.js";
 import { getContactByPhoneForUser, markContactTemplateOutboundActivity } from "./contacts-service.js";
-import { getOrCreateConversation, trackOutboundMessage } from "./conversation-service.js";
+import { getOrCreateConversation, setConversationResolved, trackOutboundMessage } from "./conversation-service.js";
 import { evaluateOutboundTemplatePolicy, recordFrequencyCapSend, summarizeOutboundPolicyReasons } from "./outbound-policy-service.js";
 import { queueSequenceOutboundMessage } from "./outbound-message-service.js";
 import { evaluateSequenceConditions } from "./sequence-condition-service.js";
@@ -570,6 +570,7 @@ export async function executeSequenceOutboundMessage(input: {
       sent.messagePayload,
       sent.messageId ?? null
     );
+    await setConversationResolved(contact.user_id, conversation.id);
     realtimeHub.broadcast(contact.user_id, "conversation.updated", {
       conversationId: conversation.id,
       phoneNumber: contact.phone_number,

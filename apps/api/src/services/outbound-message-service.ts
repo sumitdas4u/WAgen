@@ -6,6 +6,7 @@ import { pool } from "../db/pool.js";
 import {
   getConversationById,
   getOrCreateConversation,
+  setConversationResolved,
   trackOutboundMessage
 } from "./conversation-service.js";
 import { deliverCampaignMessage, deliverConversationTemplateMessage, sendTrackedApiConversationFlowMessage } from "./message-delivery-service.js";
@@ -736,6 +737,10 @@ async function processTemplateApi(row: OutboundMessageRow): Promise<void> {
     providerMessageId: result.messageId ?? null,
     errorMessage: null
   });
+
+  if (row.generic_webhook_log_id && row.conversation_id) {
+    await setConversationResolved(row.user_id, row.conversation_id);
+  }
 }
 
 async function processCampaignSend(row: OutboundMessageRow): Promise<void> {
