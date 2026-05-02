@@ -308,7 +308,7 @@ export async function deliverConversationTemplateMessage(input: {
   templateId: string;
   variableValues: Record<string, string>;
   senderName?: string | null;
-}): Promise<{ messageId: string | null }> {
+}): Promise<{ messageId: string | null; deferred?: false } | { deferred: true; delayUntil: string; reason: string }> {
   const conversation = await getConversationById(input.conversationId);
   if (!conversation || conversation.user_id !== input.userId) {
     throw new Error("Conversation not found.");
@@ -336,8 +336,13 @@ export async function deliverConversationTemplateMessage(input: {
   if (policy.frequencyCapDecision.action === "variant") {
     activeTemplateId = policy.frequencyCapDecision.variantTemplateId;
   } else if (policy.frequencyCapDecision.action === "delay") {
-    const until = new Date(policy.frequencyCapDecision.delayUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    throw new Error(`This marketing template was already sent to this contact within 24 hours. Next send available at ${until} UTC. No variant template is configured for automatic rerouting.`);
+    const delayUntil = policy.frequencyCapDecision.delayUntil;
+    const until = new Date(delayUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return {
+      deferred: true,
+      delayUntil,
+      reason: `This marketing template was already sent to this contact within 24 hours. Next send available at ${until} UTC. No variant template is configured for automatic rerouting.`
+    };
   }
 
   const activeTemplate = activeTemplateId !== input.templateId

@@ -720,6 +720,16 @@ async function processTemplateApi(row: OutboundMessageRow): Promise<void> {
     variableValues: row.variable_values_json ?? {},
     senderName: row.sender_name ?? null
   });
+
+  if (result.deferred) {
+    // Frequency cap — reschedule to delayUntil; outbound sweep will re-enqueue
+    await pool.query(
+      `UPDATE outbound_messages SET status = 'queued', scheduled_at = $2 WHERE id = $1`,
+      [row.id, result.delayUntil]
+    );
+    return;
+  }
+
   await updateOutboundMessageState({
     id: row.id,
     status: "completed",
