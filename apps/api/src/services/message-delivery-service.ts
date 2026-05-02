@@ -13,6 +13,7 @@ import {
   getConversationById,
   getOrCreateConversation,
   setConversationManualAndPaused,
+  setConversationResolved,
   trackOutboundMessage
 } from "./conversation-service.js";
 import {
@@ -500,8 +501,13 @@ export async function deliverCampaignMessage(input: {
   if (policy.frequencyCapDecision.action === "variant") {
     activeTemplateId = policy.frequencyCapDecision.variantTemplateId;
   } else if (policy.frequencyCapDecision.action === "delay") {
-    await deferCampaignMessageToNextDay(input.message.id);
-    return { status: "retrying", errorMessage: `24h marketing frequency cap reached. Deferred to next day.` };
+    const capUntil = new Date(policy.frequencyCapDecision.delayUntil);
+    await deferCampaignMessageToNextDay(input.message.id, {
+      nextRetryAt: capUntil,
+      errorCode: "FREQ_CAP_24H",
+      errorMessage: `24h marketing frequency cap reached. Retry scheduled at ${capUntil.toUTCString()}.`
+    });
+    return { status: "retrying", errorMessage: `24h marketing frequency cap reached. Retry scheduled at ${capUntil.toUTCString()}.` };
   }
 
   const activeTemplate = activeTemplateId !== input.campaign.template_id
@@ -576,6 +582,7 @@ export async function deliverCampaignMessage(input: {
       sent.messagePayload,
       sent.messageId ?? null
     );
+    await setConversationResolved(input.userId, conversation.id);
     await markContactTemplateOutboundActivity(input.userId, input.message.phone_number, sent.template.category);
 
     if (contact?.id) {
