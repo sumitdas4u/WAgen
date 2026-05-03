@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Job, QueueEvents, UnrecoverableError, Worker, type JobsOptions } from "bullmq";
+import { DelayedError, Job, QueueEvents, UnrecoverableError, Worker, type JobsOptions } from "bullmq";
 import { env } from "../config/env.js";
 import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
@@ -709,7 +709,7 @@ async function processConversationChannel(row: OutboundMessageRow): Promise<void
   await broadcastConversationUpdate(conversation.id, summaryText);
 }
 
-async function processTemplateApi(row: OutboundMessageRow): Promise<void> {
+async function processTemplateApi(row: OutboundMessageRow, job: Job<OutboundJobPayload>, token?: string): Promise<void> {
   if (!row.conversation_id || !row.template_id) {
     throw new Error("Template outbound message is missing execution context.");
   }
@@ -723,12 +723,12 @@ async function processTemplateApi(row: OutboundMessageRow): Promise<void> {
   });
 
   if (result.deferred) {
-    // Frequency cap — reschedule to delayUntil; outbound sweep will re-enqueue
     await pool.query(
       `UPDATE outbound_messages SET status = 'queued', scheduled_at = $2 WHERE id = $1`,
       [row.id, result.delayUntil]
     );
-    return;
+    await job.moveToDelayed(Date.parse(result.delayUntil), token);
+    throw new DelayedError();
   }
 
   await updateOutboundMessageState({
@@ -743,7 +743,7 @@ async function processTemplateApi(row: OutboundMessageRow): Promise<void> {
   }
 }
 
-async function processCampaignSend(row: OutboundMessageRow): Promise<void> {
+async function processCampaignSend(row: OutboundMessageRow, job: Job<OutboundJobPayload>, token?: string): Promise<void> {
   if (!row.campaign_message_id) {
     throw new Error("Campaign outbound message is missing campaign message context.");
   }
@@ -758,21 +758,14 @@ async function processCampaignSend(row: OutboundMessageRow): Promise<void> {
     senderName: input.senderName
   });
   if (outcome.status === "retrying" && outcome.retryAt) {
-    // Reschedule via outbound_messages.scheduled_at — reconciliation timer re-enqueues
-    // as a native BullMQ delayed job when the window expires.
+    // Use BullMQ native delayed job — no reconciliation polling needed.
+    // DB scheduled_at is updated for visibility and crash recovery only.
     await pool.query(
       `UPDATE outbound_messages SET status = 'queued', scheduled_at = $2 WHERE id = $1`,
       [row.id, outcome.retryAt]
     );
-    // Clear campaign_messages.next_retry_at so the retrySweep doesn't create a
-    // duplicate outbound job for the same message (this path owns the retry).
-    if (row.campaign_message_id) {
-      await pool.query(
-        `UPDATE campaign_messages SET next_retry_at = NULL WHERE id = $1 AND status = 'queued'`,
-        [row.campaign_message_id]
-      );
-    }
-    return;
+    await job.moveToDelayed(Date.parse(outcome.retryAt), token);
+    throw new DelayedError();
   }
   if (outcome.status === "failed") {
     await updateOutboundMessageState({
@@ -837,7 +830,7 @@ async function resolveOutboundRow(payload: OutboundJobPayload): Promise<Outbound
   }
 }
 
-async function executeOutboundJob(job: Job<OutboundJobPayload>): Promise<void> {
+async function executeOutboundJob(job: Job<OutboundJobPayload>, token?: string): Promise<void> {
   const row = await resolveOutboundRow(job.data);
   if (!row) {
     return;
@@ -858,10 +851,10 @@ async function executeOutboundJob(job: Job<OutboundJobPayload>): Promise<void> {
         await processConversationChannel(row);
         return;
       case "template_api":
-        await processTemplateApi(row);
+        await processTemplateApi(row, job, token);
         return;
       case "campaign_send":
-        await processCampaignSend(row);
+        await processCampaignSend(row, job, token);
         return;
       case "sequence_send":
         await processSequenceSend(row);
@@ -1187,11 +1180,14 @@ export function startOutboundWorker(): void {
 
     worker = new Worker<OutboundJobPayload>(
       "outbound-execution",
-      async (job) => {
+      async (job, token) => {
         const row = await resolveOutboundRow(job.data);
         try {
-          await executeOutboundJob(job);
+          await executeOutboundJob(job, token);
         } catch (error) {
+          if (error instanceof DelayedError) {
+            throw error; // BullMQ handles the delayed state natively
+          }
           const classified = classifyOutboundError(row, error);
           const shouldRetry = classified.retryable && hasRemainingAttempts(job);
           if (row) {
@@ -1260,11 +1256,14 @@ export function startQrOutboundWorker(): void {
 
     qrWorker = new Worker<OutboundJobPayload>(
       "outbound-qr-execution",
-      async (job) => {
+      async (job, token) => {
         const row = await resolveOutboundRow(job.data);
         try {
-          await executeOutboundJob(job);
+          await executeOutboundJob(job, token);
         } catch (error) {
+          if (error instanceof DelayedError) {
+            throw error;
+          }
           const classified = classifyOutboundError(row, error);
           const shouldRetry = classified.retryable && hasRemainingAttempts(job);
           if (row) {

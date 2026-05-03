@@ -175,7 +175,9 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
   }, [messagesQuery]);
 
   const handleRetry = useCallback((msgId: string) => {
-    void retryMsg.mutateAsync({ convId, msgId });
+    retryMsg.mutateAsync({ convId, msgId }).catch((err: unknown) => {
+      window.alert(err instanceof Error ? err.message : "Retry failed. Please try again.");
+    });
   }, [convId, retryMsg]);
 
   const handleReply = useCallback((msg: ConversationMessage) => {
