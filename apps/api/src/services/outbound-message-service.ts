@@ -904,7 +904,12 @@ async function reconcileOutboundQueue(limit = 100): Promise<void> {
     const normalizedJobKey = toBullMqSafeJobId(row.job_key);
     const existing = await targetQueue.getJob(normalizedJobKey);
     if (existing) {
-      continue;
+      const state = await existing.getState();
+      if (state === "waiting" || state === "delayed" || state === "active" || state === "waiting-children") {
+        continue; // Job is in-flight — don't re-enqueue
+      }
+      // Job is completed/failed — remove stale record so we can re-enqueue below
+      await existing.remove().catch(() => undefined);
     }
 
     const payload: OutboundJobPayload =
