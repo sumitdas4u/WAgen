@@ -9,6 +9,8 @@ import {
   setConversationResolved,
   trackOutboundMessage
 } from "./conversation-service.js";
+import { getContactByPhoneForUser } from "./contacts-service.js";
+import { clearFrequencyCapSend } from "./outbound-policy-service.js";
 import { deliverCampaignMessage, deliverConversationTemplateMessage, sendTrackedApiConversationFlowMessage } from "./message-delivery-service.js";
 import { registerChannelAdapter, getChannelAdapter, type ConversationChannelAdapter } from "./channel-adapter.js";
 import { realtimeHub } from "./realtime-hub.js";
@@ -309,6 +311,8 @@ async function updateOutboundMessageState(input: {
   const result = await pool.query<{
     type: OutboundMessageType;
     generic_webhook_log_id: string | null;
+    conversation_id: string | null;
+    user_id: string;
     status: OutboundMessageStatus;
     provider_message_id: string | null;
     error_message: string | null;
@@ -319,7 +323,7 @@ async function updateOutboundMessageState(input: {
          error_message = $4,
          attempt_count = COALESCE($5, attempt_count)
      WHERE id = $1
-     RETURNING type, generic_webhook_log_id, status, provider_message_id, error_message`,
+     RETURNING type, generic_webhook_log_id, conversation_id, user_id, status, provider_message_id, error_message`,
     [
       input.id,
       input.status ?? null,
@@ -330,7 +334,35 @@ async function updateOutboundMessageState(input: {
   );
 
   const row = firstRow(result);
-  if (!row?.generic_webhook_log_id || row.type !== "template_api") {
+  if (!row) return;
+
+  // When a conversation job fails permanently, flip any pending conversation_messages
+  // row back to failed so the retry spinner resolves and the user sees the error.
+  if (
+    row.status === "failed" &&
+    row.conversation_id &&
+    isConversationJobType(row.type)
+  ) {
+    const failedMsgs = await pool.query<{ id: string }>(
+      `UPDATE conversation_messages
+       SET delivery_status = 'failed',
+           error_message = COALESCE($2, error_message)
+       WHERE conversation_id = $1
+         AND delivery_status = 'pending'
+       RETURNING id`,
+      [row.conversation_id, row.error_message ?? null]
+    );
+    for (const fm of failedMsgs.rows) {
+      realtimeHub.broadcastMessageUpdated(row.user_id, {
+        conversationId: row.conversation_id,
+        messageId: fm.id,
+        deliveryStatus: "failed",
+        errorMessage: row.error_message ?? undefined
+      });
+    }
+  }
+
+  if (!row.generic_webhook_log_id || row.type !== "template_api") {
     return;
   }
 
@@ -1132,6 +1164,19 @@ export async function retryConversationOutboundMessage(input: {
      WHERE id = $1`,
     [outbound.id]
   );
+
+  // Manual retry should never be blocked by a stale freq cap key (the original
+  // message failed — it never reached the recipient). Clear it proactively so
+  // the send goes through immediately instead of deferring 12-24 h.
+  if (outbound.template_id && outbound.conversation_id) {
+    const conv = await getConversationById(outbound.conversation_id);
+    if (conv) {
+      const contact = await getContactByPhoneForUser(outbound.user_id, conv.phone_number);
+      if (contact?.id) {
+        await clearFrequencyCapSend(contact.id, outbound.template_id);
+      }
+    }
+  }
 
   const queue =
     outbound.type === "conversation_qr"
