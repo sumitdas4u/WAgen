@@ -310,6 +310,7 @@ export async function deliverConversationTemplateMessage(input: {
   templateId: string;
   variableValues: Record<string, string>;
   senderName?: string | null;
+  echoId?: string | null;
 }): Promise<{ messageId: string | null; deferred?: false } | { deferred: true; delayUntil: string; reason: string }> {
   const conversation = await getConversationById(input.conversationId);
   if (!conversation || conversation.user_id !== input.userId) {
@@ -407,7 +408,7 @@ export async function deliverConversationTemplateMessage(input: {
     await trackOutboundMessage(
       conversation.id,
       result.summaryText,
-      { senderName: input.senderName ?? null },
+      { senderName: input.senderName ?? null, echoId: input.echoId ?? null },
       result.messagePayload.headerMediaUrl ?? null,
       result.messagePayload,
       result.messageId ?? null

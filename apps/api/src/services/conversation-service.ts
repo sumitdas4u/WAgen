@@ -863,13 +863,24 @@ export async function trackOutboundMessage(
   payload?: FlowMessagePayload | null,
   wamid?: string | null
 ): Promise<void> {
-  // echo_id dedup: return early if this outbound message was already inserted
+  // echo_id dedup: if the row already exists, update it with the latest wamid/status instead of inserting
   if (usage?.echoId) {
-    const existing = await pool.query<{ id: string }>(
-      `SELECT id FROM conversation_messages WHERE conversation_id = $1 AND echo_id = $2 LIMIT 1`,
-      [conversationId, usage.echoId]
+    const updated = await pool.query<{ id: string }>(
+      `UPDATE conversation_messages
+       SET wamid = COALESCE($3, wamid),
+           delivery_status = CASE
+             WHEN delivery_status IN ('delivered', 'read', 'failed') THEN delivery_status
+             ELSE 'sent'
+           END,
+           sent_at = COALESCE(sent_at, NOW()),
+           error_code = NULL,
+           error_message = NULL
+       WHERE conversation_id = $1
+         AND echo_id = $2
+       RETURNING id`,
+      [conversationId, usage.echoId, wamid ?? null]
     );
-    if ((existing.rowCount ?? 0) > 0) return;
+    if ((updated.rowCount ?? 0) > 0) return;
   }
   const validatedPayload = payload ? validateFlowMessagePayload(payload) : null;
   const msgType = validatedPayload ? deriveRendererMessageType(validatedPayload) : "text";

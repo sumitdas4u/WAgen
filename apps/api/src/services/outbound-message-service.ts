@@ -746,12 +746,18 @@ async function processTemplateApi(row: OutboundMessageRow, job: Job<OutboundJobP
     throw new Error("Template outbound message is missing execution context.");
   }
 
+  // Use outbound_message.id as the echoId so trackOutboundMessage deduplicates
+  // correctly on retry (the existing pending row already has echo_id set to this id).
+  const usage = parseUsage(row);
+  const echoId = usage.echoId?.trim() || row.id;
+
   const result = await deliverConversationTemplateMessage({
     userId: row.user_id,
     conversationId: row.conversation_id,
     templateId: row.template_id,
     variableValues: row.variable_values_json ?? {},
-    senderName: row.sender_name ?? null
+    senderName: row.sender_name ?? null,
+    echoId
   });
 
   if (result.deferred) {
@@ -769,6 +775,22 @@ async function processTemplateApi(row: OutboundMessageRow, job: Job<OutboundJobP
     providerMessageId: result.messageId ?? null,
     errorMessage: null
   });
+
+  // Broadcast the per-message status update so the pending spinner resolves immediately.
+  if (row.conversation_id) {
+    const updatedMsg = await pool.query<{ id: string }>(
+      `SELECT id FROM conversation_messages WHERE conversation_id = $1 AND echo_id = $2 LIMIT 1`,
+      [row.conversation_id, echoId]
+    );
+    const msgRow = updatedMsg.rows[0];
+    if (msgRow) {
+      realtimeHub.broadcastMessageUpdated(row.user_id, {
+        conversationId: row.conversation_id,
+        messageId: msgRow.id,
+        deliveryStatus: "sent"
+      });
+    }
+  }
 
   if (row.generic_webhook_log_id && row.conversation_id) {
     await setConversationResolved(row.user_id, row.conversation_id);
@@ -1163,6 +1185,14 @@ export async function retryConversationOutboundMessage(input: {
          updated_at = NOW()
      WHERE id = $1`,
     [outbound.id]
+  );
+
+  // Link the pending conversation_message row to this outbound_message via echo_id.
+  // processTemplateApi uses outbound.id as the echoId so trackOutboundMessage's
+  // dedup finds this row and updates it (to 'sent') instead of inserting a duplicate.
+  await pool.query(
+    `UPDATE conversation_messages SET echo_id = $2 WHERE id = $1 AND echo_id IS NULL`,
+    [input.messageId, outbound.id]
   );
 
   // Manual retry should never be blocked by a stale freq cap key (the original
