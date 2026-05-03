@@ -788,13 +788,19 @@ export async function processMetaDeliveryStatusEvent(event: MetaDeliveryStatusEv
       eventTimestamp: event.eventTimestamp,
       payload: event.payload
     });
-    await applyConversationDeliveryStatusUpdate({
+    const conversationResult = await applyConversationDeliveryStatusUpdate({
       wamid: event.wamid,
       status: event.status,
       errorCode: event.errorCode,
       errorMessage: event.errorMessage,
       eventTimestamp: event.eventTimestamp
     });
+    if (conversationResult.freqCapRelease) {
+      await clearFrequencyCapSend(
+        conversationResult.freqCapRelease.contactId,
+        conversationResult.freqCapRelease.templateId
+      );
+    }
     const campaignResult = await applyCampaignDeliveryStatusUpdate({
       wamid: event.wamid,
       status: event.status,

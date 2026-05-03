@@ -1136,7 +1136,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
   errorCode?: string | null;
   errorMessage?: string | null;
   eventTimestamp?: string | null;
-}): Promise<void> {
+}): Promise<{ freqCapRelease: { contactId: string; templateId: string } | null }> {
   const webhookFailureMessage =
     input.status === "failed"
       ? resolveWebhookFailureMessage({
@@ -1150,6 +1150,8 @@ export async function applyConversationDeliveryStatusUpdate(input: {
       : null;
   const normalizedErrorMessage = failure?.errorMessage ?? webhookFailureMessage;
 
+  let freqCapRelease: { contactId: string; templateId: string } | null = null;
+
   const updatedMessage = await withTransaction(async (client) => {
     const rowResult = await client.query<{
       message_id: string;
@@ -1160,6 +1162,7 @@ export async function applyConversationDeliveryStatusUpdate(input: {
       current_status: string | null;
       sent_at: string | null;
       connection_id: string | null;
+      template_id: string | null;
     }>(
       `SELECT
          cm.id AS message_id,
@@ -1175,7 +1178,15 @@ export async function applyConversationDeliveryStatusUpdate(input: {
            WHERE mda.provider_message_id = $1
            ORDER BY mda.created_at DESC
            LIMIT 1
-         ) AS connection_id
+         ) AS connection_id,
+         (
+           SELECT mda.requested_payload_json->>'templateId'
+           FROM message_delivery_attempts mda
+           WHERE mda.provider_message_id = $1
+             AND mda.requested_payload_json->>'templateId' IS NOT NULL
+           ORDER BY mda.created_at DESC
+           LIMIT 1
+         ) AS template_id
        FROM conversation_messages cm
        JOIN conversations c ON c.id = cm.conversation_id
        LEFT JOIN contacts ct
@@ -1225,6 +1236,10 @@ export async function applyConversationDeliveryStatusUpdate(input: {
       eventTimestamp: input.eventTimestamp ?? null
     });
 
+    if (input.status === "failed" && row.contact_id && row.template_id) {
+      freqCapRelease = { contactId: row.contact_id, templateId: row.template_id };
+    }
+
     return {
       userId: row.user_id,
       conversationId: row.conversation_id,
@@ -1241,6 +1256,8 @@ export async function applyConversationDeliveryStatusUpdate(input: {
       errorMessage: normalizedErrorMessage ?? undefined
     });
   }
+
+  return { freqCapRelease };
 }
 
 export async function applyCampaignDeliveryStatusUpdate(input: {
