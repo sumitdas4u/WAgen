@@ -64,6 +64,9 @@ export const updateContactFieldBlock: FlowBlockModule = {
         conversationId: conversationId || null,
         contactId: contactId || null
       });
+      if (!updatedContact) {
+        console.warn(`[UpdateContactField] Contact not found — userId=${userId} contactId=${contactId || "none"} conversationId=${conversationId || "none"} fieldKey=${fieldKey}`);
+      }
       nextVars = buildUpdatedVariables(context.vars, updatedContact);
     }
 

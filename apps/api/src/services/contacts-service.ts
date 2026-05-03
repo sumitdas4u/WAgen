@@ -393,9 +393,8 @@ function normalizeTags(values: string[] | null | undefined): string[] {
       values
         .map((value) => value.replace(/\s+/g, " ").trim())
         .filter(Boolean)
-        .slice(0, 24)
     )
-  );
+  ).slice(0, 24);
 }
 
 function parseTagCell(value: unknown): string[] {

@@ -115,8 +115,8 @@ export function DetailsSidebar({ convId, onClose }: Props) {
   const [openSections, setOpenSections] = useState<Set<string>>(getSavedSections);
   const [snoozeAt, setSnoozeAt] = useState("");
   const [pendingSnooze, setPendingSnooze] = useState(false);
-  const [editingTags, setEditingTags] = useState(false);
-  const [tagDraft, setTagDraft] = useState("");
+  const [addingTag, setAddingTag] = useState(false);
+  const [newTagValue, setNewTagValue] = useState("");
 
   const { byId, labels } = useConvStore();
   const conv = byId[convId];
@@ -197,20 +197,31 @@ export function DetailsSidebar({ convId, onClose }: Props) {
   useEffect(() => {
     setPendingSnooze(false);
     setSnoozeAt("");
-    setEditingTags(false);
+    setAddingTag(false);
+    setNewTagValue("");
   }, [convId]);
-
-  useEffect(() => {
-    setTagDraft((contact?.tags ?? []).join(", "));
-  }, [contact?.id, contact?.tags]);
 
   const updateTagsMut = useMutation({
     mutationFn: (tags: string[]) => updateContact(token!, contact!.id, { tags }),
     onSuccess: async () => {
-      setEditingTags(false);
+      setAddingTag(false);
+      setNewTagValue("");
       await contactQuery.refetch();
     }
   });
+
+  function handleAddTag() {
+    const trimmed = newTagValue.trim().replace(/\s+/g, " ");
+    if (!trimmed || !contact) return;
+    const existing = contact.tags ?? [];
+    if (existing.includes(trimmed)) { setNewTagValue(""); setAddingTag(false); return; }
+    updateTagsMut.mutate([...existing, trimmed]);
+  }
+
+  function handleRemoveTag(tag: string) {
+    if (!contact) return;
+    updateTagsMut.mutate((contact.tags ?? []).filter((t) => t !== tag));
+  }
 
   const toggleSection = useCallback((id: string) => {
     setOpenSections((prev) => {
@@ -273,48 +284,59 @@ export function DetailsSidebar({ convId, onClose }: Props) {
               <div className="iv-cf-row">
                 <div className="iv-cf-label">TAGS</div>
                 <div className="iv-cf-value">
-                  {editingTags ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                    {contact.tags.length > 0
+                      ? contact.tags.map((tag) => (
+                          <span key={tag} className="iv-tag" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                            {tag}
+                            <button
+                              type="button"
+                              disabled={updateTagsMut.isPending}
+                              onClick={() => handleRemoveTag(tag)}
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: "#94a3b8", fontSize: 13, fontWeight: 700 }}
+                              title={`Remove ${tag}`}
+                            >×</button>
+                          </span>
+                        ))
+                      : <span style={{ color: "#94a3b8", fontSize: 12 }}>No tags yet</span>}
+                  </div>
+                  {addingTag ? (
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                       <input
-                        value={tagDraft}
-                        onChange={(event) => setTagDraft(event.target.value)}
-                        placeholder="vip, follow-up, complaint"
-                        style={{ border: "1px solid #e2eaf4", borderRadius: 6, padding: "5px 7px", fontSize: 12 }}
+                        autoFocus
+                        value={newTagValue}
+                        onChange={(e) => setNewTagValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddTag();
+                          if (e.key === "Escape") { setAddingTag(false); setNewTagValue(""); }
+                        }}
+                        onBlur={() => { if (!newTagValue.trim()) { setAddingTag(false); } }}
+                        placeholder="tag name"
+                        style={{ border: "1px solid #e2eaf4", borderRadius: 6, padding: "3px 7px", fontSize: 12, width: 90 }}
                       />
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          className="iv-btn-blue"
-                          style={{ fontSize: 11, padding: "3px 8px" }}
-                          disabled={updateTagsMut.isPending}
-                          onClick={() => updateTagsMut.mutate(
-                            tagDraft.split(",").map((tag) => tag.trim()).filter(Boolean)
-                          )}
-                        >
-                          {updateTagsMut.isPending ? "Saving..." : "Save tags"}
-                        </button>
-                        <button
-                          className="iv-bulk-btn"
-                          style={{ fontSize: 11, padding: "3px 8px" }}
-                          onClick={() => {
-                            setTagDraft((contact.tags ?? []).join(", "));
-                            setEditingTags(false);
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="iv-btn-blue"
+                        style={{ fontSize: 11, padding: "3px 8px" }}
+                        disabled={updateTagsMut.isPending || !newTagValue.trim()}
+                        onClick={handleAddTag}
+                      >
+                        {updateTagsMut.isPending ? "…" : "Add"}
+                      </button>
+                      <button
+                        type="button"
+                        className="iv-bulk-btn"
+                        style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => { setAddingTag(false); setNewTagValue(""); }}
+                      >Cancel</button>
                     </div>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <div className="iv-tag-cloud">
-                        {contact.tags.length > 0
-                          ? contact.tags.map((tag) => <span key={tag} className="iv-tag">{tag}</span>)
-                          : <span style={{ color: "#94a3b8" }}>No tags yet</span>}
-                      </div>
-                      <button className="iv-bulk-btn" style={{ fontSize: 11, padding: "3px 8px", alignSelf: "flex-start" }} onClick={() => setEditingTags(true)}>
-                        Edit tags
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="iv-bulk-btn"
+                      style={{ fontSize: 11, padding: "3px 8px" }}
+                      onClick={() => setAddingTag(true)}
+                    >+ Add tag</button>
                   )}
                 </div>
               </div>
