@@ -39,6 +39,7 @@ import {
 } from "./message-delivery-data-service.js";
 import { sendMetaFlowMessageDirect } from "./meta-whatsapp-service.js";
 import {
+  clearFrequencyCapSend,
   evaluateHardBlocks,
   evaluateOutboundTemplatePolicy,
   recordFrequencyCapSend,
@@ -473,6 +474,7 @@ export async function deliverCampaignMessage(input: {
   senderName: string;
 }): Promise<{
   status: "sent" | "retrying" | "failed";
+  retryAt?: string | null;
   errorMessage?: string | null;
 }> {
   if (!input.campaign.template_id) {
@@ -507,7 +509,7 @@ export async function deliverCampaignMessage(input: {
       errorCode: "FREQ_CAP_24H",
       errorMessage: `24h marketing frequency cap reached. Retry scheduled at ${capUntil.toUTCString()}.`
     });
-    return { status: "retrying", errorMessage: `24h marketing frequency cap reached. Retry scheduled at ${capUntil.toUTCString()}.` };
+    return { status: "retrying", retryAt: capUntil.toISOString(), errorMessage: `24h marketing frequency cap reached. Retry scheduled at ${capUntil.toUTCString()}.` };
   }
 
   const activeTemplate = activeTemplateId !== input.campaign.template_id
@@ -517,8 +519,13 @@ export async function deliverCampaignMessage(input: {
   if (input.campaign.connection_id) {
     const dailyCap = await checkConnectionDailyCap(input.campaign.connection_id);
     if (dailyCap.exceeded) {
-      await deferCampaignMessageToNextDay(input.message.id);
-      return { status: "retrying", errorMessage: `Daily tier limit (${dailyCap.cap}) reached. Deferred to next day.` };
+      const nextDay = (() => {
+        const d = new Date();
+        d.setUTCHours(24, 0, 0, Math.floor(Math.random() * 60_000));
+        return d;
+      })();
+      await deferCampaignMessageToNextDay(input.message.id, { nextRetryAt: nextDay });
+      return { status: "retrying", retryAt: nextDay.toISOString(), errorMessage: `Daily tier limit (${dailyCap.cap}) reached. Deferred to next day.` };
     }
   }
 
@@ -662,6 +669,7 @@ export async function deliverCampaignMessage(input: {
 
     return {
       status: nextRetryAt ? "retrying" : "failed",
+      retryAt: nextRetryAt?.toISOString() ?? null,
       errorMessage: classification.errorMessage
     };
   }
@@ -787,13 +795,19 @@ export async function processMetaDeliveryStatusEvent(event: MetaDeliveryStatusEv
       errorMessage: event.errorMessage,
       eventTimestamp: event.eventTimestamp
     });
-    await applyCampaignDeliveryStatusUpdate({
+    const campaignResult = await applyCampaignDeliveryStatusUpdate({
       wamid: event.wamid,
       status: event.status,
       errorCode: event.errorCode,
       errorMessage: event.errorMessage,
       eventTimestamp: event.eventTimestamp
     });
+    if (campaignResult.freqCapRelease) {
+      await clearFrequencyCapSend(
+        campaignResult.freqCapRelease.contactId,
+        campaignResult.freqCapRelease.templateId
+      );
+    }
     await applySequenceDeliveryStatusUpdate({ wamid: event.wamid, status: event.status });
     await markWebhookStatusEventProcessed(claimed.eventId);
     void firePerMessageWebhook(event);

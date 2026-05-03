@@ -757,8 +757,30 @@ async function processCampaignSend(row: OutboundMessageRow): Promise<void> {
     message: input.message,
     senderName: input.senderName
   });
-  if (outcome.status !== "sent") {
-    throw new UnrecoverableError(outcome.errorMessage ?? "Campaign delivery did not complete.");
+  if (outcome.status === "retrying" && outcome.retryAt) {
+    // Reschedule via outbound_messages.scheduled_at — reconciliation timer re-enqueues
+    // as a native BullMQ delayed job when the window expires.
+    await pool.query(
+      `UPDATE outbound_messages SET status = 'queued', scheduled_at = $2 WHERE id = $1`,
+      [row.id, outcome.retryAt]
+    );
+    // Clear campaign_messages.next_retry_at so the retrySweep doesn't create a
+    // duplicate outbound job for the same message (this path owns the retry).
+    if (row.campaign_message_id) {
+      await pool.query(
+        `UPDATE campaign_messages SET next_retry_at = NULL WHERE id = $1 AND status = 'queued'`,
+        [row.campaign_message_id]
+      );
+    }
+    return;
+  }
+  if (outcome.status === "failed") {
+    await updateOutboundMessageState({
+      id: row.id,
+      status: "failed",
+      errorMessage: outcome.errorMessage ?? null
+    });
+    return;
   }
   await updateOutboundMessageState({
     id: row.id,
@@ -990,6 +1012,7 @@ export async function queueConversationTemplateMessage(input: {
 export async function queueCampaignOutboundMessage(input: {
   userId: string;
   campaignMessageId: string;
+  scheduledAt?: string | null;
   groupingKey?: string | null;
 }): Promise<void> {
   const row = await insertOutboundMessage({
@@ -998,6 +1021,7 @@ export async function queueCampaignOutboundMessage(input: {
     channel: "api",
     jobKey: buildOutboundJobKey("campaign", input.campaignMessageId),
     campaignMessageId: input.campaignMessageId,
+    scheduledAt: input.scheduledAt ?? null,
     groupingKey: input.groupingKey ?? null
   });
   await enqueueOutboundJob({ type: "campaign_send", campaignMessageId: input.campaignMessageId }, row.job_key, row.scheduled_at);

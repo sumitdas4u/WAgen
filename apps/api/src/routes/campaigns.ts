@@ -106,7 +106,7 @@ export async function campaignRoutes(fastify: FastifyInstance): Promise<void> {
         audienceSource: parsed.data.audienceSource ?? {},
         mediaOverrides: parsed.data.mediaOverrides ?? {},
         scheduledAt: parsed.data.scheduledAt ?? null,
-        smartRetryEnabled: parsed.data.smartRetryEnabled ?? false,
+        smartRetryEnabled: parsed.data.smartRetryEnabled ?? true,
         smartRetryUntil: parsed.data.smartRetryUntil ?? null
       });
       return reply.status(201).send({ campaign });

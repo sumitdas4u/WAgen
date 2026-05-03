@@ -1249,7 +1249,7 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
   errorCode?: string | null;
   errorMessage?: string | null;
   eventTimestamp?: string | null;
-}): Promise<void> {
+}): Promise<{ freqCapRelease: { contactId: string; templateId: string } | null }> {
   const webhookFailureMessage =
     input.status === "failed"
       ? resolveWebhookFailureMessage({
@@ -1263,6 +1263,8 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
       : null;
   const normalizedErrorMessage = failure?.errorMessage ?? webhookFailureMessage;
 
+  let freqCapRelease: { contactId: string; templateId: string } | null = null;
+
   await withTransaction(async (client) => {
     const rowResult = await client.query<{
       campaign_message_id: string;
@@ -1271,6 +1273,10 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
       contact_id: string | null;
       phone_number: string;
       current_status: CampaignDeliveryStatus;
+      retry_count: number;
+      smart_retry_enabled: boolean;
+      smart_retry_until: string | null;
+      template_id: string | null;
       sent_at: string | null;
       connection_id: string | null;
     }>(
@@ -1281,6 +1287,10 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
          cm.contact_id,
          cm.phone_number,
          cm.status AS current_status,
+         cm.retry_count,
+         c.smart_retry_enabled,
+         c.smart_retry_until::text AS smart_retry_until,
+         c.template_id,
          cm.sent_at::text AS sent_at,
          (
            SELECT mda.connection_id
@@ -1298,6 +1308,35 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
     const row = firstRow(rowResult);
     if (!row || !shouldApplyCampaignStatus(row.current_status, input.status)) {
       return;
+    }
+
+    // Smart retry: 131049 "healthy ecosystem" failures come through as webhook failures
+    // (Meta accepts the send, then fires a failed delivery event). Schedule for retry
+    // instead of permanently failing the message.
+    if (
+      input.status === "failed" &&
+      failure &&
+      isSmartRetryableCode(failure.errorCode) &&
+      row.smart_retry_enabled &&
+      row.retry_count < MAX_SMART_RETRIES
+    ) {
+      const delayMs = smartRetryDelayMs(row.retry_count);
+      const candidate = new Date(Date.now() + delayMs);
+      const boundary = row.smart_retry_until ? new Date(row.smart_retry_until) : null;
+      if (!boundary || candidate <= boundary) {
+        await client.query(
+          `UPDATE campaign_messages
+           SET status = 'queued',
+               retry_count = retry_count + 1,
+               next_retry_at = $2,
+               error_code = $3,
+               error_message = $4
+           WHERE id = $1`,
+          [row.campaign_message_id, candidate.toISOString(), input.errorCode ?? null, normalizedErrorMessage]
+        );
+        // Campaign stays running — markCampaignCompletedIfIdle will find queued messages
+        return;
+      }
     }
 
     await client.query(
@@ -1319,6 +1358,12 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
 
     await incrementCampaignCounterForTransition(client, row.campaign_id, row.current_status, input.status);
     await markCampaignCompletedIfIdle(client, row.campaign_id);
+
+    // If the message permanently failed, signal the caller to release the freq cap key
+    // so the contact can be immediately resent to (the message never actually arrived).
+    if (input.status === "failed" && row.contact_id && row.template_id) {
+      freqCapRelease = { contactId: row.contact_id, templateId: row.template_id };
+    }
 
     if (failure?.suppressionReason) {
       await upsertRecipientSuppression({
@@ -1345,6 +1390,8 @@ export async function applyCampaignDeliveryStatusUpdate(input: {
       eventTimestamp: input.eventTimestamp ?? null
     });
   });
+
+  return { freqCapRelease };
 }
 
 export async function listDeliveryAlerts(

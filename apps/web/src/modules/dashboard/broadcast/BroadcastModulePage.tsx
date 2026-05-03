@@ -1158,7 +1158,7 @@ function BroadcastWizardPage({
   const [error, setError] = useState<string | null>(null);
   const [retargetStatus, setRetargetStatus] = useState<RetargetStatus>("sent");
   const [sendMode, setSendMode] = useState<"now" | "schedule">("now");
-  const [retryEnabled, setRetryEnabled] = useState(false);
+  const [retryEnabled, setRetryEnabled] = useState(true);
   const [retryType, setRetryType] = useState<"smart" | "manual">("smart");
   const [retryUntil, setRetryUntil] = useState("");
   const [policyEnabled, setPolicyEnabled] = useState(true);

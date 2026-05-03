@@ -6,14 +6,12 @@ import {
   claimQueuedCampaignMessages,
   launchCampaign,
   markCampaignCompleted,
-  type Campaign,
-  type CampaignMessage
+  type Campaign
 } from "./campaign-service.js";
 import { queueCampaignOutboundMessage } from "./outbound-message-service.js";
 import {
   createQueueWorkerConnection,
-  getCampaignDispatchQueue,
-  getCampaignMessageQueue
+  getCampaignDispatchQueue
 } from "./queue-service.js";
 
 interface CampaignDispatchJob {
@@ -21,23 +19,11 @@ interface CampaignDispatchJob {
   userId: string;
 }
 
-interface CampaignMessageSendJob {
-  campaignId: string;
-  userId: string;
-  campaignMessageId: string;
-  retryCount: number;
-}
-
 let retrySweepTimer: ReturnType<typeof setInterval> | null = null;
 let dispatchWorker: Worker<CampaignDispatchJob> | null = null;
-let sendWorker: Worker<CampaignMessageSendJob> | null = null;
 
 function campaignDispatchJobId(campaignId: string): string {
   return `campaign-${campaignId}`;
-}
-
-function campaignMessageJobId(messageId: string, retryCount: number): string {
-  return `campaign-message-${messageId}-attempt-${retryCount}`;
 }
 
 function sharedJobCleanup(): Pick<JobsOptions, "removeOnComplete" | "removeOnFail"> {
@@ -65,44 +51,6 @@ async function loadRunningCampaign(campaignId: string): Promise<Campaign | null>
   return firstRow(campaignResult);
 }
 
-async function loadCampaignMessage(campaignMessageId: string): Promise<CampaignMessage | null> {
-  const messageResult = await pool.query<CampaignMessage>(
-    `SELECT * FROM campaign_messages WHERE id = $1 LIMIT 1`,
-    [campaignMessageId]
-  );
-  return firstRow(messageResult);
-}
-
-async function lookupSenderName(userId: string): Promise<string> {
-  const userRow = await pool.query<{ name: string }>(
-    `SELECT name FROM users WHERE id = $1 LIMIT 1`,
-    [userId]
-  );
-  return firstRow(userRow)?.name?.trim() || "Agent";
-}
-
-async function scheduleCampaignMessageJob(message: CampaignMessage, userId: string): Promise<void> {
-  const queue = getCampaignMessageQueue();
-  if (!queue) {
-    throw new Error("Campaign message queue is unavailable because REDIS_URL is not configured.");
-  }
-
-  await queue.add(
-    "send-message",
-    {
-      campaignId: message.campaign_id,
-      userId,
-      campaignMessageId: message.id,
-      retryCount: message.retry_count
-    },
-    {
-      jobId: campaignMessageJobId(message.id, message.retry_count),
-      delay: 1000 + Math.floor(Math.random() * 4000),
-      ...sharedRetryOptions(),
-      ...sharedJobCleanup()
-    }
-  );
-}
 
 export async function enqueueCampaign(campaignId: string, userId: string): Promise<void> {
   const queue = getCampaignDispatchQueue();
@@ -130,6 +78,7 @@ async function processCampaignDispatch(job: CampaignDispatchJob): Promise<void> 
     return;
   }
 
+  let batchIndex = 0;
   while (true) {
     const statusCheck = await pool.query<{ status: string }>(
       `SELECT status FROM campaigns WHERE id = $1 LIMIT 1`,
@@ -144,31 +93,24 @@ async function processCampaignDispatch(job: CampaignDispatchJob): Promise<void> 
       break;
     }
 
-    await Promise.all(messages.map((message) => scheduleCampaignMessageJob(message, job.userId)));
+    // Stagger each message by 1–5 s within the batch to avoid thundering herd
+    await Promise.all(
+      messages.map((message, idx) => {
+        const staggerMs = (batchIndex * 25 + idx) * 1000 + Math.floor(Math.random() * 1000);
+        const scheduledAt = staggerMs > 0
+          ? new Date(Date.now() + staggerMs).toISOString()
+          : null;
+        return queueCampaignOutboundMessage({
+          userId: job.userId,
+          campaignMessageId: message.id,
+          scheduledAt,
+          groupingKey: `campaign:${message.phone_number.replace(/\D/g, "")}`
+        });
+      })
+    );
+
+    batchIndex++;
   }
-
-  await markCampaignCompleted(job.campaignId);
-}
-
-async function processCampaignSend(job: CampaignMessageSendJob): Promise<void> {
-  const [campaign, message] = await Promise.all([
-    loadRunningCampaign(job.campaignId),
-    loadCampaignMessage(job.campaignMessageId)
-  ]);
-
-  if (!campaign || !campaign.template_id || !message) {
-    return;
-  }
-
-  if (message.status !== "sending" || message.retry_count !== job.retryCount) {
-    return;
-  }
-
-  await queueCampaignOutboundMessage({
-    userId: job.userId,
-    campaignMessageId: message.id,
-    groupingKey: `campaign:${message.phone_number.replace(/\D/g, "")}`
-  });
 
   await markCampaignCompleted(job.campaignId);
 }
@@ -197,17 +139,25 @@ async function retrySweep(): Promise<void> {
       }
     }
 
-    const result = await pool.query<{ campaign_id: string; user_id: string }>(
+    // Re-dispatch campaigns with messages deferred via webhook (e.g. 131049 smart retry).
+    // These messages have next_retry_at set but no active outbound_messages row, so
+    // the reconciliation timer cannot handle them — they need a new dispatch job.
+    const retryable = await pool.query<{ campaign_id: string; user_id: string }>(
       `SELECT DISTINCT cm.campaign_id, c.user_id
        FROM campaign_messages cm
        JOIN campaigns c ON c.id = cm.campaign_id
        WHERE cm.status = 'queued'
          AND cm.retry_count > 0
+         AND cm.next_retry_at IS NOT NULL
          AND cm.next_retry_at <= NOW()
          AND c.status = 'running'`
     );
-    for (const row of result.rows) {
-      await enqueueCampaign(row.campaign_id, row.user_id);
+    for (const row of retryable.rows) {
+      try {
+        await enqueueCampaign(row.campaign_id, row.user_id);
+      } catch (error) {
+        console.error(`[CampaignWorker] retry enqueue failed for campaign=${row.campaign_id}`, error);
+      }
     }
   } catch (error) {
     console.error("[CampaignWorker] retry sweep failed", error);
@@ -266,27 +216,6 @@ export function startCampaignWorker(): void {
     });
   }
 
-  if (!sendWorker) {
-    const connection = createQueueWorkerConnection();
-    if (!connection) {
-      throw new Error("Failed to create BullMQ connection for campaign send worker.");
-    }
-
-    sendWorker = new Worker<CampaignMessageSendJob>(
-      "campaign-message-send",
-      async (job) => processCampaignSend(job.data),
-      {
-        connection,
-        prefix: env.QUEUE_PREFIX?.trim() || undefined,
-        concurrency: Math.max(1, env.CAMPAIGN_SEND_CONCURRENCY)
-      }
-    );
-
-    sendWorker.on("failed", (job, error) => {
-      console.error(`[CampaignWorker] message job failed id=${job?.id ?? "unknown"}`, error);
-    });
-  }
-
   if (!retrySweepTimer) {
     retrySweepTimer = setInterval(
       () => void retrySweep(),
@@ -307,12 +236,6 @@ export async function stopCampaignWorker(): Promise<void> {
   if (dispatchWorker) {
     const worker = dispatchWorker;
     dispatchWorker = null;
-    await worker.close();
-  }
-
-  if (sendWorker) {
-    const worker = sendWorker;
-    sendWorker = null;
     await worker.close();
   }
 }

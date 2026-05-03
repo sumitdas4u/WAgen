@@ -90,6 +90,17 @@ export async function recordFrequencyCapSend(contactId: string, templateId: stri
 }
 
 /**
+ * Clear the frequency cap key when a message ultimately fails (delivery webhook failure).
+ * The cap was set on API dispatch success, but if Meta never delivered the message,
+ * the contact should be allowed to receive a resend immediately.
+ */
+export async function clearFrequencyCapSend(contactId: string, templateId: string): Promise<void> {
+  const redis = getQueueRedisConnection();
+  if (!redis) return;
+  await redis.del(freqCapKey(contactId, templateId));
+}
+
+/**
  * Look up an approved variant template for the given templateId.
  * Returns null until a variant_template_id column is configured on message_templates.
  *
@@ -199,8 +210,11 @@ export async function evaluateFrequencyCap(input: {
     sentAtMs = await getFreqCapSentAt(input.contactId, input.templateId);
   }
 
-  // Fall back to contact-level field (covers sends before Redis tracking was added)
-  if (sentAtMs === null && input.contact?.last_outgoing_marketing_at) {
+  // Fall back to contact-level field only when no templateId is known.
+  // When templateId is present, the Redis key is the authoritative source — using the
+  // contact-level timestamp would block a different template from sending (cross-template
+  // blocking), which contradicts the per-template cap intent.
+  if (sentAtMs === null && !input.templateId && input.contact?.last_outgoing_marketing_at) {
     const parsed = Date.parse(input.contact.last_outgoing_marketing_at);
     if (Number.isFinite(parsed)) sentAtMs = parsed;
   }
