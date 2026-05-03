@@ -62,6 +62,7 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
   const didInitialScrollRef = useRef<string | null>(null);
   const pendingHistoryScrollRef = useRef<{ previousHeight: number; previousTop: number } | null>(null);
   const [showFab, setShowFab] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   const messagesQuery = useMessages(convId);
   useNotes(convId);
@@ -175,8 +176,11 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
   }, [messagesQuery]);
 
   const handleRetry = useCallback((msgId: string) => {
+    setRetryError(null);
     retryMsg.mutateAsync({ convId, msgId }).catch((err: unknown) => {
-      window.alert(err instanceof Error ? err.message : "Retry failed. Please try again.");
+      const msg = err instanceof Error ? err.message : "Retry failed. Please try again.";
+      setRetryError(msg);
+      setTimeout(() => setRetryError(null), 6000);
     });
   }, [convId, retryMsg]);
 
@@ -328,6 +332,13 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
         <button className="iv-scroll-fab" onClick={scrollToBottom} title="Scroll to latest">
           ↓
         </button>
+      )}
+
+      {/* Retry error toast */}
+      {retryError && (
+        <div className="iv-compose-toast" style={{ background: "#fee2e2", color: "#991b1b", borderTop: "1px solid #fca5a5" }}>
+          {retryError}
+        </div>
       )}
 
       {/* Compose */}
