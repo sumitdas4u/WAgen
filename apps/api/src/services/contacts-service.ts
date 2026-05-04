@@ -572,7 +572,7 @@ async function getContactByPhone(db: DbExecutor, userId: string, phoneNumber: st
     `SELECT *
      FROM contacts
      WHERE user_id = $1
-       AND phone_number = $2
+       AND regexp_replace(phone_number, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
      LIMIT 1`,
     [userId, phoneNumber]
   );
@@ -1255,8 +1255,6 @@ export async function syncConversationContact(input: {
       email: input.email ?? undefined,
       contactType: input.contactType ?? "lead",
       marketingConsentStatus: "subscribed",
-      marketingConsentRecordedAt: new Date().toISOString(),
-      marketingConsentSource: "system",
       sourceType: input.sourceType,
       linkedConversationId: input.linkedConversationId
     })
@@ -1933,7 +1931,10 @@ export async function getContactByConversationId(userId: string, conversationId:
     );
     if (!conv.rows[0]) return null;
     const byPhone = await pool.query<Contact>(
-      `SELECT c.* FROM contacts c WHERE c.user_id = $1 AND c.phone_number = $2 LIMIT 1`,
+      `SELECT c.* FROM contacts c
+       WHERE c.user_id = $1
+         AND regexp_replace(c.phone_number, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
+       LIMIT 1`,
       [userId, conv.rows[0].phone_number]
     );
     if (!byPhone.rows[0]) return null;

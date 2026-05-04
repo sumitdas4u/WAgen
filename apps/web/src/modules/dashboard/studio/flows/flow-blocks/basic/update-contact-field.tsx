@@ -112,10 +112,12 @@ function UpdateContactFieldNode({ id, data, selected }: NodeProps<UpdateContactF
             onChange={(event) => {
               const nextField = fieldChoices.find((choice) => choice.key === event.target.value);
               const allowedOperations = getAvailableOperations(nextField?.fieldType);
-              patch({
-                fieldKey: event.target.value,
-                operation: allowedOperations.includes(data.operation) ? data.operation : "replace"
-              });
+              const nextOp = allowedOperations.includes(data.operation)
+                ? data.operation
+                : nextField?.fieldType === "MULTI_TEXT"
+                  ? "append"
+                  : "replace";
+              patch({ fieldKey: event.target.value, operation: nextOp });
             }}
           >
             {fieldChoices.map((choice) => (
