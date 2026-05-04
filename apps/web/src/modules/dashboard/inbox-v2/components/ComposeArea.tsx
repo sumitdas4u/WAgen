@@ -284,7 +284,37 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
   const sendTemplateMut = useMutation({
     mutationFn: ({ templateId, vars }: { templateId: string; vars: Record<string, string> }) =>
       sendTemplate(token!, convId, templateId, vars),
-    onSuccess: () => { setShowTemplateMenu(false); setTemplateVarsDialog(null); showToast("Template sent"); },
+    onSuccess: (data, variables) => {
+      setShowTemplateMenu(false);
+      setTemplateVarsDialog(null);
+      showToast("Template sent");
+      if (data.messageId) {
+        const template = templatesQuery.data?.find((t) => t.id === variables.templateId);
+        const bodyText = template ? getTemplateBody(template) : "Template sent";
+        const tempId = `temp-${data.messageId}`;
+        optimisticMap.current.set(data.messageId, tempId);
+        appendMessage(convId, {
+          id: tempId,
+          conversation_id: convId,
+          direction: "outbound",
+          sender_name: null,
+          message_text: bodyText,
+          content_type: "text",
+          is_private: false,
+          in_reply_to_id: null,
+          echo_id: data.messageId,
+          delivery_status: "pending",
+          error_code: null,
+          error_message: null,
+          retry_count: 0,
+          payload_json: null,
+          source_type: "manual",
+          ai_model: null,
+          total_tokens: null,
+          created_at: new Date().toISOString()
+        });
+      }
+    },
     onError: (e: Error) => showToast(e.message)
   });
 

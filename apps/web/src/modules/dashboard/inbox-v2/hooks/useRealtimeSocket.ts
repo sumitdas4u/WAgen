@@ -123,24 +123,24 @@ export function useRealtimeSocket(token: string | null) {
           const { conversationId, message } = envelope.data;
           setLastMsgId(conversationId, message.id);
 
+          const normalised = {
+            ...message,
+            direction: message.direction as "inbound" | "outbound",
+            delivery_status: message.delivery_status as import("../store/convStore").MsgDeliveryStatus,
+            content_type: (message.content_type ?? "text") as import("../store/convStore").MsgContentType,
+            message_content: (message as unknown as { message_content?: Record<string, unknown> | null }).message_content ?? null,
+            payload_json: (message as unknown as { payload_json?: Record<string, unknown> }).payload_json ?? null
+          };
+
           const tempId = optimisticMap.current.get(message.echo_id ?? "");
           if (tempId) {
-            s.replaceOptimisticMessage(conversationId, tempId, {
-              ...message,
-              direction: message.direction as "inbound" | "outbound",
-              delivery_status: message.delivery_status as import("../store/convStore").MsgDeliveryStatus,
-              content_type: (message.content_type ?? "text") as import("../store/convStore").MsgContentType,
-              payload_json: (message as unknown as { payload_json?: Record<string, unknown> }).payload_json ?? null
-            });
+            // Fast path: we have the temp→real mapping; replace the optimistic bubble.
+            s.replaceOptimisticMessage(conversationId, tempId, normalised);
             optimisticMap.current.delete(message.echo_id!);
-          } else if (!s.messagesByConvId[conversationId]?.some((m) => m.id === message.id)) {
-            s.appendMessage(conversationId, {
-              ...message,
-              direction: message.direction as "inbound" | "outbound",
-              delivery_status: message.delivery_status as import("../store/convStore").MsgDeliveryStatus,
-              content_type: (message.content_type ?? "text") as import("../store/convStore").MsgContentType,
-              payload_json: (message as unknown as { payload_json?: Record<string, unknown> }).payload_json ?? null
-            });
+          } else {
+            // Slow path: let mergeMessage dedup by sameId / sameEcho / sameTempId.
+            // This handles: page-reload (no map), late WS, or duplicate delivery.
+            s.appendMessage(conversationId, normalised);
           }
           break;
         }
@@ -181,22 +181,31 @@ export function useRealtimeSocket(token: string | null) {
         case "conversation.status_changed":
         case "conversation.priority_changed": {
           const raw = envelope.data;
+          // Some broadcasts (e.g. deliverConversationTemplateMessage) use "conversationId"
+          // instead of "id" — normalise so all paths set the store key correctly.
+          const convId: string = (raw as { id?: string }).id
+            ?? (raw as { conversationId?: string }).conversationId
+            ?? "";
+          if (!convId) break;
           const lm = (raw as { last_message?: { text: string; sent_at: string } }).last_message;
           const update = {
             ...raw,
+            id: convId,
             last_message: lm ? lm.text : (raw as unknown as { last_message?: string }).last_message,
             last_message_at: lm ? lm.sent_at : undefined,
           } as Partial<import("../store/convStore").Conversation> & { id: string };
           // Don't overwrite unread_count for the currently open conversation
-          if (raw.id === s.activeConvId) {
+          if (convId === s.activeConvId) {
             delete (update as Record<string, unknown>).unread_count;
           }
           // Optimistic update immediately so the row reflects the change
           s.upsertConv(update);
+          // Refresh contact data — flow blocks may have mutated contact fields/tags
+          void qcRef.current.invalidateQueries({ queryKey: ["iv2-contact", convId] });
           // Skip invalidation for the active conversation — upsertConv already applied
           // the update, and markRead.onSettled handles its own refetch. Refetching here
           // would briefly restore unread_count from the server and break mark-as-read.
-          if (raw.id !== s.activeConvId) scheduleConversationsRefresh();
+          if (convId !== s.activeConvId) scheduleConversationsRefresh();
           break;
         }
         case "conversation.read":
