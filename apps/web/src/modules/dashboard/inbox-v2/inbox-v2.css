@@ -690,7 +690,10 @@
 }
 
 .iv-compose-footer {
-  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  display: flex; align-items: stretch;
+}
+.iv-footer-btns {
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex: 1; min-width: 0;
 }
 .iv-footer-btn {
   width: 32px; height: 32px; border-radius: 8px; border: 1px solid #e2eaf4;
@@ -1963,14 +1966,14 @@ select.cd-input { height: 36px; }
     line-height: 1.35;
   }
 
-  .iv-compose-footer {
+  .iv-footer-btns {
     gap: 5px;
     padding: 8px 10px 10px;
     overflow-x: auto;
     scrollbar-width: none;
   }
 
-  .iv-compose-footer::-webkit-scrollbar {
+  .iv-footer-btns::-webkit-scrollbar {
     display: none;
   }
 

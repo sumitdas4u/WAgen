@@ -976,15 +976,6 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
               </div>
             )}
 
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.txt"
-              multiple
-              style={{ display: "none" }}
-              onChange={handleFileSelect}
-            />
             {/* Emoji picker */}
             {showEmojiPicker && (
               <div className="iv-emoji-picker" ref={emojiPickerRef}>
@@ -993,50 +984,62 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
                 ))}
               </div>
             )}
-            <button
-              className={`iv-footer-btn${showEmojiPicker ? " active" : ""}`}
-              title="Emoji"
-              onClick={() => { setShowEmojiPicker((v) => !v); closeAllMenus(); }}
-            >😊</button>
-            <button
-              className="iv-footer-btn"
-              title="Attach file"
-              disabled={attachedFiles.length >= 5 || (mode === "reply" && Boolean(freeFormBlockedReason))}
-              onClick={() => fileInputRef.current?.click()}
-            >📎</button>
-            {mode === "reply" && (
-              <>
-                <button
-                  className={`iv-footer-pill${showFlowMenu ? " active" : ""}`}
-                  title="Assign flow"
-                  onClick={() => { setShowFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); }}
-                >
-                  Flow
-                </button>
-                {isApiChannel && (
+
+            {/* Scrollable button row — separate from popups to avoid overflow clipping */}
+            <div className="iv-footer-btns">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.txt"
+                multiple
+                style={{ display: "none" }}
+                onChange={handleFileSelect}
+              />
+              <button
+                className={`iv-footer-btn${showEmojiPicker ? " active" : ""}`}
+                title="Emoji"
+                onClick={() => { setShowEmojiPicker((v) => !v); closeAllMenus(); }}
+              >😊</button>
+              <button
+                className="iv-footer-btn"
+                title="Attach file"
+                disabled={attachedFiles.length >= 5 || (mode === "reply" && Boolean(freeFormBlockedReason))}
+                onClick={() => fileInputRef.current?.click()}
+              >📎</button>
+              {mode === "reply" && (
+                <>
                   <button
-                    className={`iv-footer-pill${showTemplateMenu ? " active" : ""}`}
-                    title="Send template"
-                    disabled={sendTemplateMut.isPending}
-                    onClick={() => { setShowTemplateMenu((v) => !v); setShowFlowMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); }}
+                    className={`iv-footer-pill${showFlowMenu ? " active" : ""}`}
+                    title="Assign flow"
+                    onClick={() => { setShowFlowMenu((v) => !v); setShowTemplateMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); }}
                   >
-                    {sendTemplateMut.isPending ? "Template…" : "Template"}
+                    Flow
                   </button>
-                )}
-              </>
-            )}
-            <button
-              className={`iv-footer-btn ai${showAiAssistPopup ? " active" : ""}`}
-              title="AI Assist"
-              onClick={() => { setShowAiAssistPopup((v) => !v); setShowFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); }}
-            >
-              ✨
-            </button>
-            <div className="iv-send-group">
-              <button className="iv-btn-send" disabled={isUploading || (mode === "reply" && Boolean(freeFormBlockedReason))} onClick={() => void handleSend()}>
-                {isUploading ? "Uploading…" : mode === "note" ? "Add Note" : "Send ↵"}
+                  {isApiChannel && (
+                    <button
+                      className={`iv-footer-pill${showTemplateMenu ? " active" : ""}`}
+                      title="Send template"
+                      disabled={sendTemplateMut.isPending}
+                      onClick={() => { setShowTemplateMenu((v) => !v); setShowFlowMenu(false); setShowAiAssistPopup(false); setShowTranslateSubmenu(false); }}
+                    >
+                      {sendTemplateMut.isPending ? "Template…" : "Template"}
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                className={`iv-footer-btn ai${showAiAssistPopup ? " active" : ""}`}
+                title="AI Assist"
+                onClick={() => { setShowAiAssistPopup((v) => !v); setShowFlowMenu(false); setShowTemplateMenu(false); setShowTranslateSubmenu(false); }}
+              >
+                ✨
               </button>
-              <button className="iv-btn-send-caret">▾</button>
+              <div className="iv-send-group">
+                <button className="iv-btn-send" disabled={isUploading || (mode === "reply" && Boolean(freeFormBlockedReason))} onClick={() => void handleSend()}>
+                  {isUploading ? "Uploading…" : mode === "note" ? "Add Note" : "Send ↵"}
+                </button>
+                <button className="iv-btn-send-caret">▾</button>
+              </div>
             </div>
           </div>
         </>
