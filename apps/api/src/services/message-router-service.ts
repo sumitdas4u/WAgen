@@ -142,6 +142,25 @@ async function getLatestConversationState(
   return firstRow(refreshed) ?? fallback;
 }
 
+async function getLatestConversationAiGateState(
+  conversationId: string,
+  fallback: { score: number; stage: string; manual_takeover: boolean; ai_paused: boolean }
+): Promise<{ score: number; stage: string; manual_takeover: boolean; ai_paused: boolean }> {
+  const refreshed = await pool.query<{
+    score: number;
+    stage: string;
+    manual_takeover: boolean;
+    ai_paused: boolean;
+  }>(
+    `SELECT score, stage, manual_takeover, ai_paused
+     FROM conversations
+     WHERE id = $1
+     LIMIT 1`,
+    [conversationId]
+  );
+  return firstRow(refreshed) ?? fallback;
+}
+
 export async function processIncomingMessage(
   input: ProcessIncomingMessageInput
 ): Promise<ProcessIncomingMessageResult> {
@@ -429,25 +448,32 @@ export async function processIncomingMessage(
     };
   }
 
-  if (conversation.manual_takeover) {
+  const latestAiGateState = await getLatestConversationAiGateState(conversation.id, {
+    score: conversation.score,
+    stage: conversation.stage,
+    manual_takeover: conversation.manual_takeover,
+    ai_paused: conversation.ai_paused
+  });
+
+  if (latestAiGateState.manual_takeover) {
     console.log(`[Router] Manual takeover — skipping AI reply (conversation=${conversation.id})`);
     await notifyBotAlert(input.userId, conversation.id, "manual_takeover");
     return {
       conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
+      stage: latestAiGateState.stage,
+      score: latestAiGateState.score,
       autoReplySent: false,
       reason: "manual_takeover"
     };
   }
 
-  if (conversation.ai_paused) {
+  if (latestAiGateState.ai_paused) {
     console.log(`[Router] AI paused — skipping AI reply (conversation=${conversation.id})`);
     await notifyBotAlert(input.userId, conversation.id, "conversation_paused");
     return {
       conversationId: conversation.id,
-      stage: conversation.stage,
-      score: conversation.score,
+      stage: latestAiGateState.stage,
+      score: latestAiGateState.score,
       autoReplySent: false,
       reason: "conversation_paused"
     };
