@@ -6,7 +6,14 @@ export default defineConfig({
   base: process.env.VITE_BASE_PATH || "/",
   server: {
     port: 8080,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: "https://wagenai.com",
+        changeOrigin: true,
+        secure: true
+      }
+    }
   },
   preview: {
     port: 8080,

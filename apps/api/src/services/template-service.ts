@@ -312,13 +312,9 @@ function validateCreateTemplatePayload(payload: CreateTemplatePayload): void {
   const fullText = textFragments.join("\n").toLowerCase();
   const promotionalSignals = ["sale", "offer", "discount", "coupon", "% off", "limited time", "shop now", "deal"];
   const hasPromotionalSignal = promotionalSignals.some((signal) => fullText.includes(signal));
-  const hasOptOutInstruction = fullText.includes("reply stop") || fullText.includes("unsubscribe");
 
   if (payload.category === "UTILITY" && hasPromotionalSignal) {
     errors.push("Utility templates cannot contain promotional copy like offers, discounts, or sale language.");
-  }
-  if (payload.category === "MARKETING" && !hasOptOutInstruction) {
-    errors.push("Marketing templates must include a clear opt-out instruction such as Reply STOP to unsubscribe.");
   }
 
   if (errors.length > 0) {

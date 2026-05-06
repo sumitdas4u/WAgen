@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>WagenAI Restaurant Feedback Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Instrument+Serif:ital,wght@0,600;1,600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --green: #1db954;
+      --green-dark: #12833a;
+      --mint: #eaf8ef;
+      --ink: #111714;
+      --muted: #66736b;
+      --line: #dfe8e2;
+      --paper: #fffdfa;
+      --cream: #fbf6ea;
+      --amber: #c57924;
+      --rose: #b64255;
+      --shadow: 0 24px 70px rgba(17, 23, 20, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(135deg, rgba(29, 185, 84, 0.1), rgba(197, 121, 36, 0.08)),
+        radial-gradient(circle at 78% 18%, rgba(182, 66, 85, 0.14), transparent 31%),
+        var(--paper);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 44px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 30px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 10px;
+      color: #fff;
+      background: var(--green);
+      box-shadow: 0 12px 24px rgba(29, 185, 84, 0.26);
+    }
+
+    .top-pill {
+      border: 1px solid rgba(29, 185, 84, 0.24);
+      border-radius: 999px;
+      padding: 8px 13px;
+      color: var(--green-dark);
+      background: rgba(255, 255, 255, 0.76);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .intro {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: clamp(24px, 4vw, 44px);
+      background:
+        linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(251, 246, 234, 0.86)),
+        url("https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80");
+      background-blend-mode: screen;
+      background-size: cover;
+      background-position: center;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      border: 1px solid rgba(29, 185, 84, 0.2);
+      border-radius: 999px;
+      padding: 7px 12px;
+      color: var(--green-dark);
+      background: rgba(234, 248, 239, 0.94);
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+
+    h1 {
+      max-width: 650px;
+      font-size: clamp(2.35rem, 5vw, 4.75rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+      font-weight: 800;
+    }
+
+    .serif {
+      font-family: "Instrument Serif", Georgia, serif;
+      font-style: italic;
+      font-weight: 600;
+      color: var(--amber);
+    }
+
+    .intro-copy {
+      max-width: 600px;
+      margin-top: 20px;
+      color: #3e4b44;
+      font-size: 1.02rem;
+      line-height: 1.8;
+      font-weight: 600;
+    }
+
+    .benefits {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .benefit {
+      border: 1px solid rgba(17, 23, 20, 0.1);
+      border-radius: 14px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .benefit b {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 0.9rem;
+    }
+
+    .benefit span {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      font-weight: 600;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: var(--shadow);
+    }
+
+    .panel h2 {
+      margin-bottom: 8px;
+      font-size: 1.35rem;
+      letter-spacing: 0;
+    }
+
+    .panel p {
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.6;
+      font-weight: 600;
+    }
+
+    .demo-form {
+      display: grid;
+      gap: 14px;
+      margin-top: 22px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: #26312b;
+    }
+
+    .field input {
+      width: 100%;
+      border: 1.5px solid #d7e2db;
+      border-radius: 12px;
+      padding: 13px 14px;
+      color: var(--ink);
+      background: #fff;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .field input:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 4px rgba(29, 185, 84, 0.14);
+    }
+
+    .submit {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      border: 0;
+      border-radius: 12px;
+      color: #fff;
+      background: var(--green);
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 14px 30px rgba(29, 185, 84, 0.25);
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+
+    .submit:hover {
+      background: var(--green-dark);
+      transform: translateY(-1px);
+    }
+
+    .submit:disabled {
+      cursor: wait;
+      opacity: 0.72;
+      transform: none;
+    }
+
+    .status {
+      display: none;
+      border-radius: 12px;
+      padding: 12px 13px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      font-weight: 700;
+    }
+
+    .status.show {
+      display: block;
+    }
+
+    .status.ok {
+      color: #0c5f2c;
+      background: #e7f8ee;
+      border: 1px solid #b9e7c9;
+    }
+
+    .status.error {
+      color: #8d2434;
+      background: #fff0f2;
+      border: 1px solid #f0c5cc;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 22px;
+      margin-top: 28px;
+    }
+
+    .receipt,
+    .phone {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 16px 42px rgba(17, 23, 20, 0.08);
+      overflow: hidden;
+    }
+
+    .receipt-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 18px;
+      background: var(--cream);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .receipt-head b {
+      font-size: 0.95rem;
+    }
+
+    .receipt-head span {
+      color: var(--amber);
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+
+    .receipt-body {
+      padding: 18px;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 8px 0;
+      color: var(--muted);
+      border-bottom: 1px dashed #e7ede9;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .meta-row strong {
+      color: var(--ink);
+      text-align: right;
+    }
+
+    .items {
+      display: grid;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-radius: 10px;
+      padding: 9px 10px;
+      background: #f8fbf8;
+      color: #2d3731;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .total {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 16px;
+      border-radius: 14px;
+      padding: 15px;
+      color: #fff;
+      background: #151d18;
+      font-weight: 800;
+    }
+
+    .phone {
+      display: flex;
+      flex-direction: column;
+      min-height: 520px;
+      background: #efe8dd;
+    }
+
+    .phone-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 15px 16px;
+      color: #fff;
+      background: #0f7a42;
+    }
+
+    .avatar {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.2);
+      font-weight: 800;
+    }
+
+    .phone-head b {
+      display: block;
+      font-size: 0.9rem;
+    }
+
+    .phone-head span {
+      display: block;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .chat {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 10px;
+      padding: 17px;
+    }
+
+    .bubble {
+      max-width: 86%;
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      box-shadow: 0 2px 7px rgba(17, 23, 20, 0.07);
+    }
+
+    .bubble.business {
+      align-self: flex-start;
+      border-top-left-radius: 3px;
+      background: #fff;
+    }
+
+    .bubble.customer {
+      align-self: flex-end;
+      border-top-right-radius: 3px;
+      background: #d8f7c7;
+    }
+
+    .quick {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 9px;
+      border: 1px solid rgba(15, 122, 66, 0.22);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: #0f7a42;
+      background: #f6fff8;
+      font-size: 0.75rem;
+      font-weight: 800;
+    }
+
+    .phone-input {
+      margin: 0 12px 12px;
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: #8a918d;
+      background: #fff;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.86);
+    }
+
+    .step span {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      margin-bottom: 10px;
+      place-items: center;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--amber);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .step b {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.83rem;
+    }
+
+    .step p {
+      color: var(--muted);
+      font-size: 0.75rem;
+      line-height: 1.45;
+      font-weight: 600;
+    }
+
+    @media (max-width: 920px) {
+      .hero,
+      .preview-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .benefits,
+      .workflow {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 620px) {
+      .page {
+        width: min(100% - 22px, 1180px);
+        padding-top: 18px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .hero {
+        gap: 18px;
+      }
+
+      .intro,
+      .panel {
+        border-radius: 18px;
+        padding: 20px;
+      }
+
+      .benefits,
+      .workflow {
+        grid-template-columns: 1fr;
+      }
+
+      .phone {
+        min-height: 470px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div class="brand" aria-label="WagenAI">
+        <span class="brand-mark">W</span>
+        <span>WagenAI</span>
+      </div>
+      <div class="top-pill">Restaurant feedback automation demo</div>
+    </header>
+
+    <section class="hero" aria-label="Restaurant feedback demo">
+      <div class="intro">
+        <div class="eyebrow">Live WhatsApp feedback trigger</div>
+        <h1>Send a real feedback request after a <span class="serif">sample dine-in order.</span></h1>
+        <p class="intro-copy">
+          Enter a customer name and WhatsApp number. WagenAI will receive the sample order payload through webhook and start the restaurant feedback flow.
+        </p>
+        <div class="benefits">
+          <div class="benefit">
+            <b>Collect reviews faster</b>
+            <span>Reach guests while the dining experience is still fresh.</span>
+          </div>
+          <div class="benefit">
+            <b>Recover unhappy guests</b>
+            <span>Low ratings can alert the owner before a public review happens.</span>
+          </div>
+          <div class="benefit">
+            <b>Show real ROI</b>
+            <span>Every submitted order can become a trackable feedback moment.</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="panel">
+        <h2>Try the demo</h2>
+        <p>Please enter your WhatsApp number. The demo uses fixed restaurant order data and your submitted customer details.</p>
+        <form class="demo-form" id="feedbackForm">
+          <div class="field">
+            <label for="customerName">Customer name</label>
+            <input id="customerName" name="customerName" autocomplete="name" placeholder="e.g. Aditi Sharma" required />
+          </div>
+          <div class="field">
+            <label for="customerPhone">WhatsApp number</label>
+            <input id="customerPhone" name="customerPhone" autocomplete="tel" inputmode="tel" placeholder="e.g. 919876543210" required />
+          </div>
+          <button class="submit" id="submitButton" type="submit">Send feedback request</button>
+          <div class="status" id="statusBox" role="status" aria-live="polite"></div>
+        </form>
+      </aside>
+    </section>
+
+    <section class="preview-grid" aria-label="Sample data and feedback preview">
+      <article class="receipt">
+        <div class="receipt-head">
+          <div>
+            <b>Order #1422</b><br />
+            <span>Dine In - 06 May 2026, 8:19 PM</span>
+          </div>
+          <span>Sample payload</span>
+        </div>
+        <div class="receipt-body">
+          <div class="meta-row"><span>Customer</span><strong id="receiptName">Input from text</strong></div>
+          <div class="meta-row"><span>Phone</span><strong id="receiptPhone">Input from text</strong></div>
+          <div class="meta-row"><span>Order type</span><strong>Dine In</strong></div>
+          <div class="items">
+            <div class="item"><span>Crispy Chilli Baby Corn</span><strong>1</strong></div>
+            <div class="item"><span>Paneer Sufiana Malai (6 Pcs)</span><strong>1</strong></div>
+            <div class="item"><span>Murgh Tikka Makhan Masala (6 Pcs)</span><strong>1</strong></div>
+            <div class="item"><span>Chicken Biryani</span><strong>1</strong></div>
+            <div class="item"><span>Kadhai Paneer, Naan, Salad, Water</span><strong>+</strong></div>
+          </div>
+          <div class="total"><span>Grand total</span><strong>Rs. 2,332</strong></div>
+        </div>
+      </article>
+
+      <article class="phone" aria-label="WhatsApp feedback flow preview">
+        <div class="phone-head">
+          <div class="avatar">W</div>
+          <div>
+            <b>Wagen Restaurant</b>
+            <span>WhatsApp feedback assistant</span>
+          </div>
+        </div>
+        <div class="chat">
+          <div class="bubble business">
+            Hi <span id="chatName">there</span>, thank you for dining with us today. How was your experience?
+            <div class="quick">Rate your visit</div>
+          </div>
+          <div class="bubble customer">Food was great, service was quick.</div>
+          <div class="bubble business">
+            Wonderful. Would you like to share a Google review, or should our manager call you for more feedback?
+            <div class="quick">Share Google review</div>
+          </div>
+          <div class="bubble business">
+            Order #1422 included Chicken Biryani, Paneer Sufiana Malai and Butter Garlic Naan.
+          </div>
+        </div>
+        <div class="phone-input">Feedback flow starts after webhook submit</div>
+      </article>
+    </section>
+
+    <section class="workflow" aria-label="Owner workflow">
+      <div class="step">
+        <span>1</span>
+        <b>Guest details</b>
+        <p>Name and WhatsApp number are entered from the demo form.</p>
+      </div>
+      <div class="step">
+        <span>2</span>
+        <b>Order payload</b>
+        <p>Sample restaurant order data is sent to the WagenAI webhook.</p>
+      </div>
+      <div class="step">
+        <span>3</span>
+        <b>WhatsApp message</b>
+        <p>The selected feedback workflow can send a WhatsApp prompt.</p>
+      </div>
+      <div class="step">
+        <span>4</span>
+        <b>Owner follow-up</b>
+        <p>Ratings and replies can be routed into the restaurant workflow.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const WEBHOOK_URL = "/api/integrations/webhooks/wh_521cafe19065ff4e/incoming";
+    const WEBHOOK_SECRET = "d1e6eef3e7d5ea3ed4def01ca181438f46a3";
+    const ITEMS_ORDERED = "Crispy Chilli Baby Corn, Paneer Sufiana Malai (6 Pcs), Drinks Packaged Drinking Water, Murgh Tikka Makhan Masala (6 Pcs), Butter Garlic Naan, Chicken Biryani, Kadhai Paneer, Veg Manchurian Gravyy, Butter Naan, Onion Salad, Drinks Packaged Drinking Water";
+
+    const form = document.getElementById("feedbackForm");
+    const submitButton = document.getElementById("submitButton");
+    const statusBox = document.getElementById("statusBox");
+    const nameInput = document.getElementById("customerName");
+    const phoneInput = document.getElementById("customerPhone");
+    const receiptName = document.getElementById("receiptName");
+    const receiptPhone = document.getElementById("receiptPhone");
+    const chatName = document.getElementById("chatName");
+
+    function cleanPhone(value) {
+      return value.replace(/[^\d+]/g, "").trim();
+    }
+
+    function updatePreview() {
+      const name = nameInput.value.trim();
+      const phone = cleanPhone(phoneInput.value);
+      receiptName.textContent = name || "Input from text";
+      receiptPhone.textContent = phone || "Input from text";
+      chatName.textContent = name ? name.split(" ")[0] : "there";
+    }
+
+    function showStatus(type, message) {
+      statusBox.className = `status show ${type}`;
+      statusBox.textContent = message;
+    }
+
+    nameInput.addEventListener("input", updatePreview);
+    phoneInput.addEventListener("input", updatePreview);
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const customerName = nameInput.value.trim();
+      const customerPhone = cleanPhone(phoneInput.value);
+
+      if (!customerName || customerPhone.length < 10) {
+        showStatus("error", "Please enter a customer name and a valid WhatsApp number with country code.");
+        return;
+      }
+
+      const payload = {
+        customerName,
+        customerPhone,
+        grandTotal: 2332,
+        itemsOrdered: ITEMS_ORDERED,
+        orderDate: "2026-05-06 20:19:31",
+        orderNo: 1422,
+        orderType: "Dine In"
+      };
+
+      submitButton.disabled = true;
+      submitButton.textContent = "Sending...";
+      showStatus("ok", "Sending sample order to WagenAI webhook...");
+
+      try {
+        const response = await fetch(WEBHOOK_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webhook-secret": WEBHOOK_SECRET
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(result.error || `Webhook returned ${response.status}`);
+        }
+
+        showStatus(
+          "ok",
+          `Webhook fired successfully. Matched workflows: ${result.matchedWorkflows ?? 0}. The feedback automation can now continue on WhatsApp.`
+        );
+      } catch (error) {
+        showStatus("error", `Webhook could not be fired: ${error.message}`);
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Send feedback request";
+      }
+    });
+  </script>
+</body>
+</html>

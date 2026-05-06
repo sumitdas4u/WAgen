@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../../../lib/auth-context";
 import { fetchConversationTags } from "../api";
@@ -66,6 +66,8 @@ export function LeadFiltersPanel({ conversations }: Props) {
   const { token } = useAuth();
   const [tagSearch, setTagSearch] = useState("");
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const tagComboRef = useRef<HTMLDivElement | null>(null);
+  const [tagMenuMaxHeight, setTagMenuMaxHeight] = useState(180);
   const facetsQuery = useConversationFacets(folder, "", filters);
   const tagOptionsQuery = useQuery({
     queryKey: ["iv2-conversation-tags", tagSearch],
@@ -110,6 +112,28 @@ export function LeadFiltersPanel({ conversations }: Props) {
     filters.leadKind === "all" &&
     filters.priority === "all" &&
     filters.tags.length === 0;
+
+  useEffect(() => {
+    if (!tagPickerOpen) return;
+
+    const updateMenuHeight = () => {
+      const combo = tagComboRef.current;
+      if (!combo) return;
+
+      const rect = combo.getBoundingClientRect();
+      const panelBottom = combo.closest(".iv-nav")?.getBoundingClientRect().bottom ?? window.innerHeight;
+      const available = Math.floor(panelBottom - rect.bottom - 12);
+      setTagMenuMaxHeight(Math.max(96, available));
+    };
+
+    updateMenuHeight();
+    window.addEventListener("resize", updateMenuHeight);
+    window.addEventListener("scroll", updateMenuHeight, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuHeight);
+      window.removeEventListener("scroll", updateMenuHeight, true);
+    };
+  }, [tagPickerOpen, tagSearch, filters.tags.length]);
 
   // activeView only reflects filters state — tabs don't affect left panel
   const activeView = (() => {
@@ -285,7 +309,11 @@ export function LeadFiltersPanel({ conversations }: Props) {
                 ))}
               </div>
             )}
-            <div className="iv-tag-filter-combo">
+            <div
+              className="iv-tag-filter-combo"
+              ref={tagComboRef}
+              style={{ "--iv-tag-filter-menu-max-height": `${tagMenuMaxHeight}px` } as React.CSSProperties}
+            >
               <input
                 className="iv-tag-filter-input"
                 value={tagSearch}

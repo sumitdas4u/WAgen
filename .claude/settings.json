@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh -i /c/Users/user/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@64.227.182.4 \"docker logs infra-worker-1 --since 48h 2>&1 | grep -i '131049\\\\|not healthy\\\\|FREQ_CAP\\\\|smart' | tail -30\")"
+    ]
+  }
+}
