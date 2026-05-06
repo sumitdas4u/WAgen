@@ -1202,7 +1202,7 @@ export async function upsertWebhookContact(input: {
         displayName: input.displayName ?? undefined,
         phoneNumber: input.phoneNumber,
         email: input.email ?? undefined,
-        tags: input.tags ?? [],
+        tags: input.tags,
         marketingConsentStatus: "subscribed",
         marketingConsentRecordedAt: new Date().toISOString(),
         marketingConsentSource: "system",
