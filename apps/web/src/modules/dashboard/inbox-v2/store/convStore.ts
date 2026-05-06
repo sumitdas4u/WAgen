@@ -74,6 +74,7 @@ export interface ConvFilters {
   labelId: string;    // "all" | label.id
   leadKind: string;   // "all" | "lead" | "feedback" | "complaint" | "other"
   priority: string;   // "all" | "none" | "low" | "medium" | "high" | "urgent"
+  tags: string[];
 }
 
 interface ConvStore {
@@ -126,7 +127,8 @@ const DEFAULT_FILTERS: ConvFilters = {
   assignment: "all",
   labelId: "all",
   leadKind: "all",
-  priority: "all"
+  priority: "all",
+  tags: []
 };
 
 function mergeMessage(existing: ConversationMessage[], message: ConversationMessage): ConversationMessage[] {

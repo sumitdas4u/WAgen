@@ -72,7 +72,19 @@ const ConversationsQuerySchema = z.object({
   labelId: z.string().trim().optional(),
   leadKind: z.enum(["all", "lead", "feedback", "complaint", "other"]).optional(),
   priority: z.enum(["all", "none", "low", "medium", "high", "urgent"]).optional(),
-  stage: z.enum(["all", "hot", "warm", "cold"]).optional()
+  stage: z.enum(["all", "hot", "warm", "cold"]).optional(),
+  tags: z.preprocess(
+    (value) => {
+      const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+      return raw.map((tag) => String(tag).trim()).filter(Boolean);
+    },
+    z.array(z.string().trim().min(1).max(80)).max(24).optional()
+  )
+});
+
+const ConversationTagsQuerySchema = z.object({
+  q: z.string().trim().max(80).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional()
 });
 
 const ConversationMessagesQuerySchema = z.object({
@@ -106,6 +118,10 @@ function cleanTimelineDetail(value: unknown): string | null {
 }
 
 type FacetDimension = "status" | "stage" | "channel" | "aiMode" | "assignment" | "labelId" | "leadKind" | "priority";
+
+function normalizeTagFilters(tags: string[] | undefined): string[] {
+  return Array.from(new Set((tags ?? []).map((tag) => tag.replace(/\s+/g, " ").trim().toLowerCase()).filter(Boolean))).slice(0, 24);
+}
 
 function conversationFacetWhere(
   options: z.infer<typeof ConversationsQuerySchema>,
@@ -180,6 +196,16 @@ function conversationFacetWhere(
     where.push(`COALESCE(c.priority, 'none') = $${values.length}`);
   }
 
+  const tagFilters = normalizeTagFilters(options.tags);
+  if (tagFilters.length > 0) {
+    values.push(tagFilters);
+    where.push(`EXISTS (
+      SELECT 1
+      FROM unnest(COALESCE(ct.tags, ARRAY[]::text[])) AS tag
+      WHERE LOWER(tag) = ANY($${values.length}::text[])
+    )`);
+  }
+
   return where.join(" AND ");
 }
 
@@ -241,7 +267,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         labelId: parsed.data.labelId,
         leadKind: parsed.data.leadKind,
         priority: parsed.data.priority,
-        stage: parsed.data.stage
+        stage: parsed.data.stage,
+        tags: parsed.data.tags
       });
 
       return {
@@ -342,6 +369,45 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           qr: channels.qr ?? 0,
           web: channels.web ?? 0
         }
+      };
+    }
+  );
+
+  fastify.get(
+    "/api/conversations/tags",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = ConversationTagsQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid conversation tags query" });
+      }
+
+      const q = parsed.data.q?.trim().toLowerCase() ?? "";
+      const limit = parsed.data.limit ?? 50;
+      const values: Array<string | number> = [request.authUser.userId];
+      const where = ["ct.user_id = $1", "tag <> ''"];
+      if (q) {
+        values.push(`%${q}%`);
+        where.push(`LOWER(tag) LIKE $${values.length}`);
+      }
+      values.push(limit);
+
+      const result = await pool.query<{ tag: string; count: string }>(
+        `SELECT tag, COUNT(*)::text AS count
+         FROM contacts ct
+         CROSS JOIN LATERAL unnest(COALESCE(ct.tags, ARRAY[]::text[])) AS tag
+         WHERE ${where.join(" AND ")}
+         GROUP BY tag
+         ORDER BY COUNT(*) DESC, LOWER(tag) ASC
+         LIMIT $${values.length}`,
+        values
+      );
+
+      return {
+        tags: result.rows.map((row) => ({
+          value: row.tag,
+          count: Number(row.count)
+        }))
       };
     }
   );
@@ -466,13 +532,15 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
             )
            ORDER BY CASE WHEN ct.linked_conversation_id = o.id THEN 0 ELSE 1 END, ct.updated_at DESC
            LIMIT 1
-         )
+         ),
+         timeline_events AS (
          SELECT
            'conversation-started' AS id,
            'conversation_started' AS type,
            'Conversation started' AS label,
            NULL::text AS detail,
-           o.created_at AS occurred_at
+           o.created_at AS occurred_at,
+           0 AS sort_order
          FROM owned o
 
          UNION ALL
@@ -506,7 +574,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
              NULLIF(cm.sender_name, ''),
              NULLIF(cm.message_text, '')
            ) AS detail,
-           cm.created_at AS occurred_at
+           cm.created_at AS occurred_at,
+           10 AS sort_order
          FROM conversation_messages cm
          JOIN owned o ON o.id = cm.conversation_id
 
@@ -517,7 +586,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
            'flow_started' AS type,
            'Flow started' AS label,
            COALESCE(NULLIF(f.name, ''), fs.flow_id::text) AS detail,
-           fs.created_at AS occurred_at
+           fs.created_at AS occurred_at,
+           20 AS sort_order
          FROM flow_sessions fs
          JOIN owned o ON o.id = fs.conversation_id
          LEFT JOIN flows f ON f.id = fs.flow_id
@@ -535,7 +605,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
              ELSE 'Flow active'
            END AS label,
            COALESCE(NULLIF(f.name, ''), fs.waiting_for, fs.current_node_id, fs.flow_id::text) AS detail,
-           fs.updated_at AS occurred_at
+           fs.updated_at AS occurred_at,
+           21 AS sort_order
          FROM flow_sessions fs
          JOIN owned o ON o.id = fs.conversation_id
          LEFT JOIN flows f ON f.id = fs.flow_id
@@ -548,7 +619,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
            'sequence_started' AS type,
            'Sequence started' AS label,
            COALESCE(NULLIF(s.name, ''), se.sequence_id::text) AS detail,
-           se.entered_at AS occurred_at
+           se.entered_at AS occurred_at,
+           30 AS sort_order
          FROM sequence_enrollments se
          JOIN sequences s ON s.id = se.sequence_id
          JOIN contact_match cmatch ON cmatch.id = se.contact_id
@@ -568,7 +640,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
              ELSE 'Sequence updated'
            END AS label,
            COALESCE(NULLIF(sl.meta_json->>'templateName', ''), NULLIF(s.name, ''), sl.error_message) AS detail,
-           sl.created_at AS occurred_at
+           sl.created_at AS occurred_at,
+           31 AS sort_order
          FROM sequence_logs sl
          JOIN sequence_enrollments se ON se.id = sl.enrollment_id
          JOIN sequences s ON s.id = sl.sequence_id
@@ -590,15 +663,23 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
              ELSE 'Broadcast skipped'
            END AS label,
            c.name AS detail,
-           COALESCE(cmsg.sent_at, cmsg.delivered_at, cmsg.read_at, cmsg.updated_at, cmsg.created_at) AS occurred_at
+           CASE cmsg.status
+             WHEN 'read' THEN COALESCE(cmsg.read_at, cmsg.delivered_at, cmsg.sent_at, cmsg.updated_at, cmsg.created_at)
+             WHEN 'delivered' THEN COALESCE(cmsg.delivered_at, cmsg.sent_at, cmsg.updated_at, cmsg.created_at)
+             WHEN 'sent' THEN COALESCE(cmsg.sent_at, cmsg.updated_at, cmsg.created_at)
+             ELSE COALESCE(cmsg.updated_at, cmsg.created_at)
+           END AS occurred_at,
+           40 AS sort_order
          FROM campaign_messages cmsg
          JOIN campaigns c ON c.id = cmsg.campaign_id
          JOIN owned o ON o.user_id = c.user_id
          LEFT JOIN contact_match cmatch ON cmatch.id = cmsg.contact_id
          WHERE cmatch.id IS NOT NULL
             OR regexp_replace(cmsg.phone_number, '\\D', '', 'g') = regexp_replace(o.phone_number, '\\D', '', 'g')
-
-         ORDER BY occurred_at ASC
+         )
+         SELECT id, type, label, detail, occurred_at
+         FROM timeline_events
+         ORDER BY occurred_at ASC NULLS LAST, sort_order ASC, id ASC
          LIMIT 80`,
         [conversationId, request.authUser.userId]
       );

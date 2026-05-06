@@ -1,5 +1,9 @@
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "../../../../lib/auth-context";
+import { fetchConversationTags } from "../api";
 import { useConvStore } from "../store/convStore";
-import type { Conversation } from "../store/convStore";
+import type { Conversation, ConvFilters } from "../store/convStore";
 import { useConversationFacets } from "../queries";
 
 function scoreToStage(score: number): "hot" | "warm" | "cold" {
@@ -55,11 +59,33 @@ function Pills<T extends string>({ options, value, onChange }: {
 
 interface Props { conversations: Conversation[] }
 
-const RESET_FILTERS = { stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all", leadKind: "all", priority: "all" } as const;
+const RESET_FILTERS: ConvFilters = { stage: "all", channel: "all", aiMode: "all", assignment: "all", labelId: "all", leadKind: "all", priority: "all", tags: [] };
 
 export function LeadFiltersPanel({ conversations }: Props) {
   const { filters, setFilters, labels, folder } = useConvStore();
+  const { token } = useAuth();
+  const [tagSearch, setTagSearch] = useState("");
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const facetsQuery = useConversationFacets(folder, "", filters);
+  const tagOptionsQuery = useQuery({
+    queryKey: ["iv2-conversation-tags", tagSearch],
+    queryFn: () => fetchConversationTags(token!, tagSearch, 50),
+    enabled: Boolean(token),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false
+  });
+  const tagOptions = useMemo(() => {
+    const selected = filters.tags.map((tag) => ({ value: tag, count: 0 }));
+    const options = tagOptionsQuery.data?.tags ?? [];
+    const seen = new Set<string>();
+    return [...selected, ...options].filter((option) => {
+      const key = option.value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [filters.tags, tagOptionsQuery.data?.tags]);
 
   const loadedHotCount  = conversations.filter((c) => scoreToStage(c.score) === "hot").length;
   const loadedWarmCount = conversations.filter((c) => scoreToStage(c.score) === "warm").length;
@@ -82,7 +108,8 @@ export function LeadFiltersPanel({ conversations }: Props) {
     filters.assignment === "all" &&
     filters.labelId === "all" &&
     filters.leadKind === "all" &&
-    filters.priority === "all";
+    filters.priority === "all" &&
+    filters.tags.length === 0;
 
   // activeView only reflects filters state — tabs don't affect left panel
   const activeView = (() => {
@@ -99,6 +126,17 @@ export function LeadFiltersPanel({ conversations }: Props) {
   // Only resets filters — never touches folder/tabs
   function resetFilters() {
     setFilters(RESET_FILTERS);
+  }
+
+  function toggleTag(tag: string) {
+    const normalized = tag.replace(/\s+/g, " ").trim();
+    if (!normalized) return;
+    const isSelected = filters.tags.some((current) => current.toLowerCase() === normalized.toLowerCase());
+    setFilters({
+      tags: isSelected
+        ? filters.tags.filter((current) => current.toLowerCase() !== normalized.toLowerCase())
+        : [...filters.tags, normalized]
+    });
   }
 
   return (
@@ -234,6 +272,60 @@ export function LeadFiltersPanel({ conversations }: Props) {
             </div>
           </FilterSection>
         )}
+
+        <FilterSection label="Tags">
+          <div className="iv-tag-filter">
+            {filters.tags.length > 0 && (
+              <div className="iv-tag-filter-selected">
+                {filters.tags.map((tag) => (
+                  <button key={tag} type="button" className="iv-tag-filter-chip" onClick={() => toggleTag(tag)} title={`Remove ${tag}`}>
+                    <span>{tag}</span>
+                    <span aria-hidden="true">x</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="iv-tag-filter-combo">
+              <input
+                className="iv-tag-filter-input"
+                value={tagSearch}
+                onChange={(event) => {
+                  setTagSearch(event.target.value);
+                  setTagPickerOpen(true);
+                }}
+                onFocus={() => setTagPickerOpen(true)}
+                onBlur={() => window.setTimeout(() => setTagPickerOpen(false), 120)}
+                placeholder="Search tags"
+              />
+              {tagPickerOpen && (
+                <div className="iv-tag-filter-menu">
+                  {tagOptionsQuery.isLoading ? (
+                    <div className="iv-tag-filter-empty">Loading...</div>
+                  ) : tagOptions.length === 0 ? (
+                    <div className="iv-tag-filter-empty">No tags found</div>
+                  ) : (
+                    tagOptions.map((option) => {
+                      const selected = filters.tags.some((tag) => tag.toLowerCase() === option.value.toLowerCase());
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`iv-tag-filter-option${selected ? " selected" : ""}`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => toggleTag(option.value)}
+                        >
+                          <span className="iv-tag-filter-check">{selected ? "on" : ""}</span>
+                          <span>{option.value}</span>
+                          {option.count > 0 && <span className="iv-tag-filter-count">{option.count}</span>}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </FilterSection>
 
         {!isDefault && (
           <button

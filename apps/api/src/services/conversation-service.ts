@@ -568,7 +568,10 @@ export async function getConversationForUser(
        SELECT *
        FROM contacts ct
        WHERE ct.user_id = c.user_id
-         AND (ct.linked_conversation_id = c.id OR ct.phone_number = c.phone_number)
+         AND (
+           ct.linked_conversation_id = c.id
+           OR regexp_replace(ct.phone_number, '\\D', '', 'g') = regexp_replace(c.phone_number, '\\D', '', 'g')
+         )
        ORDER BY CASE WHEN ct.linked_conversation_id = c.id THEN 0 ELSE 1 END, ct.updated_at DESC
        LIMIT 1
      ) ct ON TRUE
@@ -1255,6 +1258,7 @@ export async function listConversationsPage(
     leadKind?: "all" | ConversationKind;
     priority?: "all" | "none" | "low" | "medium" | "high" | "urgent";
     stage?: "all" | "hot" | "warm" | "cold";
+    tags?: string[];
   }
 ): Promise<
   PaginatedResult<
@@ -1271,7 +1275,7 @@ export async function listConversationsPage(
   const clampedLimit = Math.max(1, Math.min(100, options?.limit ?? 20));
   const cursor = decodeCursor(options?.cursor);
   const search = options?.search?.trim().toLowerCase() ?? "";
-  const values: Array<string | number | null> = [userId];
+  const values: unknown[] = [userId];
   const where: string[] = ["c.user_id = $1"];
 
   if (search) {
@@ -1341,6 +1345,18 @@ export async function listConversationsPage(
   if (options?.priority && options.priority !== "all") {
     values.push(options.priority);
     where.push(`COALESCE(c.priority, 'none') = $${values.length}`);
+  }
+
+  const tagFilters = Array.from(
+    new Set((options?.tags ?? []).map((tag) => tag.replace(/\s+/g, " ").trim().toLowerCase()).filter(Boolean))
+  ).slice(0, 24);
+  if (tagFilters.length > 0) {
+    values.push(tagFilters);
+    where.push(`EXISTS (
+      SELECT 1
+      FROM unnest(COALESCE(ct.tags, ARRAY[]::text[])) AS tag
+      WHERE LOWER(tag) = ANY($${values.length}::text[])
+    )`);
   }
 
   if (cursor) {

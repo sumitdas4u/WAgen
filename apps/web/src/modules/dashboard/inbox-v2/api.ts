@@ -56,6 +56,7 @@ export function fetchConvPage(token: string, params: {
   if (filters?.leadKind && filters.leadKind !== "all") sp.set("leadKind", filters.leadKind);
   if (filters?.priority && filters.priority !== "all") sp.set("priority", filters.priority);
   if (filters?.stage && filters.stage !== "all") sp.set("stage", filters.stage);
+  filters?.tags?.forEach((tag) => sp.append("tags", tag));
   return apiFetch<ConvPage>(token, `/api/conversations?${sp}`);
 }
 
@@ -81,7 +82,20 @@ export function fetchConversationFacets(token: string, params: {
   if (filters?.leadKind && filters.leadKind !== "all") sp.set("leadKind", filters.leadKind);
   if (filters?.priority && filters.priority !== "all") sp.set("priority", filters.priority);
   if (filters?.stage && filters.stage !== "all") sp.set("stage", filters.stage);
+  filters?.tags?.forEach((tag) => sp.append("tags", tag));
   return apiFetch(token, `/api/conversations/facets?${sp}`);
+}
+
+export interface ConversationTagOption {
+  value: string;
+  count: number;
+}
+
+export function fetchConversationTags(token: string, q = "", limit = 50): Promise<{ tags: ConversationTagOption[] }> {
+  const sp = new URLSearchParams();
+  if (q.trim()) sp.set("q", q.trim());
+  sp.set("limit", String(limit));
+  return apiFetch(token, `/api/conversations/tags?${sp}`);
 }
 
 export function fetchConversation(token: string, convId: string): Promise<{ conversation: Conversation }> {

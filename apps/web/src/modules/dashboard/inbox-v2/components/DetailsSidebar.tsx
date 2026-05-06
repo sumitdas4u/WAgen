@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
@@ -185,6 +185,16 @@ export function DetailsSidebar({ convId, onClose }: Props) {
 
   const contact = contactQuery.data?.contact ?? null;
   const automation = automationQuery.data?.automation ?? null;
+  const timelineEvents = useMemo(
+    () => [...(timelineQuery.data?.events ?? [])].sort((left, right) => {
+      const leftTime = Date.parse(left.occurred_at);
+      const rightTime = Date.parse(right.occurred_at);
+      const leftRank = Number.isFinite(leftTime) ? leftTime : Number.MAX_SAFE_INTEGER;
+      const rightRank = Number.isFinite(rightTime) ? rightTime : Number.MAX_SAFE_INTEGER;
+      return leftRank - rightRank || left.id.localeCompare(right.id);
+    }),
+    [timelineQuery.data?.events]
+  );
   const fieldDefs = fieldsQuery.data?.fields ?? [];
   const fieldValues = contact?.custom_field_values ?? [];
   const valueMap = new Map(fieldValues.map((fv) => [fv.field_id, fv]));
@@ -528,10 +538,10 @@ export function DetailsSidebar({ convId, onClose }: Props) {
                 <div className="iv-timeline-empty">Loading timeline...</div>
               ) : timelineQuery.isError ? (
                 <div className="iv-timeline-empty">{(timelineQuery.error as Error).message || "Failed to load timeline"}</div>
-              ) : (timelineQuery.data?.events ?? []).length === 0 ? (
+              ) : timelineEvents.length === 0 ? (
                 <div className="iv-timeline-empty">No timeline events yet.</div>
               ) : (
-                (timelineQuery.data?.events ?? []).map((event: ConversationTimelineEvent) => (
+                timelineEvents.map((event: ConversationTimelineEvent) => (
                   <div key={event.id} className={`iv-timeline-item iv-timeline-${event.type}`}>
                     <span className="iv-timeline-icon">{timelineIcon(event.type)}</span>
                     <div className="iv-timeline-body">
