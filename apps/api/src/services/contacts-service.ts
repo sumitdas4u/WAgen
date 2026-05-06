@@ -1330,14 +1330,23 @@ export async function updateContactFieldValueFromFlow(input: {
 
     if (fieldKey === "tags") {
       const existingTags = Array.isArray(contact.tags) ? contact.tags : [];
+      const incomingTags = parseTagCell(rawValue);
+      if (incomingTags.length === 0) {
+        const fieldValuesMap = await loadFieldValues(client, [contact.id]);
+        return {
+          ...contact,
+          linked_conversation_id: linkedConversationId,
+          custom_field_values: fieldValuesMap.get(contact.id) ?? []
+        };
+      }
       const nextTags =
         op === "add_if_empty"
           ? existingTags.length > 0
             ? existingTags
-            : parseTagCell(rawValue)
+            : incomingTags
           : op === "append"
-            ? mergeTags(existingTags, parseTagCell(rawValue))
-            : parseTagCell(rawValue);
+            ? mergeTags(existingTags, incomingTags)
+            : incomingTags;
 
       contact = await updateContact(client, contact.id, {
         displayName: contact.display_name,

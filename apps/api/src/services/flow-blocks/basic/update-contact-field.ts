@@ -48,7 +48,8 @@ export const updateContactFieldBlock: FlowBlockModule = {
   async execute(context) {
     const fieldKey = String(context.node.data.fieldKey ?? "").trim();
     const rawValue = interpolate(String(context.node.data.value ?? ""), context.vars).trim();
-    const operation = String(context.node.data.operation ?? "replace");
+    const defaultOperation = fieldKey === "tags" ? "append" : "replace";
+    const operation = String(context.node.data.operation ?? defaultOperation);
     const userId = context.userId ?? null;
     const conversationId = String((context.vars.conversation as { id?: unknown } | undefined)?.id ?? "").trim();
     const contactId = String((context.vars.contact as { id?: unknown } | undefined)?.id ?? "").trim();
