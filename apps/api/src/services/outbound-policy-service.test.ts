@@ -169,14 +169,14 @@ describe("evaluateMarketingConsent", () => {
     ).toContain("marketing_unsubscribed");
   });
 
-  it("returns missing_marketing_consent when consent is unknown", () => {
+  it("returns no codes when consent is unknown", () => {
     const contact: Contact = {
       ...subscribedContact,
       marketing_consent_status: "unknown",
     };
     expect(
       evaluateMarketingConsent({ category: "MARKETING", contact })
-    ).toContain("missing_marketing_consent");
+    ).toHaveLength(0);
   });
 });
 

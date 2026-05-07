@@ -47,7 +47,7 @@ function isMarketingCategory(category: TemplateCategory): boolean {
 }
 
 function hasValidMarketingConsent(status: MarketingConsentStatus): boolean {
-  return status === "subscribed";
+  return status === "subscribed" || status === "unknown";
 }
 
 function classifySuppression(
