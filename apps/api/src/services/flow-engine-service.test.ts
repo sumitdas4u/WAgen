@@ -456,4 +456,54 @@ describe("handleFlowMessage — AI fallback takeover", () => {
     expect(mocks.createFlowSessionMock).not.toHaveBeenCalled();
     expect(sent).toContain("Thanks order 123");
   });
+
+  it("hands the first user message after an aiReply wait to AI instead of advancing past it", async () => {
+    const aiFlow = makeFlow({
+      id: "ai-flow",
+      nodes: [
+        { id: "start", type: "flowStart", data: { label: "Start", welcomeMessage: "", triggers: [], routes: [] } },
+        { id: "ai", type: "aiReply", data: { mode: "one_shot", contextNote: "Use the product catalog." } },
+        { id: "after-ai", type: "sendText", data: { text: "Thanks, AI is done." } }
+      ],
+      edges: [
+        { id: "edge-1", source: "start", sourceHandle: "out", target: "ai" },
+        { id: "edge-2", source: "ai", sourceHandle: "out", target: "after-ai" }
+      ]
+    });
+    mocks.state.flowLookup.set(aiFlow.id, aiFlow);
+    mocks.state.activeSession = {
+      id: "session-ai",
+      flow_id: aiFlow.id,
+      conversation_id: "conv-1",
+      current_node_id: "ai",
+      status: "waiting",
+      variables: {},
+      waiting_for: "ai_reply",
+      waiting_node_id: "after-ai",
+      created_at: new Date(0).toISOString(),
+      updated_at: new Date(0).toISOString()
+    };
+
+    const sent: string[] = [];
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType: "api",
+      message: "Can you help me choose?",
+      sendReply: async (payload) => {
+        if (payload.type === "text") sent.push(payload.text);
+      }
+    });
+
+    expect(result).toEqual({ result: "use_ai" });
+    expect(sent).toEqual([]);
+    expect(mocks.updateFlowSessionMock).not.toHaveBeenCalledWith(
+      "session-ai",
+      expect.objectContaining({
+        status: "active",
+        waiting_for: null,
+        waiting_node_id: null
+      })
+    );
+  });
 });

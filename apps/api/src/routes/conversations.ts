@@ -782,7 +782,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         `UPDATE conversations
          SET assigned_agent_profile_id = $1,
              manual_takeover = CASE WHEN $1::uuid IS NOT NULL THEN TRUE ELSE manual_takeover END,
-             ai_paused = CASE WHEN $1::uuid IS NOT NULL THEN TRUE ELSE ai_paused END
+             ai_paused = CASE WHEN $1::uuid IS NOT NULL THEN TRUE ELSE ai_paused END,
+             ai_pause_reason = CASE WHEN $1::uuid IS NOT NULL THEN 'assigned_agent' ELSE ai_pause_reason END
          WHERE id = $2
            AND user_id = $3`,
         [agentProfileId, params.conversationId, request.authUser.userId]

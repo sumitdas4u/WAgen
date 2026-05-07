@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS conversations (
   last_classified_at TIMESTAMPTZ,
   ai_paused BOOLEAN NOT NULL DEFAULT FALSE,
   manual_takeover BOOLEAN NOT NULL DEFAULT FALSE,
+  ai_pause_reason TEXT CHECK (
+    ai_pause_reason IS NULL
+    OR ai_pause_reason IN (
+      'manual',
+      'outbound_template',
+      'assigned_agent',
+      'external_bot',
+      'agent_number',
+      'flow_handoff'
+    )
+  ),
   last_ai_reply_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

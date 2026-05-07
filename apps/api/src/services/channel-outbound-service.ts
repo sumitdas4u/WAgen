@@ -179,7 +179,7 @@ export async function sendManualConversationMessage(input: {
   });
 
   if (input.lockToManual !== false) {
-    await setConversationManualAndPaused(input.userId, delivered.conversationId);
+    await setConversationManualAndPaused(input.userId, delivered.conversationId, "manual");
   }
 
   return {

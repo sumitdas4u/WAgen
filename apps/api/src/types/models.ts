@@ -28,6 +28,13 @@ export interface User {
 
 export type ConversationStatus = "open" | "pending" | "resolved" | "snoozed";
 export type ConversationPriority = "none" | "low" | "medium" | "high" | "urgent";
+export type ConversationAiPauseReason =
+  | "manual"
+  | "outbound_template"
+  | "assigned_agent"
+  | "external_bot"
+  | "agent_number"
+  | "flow_handoff";
 export type MessageContentType = "text" | "image" | "audio" | "video" | "document" | "sticker" | "location" | "contacts" | "interactive" | "template" | "activity";
 export type MessageDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
@@ -47,6 +54,7 @@ export interface Conversation {
   last_message_at: string | null;
   ai_paused: boolean;
   manual_takeover: boolean;
+  ai_pause_reason: ConversationAiPauseReason | null;
   last_ai_reply_at: string | null;
   unread_count?: number;
   visitor_online?: boolean;

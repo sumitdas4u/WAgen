@@ -592,7 +592,8 @@ async function runChain(
           await pool.query(
             `UPDATE conversations
              SET manual_takeover = FALSE,
-                 ai_paused = FALSE
+                 ai_paused = FALSE,
+                 ai_pause_reason = NULL
              WHERE id = $1 AND user_id = $2`,
             [session.conversation_id, options.userId]
           );
@@ -618,7 +619,7 @@ async function runChain(
 
     if (result.signal === "end") {
       if (result.handoffToHuman && options.userId) {
-        await setConversationManualAndPaused(options.userId, session.conversation_id);
+        await setConversationManualAndPaused(options.userId, session.conversation_id, "flow_handoff");
       }
       await updateFlowSession(session.id, {
         status: "completed",
@@ -659,23 +660,7 @@ async function resumeWaiting(
   invalidReplyLimit: number
 ): Promise<FlowHandleResult> {
   if (session.waiting_for === "ai_reply") {
-    if (!session.waiting_node_id) {
-      await updateFlowSession(session.id, { status: "completed" });
-      return { result: "handled" };
-    }
-
-    const nextNode = nodes.find((node) => node.id === session.waiting_node_id);
-    if (!nextNode) {
-      await updateFlowSession(session.id, { status: "completed" });
-      return { result: "handled" };
-    }
-
-    await updateFlowSession(session.id, {
-      status: "active",
-      waiting_for: null,
-      waiting_node_id: null
-    });
-    return runChain(nextNode, nodes, edges, session, session.variables, sendReply, options);
+    return { result: "use_ai" };
   }
 
   const waitNode = nodes.find((node) => node.id === session.waiting_node_id);
@@ -918,7 +903,8 @@ export async function startFlowForConversation(input: {
   await pool.query(
     `UPDATE conversations
      SET manual_takeover = FALSE,
-         ai_paused = FALSE
+         ai_paused = FALSE,
+         ai_pause_reason = NULL
      WHERE id = $1
        AND user_id = $2`,
     [input.conversationId, input.userId]

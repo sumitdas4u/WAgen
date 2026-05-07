@@ -414,7 +414,7 @@ export async function deliverConversationTemplateMessage(input: {
       result.messageId ?? null
     );
     await markContactTemplateOutboundActivity(input.userId, conversation.phone_number, result.template.category);
-    await setConversationManualAndPaused(input.userId, conversation.id);
+    await setConversationManualAndPaused(input.userId, conversation.id, "outbound_template");
 
     if (contact?.id) {
       await recordFrequencyCapSend(contact.id, activeTemplate.id);

@@ -3,7 +3,7 @@ import { firstRow, requireRow } from "../db/sql-helpers.js";
 import { fanoutEvent } from "./event-fanout-service.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { clamp } from "../utils/index.js";
-import type { AgentChannelType, Conversation, ConversationKind } from "../types/models.js";
+import type { AgentChannelType, Conversation, ConversationAiPauseReason, ConversationKind } from "../types/models.js";
 import {
   upsertConversationInsight,
   deriveSentiment,
@@ -2108,31 +2108,62 @@ export async function listConversationMessagesPage(
 export async function setManualTakeover(userId: string, conversationId: string, enabled: boolean): Promise<void> {
   await pool.query(
     `UPDATE conversations
-     SET manual_takeover = $1
+     SET manual_takeover = $1,
+         ai_pause_reason = CASE WHEN $1 THEN 'manual' ELSE NULL END
      WHERE id = $2 AND user_id = $3`,
     [enabled, conversationId, userId]
   );
 }
 
-export async function setConversationAIPaused(userId: string, conversationId: string, paused: boolean): Promise<void> {
+export async function setConversationAIPaused(
+  userId: string,
+  conversationId: string,
+  paused: boolean,
+  reason: ConversationAiPauseReason = "manual"
+): Promise<void> {
   await pool.query(
     `UPDATE conversations
-     SET ai_paused = $1
+     SET ai_paused = $1,
+         manual_takeover = CASE WHEN $1 THEN manual_takeover ELSE FALSE END,
+         ai_pause_reason = CASE WHEN $1 THEN $4 ELSE NULL END
      WHERE id = $2 AND user_id = $3`,
-    [paused, conversationId, userId]
+    [paused, conversationId, userId, reason]
   );
 }
 
-export async function setConversationManualAndPaused(userId: string, conversationId: string): Promise<void> {
+export async function setConversationManualAndPaused(
+  userId: string,
+  conversationId: string,
+  reason: ConversationAiPauseReason = "manual"
+): Promise<void> {
   await pool.query(
     `UPDATE conversations
      SET manual_takeover = TRUE,
-         ai_paused = TRUE
+         ai_paused = TRUE,
+         ai_pause_reason = $3
      WHERE id = $1
        AND user_id = $2
-       AND (manual_takeover = FALSE OR ai_paused = FALSE)`,
+       AND (manual_takeover = FALSE OR ai_paused = FALSE OR ai_pause_reason IS DISTINCT FROM $3)`,
+    [conversationId, userId, reason]
+  );
+}
+
+export async function clearConversationTemplatePauseForAi(
+  userId: string,
+  conversationId: string
+): Promise<boolean> {
+  const result = await pool.query<{ id: string }>(
+    `UPDATE conversations
+     SET manual_takeover = FALSE,
+         ai_paused = FALSE,
+         ai_pause_reason = NULL
+     WHERE id = $1
+       AND user_id = $2
+       AND ai_pause_reason = 'outbound_template'
+     RETURNING id`,
     [conversationId, userId]
   );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function setConversationResolved(userId: string, conversationId: string): Promise<void> {

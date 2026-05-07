@@ -19,6 +19,69 @@ So in product terms: **1 conversation = one total chat with one user in 24 hours
 
 ---
 
+## AI reply takeover after an inbound message
+
+When a customer replies to an API / WhatsApp template, the expected automation order is:
+
+1. Save the inbound customer message.
+2. Check whether there is an active flow session for that conversation.
+3. If no active session exists, check published flows for the channel and try to match:
+   - keyword triggers
+   - template reply triggers
+   - channel start triggers
+   - any-message / generic fallback flows
+4. If a flow keyword matches, run that flow.
+5. If no flow keyword matches, check the default reply setting for that channel.
+6. If channel default reply is **AI**, AI should take over and reply.
+7. If the flow has legacy `fallbackUseAi: true`, that also resolves to AI fallback.
+
+### Important implementation rule
+
+Template sends should not permanently block AI fallback. If a previous outbound template marked the conversation as `manual_takeover = true` / `ai_paused = true`, the inbound customer reply should still be allowed to use AI when:
+
+- the channel default reply mode is **AI**, or
+- the matched/sent flow has AI fallback enabled,
+- and the pause was caused by an outbound template, not by an intentional human pause.
+
+So the intended product behavior is:
+
+```text
+Customer replies
+-> flow keyword does not match
+-> default reply is AI / flow fallback AI exists
+-> clear template-caused pause
+-> AI replies
+```
+
+Human/manual pause should still be respected:
+
+```text
+Customer replies
+-> flow keyword does not match
+-> default reply is AI
+-> conversation was intentionally paused by human / assigned agent / external bot guard
+-> AI does not reply
+```
+
+### Current production issue to avoid
+
+Today, template sends can mark the conversation as both manual and AI-paused. Later, when the customer replies, the flow/default AI path can return `use_ai`, but the router still blocks the reply because it sees:
+
+```text
+manual_takeover = true
+ai_paused = true
+```
+
+The safer fix is to track why AI was paused, for example:
+
+```text
+ai_pause_reason = outbound_template | manual | assigned_agent | external_bot | flow_handoff
+```
+
+Then auto-resume only for `outbound_template`, and keep true manual pauses protected.
+
+---
+
 ## Suggested plan (single recommendation)
 
 Use this if you want **one clear setup**: good for Indian SMBs, **profitable at 5–6 replies** on every tier, with your preferred price points.
@@ -234,6 +297,132 @@ Cost per credit: **5 replies** = ₹1.75, **6 replies** = ₹2.10.
 - **Starter:** “400 conversations/month – ₹999.”
 - **Growth:** “1,000 conversations – ₹2,499.”
 - **Pro:** “2,800 conversations – ₹6,999.”
+
+---
+
+## Plan modules and backend protection
+
+This is the current module entitlement map from `apps/api/src/services/billing-service.ts`
+(`PLAN_ENTITLEMENT_CONFIG`). Module access is checked from the backend through
+`apps/api/src/services/plan-entitlement-service.ts`.
+
+### Modules included by plan
+
+| Module | Trial | Starter | Growth (`pro`) | Pro (`business`) |
+|--------|-------|---------|----------------|------------------|
+| Inbox | Included | Included | Included | Included |
+| Contacts | Included | Included | Included | Included |
+| Billing / AI wallet | Included | Included | Included | Included |
+| QR Channel | Included | Included | Included | Included |
+| Web Widget | Included | Included | Included | Included |
+| Broadcast | Starter Broadcast | Starter Broadcast | Advanced Broadcast | Advanced Broadcast |
+| Flows | Preview | Basic Flows | Advanced Flows | Advanced Flows |
+| Sequences | Upgrade path | Upgrade path | Included | Included |
+| Generic Webhooks | Upgrade path | Upgrade path | Included | Included |
+| API Channel / Official WhatsApp API UI | Included | Included | Included | Included |
+| Google Sheets | Upgrade path | Upgrade path | Included | Included |
+| Google Calendar | Upgrade path | Upgrade path | Included | Included |
+| Public API access / API keys | Upgrade path | Upgrade path | Upgrade path | Included |
+
+SaaS copy note: avoid saying **Limited** in plan tables. Use progression language:
+
+- **Included** for baseline features.
+- **Basic** for useful starter capability.
+- **Starter Broadcast** instead of limited broadcast.
+- **Advanced** for higher-tier workflow depth.
+- **Upgrade path** where the feature is intentionally reserved for higher plans.
+
+### Limits by plan
+
+| Limit | Trial | Starter | Growth (`pro`) | Pro (`business`) |
+|-------|-------|---------|----------------|------------------|
+| API numbers | 1 | 1 | 1 | 3 |
+| Agent profiles | 3 | 5 | 10 | 30 |
+| Active flows | 0 | 1 | 3 | 25 |
+| Knowledge sources | 1 | 2 | 5 | 15 |
+| Priority support | Standard | Standard | Standard | Priority |
+
+Notes:
+
+- The code-level plan names are `trial`, `starter`, `pro`, and `business`.
+- Product copy currently uses **Growth** for code `pro`.
+- Product copy currently uses **Pro** for code `business`.
+- `maxApiNumbers` and `maxAgentProfiles` can be overridden by DB plan values from the `plans` table:
+  - `plans.whatsapp_number_limit`
+  - `plans.agent_limit`
+- Other entitlement flags still come from `PLAN_ENTITLEMENT_CONFIG`.
+
+### How backend protection works
+
+Backend plan protection uses this flow:
+
+1. A route adds a module guard, for example `buildPlanModulePreHandler("googleSheets")`
+   or a local wrapper around `assertPlanModuleAccess(userId, "flows")`.
+2. The guard calls `getUserPlanEntitlements(userId)`.
+3. `getUserPlanEntitlements()` resolves the user's workspace plan from:
+   - `users`
+   - `workspaces`
+   - `plans`
+4. It merges DB limits (`agent_limit`, `whatsapp_number_limit`) with
+   `PLAN_ENTITLEMENT_CONFIG`.
+5. The guard checks `entitlements.modules[moduleKey]`.
+6. If the module is not included, the API returns:
+
+```json
+{
+  "error": "plan_upgrade_required",
+  "message": "Your current subscription does not include this module.",
+  "module": "flows"
+}
+```
+
+### Backend-protected modules
+
+These modules are actively protected in API routes:
+
+| Module key | Protected backend area | Route/service file |
+|------------|------------------------|--------------------|
+| `flows` | Flow create/update/delete/publish/generate draft | `apps/api/src/routes/flows.ts` |
+| `sequences` | Sequence CRUD, publish/pause/resume, enrollments, reports | `apps/api/src/routes/sequences.ts` |
+| `webhooks` | Generic webhook integrations and workflows | `apps/api/src/routes/generic-webhooks.ts` |
+| `googleSheets` | Google Sheets OAuth, status, spreadsheets, columns | `apps/api/src/routes/google-sheets.ts` |
+| `googleCalendar` | Google Calendar OAuth, status, calendars | `apps/api/src/routes/google-calendar.ts` |
+| `apiAccess` | API key creation/list/revoke | `apps/api/src/routes/api-keys.ts` |
+| `apiAccess` | Public API endpoints under `/v1/*` | `apps/api/src/routes/public-api.ts` |
+
+### Frontend protection
+
+Frontend page/module access is handled by:
+
+- `apps/web/src/registry/dashboardModules.ts`
+- `apps/web/src/app/dashboard/dashboard-module-guard.tsx`
+
+The frontend guard checks `bootstrap.planEntitlements` and can hide or block dashboard modules.
+This is useful for UX, but it is not the security boundary. The backend route guard above is the
+real protection.
+
+### Current gaps / cleanup needed
+
+The module map exists, but not every module is backend-gated yet:
+
+- `broadcast` is enabled for every plan and broadcast routes currently use `requireAuth` only.
+- Template routes are related to broadcast/templates, but backend template routes currently use `requireAuth` only.
+- `inbox`, `contacts`, `billing`, `qrChannel`, `webWidget`, and `apiChannel` are treated as baseline modules.
+- `maxActiveFlows` and `maxKnowledgeSources` are defined in entitlements, but only the dashboard guard clearly checks them; backend limit enforcement should be reviewed if these limits must be hard caps.
+
+Recommended cleanup:
+
+1. Keep baseline modules open: inbox, contacts, billing, QR, web widget, broadcast, API channel.
+2. Keep paid module gates:
+   - Starter: flows.
+   - Growth: flows, sequences, webhooks, Google Sheets, Google Calendar.
+   - Pro: everything Growth has plus public API access.
+3. Add backend hard-cap enforcement for:
+   - max active flows
+   - max knowledge sources
+   - agent profile count
+   - API number count
+4. Keep frontend guard for navigation, but do not rely on it as the only protection.
 
 ---
 

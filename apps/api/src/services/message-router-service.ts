@@ -17,6 +17,7 @@ import {
 } from "./ai-review-service.js";
 import {
   getConversationHistoryForPrompt,
+  clearConversationTemplatePauseForAi,
   setConversationAIPaused,
   setConversationManualAndPaused,
   trackInboundMessage
@@ -144,15 +145,28 @@ async function getLatestConversationState(
 
 async function getLatestConversationAiGateState(
   conversationId: string,
-  fallback: { score: number; stage: string; manual_takeover: boolean; ai_paused: boolean }
-): Promise<{ score: number; stage: string; manual_takeover: boolean; ai_paused: boolean }> {
+  fallback: {
+    score: number;
+    stage: string;
+    manual_takeover: boolean;
+    ai_paused: boolean;
+    ai_pause_reason: string | null;
+  }
+): Promise<{
+  score: number;
+  stage: string;
+  manual_takeover: boolean;
+  ai_paused: boolean;
+  ai_pause_reason: string | null;
+}> {
   const refreshed = await pool.query<{
     score: number;
     stage: string;
     manual_takeover: boolean;
     ai_paused: boolean;
+    ai_pause_reason: string | null;
   }>(
-    `SELECT score, stage, manual_takeover, ai_paused
+    `SELECT score, stage, manual_takeover, ai_paused, ai_pause_reason
      FROM conversations
      WHERE id = $1
      LIMIT 1`,
@@ -243,7 +257,7 @@ export async function processIncomingMessage(
 
   const phoneCandidate = normalizePhoneCandidate(input.customerIdentifier);
   if (isBotLoopProtectedChannel(input.channelType) && phoneCandidate && (await isAgentSenderPhone(phoneCandidate))) {
-    await setConversationAIPaused(input.userId, conversation.id, true);
+    await setConversationAIPaused(input.userId, conversation.id, true, "agent_number");
     await notifyBotAlert(input.userId, conversation.id, "sender_is_agent_number");
     return {
       conversationId: conversation.id,
@@ -296,7 +310,7 @@ export async function processIncomingMessage(
       const detection = await detectExternalBotLoop(conversation.id, normalizedMessage);
       if (detection.flagged) {
         console.log(`[Router] External bot detected - marking conversation as manual+paused (conversation=${conversation.id})`);
-        await setConversationManualAndPaused(input.userId, conversation.id);
+        await setConversationManualAndPaused(input.userId, conversation.id, "external_bot");
         await notifyBotAlert(input.userId, conversation.id, "external_bot_detected");
         return {
           conversationId: conversation.id,
@@ -452,10 +466,16 @@ export async function processIncomingMessage(
     score: conversation.score,
     stage: conversation.stage,
     manual_takeover: conversation.manual_takeover,
-    ai_paused: conversation.ai_paused
+    ai_paused: conversation.ai_paused,
+    ai_pause_reason: conversation.ai_pause_reason
   });
 
-  if (latestAiGateState.manual_takeover) {
+  const templatePauseClearedForAi =
+    flowResult.result === "use_ai" &&
+    latestAiGateState.ai_pause_reason === "outbound_template" &&
+    (await clearConversationTemplatePauseForAi(input.userId, conversation.id));
+
+  if (latestAiGateState.manual_takeover && !templatePauseClearedForAi) {
     console.log(`[Router] Manual takeover — skipping AI reply (conversation=${conversation.id})`);
     await notifyBotAlert(input.userId, conversation.id, "manual_takeover");
     return {
@@ -467,7 +487,7 @@ export async function processIncomingMessage(
     };
   }
 
-  if (latestAiGateState.ai_paused) {
+  if (latestAiGateState.ai_paused && !templatePauseClearedForAi) {
     console.log(`[Router] AI paused — skipping AI reply (conversation=${conversation.id})`);
     await notifyBotAlert(input.userId, conversation.id, "conversation_paused");
     return {
