@@ -502,7 +502,8 @@ export function classifyDeliveryFailure(error: unknown, explicitCode?: string | 
   if (
     normalizedMessage.includes("not a valid whatsapp") ||
     normalizedMessage.includes("invalid number") ||
-    normalizedMessage.includes("not valid") ||
+    normalizedMessage.includes("phone number is not valid") ||
+    normalizedMessage.includes("recipient is not valid") ||
     (errorCode != null && INVALID_NUMBER_META_CODES.has(errorCode))
   ) {
     return {
