@@ -173,6 +173,7 @@ import { handleFlowMessage } from "./flow-engine-service.js";
 
 function makeFlow(params: {
   id: string;
+  channel?: "web" | "qr" | "api";
   triggers?: FlowTrigger[];
   nodes?: FlowNode[];
   edges?: FlowEdge[];
@@ -182,7 +183,7 @@ function makeFlow(params: {
     id: params.id,
     user_id: "user-1",
     name: params.id,
-    channel: "api",
+    channel: params.channel ?? "api",
     connection_id: "conn-1",
     nodes: params.nodes ?? [],
     edges: params.edges ?? [],
@@ -505,5 +506,39 @@ describe("handleFlowMessage — AI fallback takeover", () => {
         waiting_node_id: null
       })
     );
+  });
+
+  it("fails a stale session from another channel and continues to QR AI fallback", async () => {
+    const staleApiFlow = makeSimpleFlow({ id: "stale-api-flow", replyText: "old" });
+    mocks.state.flowLookup.set(staleApiFlow.id, staleApiFlow);
+    mocks.state.publishedFlows = [];
+    mocks.state.activeSession = {
+      id: "session-stale-api",
+      flow_id: staleApiFlow.id,
+      conversation_id: "conv-1",
+      current_node_id: null,
+      status: "ai_mode",
+      variables: {},
+      waiting_for: null,
+      waiting_node_id: null,
+      created_at: new Date(0).toISOString(),
+      updated_at: new Date(0).toISOString()
+    };
+
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType: "qr",
+      message: "hello",
+      sendReply: async () => {}
+    });
+
+    expect(result).toEqual({ result: "use_ai" });
+    expect(mocks.updateFlowSessionMock).toHaveBeenCalledWith("session-stale-api", {
+      status: "failed",
+      waiting_for: null,
+      waiting_node_id: null
+    });
+    expect(mocks.createFlowSessionMock).not.toHaveBeenCalled();
   });
 });

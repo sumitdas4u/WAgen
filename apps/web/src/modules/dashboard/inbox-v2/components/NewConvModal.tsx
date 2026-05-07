@@ -83,7 +83,7 @@ export function NewConvModal({ onClose, onCreated }: Props) {
       const result = await createOutboundConversation(token!, {
         contactId: selectedContact.id,
         channelType,
-        connectionId: channelType === "api" ? selectedApiConnection?.id ?? null : null
+        connectionId: channelType === "api" ? selectedApiConnection?.id : undefined
       });
       onCreated(result.conversationId);
       onClose();

@@ -1036,7 +1036,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
   const OutboundConversationSchema = z.object({
     contactId: z.string().uuid(),
     channelType: z.enum(["qr", "api"]),
-    connectionId: z.string().uuid().optional()
+    connectionId: z.string().uuid().nullish()
   });
 
   fastify.post(
