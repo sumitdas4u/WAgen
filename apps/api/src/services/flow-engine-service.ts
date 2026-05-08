@@ -942,10 +942,16 @@ export async function handleFlowMessage(input: {
   message: string;
   sendReply: SendReplyFn;
 }): Promise<FlowHandleResult> {
-  let sessionIdToFail: string | null = null;
-
   try {
     const { userId, conversationId, channelType, message, sendReply } = input;
+    let firstInboundCache: boolean | null = null;
+    const getFirstInbound = async (): Promise<boolean> => {
+      if (firstInboundCache === null) {
+        firstInboundCache = await isFirstInboundMessage(conversationId);
+      }
+      return firstInboundCache;
+    };
+
     const flows = await getPublishedFlowsForUser(userId, channelType);
     const defaultReplyConfig = await resolveChannelDefaultReplyConfig(userId, channelType, {
       publishedFlows: flows
@@ -968,7 +974,6 @@ export async function handleFlowMessage(input: {
         [__FLOW_TRIGGER_ID_KEY]: matchedTriggerId
       };
       const session = await createFlowSession(matchedFlow.id, conversationId, initialVars);
-      sessionIdToFail = session.id;
 
       try {
         return await runChain(startNode, nodes, edges, session, initialVars, sendReply, {
@@ -985,9 +990,9 @@ export async function handleFlowMessage(input: {
       }
     };
 
-    const existingSession = await getActiveFlowSession(conversationId);
-    if (existingSession) {
-      sessionIdToFail = existingSession.id;
+    const processExistingSession = async (
+      existingSession: FlowSessionRow
+    ): Promise<FlowHandleResult | null> => {
       const flowResult = await pool.query<FlowRow>(
         "SELECT * FROM flows WHERE id = $1 LIMIT 1",
         [existingSession.flow_id]
@@ -995,78 +1000,90 @@ export async function handleFlowMessage(input: {
       const flow = flowResult.rows[0];
       if (!flow) {
         await markFlowSessionFailed(existingSession.id);
-        sessionIdToFail = null;
-      } else if (!isFlowCompatibleWithChannel(flow, channelType)) {
+        console.warn(
+          `[FlowEngine] Ignored missing-flow active session conversation=${conversationId} session=${existingSession.id} flow=${existingSession.flow_id}`
+        );
+        return null;
+      }
+
+      if (!isFlowCompatibleWithChannel(flow, channelType)) {
         await markFlowSessionFailed(existingSession.id);
-        sessionIdToFail = null;
         console.warn(
           `[FlowEngine] Ignored incompatible active session conversation=${conversationId} session=${existingSession.id} flowChannel=${flow.channel} messageChannel=${channelType}`
         );
-      } else {
-        const { nodes, edges, startNode } = getFlowGraph(flow);
+        return null;
+      }
 
-        try {
-          if (existingSession.status === "ai_mode") {
-            const aiModeMatch = findMatchedTrigger({
-              message,
-              flows: nonDefaultFlows,
-              channelType,
-              isFirstInboundMessage: await isFirstInboundMessage(conversationId)
-            });
-            if (!aiModeMatch || !isSpecificTriggerMatch(aiModeMatch)) {
-              return { result: "use_ai" };
-            }
+      const { nodes, edges, startNode } = getFlowGraph(flow);
 
-            await updateFlowSession(existingSession.id, {
-              status: "completed",
-              waiting_for: null,
-              waiting_node_id: null
-            });
-            sessionIdToFail = null;
-            return startMatchedFlow(aiModeMatch.flow, aiModeMatch.triggerId);
+      try {
+        if (existingSession.status === "ai_mode") {
+          const aiModeMatch = findMatchedTrigger({
+            message,
+            flows: nonDefaultFlows,
+            channelType,
+            isFirstInboundMessage: await getFirstInbound()
+          });
+          if (!aiModeMatch || !isSpecificTriggerMatch(aiModeMatch)) {
+            return { result: "use_ai" };
           }
 
-          if (existingSession.status === "waiting" && existingSession.waiting_node_id) {
-            return await resumeWaiting(existingSession, nodes, edges, message, sendReply, {
-              userId,
-              channelType
-            }, defaultReplyConfig.invalidReplyLimit);
-          }
-
-          const currentNode =
-            (existingSession.current_node_id
-              ? nodes.find((node) => node.id === existingSession.current_node_id)
-              : null) ?? startNode;
-
-          if (!currentNode) {
-            await updateFlowSession(existingSession.id, { status: "completed" });
-            return { result: "not_matched" };
-          }
-
-          return await runChain(
-            currentNode,
-            nodes,
-            edges,
-            existingSession,
-            existingSession.variables,
-            sendReply,
-            {
-              userId,
-              channelType
-            }
-          );
-        } catch (error) {
-          await markFlowSessionFailed(existingSession.id);
-          console.warn(
-            `[FlowEngine] Existing session failed conversation=${conversationId} session=${existingSession.id}:`,
-            error
-          );
-          return { result: "failed" };
+          await updateFlowSession(existingSession.id, {
+            status: "completed",
+            waiting_for: null,
+            waiting_node_id: null
+          });
+          return startMatchedFlow(aiModeMatch.flow, aiModeMatch.triggerId);
         }
+
+        if (existingSession.status === "waiting" && existingSession.waiting_node_id) {
+          return await resumeWaiting(existingSession, nodes, edges, message, sendReply, {
+            userId,
+            channelType
+          }, defaultReplyConfig.invalidReplyLimit);
+        }
+
+        const currentNode =
+          (existingSession.current_node_id
+            ? nodes.find((node) => node.id === existingSession.current_node_id)
+            : null) ?? startNode;
+
+        if (!currentNode) {
+          await updateFlowSession(existingSession.id, { status: "completed" });
+          return { result: "not_matched" };
+        }
+
+        return await runChain(
+          currentNode,
+          nodes,
+          edges,
+          existingSession,
+          existingSession.variables,
+          sendReply,
+          {
+            userId,
+            channelType
+          }
+        );
+      } catch (error) {
+        await markFlowSessionFailed(existingSession.id);
+        console.warn(
+          `[FlowEngine] Existing session failed conversation=${conversationId} session=${existingSession.id}:`,
+          error
+        );
+        return { result: "failed" };
+      }
+    };
+
+    const existingSession = await getActiveFlowSession(conversationId);
+    if (existingSession) {
+      const existingSessionResult = await processExistingSession(existingSession);
+      if (existingSessionResult) {
+        return existingSessionResult;
       }
     }
 
-    const firstInbound = await isFirstInboundMessage(conversationId);
+    const firstInbound = await getFirstInbound();
 
     const matchResult = findMatchedTrigger({
       message,
@@ -1106,7 +1123,6 @@ export async function handleFlowMessage(input: {
           if (drStartNode) {
             const initialVars = await buildConversationFlowVariables({ userId, conversationId });
             const session = await createFlowSession(selectedDefaultReplyFlow.id, conversationId, initialVars);
-            sessionIdToFail = session.id;
             try {
               return await runChain(drStartNode, nodes, edges, session, initialVars, sendReply, {
                 userId,
@@ -1140,7 +1156,6 @@ export async function handleFlowMessage(input: {
         if (drStartNode) {
           const initialVars = await buildConversationFlowVariables({ userId, conversationId });
           const session = await createFlowSession(selectedDefaultReplyFlow.id, conversationId, initialVars);
-          sessionIdToFail = session.id;
           try {
             return await runChain(drStartNode, nodes, edges, session, initialVars, sendReply, {
               userId,
@@ -1162,7 +1177,6 @@ export async function handleFlowMessage(input: {
 
     return startMatchedFlow(matchedFlow, matchedTriggerId);
   } catch (error) {
-    await markFlowSessionFailed(sessionIdToFail);
     console.warn("[FlowEngine] Unhandled error:", error);
     return { result: "failed" };
   }

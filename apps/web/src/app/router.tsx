@@ -167,12 +167,36 @@ export const appRoutes: RouteObject[] = [
             lazy: lazyComponent(() => import("../pages/SuperAdminLoginPage"), "SuperAdminLoginPage")
           },
           {
-            index: true,
-            lazy: lazyComponent(() => import("../pages/SuperAdminPage"), "SuperAdminPage")
-          },
-          {
-            path: "*",
-            element: <Navigate to="/super-admin/login" replace />
+            lazy: lazyComponent(() => import("../pages/super-admin/SuperAdminShell"), "SuperAdminShell"),
+            children: [
+              { index: true, lazy: lazyComponent(() => import("../pages/super-admin/DashboardPage"), "DashboardPage") },
+              { path: "workspaces", lazy: lazyComponent(() => import("../pages/super-admin/WorkspacesPage"), "WorkspacesPage") },
+              { path: "users", lazy: lazyComponent(() => import("../pages/super-admin/UsersPage"), "UsersPage") },
+              { path: "customer-success", lazy: lazyComponent(() => import("../pages/super-admin/CustomerSuccessPage"), "CustomerSuccessPage") },
+              { path: "fraud", lazy: lazyComponent(() => import("../pages/super-admin/FraudPage"), "FraudPage") },
+              { path: "billing", lazy: lazyComponent(() => import("../pages/super-admin/BillingPage"), "BillingPage") },
+              { path: "plans", lazy: lazyComponent(() => import("../pages/super-admin/PlansPage"), "PlansPage") },
+              { path: "ai-logs", lazy: lazyComponent(() => import("../pages/super-admin/AiLogsPage"), "AiLogsPage") },
+              { path: "ai-spend-limits", lazy: lazyComponent(() => import("../pages/super-admin/AiSpendLimitsPage"), "AiSpendLimitsPage") },
+              { path: "abuse-flags", lazy: lazyComponent(() => import("../pages/super-admin/AbuseFlagsPage"), "AbuseFlagsPage") },
+              { path: "prompts", lazy: lazyComponent(() => import("../pages/super-admin/PromptManagementPage"), "PromptManagementPage") },
+              { path: "qr-sessions", lazy: lazyComponent(() => import("../pages/super-admin/QrSessionsPage"), "QrSessionsPage") },
+              { path: "waba", lazy: lazyComponent(() => import("../pages/super-admin/WabaPage"), "WabaPage") },
+              { path: "meta-compliance", lazy: lazyComponent(() => import("../pages/super-admin/MetaCompliancePage"), "MetaCompliancePage") },
+              { path: "broadcasts", lazy: lazyComponent(() => import("../pages/super-admin/BroadcastsPage"), "BroadcastsPage") },
+              { path: "broadcast-health", lazy: lazyComponent(() => import("../pages/super-admin/BroadcastHealthPage"), "BroadcastHealthPage") },
+              { path: "templates", lazy: lazyComponent(() => import("../pages/super-admin/TemplatesPage"), "TemplatesPage") },
+              { path: "analytics", lazy: lazyComponent(() => import("../pages/super-admin/AnalyticsPage"), "AnalyticsPage") },
+              { path: "system-health", lazy: lazyComponent(() => import("../pages/super-admin/SystemHealthPage"), "SystemHealthPage") },
+              { path: "queues", lazy: lazyComponent(() => import("../pages/super-admin/QueuesPage"), "QueuesPage") },
+              { path: "webhook-logs", lazy: lazyComponent(() => import("../pages/super-admin/WebhookLogsPage"), "WebhookLogsPage") },
+              { path: "audit-logs", lazy: lazyComponent(() => import("../pages/super-admin/AuditLogsPage"), "AuditLogsPage") },
+              { path: "emergency", lazy: lazyComponent(() => import("../pages/super-admin/EmergencyPage"), "EmergencyPage") },
+              { path: "feature-flags", lazy: lazyComponent(() => import("../pages/super-admin/FeatureFlagsPage"), "FeatureFlagsPage") },
+              { path: "activity", lazy: lazyComponent(() => import("../pages/super-admin/ActivityPage"), "ActivityPage") },
+              { path: "settings", lazy: lazyComponent(() => import("../pages/super-admin/SettingsPage"), "SettingsPage") },
+              { path: "*", element: <Navigate to="/super-admin" replace /> }
+            ]
           }
         ]
       },

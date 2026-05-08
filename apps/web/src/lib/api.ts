@@ -695,6 +695,409 @@ export function testAdminProvider(token: string) {
   >("/api/admin/provider/test", { method: "POST", token });
 }
 
+// ── Admin QR Sessions ─────────────────────────────────────────────────────────
+export interface AdminQrSession {
+  userId: string;
+  userEmail: string;
+  userName: string;
+  status: string;
+  phoneNumber: string | null;
+  enabled: boolean;
+  lastConnectedAt: string | null;
+  updatedAt: string;
+}
+
+export function fetchAdminQrSessions(token: string) {
+  return apiRequest<{ sessions: AdminQrSession[] }>("/api/admin/qr-sessions", { token });
+}
+
+// ── Admin WABA Connections ────────────────────────────────────────────────────
+export interface AdminWabaConnection {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  wabaId: string | null;
+  displayPhoneNumber: string | null;
+  linkedNumber: string | null;
+  billingStatus: string | null;
+  status: string;
+  enabled: boolean;
+  tokenExpiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchAdminWabaConnections(token: string) {
+  return apiRequest<{ connections: AdminWabaConnection[] }>("/api/admin/waba-connections", { token });
+}
+
+// ── Admin Broadcasts ──────────────────────────────────────────────────────────
+export interface AdminBroadcast {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  name: string;
+  status: string;
+  totalCount: number;
+  sentCount: number;
+  deliveredCount: number;
+  readCount: number;
+  failedCount: number;
+  scheduledAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+export function fetchAdminBroadcasts(token: string, options?: { status?: string; limit?: number }) {
+  const params = new URLSearchParams();
+  if (options?.status) params.set("status", options.status);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const q = params.toString();
+  return apiRequest<{ broadcasts: AdminBroadcast[] }>(q ? `/api/admin/broadcasts?${q}` : "/api/admin/broadcasts", { token });
+}
+
+export function cancelAdminBroadcast(token: string, broadcastId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/broadcasts/${broadcastId}/cancel`, { method: "POST", token });
+}
+
+// ── Admin Templates ───────────────────────────────────────────────────────────
+export interface AdminTemplate {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  name: string;
+  category: string;
+  language: string;
+  status: string;
+  qualityScore: string | null;
+  metaRejectionReason: string | null;
+  createdAt: string;
+}
+
+export function fetchAdminTemplates(token: string, options?: { status?: string; limit?: number }) {
+  const params = new URLSearchParams();
+  if (options?.status) params.set("status", options.status);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const q = params.toString();
+  return apiRequest<{ templates: AdminTemplate[] }>(q ? `/api/admin/templates?${q}` : "/api/admin/templates", { token });
+}
+
+// ── Admin AI Logs ─────────────────────────────────────────────────────────────
+export interface AdminAiLogEntry {
+  id: string;
+  userId: string;
+  userEmail: string;
+  workspaceId: string | null;
+  actionType: string;
+  module: string | null;
+  model: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCostInr: number;
+  creditsDeducted: number;
+  status: string;
+  createdAt: string;
+}
+
+export function fetchAdminAiLogs(token: string, options?: { workspaceId?: string; model?: string; limit?: number }) {
+  const params = new URLSearchParams();
+  if (options?.workspaceId) params.set("workspaceId", options.workspaceId);
+  if (options?.model) params.set("model", options.model);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const q = params.toString();
+  return apiRequest<{ logs: AdminAiLogEntry[] }>(q ? `/api/admin/ai/logs?${q}` : "/api/admin/ai/logs", { token });
+}
+
+// ── Admin Audit Logs ──────────────────────────────────────────────────────────
+export interface AdminAuditLogEntry {
+  id: string;
+  adminEmail: string | null;
+  action: string;
+  workspaceId: string | null;
+  targetUserId: string | null;
+  ipAddress: string | null;
+  detailsJson: Record<string, unknown>;
+  beforeJson: Record<string, unknown> | null;
+  afterJson: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export function fetchAdminAuditLogs(token: string, options?: { action?: string; limit?: number }) {
+  const params = new URLSearchParams();
+  if (options?.action) params.set("action", options.action);
+  if (options?.limit) params.set("limit", String(options.limit));
+  const q = params.toString();
+  return apiRequest<{ logs: AdminAuditLogEntry[] }>(q ? `/api/admin/audit-logs?${q}` : "/api/admin/audit-logs", { token });
+}
+
+// ── Admin Queue Stats ─────────────────────────────────────────────────────────
+export interface AdminQueueStat {
+  name: string;
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+  delayed: number;
+}
+
+export function fetchAdminQueues(token: string) {
+  return apiRequest<{ queues: AdminQueueStat[] }>("/api/admin/queues", { token });
+}
+
+export function retryAdminQueueFailed(token: string, queueName: string) {
+  return apiRequest<{ ok: boolean; retried: number }>(`/api/admin/queues/${queueName}/retry-failed`, { method: "POST", token });
+}
+
+export function pauseAdminQueue(token: string, queueName: string, pause: boolean) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/queues/${queueName}/pause`, { method: "POST", token, body: JSON.stringify({ pause }) });
+}
+
+// ── Admin Kill Switches ───────────────────────────────────────────────────────
+export interface AdminKillSwitch {
+  key: string;
+  enabled: boolean;
+  enabledBy: string | null;
+  enabledAt: string | null;
+  reason: string | null;
+}
+
+export function fetchAdminKillSwitches(token: string) {
+  return apiRequest<{ switches: AdminKillSwitch[] }>("/api/admin/kill-switches", { token });
+}
+
+export function enableAdminKillSwitch(token: string, key: string, reason?: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/kill-switches/${key}/enable`, { method: "POST", token, body: JSON.stringify({ reason }) });
+}
+
+export function disableAdminKillSwitch(token: string, key: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/kill-switches/${key}/disable`, { method: "POST", token });
+}
+
+// ── Admin Feature Flags ───────────────────────────────────────────────────────
+export interface AdminFeatureFlag {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  enabledGlobally: boolean;
+  rolloutPercent: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchAdminFeatureFlags(token: string) {
+  return apiRequest<{ flags: AdminFeatureFlag[] }>("/api/admin/feature-flags", { token });
+}
+
+export function createAdminFeatureFlag(token: string, payload: { key: string; name: string; description?: string; enabledGlobally?: boolean; rolloutPercent?: number }) {
+  return apiRequest<{ flag: AdminFeatureFlag }>("/api/admin/feature-flags", { method: "POST", token, body: JSON.stringify(payload) });
+}
+
+export function updateAdminFeatureFlag(token: string, flagKey: string, payload: { name?: string; description?: string; enabledGlobally?: boolean; rolloutPercent?: number }) {
+  return apiRequest<{ flag: AdminFeatureFlag }>(`/api/admin/feature-flags/${flagKey}`, { method: "PUT", token, body: JSON.stringify(payload) });
+}
+
+// ── Admin Webhook Delivery Logs ───────────────────────────────────────────────
+export interface AdminWebhookLogEntry {
+  id: string;
+  endpointId: string;
+  endpointUrl: string;
+  userId: string;
+  userEmail: string;
+  event: string;
+  statusCode: number | null;
+  attempt: number;
+  success: boolean;
+  errorMessage: string | null;
+  deliveredAt: string;
+}
+
+export function fetchAdminWebhookLogs(token: string, options?: { failure?: boolean; limit?: number }) {
+  const params = new URLSearchParams();
+  if (options?.failure) params.set("failure", "true");
+  if (options?.limit) params.set("limit", String(options.limit));
+  const q = params.toString();
+  return apiRequest<{ logs: AdminWebhookLogEntry[] }>(q ? `/api/admin/webhook-logs?${q}` : "/api/admin/webhook-logs", { token });
+}
+
+// ── System Health ─────────────────────────────────────────────────────────────
+export interface WorkerHeartbeat {
+  workerName: string;
+  lastPingAt: string;
+  status: "ok" | "stale" | "missing";
+  staleSecs: number;
+}
+
+export interface SystemHealthResponse {
+  postgres: { status: "ok" | "down"; latencyMs: number };
+  redis: { status: "ok" | "down" | "unavailable" };
+  workers: WorkerHeartbeat[];
+  checkedAt: string;
+}
+
+export function fetchAdminSystemHealth(token: string) {
+  return apiRequest<SystemHealthResponse>("/api/admin/system-health", { token });
+}
+
+// ── Workspace Health Scores ───────────────────────────────────────────────────
+export interface WorkspaceHealthSummary {
+  workspaceId: string;
+  workspaceName: string;
+  ownerEmail: string;
+  score: number;
+  tier: string;
+  aiEnabled: boolean;
+  hasActiveBroadcast: boolean;
+  calculatedAt: string;
+}
+
+export function fetchAdminWorkspaceHealth(token: string) {
+  return apiRequest<{ workspaces: WorkspaceHealthSummary[] }>("/api/admin/workspace-health", { token });
+}
+
+// ── Abuse Flags ───────────────────────────────────────────────────────────────
+export interface AdminAbuseFlag {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  ownerEmail: string;
+  flagType: string;
+  severity: string;
+  autoActioned: boolean;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export function fetchAdminAbuseFlags(token: string, options?: { unresolved?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.unresolved) params.set("unresolved", "true");
+  const q = params.toString();
+  return apiRequest<{ flags: AdminAbuseFlag[] }>(q ? `/api/admin/abuse-flags?${q}` : "/api/admin/abuse-flags", { token });
+}
+
+export function resolveAdminAbuseFlag(token: string, flagId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/abuse-flags/${flagId}/resolve`, { method: "POST", token });
+}
+
+// ── Fraud Signals ─────────────────────────────────────────────────────────────
+export interface AdminFraudSignal {
+  id: string;
+  userId: string | null;
+  userEmail: string;
+  workspaceId: string | null;
+  workspaceName: string;
+  signalType: string;
+  severity: string;
+  autoActioned: boolean;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export function fetchAdminFraudSignals(token: string, options?: { unresolved?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.unresolved) params.set("unresolved", "true");
+  const q = params.toString();
+  return apiRequest<{ signals: AdminFraudSignal[] }>(q ? `/api/admin/fraud-signals?${q}` : "/api/admin/fraud-signals", { token });
+}
+
+export function resolveAdminFraudSignal(token: string, signalId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/fraud-signals/${signalId}/resolve`, { method: "POST", token });
+}
+
+// ── Broadcast Reputation ──────────────────────────────────────────────────────
+export interface BroadcastReputationEntry {
+  workspaceId: string;
+  workspaceName: string;
+  ownerEmail: string;
+  totalSent: number;
+  totalDelivered: number;
+  totalRead: number;
+  totalFailed: number;
+  deliveryRate: number | null;
+  readRate: number | null;
+  failureRate: number | null;
+  templateRejectionRate: number | null;
+  reputationScore: number;
+  riskLevel: string;
+  lastCalculatedAt: string | null;
+}
+
+export function fetchBroadcastReputation(token: string) {
+  return apiRequest<{ entries: BroadcastReputationEntry[] }>("/api/admin/broadcast-reputation", { token });
+}
+
+// ── Meta Compliance Events ────────────────────────────────────────────────────
+export interface MetaComplianceEvent {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  ownerEmail: string;
+  connectionId: string | null;
+  eventType: string;
+  severity: string;
+  detailJson: Record<string, unknown>;
+  createdAt: string;
+}
+
+export function fetchMetaComplianceEvents(token: string, limit?: number) {
+  const q = limit ? `?limit=${limit}` : "";
+  return apiRequest<{ events: MetaComplianceEvent[] }>(`/api/admin/meta-compliance${q}`, { token });
+}
+
+// ── AI Spend Limits ───────────────────────────────────────────────────────────
+export interface WorkspaceSpendLimits {
+  workspaceId: string;
+  dailyCapInr: number | null;
+  monthlyCapInr: number | null;
+  actionOnBreach: string;
+  notifyEmail: string | null;
+  currentDaySpendInr: number;
+  currentMonthSpendInr: number;
+  breachedAt: string | null;
+  updatedAt: string;
+}
+
+export function fetchWorkspaceSpendLimits(token: string, workspaceId: string) {
+  return apiRequest<{ limits: WorkspaceSpendLimits | null }>(`/api/admin/workspaces/${workspaceId}/spend-limits`, { token });
+}
+
+export function setWorkspaceSpendLimits(token: string, workspaceId: string, data: {
+  dailyCapInr?: number | null;
+  monthlyCapInr?: number | null;
+  actionOnBreach?: string;
+  notifyEmail?: string | null;
+}) {
+  return apiRequest<{ limits: WorkspaceSpendLimits }>(`/api/admin/workspaces/${workspaceId}/spend-limits`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(data),
+  });
+}
+
+// ── Business Analytics ────────────────────────────────────────────────────────
+export interface BusinessAnalytics {
+  totalWorkspaces: number;
+  activeSubscriptions: number;
+  trialWorkspaces: number;
+  mrrInr: number;
+  newWorkspaces30d: number;
+  churned30d: number;
+  totalAiCostInr: number;
+  totalBroadcastsSent: number;
+  planDistribution: Record<string, number>;
+  workspaceTrend: Array<{ date: string; count: number }>;
+  revenueByPlan: Array<{ plan: string; count: number; mrrInr: number }>;
+}
+
+export function fetchBusinessAnalytics(token: string) {
+  return apiRequest<BusinessAnalytics>("/api/admin/analytics/business", { token });
+}
+
 export interface AiWalletStatus {
   balance: number;
   planCode: string;

@@ -2,7 +2,40 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { listAdminSubscriptionSummaries } from "../services/billing-service.js";
 import { env } from "../config/env.js";
-import { getAdminOverview, listAdminUserUsage } from "../services/admin-service.js";
+import {
+  getAdminOverview,
+  listAdminUserUsage,
+  listAdminQrSessions,
+  listAdminWabaConnections,
+  listAdminBroadcasts,
+  cancelAdminBroadcast,
+  listAdminTemplates,
+  listAdminAiLogs,
+  listAdminAuditLogs,
+  writeAdminAuditLog,
+  getAdminQueueStats,
+  retryAdminQueueFailed,
+  pauseAdminQueue,
+  listAdminKillSwitches,
+  setAdminKillSwitch,
+  listAdminFeatureFlags,
+  upsertAdminFeatureFlag,
+  listAdminWebhookLogs,
+  getSystemHealth,
+  listWorkspaceHealthScores,
+  listAdminAbuseFlags,
+  resolveAdminAbuseFlag,
+  listAdminFraudSignals,
+  resolveAdminFraudSignal,
+  listAdminPrompts,
+  updateAdminPrompt,
+  listBroadcastReputation,
+  listMetaComplianceEvents,
+  getWorkspaceSpendLimits,
+  setWorkspaceSpendLimits,
+  getBusinessAnalytics,
+  writeAdminSession,
+} from "../services/admin-service.js";
 import { getUsageAnalytics } from "../services/conversation-service.js";
 import {
   adjustWorkspaceCreditsByAdmin,
@@ -142,6 +175,10 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       { role: "super_admin", email },
       { expiresIn: "12h" }
     );
+    const ip = (request.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
+      ?? request.socket.remoteAddress;
+    const ua = request.headers["user-agent"];
+    void writeAdminSession(email, ip, ua);
     return { token, role: "super_admin" };
   });
 
@@ -382,5 +419,314 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         error: (err as Error).message
       });
     }
+  });
+
+  // ── QR Sessions ────────────────────────────────────────────────────────────
+  fastify.get("/api/admin/qr-sessions", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const sessions = await listAdminQrSessions();
+    return { sessions };
+  });
+
+  // ── WABA Connections ───────────────────────────────────────────────────────
+  fastify.get("/api/admin/waba-connections", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const connections = await listAdminWabaConnections();
+    return { connections };
+  });
+
+  // ── Broadcasts ─────────────────────────────────────────────────────────────
+  const BroadcastsQuerySchema = z.object({
+    status: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  });
+  const BroadcastParamsSchema = z.object({ broadcastId: z.string().uuid() });
+
+  fastify.get("/api/admin/broadcasts", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = BroadcastsQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const broadcasts = await listAdminBroadcasts(parsed.data);
+    return { broadcasts };
+  });
+
+  fastify.post("/api/admin/broadcasts/:broadcastId/cancel", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = BroadcastParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    await cancelAdminBroadcast(parsed.data.broadcastId);
+    const email = (request.user as { email?: string })?.email;
+    await writeAdminAuditLog({ adminEmail: email, action: "broadcast.cancel", details: { broadcastId: parsed.data.broadcastId } });
+    return { ok: true };
+  });
+
+  // ── Templates ──────────────────────────────────────────────────────────────
+  const TemplatesQuerySchema = z.object({
+    status: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  });
+
+  fastify.get("/api/admin/templates", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = TemplatesQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const templates = await listAdminTemplates(parsed.data);
+    return { templates };
+  });
+
+  // ── AI Logs ────────────────────────────────────────────────────────────────
+  const AiLogsQuerySchema = z.object({
+    workspaceId: z.string().uuid().optional(),
+    model: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  });
+
+  fastify.get("/api/admin/ai/logs", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = AiLogsQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const logs = await listAdminAiLogs(parsed.data);
+    return { logs };
+  });
+
+  // ── Audit Logs ─────────────────────────────────────────────────────────────
+  const AuditLogsQuerySchema = z.object({
+    action: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  });
+
+  fastify.get("/api/admin/audit-logs", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = AuditLogsQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const logs = await listAdminAuditLogs(parsed.data);
+    return { logs };
+  });
+
+  // ── Queue Monitor ──────────────────────────────────────────────────────────
+  const QueueNameSchema = z.object({ queueName: z.string().min(1).max(80) });
+
+  fastify.get("/api/admin/queues", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const queues = await getAdminQueueStats();
+    return { queues };
+  });
+
+  fastify.post("/api/admin/queues/:queueName/retry-failed", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = QueueNameSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid queue name" });
+    const retried = await retryAdminQueueFailed(parsed.data.queueName);
+    return { ok: true, retried };
+  });
+
+  const QueuePauseSchema = z.object({ pause: z.boolean() });
+
+  fastify.post("/api/admin/queues/:queueName/pause", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = QueueNameSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid queue name" });
+    const bodyParsed = QueuePauseSchema.safeParse(request.body);
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid body" });
+    await pauseAdminQueue(paramsParsed.data.queueName, bodyParsed.data.pause);
+    return { ok: true };
+  });
+
+  // ── Kill Switches ──────────────────────────────────────────────────────────
+  const KillSwitchParamsSchema = z.object({ key: z.string().min(1).max(80) });
+  const KillSwitchBodySchema = z.object({ reason: z.string().max(500).optional() });
+
+  fastify.get("/api/admin/kill-switches", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const switches = await listAdminKillSwitches();
+    return { switches };
+  });
+
+  fastify.post("/api/admin/kill-switches/:key/enable", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = KillSwitchParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid key" });
+    const bodyParsed = KillSwitchBodySchema.safeParse(request.body ?? {});
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid body" });
+    const email = (request.user as { email?: string })?.email ?? "unknown";
+    await setAdminKillSwitch(paramsParsed.data.key, true, email, bodyParsed.data.reason);
+    await writeAdminAuditLog({ adminEmail: email, action: "kill_switch.enable", details: { key: paramsParsed.data.key, reason: bodyParsed.data.reason } });
+    return { ok: true };
+  });
+
+  fastify.post("/api/admin/kill-switches/:key/disable", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = KillSwitchParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid key" });
+    const email = (request.user as { email?: string })?.email ?? "unknown";
+    await setAdminKillSwitch(paramsParsed.data.key, false, email);
+    await writeAdminAuditLog({ adminEmail: email, action: "kill_switch.disable", details: { key: paramsParsed.data.key } });
+    return { ok: true };
+  });
+
+  // ── Feature Flags ──────────────────────────────────────────────────────────
+  const FeatureFlagBodySchema = z.object({
+    key: z.string().min(1).max(80),
+    name: z.string().min(1).max(200),
+    description: z.string().max(500).optional(),
+    enabledGlobally: z.boolean().optional(),
+    rolloutPercent: z.number().int().min(0).max(100).optional(),
+  });
+  const UpdateFeatureFlagBodySchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(500).optional(),
+    enabledGlobally: z.boolean().optional(),
+    rolloutPercent: z.number().int().min(0).max(100).optional(),
+  });
+  const FeatureFlagKeySchema = z.object({ flagKey: z.string().min(1).max(80) });
+
+  fastify.get("/api/admin/feature-flags", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const flags = await listAdminFeatureFlags();
+    return { flags };
+  });
+
+  fastify.post("/api/admin/feature-flags", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = FeatureFlagBodySchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid payload" });
+    const flag = await upsertAdminFeatureFlag(parsed.data);
+    return { flag };
+  });
+
+  fastify.put("/api/admin/feature-flags/:flagKey", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = FeatureFlagKeySchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid key" });
+    const bodyParsed = UpdateFeatureFlagBodySchema.safeParse(request.body ?? {});
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid payload" });
+    const flag = await upsertAdminFeatureFlag({ key: paramsParsed.data.flagKey, name: bodyParsed.data.name ?? paramsParsed.data.flagKey, ...bodyParsed.data });
+    return { flag };
+  });
+
+  // ── Prompt Management ─────────────────────────────────────────────────────
+  const PromptKeyParamsSchema = z.object({ key: z.string().min(1).max(80) });
+  const PromptUpdateBodySchema = z.object({ content: z.string().min(1).max(50000) });
+
+  fastify.get("/api/admin/prompts", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const prompts = await listAdminPrompts();
+    return { prompts };
+  });
+
+  fastify.put("/api/admin/prompts/:key", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = PromptKeyParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid key" });
+    const bodyParsed = PromptUpdateBodySchema.safeParse(request.body);
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid payload" });
+    const email = (request.user as { email?: string })?.email;
+    const prompt = await updateAdminPrompt(paramsParsed.data.key, bodyParsed.data.content, email);
+    await writeAdminAuditLog({ adminEmail: email, action: "prompt.update", details: { key: paramsParsed.data.key, version: prompt.version } });
+    return { prompt };
+  });
+
+  // ── System Health ──────────────────────────────────────────────────────────
+  fastify.get("/api/admin/system-health", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const health = await getSystemHealth();
+    return health;
+  });
+
+  // ── Workspace Health Scores ────────────────────────────────────────────────
+  fastify.get("/api/admin/workspace-health", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const workspaces = await listWorkspaceHealthScores(200);
+    return { workspaces };
+  });
+
+  // ── Abuse Flags ────────────────────────────────────────────────────────────
+  const AbuseFlagParamsSchema = z.object({ flagId: z.string().uuid() });
+  const AbuseFlagQuerySchema = z.object({ unresolved: z.coerce.boolean().optional() });
+
+  fastify.get("/api/admin/abuse-flags", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = AbuseFlagQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const flags = await listAdminAbuseFlags({ unresolved: parsed.data.unresolved });
+    return { flags };
+  });
+
+  fastify.post("/api/admin/abuse-flags/:flagId/resolve", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = AbuseFlagParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    await resolveAdminAbuseFlag(parsed.data.flagId);
+    return { ok: true };
+  });
+
+  // ── Fraud Signals ──────────────────────────────────────────────────────────
+  const FraudSignalParamsSchema = z.object({ signalId: z.string().uuid() });
+  const FraudSignalQuerySchema = z.object({ unresolved: z.coerce.boolean().optional() });
+
+  fastify.get("/api/admin/fraud-signals", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = FraudSignalQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const signals = await listAdminFraudSignals({ unresolved: parsed.data.unresolved });
+    return { signals };
+  });
+
+  fastify.post("/api/admin/fraud-signals/:signalId/resolve", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = FraudSignalParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    await resolveAdminFraudSignal(parsed.data.signalId);
+    return { ok: true };
+  });
+
+  // ── Webhook Delivery Logs ──────────────────────────────────────────────────
+  const WebhookLogsQuerySchema = z.object({
+    success: z.coerce.boolean().optional(),
+    failure: z.coerce.boolean().optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  });
+
+  fastify.get("/api/admin/webhook-logs", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = WebhookLogsQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const logs = await listAdminWebhookLogs({
+      limit: parsed.data.limit,
+      successOnly: parsed.data.success === true,
+      failureOnly: parsed.data.failure === true,
+    });
+    return { logs };
+  });
+
+  // ── Broadcast Reputation ───────────────────────────────────────────────────
+  fastify.get("/api/admin/broadcast-reputation", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const entries = await listBroadcastReputation();
+    return { entries };
+  });
+
+  // ── Meta Compliance Events ─────────────────────────────────────────────────
+  const MetaComplianceQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(500).optional() });
+
+  fastify.get("/api/admin/meta-compliance", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = MetaComplianceQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const events = await listMetaComplianceEvents({ limit: parsed.data.limit });
+    return { events };
+  });
+
+  // ── AI Spend Limits per Workspace ──────────────────────────────────────────
+  const SpendLimitsParamsSchema = z.object({ workspaceId: z.string().uuid() });
+  const SpendLimitsBodySchema = z.object({
+    dailyCapInr: z.number().positive().nullable().optional(),
+    monthlyCapInr: z.number().positive().nullable().optional(),
+    actionOnBreach: z.enum(["pause_ai", "alert_only", "pause_ai_and_alert"]).optional(),
+    notifyEmail: z.string().email().nullable().optional(),
+  });
+
+  fastify.get("/api/admin/workspaces/:workspaceId/spend-limits", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = SpendLimitsParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const limits = await getWorkspaceSpendLimits(parsed.data.workspaceId);
+    return { limits };
+  });
+
+  fastify.put("/api/admin/workspaces/:workspaceId/spend-limits", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = SpendLimitsParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const bodyParsed = SpendLimitsBodySchema.safeParse(request.body ?? {});
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid body" });
+    const limits = await setWorkspaceSpendLimits(paramsParsed.data.workspaceId, bodyParsed.data);
+    const email = (request.user as { email?: string })?.email;
+    await writeAdminAuditLog({ adminEmail: email, action: "spend_limits.set", details: { workspaceId: paramsParsed.data.workspaceId, ...bodyParsed.data } });
+    return { limits };
+  });
+
+  // ── Business Analytics ─────────────────────────────────────────────────────
+  fastify.get("/api/admin/analytics/business", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+    const analytics = await getBusinessAnalytics();
+    return analytics;
+  });
+
+  // ── Admin Logout ───────────────────────────────────────────────────────────
+  fastify.post("/api/admin/logout", { preHandler: [fastify.requireSuperAdmin] }, async (request) => {
+    const email = (request.user as { email?: string })?.email ?? "unknown";
+    await writeAdminAuditLog({ adminEmail: email, action: "admin.logout", details: {} });
+    return { ok: true };
   });
 }
