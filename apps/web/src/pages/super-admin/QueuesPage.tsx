@@ -30,8 +30,8 @@ export function QueuesPage() {
   const handleRetry = async (queueName: string) => {
     setLoading(true); setError(null); setInfo(null);
     try {
-      const r = await retryAdminQueueFailed(token, queueName);
-      setInfo(`Retried ${r.retried} failed jobs in ${queueName}`);
+      await retryAdminQueueFailed(token, queueName);
+      setInfo(`Queued retry for failed jobs in ${queueName}`);
       await load();
     } catch (e) { setError((e as Error).message); } finally { setLoading(false); }
   };

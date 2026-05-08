@@ -846,11 +846,11 @@ export interface AdminQueueStat {
 }
 
 export function fetchAdminQueues(token: string) {
-  return apiRequest<{ queues: AdminQueueStat[] }>("/api/admin/queues", { token });
+  return apiRequest<{ queues: AdminQueueStat[] }>("/api/admin/queue-stats", { token });
 }
 
 export function retryAdminQueueFailed(token: string, queueName: string) {
-  return apiRequest<{ ok: boolean; retried: number }>(`/api/admin/queues/${queueName}/retry-failed`, { method: "POST", token });
+  return apiRequest<{ ok: boolean; queue: string; action: "retry-failed" }>(`/api/admin/queues/${queueName}/retry-failed`, { method: "POST", token });
 }
 
 export function pauseAdminQueue(token: string, queueName: string, pause: boolean) {

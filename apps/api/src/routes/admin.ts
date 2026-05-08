@@ -14,7 +14,6 @@ import {
   listAdminAuditLogs,
   writeAdminAuditLog,
   getAdminQueueStats,
-  retryAdminQueueFailed,
   pauseAdminQueue,
   listAdminKillSwitches,
   setAdminKillSwitch,
@@ -499,16 +498,9 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
   // ── Queue Monitor ──────────────────────────────────────────────────────────
   const QueueNameSchema = z.object({ queueName: z.string().min(1).max(80) });
 
-  fastify.get("/api/admin/queues", { preHandler: [fastify.requireSuperAdmin] }, async () => {
+  fastify.get("/api/admin/queue-stats", { preHandler: [fastify.requireSuperAdmin] }, async () => {
     const queues = await getAdminQueueStats();
     return { queues };
-  });
-
-  fastify.post("/api/admin/queues/:queueName/retry-failed", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
-    const parsed = QueueNameSchema.safeParse(request.params);
-    if (!parsed.success) return reply.status(400).send({ error: "Invalid queue name" });
-    const retried = await retryAdminQueueFailed(parsed.data.queueName);
-    return { ok: true, retried };
   });
 
   const QueuePauseSchema = z.object({ pause: z.boolean() });
