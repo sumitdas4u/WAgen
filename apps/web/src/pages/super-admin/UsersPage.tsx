@@ -45,7 +45,7 @@ export function UsersPage() {
     if (aiFilter === "off" && u.aiActive) return false;
     if (search) {
       const q = search.toLowerCase();
-      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.phone ?? "").includes(q);
     }
     return true;
   });
@@ -81,7 +81,7 @@ export function UsersPage() {
           <table className="finance-table">
             <thead>
               <tr>
-                <th>Name</th><th>Email</th><th>Plan</th><th>AI</th>
+                <th>Name</th><th>Email</th><th>Phone</th><th>Plan</th><th>AI</th>
                 <th>Conversations</th><th>Messages</th><th>Chunks</th>
                 <th>Tokens</th><th>Cost</th><th>Joined</th><th>Usage</th>
               </tr>
@@ -91,6 +91,7 @@ export function UsersPage() {
                 <tr key={u.userId}>
                   <td>{u.name}</td>
                   <td style={{ fontSize: "0.8rem" }}>{u.email}</td>
+                  <td style={{ fontSize: "0.8rem" }}>{u.phone ?? "—"}</td>
                   <td>{u.plan}</td>
                   <td>
                     <span style={{ color: u.aiActive ? "#22c55e" : "#94a3b8", fontWeight: 600, fontSize: "0.8rem" }}>
@@ -109,7 +110,7 @@ export function UsersPage() {
                 </tr>
               ))}
               {filtered.length === 0 && !loading && (
-                <tr><td colSpan={11} style={{ textAlign: "center", color: "#94a3b8", padding: "2rem" }}>No users found</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", color: "#94a3b8", padding: "2rem" }}>No users found</td></tr>
               )}
             </tbody>
           </table>

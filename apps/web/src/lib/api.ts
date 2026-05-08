@@ -352,6 +352,7 @@ export interface AdminUserUsage {
   userId: string;
   name: string;
   email: string;
+  phone: string | null;
   plan: string;
   aiActive: boolean;
   conversations: number;
@@ -854,7 +855,7 @@ export function retryAdminQueueFailed(token: string, queueName: string) {
 }
 
 export function pauseAdminQueue(token: string, queueName: string, pause: boolean) {
-  return apiRequest<{ ok: boolean }>(`/api/admin/queues/${queueName}/pause`, { method: "POST", token, body: JSON.stringify({ pause }) });
+  return apiRequest<{ ok: boolean }>(`/api/admin/queue-stats/${queueName}/pause`, { method: "POST", token, body: JSON.stringify({ pause }) });
 }
 
 // ── Admin Kill Switches ───────────────────────────────────────────────────────

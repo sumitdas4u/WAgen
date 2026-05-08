@@ -505,7 +505,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
 
   const QueuePauseSchema = z.object({ pause: z.boolean() });
 
-  fastify.post("/api/admin/queues/:queueName/pause", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+  fastify.post("/api/admin/queue-stats/:queueName/pause", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
     const paramsParsed = QueueNameSchema.safeParse(request.params);
     if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid queue name" });
     const bodyParsed = QueuePauseSchema.safeParse(request.body);

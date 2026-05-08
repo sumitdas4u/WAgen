@@ -17,6 +17,7 @@ export interface AdminUserUsage {
   userId: string;
   name: string;
   email: string;
+  phone: string | null;
   plan: string;
   aiActive: boolean;
   conversations: number;
@@ -91,6 +92,7 @@ export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]>
     user_id: string;
     name: string;
     email: string;
+    phone: string | null;
     plan: string;
     ai_active: boolean;
     conversations: string;
@@ -102,6 +104,7 @@ export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]>
        u.id AS user_id,
        u.name,
        u.email,
+       u.phone_number AS phone,
        u.subscription_plan AS plan,
        u.ai_active,
        COALESCE(c.conversations, 0)::text AS conversations,
@@ -172,17 +175,18 @@ export async function listAdminUserUsage(limit = 200): Promise<AdminUserUsage[]>
   return usersResult.rows.map((row) => {
     const usage = usageByUser.get(row.user_id) ?? { totalTokens: 0, costInr: 0 };
     return {
-    userId: row.user_id,
-    name: row.name,
-    email: row.email,
-    plan: row.plan,
-    aiActive: row.ai_active,
-    conversations: Number(row.conversations),
-    messages: Number(row.messages),
-    chunks: Number(row.chunks),
-    totalTokens: usage.totalTokens,
-    costInr: usage.costInr,
-    createdAt: row.created_at
+      userId: row.user_id,
+      name: row.name,
+      email: row.email,
+      phone: row.phone ?? null,
+      plan: row.plan,
+      aiActive: row.ai_active,
+      conversations: Number(row.conversations),
+      messages: Number(row.messages),
+      chunks: Number(row.chunks),
+      totalTokens: usage.totalTokens,
+      costInr: usage.costInr,
+      createdAt: row.created_at,
     };
   });
 }
