@@ -13,6 +13,7 @@ import {
   createQueueWorkerConnection,
   getCampaignDispatchQueue
 } from "./queue-service.js";
+import { isKillSwitchEnabled } from "./kill-switch-service.js";
 
 interface CampaignDispatchJob {
   campaignId: string;
@@ -73,6 +74,19 @@ export async function enqueueCampaign(campaignId: string, userId: string): Promi
 }
 
 async function processCampaignDispatch(job: CampaignDispatchJob): Promise<void> {
+  if (await isKillSwitchEnabled("pause_all_broadcasts")) {
+    const queue = getCampaignDispatchQueue();
+    if (queue) {
+      await queue.add("dispatch-campaign", job, {
+        delay: 5 * 60 * 1000,
+        jobId: `${campaignDispatchJobId(job.campaignId)}-ks-${Date.now()}`,
+        ...sharedJobCleanup(),
+      });
+    }
+    console.info(`[CampaignWorker] pause_all_broadcasts active — campaign=${job.campaignId} re-queued in 5m`);
+    return;
+  }
+
   const campaign = await loadRunningCampaign(job.campaignId);
   if (!campaign || !campaign.template_id) {
     return;

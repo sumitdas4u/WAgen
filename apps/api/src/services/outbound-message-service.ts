@@ -27,6 +27,7 @@ import { classifyDeliveryFailure } from "./message-delivery-data-service.js";
 import type { Campaign, CampaignMessage } from "./campaign-service.js";
 import { executeQueuedGenericWebhookLog } from "./generic-webhook-service.js";
 import { executeSequenceOutboundMessage } from "./sequence-execution-service.js";
+import { isKillSwitchEnabled } from "./kill-switch-service.js";
 
 type OutboundMessageType =
   | "conversation_api"
@@ -661,6 +662,9 @@ const metaConversationAdapter: ConversationChannelAdapter = {
 const baileysConversationAdapter: ConversationChannelAdapter = {
   channelType: "qr",
   async send({ userId, conversation, payload }) {
+    if (await isKillSwitchEnabled("disable_qr_sending")) {
+      throw new Error("QR sending is disabled by admin kill switch");
+    }
     await ensureQrSessionReady(userId);
     await whatsappSessionManager.sendFlowMessage({
       userId,

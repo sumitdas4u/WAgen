@@ -4,6 +4,7 @@ import { resolvePersonalityPrompt } from "./personality.js";
 import { aiService } from "./ai-service.js";
 import { retrieveKnowledge, type KnowledgeChunk } from "./rag-service.js";
 import { chargeUser } from "./ai-token-service.js";
+import { isKillSwitchEnabled } from "./kill-switch-service.js";
 
 interface ReplyInput {
   user: User;
@@ -1336,6 +1337,15 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
     historyForPrompt
   });
   const retrievalQuery = buildKnowledgeQuery(input.incomingMessage, historyForPrompt, retrievalProfile);
+
+  if (await isKillSwitchEnabled("pause_all_ai")) {
+    return {
+      text: buildFallbackReply(detectedIntent, basics, localeContext, input.incomingMessage),
+      model: null,
+      usage: null,
+      retrievalChunks: 0
+    };
+  }
 
   if (!aiService.isConfigured()) {
     return {

@@ -19,6 +19,7 @@ import {
   validateFlowMessagePayload
 } from "./outbound-message-types.js";
 import { fanoutEvent } from "./event-fanout-service.js";
+import { isKillSwitchEnabled } from "./kill-switch-service.js";
 
 interface MetaConnectionRow {
   id: string;
@@ -3015,6 +3016,9 @@ export async function sendMetaTextDirect(input: {
   phoneNumberId?: string;
   linkedNumber?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection; to: string; text: string }> {
+  if (await isKillSwitchEnabled("disable_meta_sending")) {
+    throw new Error("Meta sending is disabled by admin kill switch");
+  }
   const normalizedTo = normalizePhoneDigits(input.to);
   if (!normalizedTo) {
     throw new Error("Recipient phone must contain 8 to 15 digits.");
@@ -3063,6 +3067,9 @@ export async function sendMetaTemplateDirect(input: {
   phoneNumberId?: string;
   linkedNumber?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection; to: string }> {
+  if (await isKillSwitchEnabled("disable_meta_sending")) {
+    throw new Error("Meta sending is disabled by admin kill switch");
+  }
   const normalizedTo = normalizePhoneDigits(input.to);
   if (!normalizedTo) {
     throw new Error("Recipient phone must contain 8 to 15 digits.");
@@ -3105,6 +3112,9 @@ export async function sendMetaFlowMessageDirect(input: {
   phoneNumberId?: string;
   linkedNumber?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection; to: string; summaryText: string }> {
+  if (await isKillSwitchEnabled("disable_meta_sending")) {
+    throw new Error("Meta sending is disabled by admin kill switch");
+  }
   const normalizedTo = normalizePhoneDigits(input.to);
   if (!normalizedTo) {
     throw new Error("Recipient phone must contain 8 to 15 digits.");

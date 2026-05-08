@@ -18,6 +18,53 @@ import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { estimateInrCost } from "./usage-cost-service.js";
 
+async function updateWorkspaceSpend(workspaceId: string, costInr: number): Promise<void> {
+  if (costInr <= 0) return;
+  try {
+    const result = await pool.query<{
+      breached_at: string | null;
+      action_on_breach: string;
+      daily_cap_inr: string | null;
+      monthly_cap_inr: string | null;
+      current_day_spend_inr: string;
+      current_month_spend_inr: string;
+    }>(`
+      UPDATE workspace_ai_spend_limits
+      SET current_day_spend_inr = current_day_spend_inr + $1,
+          current_month_spend_inr = current_month_spend_inr + $1,
+          updated_at = NOW()
+      WHERE workspace_id = $2
+      RETURNING breached_at, action_on_breach, daily_cap_inr, monthly_cap_inr,
+                current_day_spend_inr, current_month_spend_inr
+    `, [costInr, workspaceId]);
+
+    const row = result.rows[0];
+    if (!row || row.breached_at) return; // no limits configured or already breached
+
+    const daySpend = Number(row.current_day_spend_inr);
+    const monthSpend = Number(row.current_month_spend_inr);
+    const dayBreached = row.daily_cap_inr !== null && daySpend >= Number(row.daily_cap_inr);
+    const monthBreached = row.monthly_cap_inr !== null && monthSpend >= Number(row.monthly_cap_inr);
+
+    if (!dayBreached && !monthBreached) return;
+
+    await pool.query(
+      `UPDATE workspace_ai_spend_limits SET breached_at = NOW() WHERE workspace_id = $1 AND breached_at IS NULL`,
+      [workspaceId]
+    );
+
+    if (row.action_on_breach === "pause_ai" || row.action_on_breach === "pause_ai_and_alert") {
+      await pool.query(
+        `UPDATE users SET ai_active = false WHERE id = (SELECT owner_id FROM workspaces WHERE id = $1)`,
+        [workspaceId]
+      );
+      console.info(`[AiSpend] Workspace ${workspaceId} breached spend cap — AI paused`);
+    }
+  } catch (err) {
+    console.warn("[AiSpend] Failed to update workspace spend cap:", err);
+  }
+}
+
 export const AI_CREDIT_GRACE_LIMIT = -5;
 const TOKENS_PER_AI_CREDIT = 8_000;
 const DEFAULT_MAX_TOKENS_PER_ACTION = 8_000;
@@ -438,6 +485,9 @@ export async function chargeUser(
     }
 
     await client.query("COMMIT");
+    if (workspaceId && estimatedCostInr > 0) {
+      void updateWorkspaceSpend(workspaceId, estimatedCostInr);
+    }
     return { balanceAfter: newBalance };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
