@@ -34,6 +34,16 @@ import {
   setWorkspaceSpendLimits,
   getBusinessAnalytics,
   writeAdminSession,
+  getAdminWorkspaceDetail,
+  getWorkspaceCreditLedger,
+  overrideWorkspacePlan,
+  listWorkspaceNotes,
+  createWorkspaceNote,
+  updateWorkspaceNote,
+  deleteWorkspaceNote,
+  getAdminUserDetail,
+  toggleUserAiActive,
+  sendAdminPasswordReset,
 } from "../services/admin-service.js";
 import { getUsageAnalytics } from "../services/conversation-service.js";
 import {
@@ -719,6 +729,108 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post("/api/admin/logout", { preHandler: [fastify.requireSuperAdmin] }, async (request) => {
     const email = (request.user as { email?: string })?.email ?? "unknown";
     await writeAdminAuditLog({ adminEmail: email, action: "admin.logout", details: {} });
+    return { ok: true };
+  });
+
+  // ── Workspace Detail ───────────────────────────────────────────────────────
+  const WorkspaceDetailParamsSchema = z.object({ workspaceId: z.string().uuid() });
+  const OverridePlanBodySchema = z.object({ planCode: z.string().min(1).max(50) });
+  const CreditLedgerQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(500).optional() });
+  const NoteBodySchema = z.object({ content: z.string().min(1).max(5000) });
+  const NoteUpdateBodySchema = z.object({ content: z.string().min(1).max(5000).optional(), isPinned: z.boolean().optional() });
+  const NoteParamsSchema = z.object({ workspaceId: z.string().uuid(), noteId: z.string().uuid() });
+
+  fastify.get("/api/admin/workspaces/:workspaceId/detail", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = WorkspaceDetailParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const workspace = await getAdminWorkspaceDetail(parsed.data.workspaceId);
+    if (!workspace) return reply.status(404).send({ error: "Workspace not found" });
+    return { workspace };
+  });
+
+  fastify.patch("/api/admin/workspaces/:workspaceId/plan", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = WorkspaceDetailParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const bodyParsed = OverridePlanBodySchema.safeParse(request.body);
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid body" });
+    const email = (request.user as { email?: string })?.email;
+    await overrideWorkspacePlan(paramsParsed.data.workspaceId, bodyParsed.data.planCode, email);
+    return { ok: true };
+  });
+
+  fastify.get("/api/admin/workspaces/:workspaceId/credit-ledger", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = WorkspaceDetailParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const queryParsed = CreditLedgerQuerySchema.safeParse(request.query ?? {});
+    if (!queryParsed.success) return reply.status(400).send({ error: "Invalid query" });
+    const entries = await getWorkspaceCreditLedger(paramsParsed.data.workspaceId, queryParsed.data.limit);
+    return { entries };
+  });
+
+  fastify.get("/api/admin/workspaces/:workspaceId/notes", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = WorkspaceDetailParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const notes = await listWorkspaceNotes(parsed.data.workspaceId);
+    return { notes };
+  });
+
+  fastify.post("/api/admin/workspaces/:workspaceId/notes", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = WorkspaceDetailParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const bodyParsed = NoteBodySchema.safeParse(request.body);
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid body" });
+    const email = (request.user as { email?: string })?.email ?? "admin";
+    const note = await createWorkspaceNote(paramsParsed.data.workspaceId, email, bodyParsed.data.content);
+    return { note };
+  });
+
+  fastify.patch("/api/admin/workspaces/:workspaceId/notes/:noteId", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = NoteParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const bodyParsed = NoteUpdateBodySchema.safeParse(request.body ?? {});
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid body" });
+    const note = await updateWorkspaceNote(paramsParsed.data.noteId, bodyParsed.data);
+    return { note };
+  });
+
+  fastify.delete("/api/admin/workspaces/:workspaceId/notes/:noteId", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = NoteParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid params" });
+    await deleteWorkspaceNote(paramsParsed.data.noteId);
+    return { ok: true };
+  });
+
+  // ── User Detail & Actions ──────────────────────────────────────────────────
+  const UserDetailParamsSchema = z.object({ userId: z.string().uuid() });
+  const AiActiveBodySchema = z.object({ aiActive: z.boolean() });
+
+  fastify.get("/api/admin/users/:userId/detail", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = UserDetailParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const user = await getAdminUserDetail(parsed.data.userId);
+    if (!user) return reply.status(404).send({ error: "User not found" });
+    return { user };
+  });
+
+  fastify.patch("/api/admin/users/:userId/ai-active", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const paramsParsed = UserDetailParamsSchema.safeParse(request.params);
+    if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const bodyParsed = AiActiveBodySchema.safeParse(request.body);
+    if (!bodyParsed.success) return reply.status(400).send({ error: "Invalid body" });
+    const email = (request.user as { email?: string })?.email;
+    await toggleUserAiActive(paramsParsed.data.userId, bodyParsed.data.aiActive, email);
+    return { ok: true };
+  });
+
+  fastify.post("/api/admin/users/:userId/force-password-reset", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = UserDetailParamsSchema.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+    const email = (request.user as { email?: string })?.email;
+    const protocol = request.headers["x-forwarded-proto"] ?? "https";
+    const host = request.headers.host ?? "app.wagenwai.com";
+    const appBaseUrl = `${protocol}://${host}`;
+    await sendAdminPasswordReset(parsed.data.userId, appBaseUrl);
+    await writeAdminAuditLog({ adminEmail: email, action: "user.force_password_reset", targetUserId: parsed.data.userId });
     return { ok: true };
   });
 }

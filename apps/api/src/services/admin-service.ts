@@ -2,6 +2,8 @@ import { firstRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { estimateInrCost } from "./usage-cost-service.js";
 import { getManagedQueues } from "./queue-service.js";
+import { createPasswordResetToken } from "./user-service.js";
+import { sendTransactionalEmail } from "./email-service.js";
 
 export interface AdminOverview {
   totalUsers: number;
@@ -1414,4 +1416,384 @@ export async function upsertAdminFeatureFlag(data: {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+// ── Workspace Detail ──────────────────────────────────────────────────────────
+
+export interface AdminWorkspaceDetail {
+  workspaceId: string;
+  workspaceName: string;
+  status: string;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string;
+  ownerPhone: string | null;
+  planCode: string | null;
+  planName: string | null;
+  subscriptionStatus: string | null;
+  nextBillingDate: string | null;
+  totalCredits: number;
+  usedCredits: number;
+  remainingCredits: number;
+  totalConversations: number;
+  totalMessages: number;
+  totalBroadcasts: number;
+  totalKnowledgeChunks: number;
+  aiActive: boolean;
+  createdAt: string;
+}
+
+export async function getAdminWorkspaceDetail(workspaceId: string): Promise<AdminWorkspaceDetail | null> {
+  const result = await pool.query<{
+    workspace_id: string;
+    workspace_name: string;
+    status: string;
+    owner_id: string;
+    owner_name: string;
+    owner_email: string;
+    owner_phone: string | null;
+    ai_active: boolean;
+    plan_code: string | null;
+    plan_name: string | null;
+    subscription_status: string | null;
+    next_billing_date: string | null;
+    total_credits: string | null;
+    used_credits: string | null;
+    remaining_credits: string | null;
+    total_conversations: string;
+    total_messages: string;
+    total_broadcasts: string;
+    total_chunks: string;
+    created_at: string;
+  }>(`
+    SELECT
+      w.id AS workspace_id, w.name AS workspace_name, w.status, w.created_at,
+      u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
+      u.phone_number AS owner_phone, u.ai_active,
+      p.code AS plan_code, p.name AS plan_name,
+      s.status AS subscription_status, s.next_billing_date,
+      cw.total_credits::text, cw.used_credits::text, cw.remaining_credits::text,
+      COALESCE((SELECT COUNT(*) FROM conversations c WHERE c.user_id = u.id), 0)::text AS total_conversations,
+      COALESCE((SELECT COUNT(*) FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.user_id = u.id), 0)::text AS total_messages,
+      COALESCE((SELECT COUNT(*) FROM campaigns ca WHERE ca.user_id = u.id), 0)::text AS total_broadcasts,
+      COALESCE((SELECT COUNT(*) FROM knowledge_base kb WHERE kb.user_id = u.id), 0)::text AS total_chunks
+    FROM workspaces w
+    JOIN users u ON u.id = w.owner_id
+    LEFT JOIN plans p ON p.code = u.subscription_plan
+    LEFT JOIN LATERAL (
+      SELECT status, next_billing_date FROM subscriptions
+      WHERE user_id = u.id AND status NOT IN ('cancelled', 'expired')
+      ORDER BY created_at DESC LIMIT 1
+    ) s ON TRUE
+    LEFT JOIN credit_wallet cw ON cw.workspace_id = w.id
+    WHERE w.id = $1
+    LIMIT 1
+  `, [workspaceId]);
+  const r = result.rows[0];
+  if (!r) return null;
+  return {
+    workspaceId: r.workspace_id,
+    workspaceName: r.workspace_name,
+    status: r.status,
+    ownerId: r.owner_id,
+    ownerName: r.owner_name,
+    ownerEmail: r.owner_email,
+    ownerPhone: r.owner_phone,
+    aiActive: r.ai_active,
+    planCode: r.plan_code,
+    planName: r.plan_name,
+    subscriptionStatus: r.subscription_status,
+    nextBillingDate: r.next_billing_date,
+    totalCredits: Number(r.total_credits ?? 0),
+    usedCredits: Number(r.used_credits ?? 0),
+    remainingCredits: Number(r.remaining_credits ?? 0),
+    totalConversations: Number(r.total_conversations),
+    totalMessages: Number(r.total_messages),
+    totalBroadcasts: Number(r.total_broadcasts),
+    totalKnowledgeChunks: Number(r.total_chunks),
+    createdAt: r.created_at,
+  };
+}
+
+// ── Credit Ledger ─────────────────────────────────────────────────────────────
+
+export interface CreditLedgerEntry {
+  id: string;
+  type: string;
+  credits: number;
+  referenceId: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export async function getWorkspaceCreditLedger(workspaceId: string, limit = 100): Promise<CreditLedgerEntry[]> {
+  const result = await pool.query<{
+    id: string;
+    type: string;
+    credits: string;
+    reference_id: string | null;
+    reason: string | null;
+    created_at: string;
+  }>(`
+    SELECT id, type, credits::text, reference_id, reason, created_at
+    FROM credit_transactions
+    WHERE workspace_id = $1
+    ORDER BY created_at DESC
+    LIMIT $2
+  `, [workspaceId, Math.min(limit, 500)]);
+  return result.rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    credits: Number(r.credits),
+    referenceId: r.reference_id,
+    reason: r.reason,
+    createdAt: r.created_at,
+  }));
+}
+
+// ── Override Workspace Plan ───────────────────────────────────────────────────
+
+export async function overrideWorkspacePlan(workspaceId: string, planCode: string, adminEmail?: string): Promise<void> {
+  const workspaceResult = await pool.query<{ owner_id: string; plan: string | null }>(
+    `SELECT w.owner_id, u.subscription_plan AS plan FROM workspaces w JOIN users u ON u.id = w.owner_id WHERE w.id = $1`,
+    [workspaceId]
+  );
+  const ws = workspaceResult.rows[0];
+  if (!ws) throw new Error("Workspace not found");
+  const beforePlan = ws.plan;
+  await pool.query(`UPDATE users SET subscription_plan = $1 WHERE id = $2`, [planCode, ws.owner_id]);
+  await writeAdminAuditLog({
+    adminEmail,
+    action: "workspace.plan_override",
+    workspaceId,
+    before: { plan: beforePlan },
+    after: { plan: planCode },
+  });
+}
+
+// ── Admin Notes ───────────────────────────────────────────────────────────────
+
+export interface AdminNote {
+  id: string;
+  workspaceId: string;
+  adminEmail: string;
+  content: string;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listWorkspaceNotes(workspaceId: string): Promise<AdminNote[]> {
+  const result = await pool.query<{
+    id: string;
+    workspace_id: string;
+    admin_email: string;
+    content: string;
+    is_pinned: boolean;
+    created_at: string;
+    updated_at: string;
+  }>(`
+    SELECT id, workspace_id, admin_email, content, is_pinned, created_at, updated_at
+    FROM admin_workspace_notes
+    WHERE workspace_id = $1
+    ORDER BY is_pinned DESC, created_at DESC
+  `, [workspaceId]);
+  return result.rows.map((r) => ({
+    id: r.id,
+    workspaceId: r.workspace_id,
+    adminEmail: r.admin_email,
+    content: r.content,
+    isPinned: r.is_pinned,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function createWorkspaceNote(workspaceId: string, adminEmail: string, content: string): Promise<AdminNote> {
+  const result = await pool.query<{
+    id: string;
+    workspace_id: string;
+    admin_email: string;
+    content: string;
+    is_pinned: boolean;
+    created_at: string;
+    updated_at: string;
+  }>(
+    `INSERT INTO admin_workspace_notes (workspace_id, admin_email, content) VALUES ($1, $2, $3) RETURNING *`,
+    [workspaceId, adminEmail, content]
+  );
+  const r = result.rows[0]!;
+  return { id: r.id, workspaceId: r.workspace_id, adminEmail: r.admin_email, content: r.content, isPinned: r.is_pinned, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+export async function updateWorkspaceNote(noteId: string, data: { content?: string; isPinned?: boolean }): Promise<AdminNote> {
+  const result = await pool.query<{
+    id: string; workspace_id: string; admin_email: string;
+    content: string; is_pinned: boolean; created_at: string; updated_at: string;
+  }>(
+    `UPDATE admin_workspace_notes SET
+      content = COALESCE($1, content),
+      is_pinned = COALESCE($2, is_pinned),
+      updated_at = NOW()
+     WHERE id = $3 RETURNING *`,
+    [data.content ?? null, data.isPinned ?? null, noteId]
+  );
+  const r = result.rows[0];
+  if (!r) throw new Error("Note not found");
+  return { id: r.id, workspaceId: r.workspace_id, adminEmail: r.admin_email, content: r.content, isPinned: r.is_pinned, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+export async function deleteWorkspaceNote(noteId: string): Promise<void> {
+  await pool.query(`DELETE FROM admin_workspace_notes WHERE id = $1`, [noteId]);
+}
+
+// ── User Detail ───────────────────────────────────────────────────────────────
+
+export interface AdminUserDetail {
+  userId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  planCode: string | null;
+  planName: string | null;
+  aiActive: boolean;
+  aiTokenBalance: number;
+  subscriptionStatus: string | null;
+  totalConversations: number;
+  totalMessages: number;
+  totalChunks: number;
+  totalBroadcasts: number;
+  totalTokens: number;
+  totalCostInr: number;
+  createdAt: string;
+  workspaceId: string | null;
+  workspaceName: string | null;
+}
+
+export async function getAdminUserDetail(userId: string): Promise<AdminUserDetail | null> {
+  const result = await pool.query<{
+    user_id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    ai_active: boolean;
+    ai_token_balance: number;
+    plan_code: string | null;
+    plan_name: string | null;
+    subscription_status: string | null;
+    workspace_id: string | null;
+    workspace_name: string | null;
+    total_conversations: string;
+    total_messages: string;
+    total_chunks: string;
+    total_broadcasts: string;
+    created_at: string;
+  }>(`
+    SELECT
+      u.id AS user_id, u.name, u.email, u.phone_number AS phone,
+      u.ai_active, COALESCE(u.ai_token_balance, 0) AS ai_token_balance,
+      p.code AS plan_code, p.name AS plan_name,
+      s.status AS subscription_status,
+      w.id AS workspace_id, w.name AS workspace_name,
+      COALESCE((SELECT COUNT(*) FROM conversations c WHERE c.user_id = u.id), 0)::text AS total_conversations,
+      COALESCE((SELECT COUNT(*) FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.user_id = u.id), 0)::text AS total_messages,
+      COALESCE((SELECT COUNT(*) FROM knowledge_base kb WHERE kb.user_id = u.id), 0)::text AS total_chunks,
+      COALESCE((SELECT COUNT(*) FROM campaigns ca WHERE ca.user_id = u.id), 0)::text AS total_broadcasts,
+      u.created_at
+    FROM users u
+    LEFT JOIN plans p ON p.code = u.subscription_plan
+    LEFT JOIN LATERAL (
+      SELECT status FROM subscriptions
+      WHERE user_id = u.id AND status NOT IN ('cancelled', 'expired')
+      ORDER BY created_at DESC LIMIT 1
+    ) s ON TRUE
+    LEFT JOIN workspaces w ON w.owner_id = u.id
+    WHERE u.id = $1
+    LIMIT 1
+  `, [userId]);
+  const r = result.rows[0];
+  if (!r) return null;
+
+  const usageResult = await pool.query<{
+    ai_model: string | null; prompt_tokens: string; completion_tokens: string;
+  }>(`
+    SELECT m.ai_model,
+      COALESCE(SUM(COALESCE(m.prompt_tokens, 0)), 0)::text AS prompt_tokens,
+      COALESCE(SUM(COALESCE(m.completion_tokens, 0)), 0)::text AS completion_tokens
+    FROM conversation_messages m
+    JOIN conversations c ON c.id = m.conversation_id
+    WHERE m.direction = 'outbound' AND c.user_id = $1
+    GROUP BY m.ai_model
+  `, [userId]);
+  let totalTokens = 0;
+  let totalCostInr = 0;
+  for (const row of usageResult.rows) {
+    const pt = Number(row.prompt_tokens);
+    const ct = Number(row.completion_tokens);
+    totalTokens += pt + ct;
+    totalCostInr += estimateInrCost(row.ai_model, pt, ct);
+  }
+
+  return {
+    userId: r.user_id,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    aiActive: r.ai_active,
+    aiTokenBalance: Number(r.ai_token_balance),
+    planCode: r.plan_code,
+    planName: r.plan_name,
+    subscriptionStatus: r.subscription_status,
+    workspaceId: r.workspace_id,
+    workspaceName: r.workspace_name,
+    totalConversations: Number(r.total_conversations),
+    totalMessages: Number(r.total_messages),
+    totalChunks: Number(r.total_chunks),
+    totalBroadcasts: Number(r.total_broadcasts),
+    totalTokens,
+    totalCostInr,
+    createdAt: r.created_at,
+  };
+}
+
+// ── Toggle User AI Active ─────────────────────────────────────────────────────
+
+export async function toggleUserAiActive(userId: string, aiActive: boolean, adminEmail?: string): Promise<void> {
+  const before = await pool.query<{ ai_active: boolean }>(`SELECT ai_active FROM users WHERE id = $1`, [userId]);
+  const prevActive = before.rows[0]?.ai_active;
+  await pool.query(`UPDATE users SET ai_active = $1 WHERE id = $2`, [aiActive, userId]);
+  await writeAdminAuditLog({
+    adminEmail,
+    action: "user.ai_active_toggle",
+    targetUserId: userId,
+    before: { aiActive: prevActive },
+    after: { aiActive },
+  });
+}
+
+// ── Force Password Reset ──────────────────────────────────────────────────────
+
+export async function sendAdminPasswordReset(userId: string, appBaseUrl: string): Promise<void> {
+  const userResult = await pool.query<{ email: string }>(
+    `SELECT email FROM users WHERE id = $1`, [userId]
+  );
+  const email = userResult.rows[0]?.email;
+  if (!email) throw new Error("User not found");
+  const reset = await createPasswordResetToken(email);
+  if (!reset) throw new Error("Failed to create reset token");
+  const resetUrl = `${appBaseUrl.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(reset.token)}`;
+  await sendTransactionalEmail({
+    to: reset.email,
+    subject: "Reset your WAgen AI password (Admin initiated)",
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#0f172a">
+        <h1 style="font-size:22px;margin:0 0 12px">Password Reset</h1>
+        <p style="font-size:14px;line-height:1.6;color:#475569">Hi ${reset.name}, your account administrator has initiated a password reset for your account. Use the button below to set a new password. This link expires in 1 hour.</p>
+        <p style="margin:24px 0">
+          <a href="${resetUrl}" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;display:inline-block;font-weight:700">Reset password</a>
+        </p>
+        <p style="font-size:12px;line-height:1.6;color:#64748b">If you did not expect this, please contact support immediately.</p>
+      </div>
+    `
+  });
 }

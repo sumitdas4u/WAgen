@@ -171,7 +171,9 @@ export const appRoutes: RouteObject[] = [
             children: [
               { index: true, lazy: lazyComponent(() => import("../pages/super-admin/DashboardPage"), "DashboardPage") },
               { path: "workspaces", lazy: lazyComponent(() => import("../pages/super-admin/WorkspacesPage"), "WorkspacesPage") },
+              { path: "workspaces/:workspaceId", lazy: lazyComponent(() => import("../pages/super-admin/WorkspaceDetailPage"), "WorkspaceDetailPage") },
               { path: "users", lazy: lazyComponent(() => import("../pages/super-admin/UsersPage"), "UsersPage") },
+              { path: "users/:userId", lazy: lazyComponent(() => import("../pages/super-admin/UserDetailPage"), "UserDetailPage") },
               { path: "customer-success", lazy: lazyComponent(() => import("../pages/super-admin/CustomerSuccessPage"), "CustomerSuccessPage") },
               { path: "fraud", lazy: lazyComponent(() => import("../pages/super-admin/FraudPage"), "FraudPage") },
               { path: "billing", lazy: lazyComponent(() => import("../pages/super-admin/BillingPage"), "BillingPage") },

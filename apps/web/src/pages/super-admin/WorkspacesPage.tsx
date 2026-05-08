@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   fetchAdminWorkspaces,
   updateAdminWorkspaceStatus,
@@ -16,6 +17,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function WorkspacesPage() {
   const { token } = useSuperAdmin();
+  const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState<AdminWorkspaceSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +107,7 @@ export function WorkspacesPage() {
             <thead>
               <tr>
                 <th>Workspace</th><th>Owner</th><th>Plan</th><th>Status</th>
-                <th>Credits</th><th>Subscription</th><th>Adjust Credits</th><th>Actions</th>
+                <th>Credits</th><th>Subscription</th><th>Adjust Credits</th><th>Actions</th><th>Detail</th>
               </tr>
             </thead>
             <tbody>
@@ -161,10 +163,16 @@ export function WorkspacesPage() {
                       </button>
                     </div>
                   </td>
+                  <td>
+                    <button className="ghost-btn" style={{ padding: "3px 8px", fontSize: "0.78rem" }}
+                      onClick={() => navigate(`/super-admin/workspaces/${ws.workspaceId}`)}>
+                      View
+                    </button>
+                  </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "#94a3b8", padding: "2rem" }}>No workspaces found</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "#94a3b8", padding: "2rem" }}>No workspaces found</td></tr>
               )}
             </tbody>
           </table>

@@ -1099,6 +1099,126 @@ export function fetchBusinessAnalytics(token: string) {
   return apiRequest<BusinessAnalytics>("/api/admin/analytics/business", { token });
 }
 
+// ── Workspace Detail ──────────────────────────────────────────────────────────
+
+export interface AdminWorkspaceDetail {
+  workspaceId: string;
+  workspaceName: string;
+  status: string;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string;
+  ownerPhone: string | null;
+  planCode: string | null;
+  planName: string | null;
+  subscriptionStatus: string | null;
+  nextBillingDate: string | null;
+  totalCredits: number;
+  usedCredits: number;
+  remainingCredits: number;
+  totalConversations: number;
+  totalMessages: number;
+  totalBroadcasts: number;
+  totalKnowledgeChunks: number;
+  aiActive: boolean;
+  createdAt: string;
+}
+
+export function fetchAdminWorkspaceDetail(token: string, workspaceId: string) {
+  return apiRequest<{ workspace: AdminWorkspaceDetail }>(`/api/admin/workspaces/${workspaceId}/detail`, { token });
+}
+
+export interface CreditLedgerEntry {
+  id: string;
+  type: string;
+  credits: number;
+  referenceId: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export function fetchWorkspaceCreditLedger(token: string, workspaceId: string, limit?: number) {
+  const q = limit ? `?limit=${limit}` : "";
+  return apiRequest<{ entries: CreditLedgerEntry[] }>(`/api/admin/workspaces/${workspaceId}/credit-ledger${q}`, { token });
+}
+
+export function overrideWorkspacePlan(token: string, workspaceId: string, planCode: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/workspaces/${workspaceId}/plan`, {
+    method: "PATCH", token, body: JSON.stringify({ planCode }),
+  });
+}
+
+export interface AdminNote {
+  id: string;
+  workspaceId: string;
+  adminEmail: string;
+  content: string;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchWorkspaceNotes(token: string, workspaceId: string) {
+  return apiRequest<{ notes: AdminNote[] }>(`/api/admin/workspaces/${workspaceId}/notes`, { token });
+}
+
+export function createWorkspaceNote(token: string, workspaceId: string, content: string) {
+  return apiRequest<{ note: AdminNote }>(`/api/admin/workspaces/${workspaceId}/notes`, {
+    method: "POST", token, body: JSON.stringify({ content }),
+  });
+}
+
+export function updateWorkspaceNote(token: string, workspaceId: string, noteId: string, data: { content?: string; isPinned?: boolean }) {
+  return apiRequest<{ note: AdminNote }>(`/api/admin/workspaces/${workspaceId}/notes/${noteId}`, {
+    method: "PATCH", token, body: JSON.stringify(data),
+  });
+}
+
+export function deleteWorkspaceNote(token: string, workspaceId: string, noteId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/workspaces/${workspaceId}/notes/${noteId}`, {
+    method: "DELETE", token,
+  });
+}
+
+// ── User Detail ───────────────────────────────────────────────────────────────
+
+export interface AdminUserDetail {
+  userId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  planCode: string | null;
+  planName: string | null;
+  aiActive: boolean;
+  aiTokenBalance: number;
+  subscriptionStatus: string | null;
+  totalConversations: number;
+  totalMessages: number;
+  totalChunks: number;
+  totalBroadcasts: number;
+  totalTokens: number;
+  totalCostInr: number;
+  createdAt: string;
+  workspaceId: string | null;
+  workspaceName: string | null;
+}
+
+export function fetchAdminUserDetail(token: string, userId: string) {
+  return apiRequest<{ user: AdminUserDetail }>(`/api/admin/users/${userId}/detail`, { token });
+}
+
+export function toggleAdminUserAiActive(token: string, userId: string, aiActive: boolean) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/users/${userId}/ai-active`, {
+    method: "PATCH", token, body: JSON.stringify({ aiActive }),
+  });
+}
+
+export function forceAdminPasswordReset(token: string, userId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/users/${userId}/force-password-reset`, {
+    method: "POST", token,
+  });
+}
+
 export interface AiWalletStatus {
   balance: number;
   planCode: string;

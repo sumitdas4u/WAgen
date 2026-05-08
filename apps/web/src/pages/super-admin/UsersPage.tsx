@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   fetchAdminUsers,
   fetchAdminUserUsage,
@@ -11,6 +12,7 @@ const fmt = (v: number) => `₹${v.toFixed(4)}`;
 
 export function UsersPage() {
   const { token } = useSuperAdmin();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUserUsage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +107,10 @@ export function UsersPage() {
                   <td>{fmt(u.costInr)}</td>
                   <td style={{ fontSize: "0.8rem" }}>{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td>
-                    <button className="ghost-btn" style={{ padding: "3px 8px", fontSize: "0.78rem" }} onClick={() => void openUsage(u)}>View</button>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <button className="ghost-btn" style={{ padding: "3px 8px", fontSize: "0.78rem" }} onClick={() => void openUsage(u)}>Usage</button>
+                      <button className="ghost-btn" style={{ padding: "3px 8px", fontSize: "0.78rem" }} onClick={() => navigate(`/super-admin/users/${u.userId}`)}>Detail</button>
+                    </div>
                   </td>
                 </tr>
               ))}
