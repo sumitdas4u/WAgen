@@ -1797,3 +1797,188 @@ export async function sendAdminPasswordReset(userId: string, appBaseUrl: string)
     `
   });
 }
+
+// ── Global Search ─────────────────────────────────────────────────────────────
+
+export interface AdminSearchResults {
+  workspaces: Array<{ id: string; name: string; ownerEmail: string }>;
+  users: Array<{ id: string; name: string; email: string; plan: string }>;
+  phones: Array<{ phoneNumber: string; conversationId: string; workspaceName: string }>;
+  campaigns: Array<{ id: string; name: string; workspaceName: string; status: string }>;
+}
+
+export async function globalAdminSearch(query: string): Promise<AdminSearchResults> {
+  const q = `%${query.trim()}%`;
+
+  const [wsResult, usersResult, phonesResult, campaignsResult] = await Promise.all([
+    pool.query<{ id: string; name: string; owner_email: string }>(
+      `SELECT w.id, w.name, u.email AS owner_email
+       FROM workspaces w
+       JOIN users u ON u.id = w.owner_id
+       WHERE w.name ILIKE $1 OR u.email ILIKE $1 OR u.name ILIKE $1
+       LIMIT 10`,
+      [q]
+    ),
+    pool.query<{ id: string; name: string; email: string; plan: string }>(
+      `SELECT id, name, email, subscription_plan AS plan
+       FROM users
+       WHERE email ILIKE $1 OR name ILIKE $1
+       LIMIT 10`,
+      [q]
+    ),
+    pool.query<{ phone_number: string; conversation_id: string; workspace_name: string }>(
+      `SELECT DISTINCT ON (ct.phone_number) ct.phone_number, cv.id AS conversation_id, w.name AS workspace_name
+       FROM contacts ct
+       JOIN conversations cv ON cv.contact_id = ct.id
+       JOIN workspaces w ON w.owner_id = cv.user_id
+       WHERE ct.phone_number ILIKE $1
+       LIMIT 10`,
+      [q]
+    ),
+    pool.query<{ id: string; name: string; workspace_name: string; status: string }>(
+      `SELECT c.id, c.name, w.name AS workspace_name, c.status
+       FROM campaigns c
+       JOIN workspaces w ON w.owner_id = c.user_id
+       WHERE c.name ILIKE $1
+       LIMIT 10`,
+      [q]
+    ),
+  ]);
+
+  return {
+    workspaces: wsResult.rows.map((r) => ({ id: r.id, name: r.name, ownerEmail: r.owner_email })),
+    users: usersResult.rows.map((r) => ({ id: r.id, name: r.name, email: r.email, plan: r.plan })),
+    phones: phonesResult.rows.map((r) => ({ phoneNumber: r.phone_number, conversationId: r.conversation_id, workspaceName: r.workspace_name })),
+    campaigns: campaignsResult.rows.map((r) => ({ id: r.id, name: r.name, workspaceName: r.workspace_name, status: r.status })),
+  };
+}
+
+// ── Computed Alerts ───────────────────────────────────────────────────────────
+
+export interface AdminAlert {
+  type: string;
+  severity: "warn" | "critical";
+  message: string;
+  count: number;
+  detail?: Record<string, unknown>;
+}
+
+export async function getAdminAlerts(): Promise<AdminAlert[]> {
+  const alerts: AdminAlert[] = [];
+
+  const [zeroCredits, pastDue, wabaExpiring] = await Promise.all([
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM workspaces w
+       JOIN users u ON u.id = w.owner_id
+       LEFT JOIN credit_wallet cw ON cw.user_id = u.id
+       WHERE w.status = 'active' AND COALESCE(cw.remaining_credits, 0) <= 0`
+    ),
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM subscriptions
+       WHERE status = 'past_due'
+         AND updated_at <= NOW() - INTERVAL '3 days'`
+    ),
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM whatsapp_business_connections
+       WHERE token_expires_at IS NOT NULL
+         AND token_expires_at <= NOW() + INTERVAL '7 days'
+         AND token_expires_at > NOW()`
+    ),
+  ]);
+
+  const zeroCreditsCount = Number(zeroCredits.rows[0]?.count ?? 0);
+  if (zeroCreditsCount > 0) {
+    alerts.push({
+      type: "zero_credits",
+      severity: zeroCreditsCount > 5 ? "critical" : "warn",
+      message: `${zeroCreditsCount} active workspace${zeroCreditsCount === 1 ? "" : "s"} have 0 credits`,
+      count: zeroCreditsCount,
+    });
+  }
+
+  const pastDueCount = Number(pastDue.rows[0]?.count ?? 0);
+  if (pastDueCount > 0) {
+    alerts.push({
+      type: "past_due_subscription",
+      severity: "warn",
+      message: `${pastDueCount} subscription${pastDueCount === 1 ? "" : "s"} past_due for more than 3 days`,
+      count: pastDueCount,
+    });
+  }
+
+  const wabaExpiringCount = Number(wabaExpiring.rows[0]?.count ?? 0);
+  if (wabaExpiringCount > 0) {
+    alerts.push({
+      type: "waba_token_expiring",
+      severity: "critical",
+      message: `${wabaExpiringCount} WABA connection${wabaExpiringCount === 1 ? "" : "s"} token expiring within 7 days`,
+      count: wabaExpiringCount,
+    });
+  }
+
+  // Queue failures from BullMQ
+  try {
+    const queues = await getManagedQueues();
+    let totalFailed = 0;
+    for (const q of queues) {
+      const counts = await q.getJobCounts("failed");
+      totalFailed += counts.failed ?? 0;
+    }
+    if (totalFailed > 100) {
+      alerts.push({
+        type: "queue_failures",
+        severity: "critical",
+        message: `${totalFailed} failed jobs across all queues`,
+        count: totalFailed,
+      });
+    } else if (totalFailed > 20) {
+      alerts.push({
+        type: "queue_failures",
+        severity: "warn",
+        message: `${totalFailed} failed jobs across all queues`,
+        count: totalFailed,
+      });
+    }
+  } catch {
+    // Queue may be unavailable — non-fatal
+  }
+
+  return alerts;
+}
+
+// ── Admin Sessions ────────────────────────────────────────────────────────────
+
+export interface AdminSession {
+  id: string;
+  adminEmail: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export async function listAdminSessions(limit = 50): Promise<AdminSession[]> {
+  const result = await pool.query<{
+    id: string;
+    admin_email: string;
+    ip_address: string | null;
+    user_agent: string | null;
+    created_at: string;
+  }>(
+    `SELECT id, admin_email, ip_address, user_agent, created_at
+     FROM admin_sessions
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [Math.max(1, Math.min(200, limit))]
+  );
+
+  return result.rows.map((r) => ({
+    id: r.id,
+    adminEmail: r.admin_email,
+    ipAddress: r.ip_address,
+    userAgent: r.user_agent,
+    createdAt: r.created_at,
+  }));
+}

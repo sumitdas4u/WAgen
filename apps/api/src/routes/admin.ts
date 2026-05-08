@@ -44,6 +44,9 @@ import {
   getAdminUserDetail,
   toggleUserAiActive,
   sendAdminPasswordReset,
+  globalAdminSearch,
+  getAdminAlerts,
+  listAdminSessions,
 } from "../services/admin-service.js";
 import { getUsageAnalytics } from "../services/conversation-service.js";
 import {
@@ -833,4 +836,46 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     await writeAdminAuditLog({ adminEmail: email, action: "user.force_password_reset", targetUserId: parsed.data.userId });
     return { ok: true };
   });
+
+  // ── Global Search ──────────────────────────────────────────────────────────
+  const SearchQuerySchema = z.object({
+    q: z.string().min(1).max(100),
+  });
+
+  fastify.get(
+    "/api/admin/search",
+    { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = SearchQuerySchema.safeParse(request.query);
+      if (!parsed.success) return reply.status(400).send({ error: "Query param 'q' is required (1-100 chars)" });
+      const results = await globalAdminSearch(parsed.data.q);
+      return { results };
+    }
+  );
+
+  // ── Computed Alerts ────────────────────────────────────────────────────────
+  fastify.get(
+    "/api/admin/alerts",
+    { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async () => {
+      const alerts = await getAdminAlerts();
+      return { alerts };
+    }
+  );
+
+  // ── Admin Sessions ─────────────────────────────────────────────────────────
+  const AdminSessionsQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+  });
+
+  fastify.get(
+    "/api/admin/sessions",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const parsed = AdminSessionsQuerySchema.safeParse(request.query ?? {});
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
+      const sessions = await listAdminSessions(parsed.data.limit);
+      return { sessions };
+    }
+  );
 }

@@ -5,6 +5,8 @@ import {
   fetchAdminSubscriptions,
   fetchAdminWorkspaces,
   fetchAdminUserUsage,
+  fetchAdminAlerts,
+  fetchAdminSessions,
   adjustAdminWorkspaceCredits,
   resetAdminWorkspaceWallet,
   updateAdminWorkspaceStatus,
@@ -13,10 +15,17 @@ import {
   type AdminSubscriptionSummary,
   type AdminWorkspaceSummary,
   type UsageAnalyticsResponse,
+  type AdminAlert,
+  type AdminSession,
 } from "../../lib/api";
 import { useSuperAdmin } from "./lib/super-admin-context";
 
 const fmt = (v: number) => `INR ${v.toFixed(4)}`;
+
+const ALERT_COLORS: Record<string, { bg: string; border: string; dot: string }> = {
+  critical: { bg: "#fff5f5", border: "#fecaca", dot: "#ef4444" },
+  warn: { bg: "#fffbeb", border: "#fde68a", dot: "#f59e0b" },
+};
 
 export function DashboardPage() {
   const { token } = useSuperAdmin();
@@ -24,6 +33,8 @@ export function DashboardPage() {
   const [users, setUsers] = useState<AdminUserUsage[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscriptionSummary[]>([]);
   const [workspaces, setWorkspaces] = useState<AdminWorkspaceSummary[]>([]);
+  const [alerts, setAlerts] = useState<AdminAlert[]>([]);
+  const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -35,16 +46,20 @@ export function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [ov, us, subs, ws] = await Promise.all([
+      const [ov, us, subs, ws, al, sess] = await Promise.all([
         fetchAdminOverview(token),
         fetchAdminUsers(token, { limit: 300 }),
         fetchAdminSubscriptions(token, { limit: 300 }),
         fetchAdminWorkspaces(token, { limit: 500 }),
+        fetchAdminAlerts(token).catch(() => ({ alerts: [] as AdminAlert[] })),
+        fetchAdminSessions(token, 20).catch(() => ({ sessions: [] as AdminSession[] })),
       ]);
       setOverview(ov.overview);
       setUsers(us.users);
       setSubscriptions(subs.subscriptions);
       setWorkspaces(ws.workspaces);
+      setAlerts(al.alerts);
+      setSessions(sess.sessions);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -98,6 +113,36 @@ export function DashboardPage() {
         </button>
       </div>
 
+      {/* System Alerts */}
+      {alerts.length > 0 && (
+        <section style={{ marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {alerts.map((a, i) => {
+            const c = ALERT_COLORS[a.severity] ?? ALERT_COLORS.warn;
+            return (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "10px 16px",
+                  background: c.bg,
+                  border: `1px solid ${c.border}`,
+                  borderRadius: "8px",
+                  fontSize: "0.84rem",
+                }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
+                <span style={{ color: "#122033", fontWeight: 600 }}>{a.message}</span>
+                <span style={{ marginLeft: "auto", fontSize: "0.74rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {a.severity}
+                </span>
+              </div>
+            );
+          })}
+        </section>
+      )}
+
       {/* Overview stats */}
       <section className="overview-grid" style={{ marginBottom: "1.5rem" }}>
         <article><h3>Total SaaS Users</h3><p>{overview?.totalUsers ?? 0}</p></article>
@@ -105,6 +150,34 @@ export function DashboardPage() {
         <article><h3>Total Messages</h3><p>{overview?.totalMessages ?? 0}</p></article>
         <article><h3>Knowledge Chunks</h3><p>{overview?.totalChunks ?? 0}</p></article>
       </section>
+
+      {/* Recent Admin Logins */}
+      {sessions.length > 0 && (
+        <section className="finance-panel" style={{ marginBottom: "1.5rem" }}>
+          <h2>Recent Admin Logins</h2>
+          <div className="finance-table-wrap">
+            <table className="finance-table">
+              <thead>
+                <tr>
+                  <th>Admin</th><th>IP Address</th><th>User Agent</th><th>When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.adminEmail}</td>
+                    <td>{s.ipAddress ?? "-"}</td>
+                    <td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.userAgent ?? "-"}
+                    </td>
+                    <td>{new Date(s.createdAt).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Users analytics */}
       <section className="finance-panel">

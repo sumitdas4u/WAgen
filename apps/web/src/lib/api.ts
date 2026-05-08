@@ -1219,6 +1219,47 @@ export function forceAdminPasswordReset(token: string, userId: string) {
   });
 }
 
+// ── Global Search ─────────────────────────────────────────────────────────────
+
+export interface AdminSearchResults {
+  workspaces: Array<{ id: string; name: string; ownerEmail: string }>;
+  users: Array<{ id: string; name: string; email: string; plan: string }>;
+  phones: Array<{ phoneNumber: string; conversationId: string; workspaceName: string }>;
+  campaigns: Array<{ id: string; name: string; workspaceName: string; status: string }>;
+}
+
+export function fetchAdminSearch(token: string, q: string) {
+  return apiRequest<{ results: AdminSearchResults }>(`/api/admin/search?q=${encodeURIComponent(q)}`, { token });
+}
+
+// ── Computed Alerts ───────────────────────────────────────────────────────────
+
+export interface AdminAlert {
+  type: string;
+  severity: "warn" | "critical";
+  message: string;
+  count: number;
+}
+
+export function fetchAdminAlerts(token: string) {
+  return apiRequest<{ alerts: AdminAlert[] }>("/api/admin/alerts", { token });
+}
+
+// ── Admin Sessions ────────────────────────────────────────────────────────────
+
+export interface AdminSession {
+  id: string;
+  adminEmail: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export function fetchAdminSessions(token: string, limit?: number) {
+  const qs = limit ? `?limit=${limit}` : "";
+  return apiRequest<{ sessions: AdminSession[] }>(`/api/admin/sessions${qs}`, { token });
+}
+
 export interface AiWalletStatus {
   balance: number;
   planCode: string;
