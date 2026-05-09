@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { env } from "../config/env.js";
 import { pool, withTransaction } from "../db/pool.js";
 import { InMemoryCache } from "../utils/cache.js";
+import { publishAdminActivity } from "./admin-activity-publisher.js";
 
 const WORKSPACE_PLAN_CODES = ["starter", "pro", "business"] as const;
 type WorkspacePlanCode = (typeof WORKSPACE_PLAN_CODES)[number];
@@ -738,6 +739,7 @@ export async function evaluateConversationCredit(input: {
     }
 
     if (wallet.remaining_credits <= 0) {
+      publishAdminActivity({ type: "workspace.credits_exhausted", workspaceId: context.workspace.id });
       return {
         allowed: false,
         deducted: false,

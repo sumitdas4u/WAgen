@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchAdminQrSessions, type AdminQrSession } from "../../lib/api";
+import { fetchAdminQrSessions, disconnectAdminQrSession, type AdminQrSession } from "../../lib/api";
 import { useSuperAdmin } from "./lib/super-admin-context";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -15,6 +15,7 @@ export function QrSessionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -25,6 +26,15 @@ export function QrSessionsPage() {
   };
 
   useEffect(() => { void load(); }, [token]);
+
+  const handleDisconnect = async (userId: string) => {
+    if (!confirm("Force-disconnect this QR session?")) return;
+    setDisconnecting(userId); setError(null);
+    try {
+      await disconnectAdminQrSession(token, userId);
+      await load();
+    } catch (e) { setError((e as Error).message); } finally { setDisconnecting(null); }
+  };
 
   const filtered = sessions.filter((s) => {
     if (statusFilter && s.status !== statusFilter) return false;
@@ -63,7 +73,7 @@ export function QrSessionsPage() {
           <table className="finance-table">
             <thead>
               <tr>
-                <th>User</th><th>Email</th><th>Phone</th><th>Status</th><th>Enabled</th><th>Last Connected</th><th>Updated</th>
+                <th>User</th><th>Email</th><th>Phone</th><th>Status</th><th>Enabled</th><th>Last Connected</th><th>Updated</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -92,10 +102,22 @@ export function QrSessionsPage() {
                   </td>
                   <td style={{ fontSize: "0.8rem" }}>{s.lastConnectedAt ? new Date(s.lastConnectedAt).toLocaleString() : "Never"}</td>
                   <td style={{ fontSize: "0.8rem" }}>{new Date(s.updatedAt).toLocaleString()}</td>
+                  <td>
+                    {s.status !== "disconnected" && (
+                      <button
+                        className="ghost-btn"
+                        style={{ fontSize: "0.75rem", padding: "3px 8px", color: "#dc2626", borderColor: "#fca5a5" }}
+                        disabled={disconnecting === s.userId}
+                        onClick={() => void handleDisconnect(s.userId)}
+                      >
+                        {disconnecting === s.userId ? "…" : "Disconnect"}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {filtered.length === 0 && !loading && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "#94a3b8", padding: "2rem" }}>No QR sessions found</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "#94a3b8", padding: "2rem" }}>No QR sessions found</td></tr>
               )}
             </tbody>
           </table>

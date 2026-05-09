@@ -1975,6 +1975,220 @@ export interface AdminSession {
   createdAt: string;
 }
 
+// ── Billing Payments ───────────────────────────────────────────────────────────
+
+export interface BillingPaymentEntry {
+  id: string;
+  type: "subscription" | "recharge";
+  userEmail: string;
+  workspaceName: string;
+  amountPaise: number;
+  currency: string;
+  status: string;
+  method: string | null;
+  razorpayId: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export async function listBillingPayments(limit = 200): Promise<BillingPaymentEntry[]> {
+  const result = await pool.query<{
+    id: string;
+    type: "subscription" | "recharge";
+    user_email: string;
+    workspace_name: string;
+    amount_paise: number;
+    currency: string;
+    status: string;
+    method: string | null;
+    razorpay_id: string | null;
+    paid_at: string | null;
+    created_at: string;
+  }>(
+    `SELECT
+       p.id,
+       'subscription' AS type,
+       u.email AS user_email,
+       COALESCE(w.name, u.email) AS workspace_name,
+       p.amount_paise,
+       p.currency,
+       p.status,
+       p.method,
+       p.razorpay_payment_id AS razorpay_id,
+       p.paid_at,
+       p.created_at
+     FROM subscription_payments p
+     JOIN users u ON u.id = p.user_id
+     LEFT JOIN workspaces w ON w.owner_id = u.id
+     UNION ALL
+     SELECT
+       o.id,
+       'recharge' AS type,
+       u.email AS user_email,
+       COALESCE(w.name, u.email) AS workspace_name,
+       o.amount_total_paise AS amount_paise,
+       o.currency,
+       o.status,
+       NULL AS method,
+       o.razorpay_payment_id AS razorpay_id,
+       o.paid_at,
+       o.created_at
+     FROM credit_recharge_orders o
+     JOIN users u ON u.id = o.user_id
+     LEFT JOIN workspaces w ON w.owner_id = u.id
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [Math.max(1, Math.min(500, limit))]
+  );
+
+  return result.rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    userEmail: r.user_email,
+    workspaceName: r.workspace_name,
+    amountPaise: Number(r.amount_paise),
+    currency: r.currency,
+    status: r.status,
+    method: r.method,
+    razorpayId: r.razorpay_id,
+    paidAt: r.paid_at,
+    createdAt: r.created_at,
+  }));
+}
+
+// ── AI Cost Summary ─────────────────────────────────────────────────────────────
+
+export interface AiCostSummaryEntry {
+  label: string;
+  costInr: number;
+  tokens: number;
+  messages: number;
+}
+
+export async function getAiCostSummary(
+  groupBy: "model" | "workspace" | "module" | "day" = "model",
+  days = 30
+): Promise<AiCostSummaryEntry[]> {
+  let selectLabel: string;
+  switch (groupBy) {
+    case "workspace":
+      selectLabel = "COALESCE(w.name, u.email)";
+      break;
+    case "module":
+      selectLabel = "COALESCE(l.module, 'unknown')";
+      break;
+    case "day":
+      selectLabel = "TO_CHAR(l.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')";
+      break;
+    default:
+      selectLabel = "COALESCE(l.model, 'unknown')";
+  }
+
+  const result = await pool.query<{
+    label: string;
+    cost_inr: string;
+    tokens: string;
+    messages: string;
+  }>(
+    `SELECT
+       ${selectLabel} AS label,
+       SUM(l.estimated_cost_inr) AS cost_inr,
+       SUM(l.total_tokens) AS tokens,
+       COUNT(*) AS messages
+     FROM ai_token_ledger l
+     LEFT JOIN users u ON u.id = l.user_id
+     LEFT JOIN workspaces w ON w.owner_id = u.id
+     WHERE l.created_at >= NOW() - INTERVAL '1 day' * $1
+     GROUP BY 1
+     ORDER BY cost_inr DESC
+     LIMIT 50`,
+    [days]
+  );
+
+  return result.rows.map((r) => ({
+    label: r.label,
+    costInr: Number(r.cost_inr),
+    tokens: Number(r.tokens),
+    messages: Number(r.messages),
+  }));
+}
+
+// ── Workspace Feature Flag Overrides ───────────────────────────────────────────
+
+export interface WorkspaceFeatureFlagOverride {
+  flagKey: string;
+  enabled: boolean;
+  overrideReason: string | null;
+  setByAdmin: string | null;
+  updatedAt: string;
+}
+
+export async function listWorkspaceFeatureFlagOverrides(workspaceId: string): Promise<WorkspaceFeatureFlagOverride[]> {
+  const result = await pool.query<{
+    flag_key: string;
+    enabled: boolean;
+    override_reason: string | null;
+    set_by_admin: string | null;
+    updated_at: string;
+  }>(
+    `SELECT flag_key, enabled, override_reason, set_by_admin, updated_at
+     FROM workspace_feature_overrides
+     WHERE workspace_id = $1
+     ORDER BY updated_at DESC`,
+    [workspaceId]
+  );
+
+  return result.rows.map((r) => ({
+    flagKey: r.flag_key,
+    enabled: r.enabled,
+    overrideReason: r.override_reason,
+    setByAdmin: r.set_by_admin,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function setWorkspaceFeatureFlagOverride(
+  workspaceId: string,
+  flagKey: string,
+  enabled: boolean,
+  adminEmail: string,
+  reason?: string
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO workspace_feature_overrides (workspace_id, flag_key, enabled, override_reason, set_by_admin, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (workspace_id, flag_key) DO UPDATE
+       SET enabled = EXCLUDED.enabled,
+           override_reason = EXCLUDED.override_reason,
+           set_by_admin = EXCLUDED.set_by_admin,
+           updated_at = NOW()`,
+    [workspaceId, flagKey, enabled, reason ?? null, adminEmail]
+  );
+  await writeAdminAuditLog({
+    adminEmail,
+    action: "workspace.feature_flag_override",
+    workspaceId,
+    details: { flagKey, enabled, reason },
+  });
+}
+
+export async function removeWorkspaceFeatureFlagOverride(
+  workspaceId: string,
+  flagKey: string,
+  adminEmail: string
+): Promise<void> {
+  await pool.query(
+    `DELETE FROM workspace_feature_overrides WHERE workspace_id = $1 AND flag_key = $2`,
+    [workspaceId, flagKey]
+  );
+  await writeAdminAuditLog({
+    adminEmail,
+    action: "workspace.feature_flag_override_removed",
+    workspaceId,
+    details: { flagKey },
+  });
+}
+
 export async function listAdminSessions(limit = 50): Promise<AdminSession[]> {
   const result = await pool.query<{
     id: string;

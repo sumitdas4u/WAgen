@@ -48,7 +48,14 @@ import {
   getAdminAlerts,
   listAdminSessions,
   writeAdminImpersonationLog,
+  retryAdminQueueFailed,
+  listBillingPayments,
+  getAiCostSummary,
+  listWorkspaceFeatureFlagOverrides,
+  setWorkspaceFeatureFlagOverride,
+  removeWorkspaceFeatureFlagOverride,
 } from "../services/admin-service.js";
+import { whatsappSessionManager } from "../services/whatsapp-session-manager.js";
 import { createQueueWorkerConnection } from "../services/queue-service.js";
 import { ADMIN_ACTIVITY_CHANNEL } from "../services/admin-activity-publisher.js";
 import { getUsageAnalytics } from "../services/conversation-service.js";
@@ -962,6 +969,127 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         clearInterval(ping);
         void subscriber.unsubscribe().then(() => subscriber.disconnect());
       });
+    }
+  );
+
+  // ── Queue: retry failed ────────────────────────────────────────────────────
+  const QueueRetrySchema = z.object({ queueName: z.string().min(1).max(80) });
+
+  fastify.post(
+    "/api/admin/queues/:queueName/retry-failed",
+    { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = QueueRetrySchema.safeParse(request.params);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid queue name" });
+      const count = await retryAdminQueueFailed(parsed.data.queueName);
+      const adminEmail = (request as { adminEmail?: string }).adminEmail ?? "unknown";
+      await writeAdminAuditLog({ adminEmail, action: "system.queue_retry_failed", details: { queueName: parsed.data.queueName, retried: count } });
+      return reply.send({ retried: count });
+    }
+  );
+
+  // ── QR Sessions: force-disconnect ─────────────────────────────────────────
+  const QrDisconnectSchema = z.object({ userId: z.string().uuid() });
+
+  fastify.post(
+    "/api/admin/qr-sessions/:userId/disconnect",
+    { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = QrDisconnectSchema.safeParse(request.params);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid user ID" });
+      const { userId } = parsed.data;
+      try {
+        await whatsappSessionManager.disconnectUser(userId);
+      } catch {
+        // If no active session, treat as success — it's already disconnected.
+      }
+      const adminEmail = (request as { adminEmail?: string }).adminEmail ?? "unknown";
+      await writeAdminAuditLog({ adminEmail, action: "qr_session.force_disconnect", details: { userId } });
+      return reply.send({ ok: true });
+    }
+  );
+
+  // ── Billing Payments ───────────────────────────────────────────────────────
+  fastify.get(
+    "/api/admin/billing/payments",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const query = (request.query as Record<string, string>);
+      const limit = Math.min(500, Math.max(1, parseInt(query.limit ?? "200", 10)));
+      const payments = await listBillingPayments(limit);
+      return reply.send({ payments });
+    }
+  );
+
+  // ── AI Cost Summary ────────────────────────────────────────────────────────
+  const AiCostSummaryGroupSchema = z.enum(["model", "workspace", "module", "day"]);
+
+  fastify.get(
+    "/api/admin/ai/cost-summary",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const query = (request.query as Record<string, string>);
+      const groupByParsed = AiCostSummaryGroupSchema.safeParse(query.group_by ?? "model");
+      const groupBy = groupByParsed.success ? groupByParsed.data : "model";
+      const days = Math.min(90, Math.max(1, parseInt(query.days ?? "30", 10)));
+      const series = await getAiCostSummary(groupBy, days);
+      return reply.send({ series, groupBy, days });
+    }
+  );
+
+  // ── Workspace Feature Flag Overrides ───────────────────────────────────────
+  const WorkspaceFeatureFlagSchema = z.object({
+    workspaceId: z.string().uuid(),
+    flagKey: z.string().min(1).max(100),
+  });
+  const WorkspaceFeatureFlagBodySchema = z.object({
+    enabled: z.boolean(),
+    reason: z.string().max(500).optional(),
+  });
+
+  fastify.get(
+    "/api/admin/workspaces/:workspaceId/feature-flags",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const parsed = z.object({ workspaceId: z.string().uuid() }).safeParse(request.params);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid workspace ID" });
+      const overrides = await listWorkspaceFeatureFlagOverrides(parsed.data.workspaceId);
+      return reply.send({ overrides });
+    }
+  );
+
+  fastify.put(
+    "/api/admin/workspaces/:workspaceId/feature-flags/:flagKey",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const paramsParsed = WorkspaceFeatureFlagSchema.safeParse(request.params);
+      const bodyParsed = WorkspaceFeatureFlagBodySchema.safeParse(request.body);
+      if (!paramsParsed.success || !bodyParsed.success) return reply.status(400).send({ error: "Invalid request" });
+      const adminEmail = (request as { adminEmail?: string }).adminEmail ?? "unknown";
+      await setWorkspaceFeatureFlagOverride(
+        paramsParsed.data.workspaceId,
+        paramsParsed.data.flagKey,
+        bodyParsed.data.enabled,
+        adminEmail,
+        bodyParsed.data.reason
+      );
+      return reply.send({ ok: true });
+    }
+  );
+
+  fastify.delete(
+    "/api/admin/workspaces/:workspaceId/feature-flags/:flagKey",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const paramsParsed = WorkspaceFeatureFlagSchema.safeParse(request.params);
+      if (!paramsParsed.success) return reply.status(400).send({ error: "Invalid request" });
+      const adminEmail = (request as { adminEmail?: string }).adminEmail ?? "unknown";
+      await removeWorkspaceFeatureFlagOverride(
+        paramsParsed.data.workspaceId,
+        paramsParsed.data.flagKey,
+        adminEmail
+      );
+      return reply.send({ ok: true });
     }
   );
 }

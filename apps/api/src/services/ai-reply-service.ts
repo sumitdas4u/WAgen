@@ -5,6 +5,7 @@ import { aiService } from "./ai-service.js";
 import { retrieveKnowledge, type KnowledgeChunk } from "./rag-service.js";
 import { chargeUser } from "./ai-token-service.js";
 import { isKillSwitchEnabled } from "./kill-switch-service.js";
+import { publishAdminActivity } from "./admin-activity-publisher.js";
 
 interface ReplyInput {
   user: User;
@@ -1487,6 +1488,7 @@ export async function buildSalesReply(input: ReplyInput): Promise<ReplyOutput> {
   try {
     const response = await aiService.generateReply(systemPrompt, userPrompt);
     // Deduct tokens for a successful AI reply (fire-and-forget)
+    publishAdminActivity({ type: "workspace.ai_reply_sent", workspaceId: input.user.id, detail: { model: response.model } });
     void chargeUser(input.user.id, "chatbot_reply", {
       module: "inbox",
       model: response.model,

@@ -3,6 +3,7 @@ import Razorpay from "razorpay";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { getWorkspaceIdByUserId, syncWorkspaceSubscriptionFromBillingEvent } from "./workspace-billing-service.js";
+import { publishAdminActivity } from "./admin-activity-publisher.js";
 import { creditMonthlyTokens } from "./ai-token-service.js";
 import {
   createWorkspaceRechargeOrder,
@@ -1501,6 +1502,7 @@ async function upsertPaymentFromWebhook(
     }
 
     if (existing?.user_id && (wasActiveBeforeFailure || linkedWorkspaceGateway)) {
+      publishAdminActivity({ type: "billing.payment_failed", detail: { userId: existing.user_id, subscriptionId } });
       await syncWorkspaceSubscriptionFromBillingEvent({
         userId: existing.user_id,
         billingPlanCode: normalizePlanCode(existingBeforeFailure?.plan_code ?? existing.plan_code) ?? "starter",

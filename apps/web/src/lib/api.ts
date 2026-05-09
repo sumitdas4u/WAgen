@@ -4368,3 +4368,82 @@ export function fetchTodayReport(token: string): Promise<DailyReportSnapshot> {
 export function fetchDailyReports(token: string): Promise<{ reports: DailyReportEntry[] }> {
   return apiRequest("/api/reports/daily", { token });
 }
+
+// ── Super Admin: Billing Payments ──────────────────────────────────────────
+
+export interface BillingPaymentEntry {
+  id: string;
+  type: "subscription" | "recharge";
+  userEmail: string;
+  workspaceName: string;
+  amountPaise: number;
+  currency: string;
+  status: string;
+  method: string | null;
+  razorpayId: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export function fetchAdminBillingPayments(token: string, limit = 200) {
+  return apiRequest<{ payments: BillingPaymentEntry[] }>(`/api/admin/billing/payments?limit=${limit}`, { token });
+}
+
+// ── Super Admin: AI Cost Summary ──────────────────────────────────────────
+
+export interface AiCostSummaryEntry {
+  label: string;
+  costInr: number;
+  tokens: number;
+  messages: number;
+}
+
+export function fetchAiCostSummary(token: string, groupBy: "model" | "workspace" | "module" | "day" = "model", days = 30) {
+  return apiRequest<{ series: AiCostSummaryEntry[]; groupBy: string; days: number }>(
+    `/api/admin/ai/cost-summary?group_by=${groupBy}&days=${days}`,
+    { token }
+  );
+}
+
+// ── Super Admin: QR Session Disconnect ────────────────────────────────────
+
+export function disconnectAdminQrSession(token: string, userId: string) {
+  return apiRequest<{ ok: boolean }>(`/api/admin/qr-sessions/${userId}/disconnect`, { method: "POST", token });
+}
+
+// ── Super Admin: Workspace Feature Flag Overrides ─────────────────────────
+
+export interface WorkspaceFeatureFlagOverride {
+  flagKey: string;
+  enabled: boolean;
+  overrideReason: string | null;
+  setByAdmin: string | null;
+  updatedAt: string;
+}
+
+export function fetchWorkspaceFeatureFlagOverrides(token: string, workspaceId: string) {
+  return apiRequest<{ overrides: WorkspaceFeatureFlagOverride[] }>(
+    `/api/admin/workspaces/${workspaceId}/feature-flags`,
+    { token }
+  );
+}
+
+export function setWorkspaceFeatureFlagOverride(
+  token: string,
+  workspaceId: string,
+  flagKey: string,
+  enabled: boolean,
+  reason?: string
+) {
+  return apiRequest<{ ok: boolean }>(
+    `/api/admin/workspaces/${workspaceId}/feature-flags/${flagKey}`,
+    { method: "PUT", token, body: JSON.stringify({ enabled, reason }) }
+  );
+}
+
+export function removeWorkspaceFeatureFlagOverride(token: string, workspaceId: string, flagKey: string) {
+  return apiRequest<{ ok: boolean }>(
+    `/api/admin/workspaces/${workspaceId}/feature-flags/${flagKey}`,
+    { method: "DELETE", token }
+  );
+}

@@ -14,6 +14,7 @@ import {
   getCampaignDispatchQueue
 } from "./queue-service.js";
 import { isKillSwitchEnabled } from "./kill-switch-service.js";
+import { publishAdminActivity } from "./admin-activity-publisher.js";
 
 interface CampaignDispatchJob {
   campaignId: string;
@@ -91,6 +92,8 @@ async function processCampaignDispatch(job: CampaignDispatchJob): Promise<void> 
   if (!campaign || !campaign.template_id) {
     return;
   }
+
+  publishAdminActivity({ type: "workspace.broadcast_started", workspaceId: campaign.user_id, detail: { campaignId: job.campaignId } });
 
   let batchIndex = 0;
   while (true) {

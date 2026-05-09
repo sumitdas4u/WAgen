@@ -63,6 +63,7 @@ import {
 import { fanoutEvent } from "./event-fanout-service.js";
 import { disconnectRabbitMQ } from "./rabbitmq-service.js";
 import { makeProxyAgent, makeProxyAgentUndici, type ProxyConfig } from "../utils/makeProxyAgent.js";
+import { publishAdminActivity } from "./admin-activity-publisher.js";
 
 const HUMAN_REPLY_DELAY_MIN_MS = Math.max(0, Math.min(env.REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS));
 const HUMAN_REPLY_DELAY_MAX_MS = Math.max(HUMAN_REPLY_DELAY_MIN_MS, env.REPLY_DELAY_MAX_MS);
@@ -1651,6 +1652,7 @@ class WhatsAppSessionManager {
     clearAuthStateCache(userId);
     await resetWhatsAppAuthState(userId);
     await updateWhatsAppStatus(userId, "disconnected");
+    publishAdminActivity({ type: "workspace.qr_disconnected", workspaceId: userId });
     await savePairingCode(userId, null, null);
     void fanoutEvent(
       userId,
