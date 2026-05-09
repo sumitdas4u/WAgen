@@ -2,6 +2,8 @@ import { pool, withTransaction } from "../db/pool.js";
 import { aiService } from "./ai-service.js";
 import { toVectorLiteral } from "../utils/index.js";
 import { chargeUser, estimateTextTokens, requireAiCredit } from "./ai-token-service.js";
+import { getUserPlanEntitlements } from "./billing-service.js";
+import { assertPlanCapLimit } from "./plan-entitlement-service.js";
 
 export interface KnowledgeChunk {
   id: string;
@@ -321,6 +323,18 @@ export async function listKnowledgeSources(
     chunks: Number(row.chunks),
     last_ingested_at: row.last_ingested_at
   }));
+}
+
+export async function assertKnowledgeSourceLimit(userId: string): Promise<void> {
+  const [entitlements, sources] = await Promise.all([
+    getUserPlanEntitlements(userId),
+    listKnowledgeSources(userId),
+  ]);
+  await assertPlanCapLimit({
+    used: sources.length,
+    limit: entitlements.maxKnowledgeSources,
+    module: "knowledgeSources",
+  });
 }
 
 export async function deleteKnowledgeSource(input: {

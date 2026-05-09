@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { env } from "./config/env.js";
 import { validateApiKey } from "./services/api-key-service.js";
 import { AiTokenLimitExceededError, AiTokensDepletedError } from "./services/ai-token-service.js";
+import { PlanLimitExceededError } from "./services/plan-entitlement-service.js";
 import { registerMetrics } from "./observability/metrics.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -279,6 +280,16 @@ export async function buildApp() {
           error: error.code,
           message: error.message,
           balance: error.balance
+        });
+      }
+
+      if (error instanceof PlanLimitExceededError) {
+        return reply.status(403).send({
+          error: error.code,
+          code: error.code,
+          module: error.module,
+          used: error.used,
+          limit: error.limit
         });
       }
 

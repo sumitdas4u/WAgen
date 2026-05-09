@@ -3,6 +3,8 @@ import type { Contact } from "../types/models.js";
 import { getSegmentContacts } from "./contact-segments-service.js";
 import { findSuppressedRecipients } from "./message-delivery-data-service.js";
 import { requireMetaConnection } from "./meta-whatsapp-service.js";
+import { getUserPlanEntitlements } from "./billing-service.js";
+import { assertPlanCapLimit } from "./plan-entitlement-service.js";
 import {
   evaluateOutboundTemplatePolicy,
   summarizeOutboundPolicyReasons,
@@ -388,6 +390,18 @@ export async function updateCampaign(
   return result.rows[0] ?? null;
 }
 
+async function getMonthlyRecipientCount(userId: string): Promise<number> {
+  const res = await pool.query<{ monthly_used: string }>(
+    `SELECT COALESCE(SUM(total_count - skipped_count), 0)::text AS monthly_used
+     FROM campaigns
+     WHERE user_id = $1
+       AND DATE_TRUNC('month', started_at) = DATE_TRUNC('month', NOW())
+       AND status NOT IN ('draft', 'cancelled')`,
+    [userId]
+  );
+  return parseInt(res.rows[0]?.monthly_used ?? "0", 10);
+}
+
 export async function launchCampaign(userId: string, campaignId: string): Promise<Campaign | null> {
   const campaign = await getCampaign(userId, campaignId);
   if (!campaign || (campaign.status !== "draft" && campaign.status !== "scheduled")) {
@@ -411,6 +425,15 @@ export async function launchCampaign(userId: string, campaignId: string): Promis
   if (eligibleContacts.length === 0) {
     throw new Error("No contacts with phone numbers in the selected segment.");
   }
+
+  const entitlements = await getUserPlanEntitlements(userId);
+  const monthlyUsed = await getMonthlyRecipientCount(userId);
+  await assertPlanCapLimit({
+    used: monthlyUsed + eligibleContacts.length,
+    limit: entitlements.broadcastMonthlyRecipients,
+    module: "broadcast",
+  });
+
   const suppressedRecipients = await findSuppressedRecipients(
     userId,
     eligibleContacts.map((contact) => contact.phone_number)

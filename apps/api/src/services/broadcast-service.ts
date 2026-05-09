@@ -28,6 +28,7 @@ export interface BroadcastSummary {
   failed: number;
   suppressed: number;
   frequencyLimited: number;
+  monthlyRecipientsUsed: number;
 }
 
 export interface BroadcastRetargetPreview {
@@ -62,27 +63,37 @@ function buildRetargetClause(status: RetargetStatus): string {
 }
 
 export async function getBroadcastSummary(userId: string): Promise<BroadcastSummary> {
-  const result = await pool.query<{
-    total_broadcasts: string;
-    recipients: string;
-    sent: string;
-    delivered: string;
-    engaged: string;
-    failed: string;
-    suppressed: string;
-  }>(
-    `SELECT
-       COUNT(*)::text AS total_broadcasts,
-       COALESCE(SUM(total_count), 0)::text AS recipients,
-       COALESCE(SUM(sent_count), 0)::text AS sent,
-       COALESCE(SUM(delivered_count), 0)::text AS delivered,
-       COALESCE(SUM(read_count), 0)::text AS engaged,
-       COALESCE(SUM(failed_count), 0)::text AS failed,
-       COALESCE(SUM(skipped_count), 0)::text AS suppressed
-     FROM campaigns
-     WHERE user_id = $1`,
-    [userId]
-  );
+  const [result, monthlyResult] = await Promise.all([
+    pool.query<{
+      total_broadcasts: string;
+      recipients: string;
+      sent: string;
+      delivered: string;
+      engaged: string;
+      failed: string;
+      suppressed: string;
+    }>(
+      `SELECT
+         COUNT(*)::text AS total_broadcasts,
+         COALESCE(SUM(total_count), 0)::text AS recipients,
+         COALESCE(SUM(sent_count), 0)::text AS sent,
+         COALESCE(SUM(delivered_count), 0)::text AS delivered,
+         COALESCE(SUM(read_count), 0)::text AS engaged,
+         COALESCE(SUM(failed_count), 0)::text AS failed,
+         COALESCE(SUM(skipped_count), 0)::text AS suppressed
+       FROM campaigns
+       WHERE user_id = $1`,
+      [userId]
+    ),
+    pool.query<{ monthly_used: string }>(
+      `SELECT COALESCE(SUM(total_count - skipped_count), 0)::text AS monthly_used
+       FROM campaigns
+       WHERE user_id = $1
+         AND DATE_TRUNC('month', started_at) = DATE_TRUNC('month', NOW())
+         AND status NOT IN ('draft', 'cancelled')`,
+      [userId]
+    ),
+  ]);
 
   const row = firstRow(result);
   return {
@@ -93,7 +104,8 @@ export async function getBroadcastSummary(userId: string): Promise<BroadcastSumm
     engaged: Number(row?.engaged ?? 0),
     failed: Number(row?.failed ?? 0),
     suppressed: Number(row?.suppressed ?? 0),
-    frequencyLimited: 0
+    frequencyLimited: 0,
+    monthlyRecipientsUsed: parseInt(monthlyResult.rows[0]?.monthly_used ?? "0", 10),
   };
 }
 

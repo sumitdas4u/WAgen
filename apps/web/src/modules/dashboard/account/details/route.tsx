@@ -8,8 +8,8 @@ import "./../account.css";
 const PLAN_LABELS: Record<string, string> = {
   trial: "Trial",
   starter: "Starter",
-  pro: "Pro",
-  business: "Business"
+  pro: "Growth",
+  business: "Pro"
 };
 
 function getBasics(raw: Record<string, unknown>) {

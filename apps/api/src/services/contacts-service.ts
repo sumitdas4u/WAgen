@@ -15,6 +15,7 @@ import type {
 const CONTACT_TYPE_VALUES = new Set<ConversationKind>(["lead", "feedback", "complaint", "other"]);
 const CONTACT_SOURCE_VALUES = new Set<ContactSourceType>(["manual", "import", "web", "qr", "api"]);
 const USER_MANAGED_SOURCES = new Set<ContactSourceType>(["manual", "import"]);
+const MIN_PHONE_SUFFIX_MATCH_LENGTH = 8;
 const CONTACT_TEMPLATE_HEADERS = [
   "Name",
   "Phone",
@@ -205,6 +206,15 @@ function normalizePhoneNumberWithCountryCode(value: string | null | undefined): 
     return null;
   }
   return normalizePhoneNumber(raw);
+}
+
+function shouldPromotePhoneNumber(existingPhoneNumber: string, nextPhoneNumber: string): boolean {
+  const existing = normalizePhoneNumber(existingPhoneNumber);
+  const next = normalizePhoneNumber(nextPhoneNumber);
+  if (!existing || !next || existing === next || next.length <= existing.length) {
+    return false;
+  }
+  return next.endsWith(existing);
 }
 
 function normalizeHeader(value: string | null | undefined): string {
@@ -568,7 +578,7 @@ async function getConversationLinkByPhone(
 }
 
 async function getContactByPhone(db: DbExecutor, userId: string, phoneNumber: string): Promise<Contact | null> {
-  const result = await db.query<Contact>(
+  const exactResult = await db.query<Contact>(
     `SELECT *
      FROM contacts
      WHERE user_id = $1
@@ -576,7 +586,31 @@ async function getContactByPhone(db: DbExecutor, userId: string, phoneNumber: st
      LIMIT 1`,
     [userId, phoneNumber]
   );
-  return result.rows[0] ?? null;
+  const exact = exactResult.rows[0] ?? null;
+  if (exact) {
+    return exact;
+  }
+
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+  if (!normalizedPhone || normalizedPhone.length < MIN_PHONE_SUFFIX_MATCH_LENGTH) {
+    return null;
+  }
+
+  const suffixResult = await db.query<Contact>(
+    `SELECT *
+     FROM contacts
+     WHERE user_id = $1
+       AND length(regexp_replace(phone_number, '\\D', '', 'g')) >= $3
+       AND (
+         right(regexp_replace($2, '\\D', '', 'g'), length(regexp_replace(phone_number, '\\D', '', 'g'))) = regexp_replace(phone_number, '\\D', '', 'g')
+         OR right(regexp_replace(phone_number, '\\D', '', 'g'), length(regexp_replace($2, '\\D', '', 'g'))) = regexp_replace($2, '\\D', '', 'g')
+       )
+     ORDER BY updated_at DESC, created_at DESC
+     LIMIT 2`,
+    [userId, normalizedPhone, MIN_PHONE_SUFFIX_MATCH_LENGTH]
+  );
+
+  return suffixResult.rows.length === 1 ? suffixResult.rows[0] : null;
 }
 
 async function getContactsByIds(db: DbExecutor, userId: string, ids: string[]): Promise<Contact[]> {
@@ -666,6 +700,7 @@ async function updateContact(
   db: DbExecutor,
   contactId: string,
   input: {
+    phoneNumber?: string;
     displayName: string | null;
     email: string | null;
     contactType: ConversationKind;
@@ -702,8 +737,9 @@ async function updateContact(
          source_id = $14,
          source_url = $15,
          linked_conversation_id = $16,
+         phone_number = COALESCE($17, phone_number),
          updated_at = NOW()
-     WHERE id = $17
+     WHERE id = $18
      RETURNING *`,
     [
       input.displayName,
@@ -722,6 +758,7 @@ async function updateContact(
       input.sourceId,
       input.sourceUrl,
       input.linkedConversationId,
+      input.phoneNumber ?? null,
       contactId
     ]
   );
@@ -835,6 +872,9 @@ async function upsertContact(
   }
 
   const preserveSource = isSourcePreserved(existing.source_type);
+  const nextPhoneNumber = shouldPromotePhoneNumber(existing.phone_number, phoneNumber)
+    ? phoneNumber
+    : existing.phone_number;
   const nextDisplayName = displayName ?? existing.display_name;
   const nextEmail = email === undefined ? existing.email : email;
   const nextContactType =
@@ -870,6 +910,7 @@ async function upsertContact(
   const nextLinkedConversationId = linkedConversationId ?? existing.linked_conversation_id;
 
   const changed =
+    nextPhoneNumber !== existing.phone_number ||
     nextDisplayName !== existing.display_name ||
     nextEmail !== existing.email ||
     nextContactType !== existing.contact_type ||
@@ -890,7 +931,7 @@ async function upsertContact(
   if (!changed) {
     await syncConversationKindFromContact(db, {
       userId: input.userId,
-      phoneNumber,
+      phoneNumber: nextPhoneNumber,
       contactType: existing.contact_type,
       linkedConversationId: nextLinkedConversationId
     });
@@ -898,6 +939,7 @@ async function upsertContact(
   }
 
   const updated = await updateContact(db, existing.id, {
+    phoneNumber: nextPhoneNumber,
     displayName: nextDisplayName,
     email: nextEmail,
     contactType: nextContactType,
@@ -918,7 +960,7 @@ async function upsertContact(
 
   await syncConversationKindFromContact(db, {
     userId: input.userId,
-    phoneNumber,
+    phoneNumber: nextPhoneNumber,
     contactType: updated.contact_type,
     linkedConversationId: nextLinkedConversationId
   });

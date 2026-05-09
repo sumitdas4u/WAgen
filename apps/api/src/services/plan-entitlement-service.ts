@@ -14,6 +14,33 @@ export class PlanUpgradeRequiredError extends Error {
   }
 }
 
+export class PlanLimitExceededError extends Error {
+  readonly code = "plan_limit_exceeded" as const;
+
+  constructor(
+    readonly module: string,
+    readonly used: number,
+    readonly limit: number
+  ) {
+    super(`Plan limit reached for ${module}: used ${used} of ${limit}`);
+    this.name = "PlanLimitExceededError";
+  }
+}
+
+export async function assertPlanCapLimit({
+  used,
+  limit,
+  module,
+}: {
+  used: number;
+  limit: number;
+  module: string;
+}): Promise<void> {
+  if (used >= limit) {
+    throw new PlanLimitExceededError(module, used, limit);
+  }
+}
+
 export async function assertPlanModuleAccess(userId: string, moduleKey: PlanModuleKey): Promise<void> {
   const entitlements = await getUserPlanEntitlements(userId);
   if (!entitlements.modules[moduleKey]) {

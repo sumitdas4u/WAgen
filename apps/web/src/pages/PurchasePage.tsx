@@ -24,20 +24,44 @@ declare global {
 
 const PLAN_ORDER: BillingPlan["code"][] = ["starter", "pro", "business"];
 const PLAN_PITCHES: Record<BillingPlan["code"], string> = {
-  starter: "Unlimited conversations + 300 AI credits/month - \u20b9799.",
-  pro: "Unlimited conversations + 700 AI credits/month - \u20b91,499.",
-  business: "Unlimited conversations + 1,500 AI credits/month - \u20b92,999."
+  starter: "For small businesses getting started \u2014 300 AI credits/month.",
+  pro: "Recommended automation plan \u2014 600 AI credits/month.",
+  business: "High-volume & developer plan \u2014 1,200 AI credits/month."
 };
 const PLAN_FEATURES: Record<BillingPlan["code"], string[]> = {
-  starter: ["1 WhatsApp Number", "Basic AI training", "24/7 auto-replies", "Email support"],
-  pro: ["Up to 2 WhatsApp Numbers", "Advanced AI training", "Analytics dashboard", "Lead collection", "Priority ticket support"],
+  starter: [
+    "WhatsApp Business API",
+    "300 AI Credits / month",
+    "1 Active Flow",
+    "Unlimited Broadcast",
+    "2 Knowledge Sources",
+    "Email support",
+  ],
+  pro: [
+    "WhatsApp Business API",
+    "600 AI Credits / month",
+    "3 Active Flows (Advanced Flows)",
+    "Unlimited Broadcast",
+    "5 Knowledge Sources",
+    "Sequences & Webhooks",
+    "Google Sheets & Calendar",
+    "Priority ticket support",
+  ],
   business: [
-    "Up to 3 WhatsApp Numbers",
-    "Custom AI voice and tone",
-    "Premium templates",
+    "WhatsApp Business API",
+    "1,200 AI Credits / month",
+    "25 Active Flows (Advanced Flows)",
+    "Unlimited Broadcast",
+    "15 Knowledge Sources",
+    "Public API & API Keys",
     "Priority support",
-    "Optional API access"
-  ]
+  ],
+};
+
+const PLAN_DISPLAY_LABELS: Record<string, string> = {
+  starter: "Starter",
+  pro: "Growth",
+  business: "Pro"
 };
 
 function getQueryPlan(search: string): BillingPlan["code"] | null {
@@ -279,18 +303,16 @@ export function PurchasePage() {
           </p>
         </div>
 
-        {entitlements ? (
+        {entitlements?.planCode === "trial" ? (
           <article className="orch-card purchase-status-card">
-            <h3>Current Plan Entitlements</h3>
-            <p>
-              Plan: <strong>{entitlements.planCode.toUpperCase()}</strong>
-            </p>
-            <p>
-              Official API numbers allowed: <strong>{entitlements.maxApiNumbers}</strong>
-            </p>
-            <p>
-              Agent profiles allowed: <strong>{entitlements.maxAgentProfiles}</strong>
-            </p>
+            <h3>You&apos;re on the Free Trial</h3>
+            <p>Your trial includes: <strong>200 AI credits</strong>, <strong>1 active flow</strong>, <strong>1 knowledge source</strong>, <strong>1,000 broadcast recipients/month</strong>.</p>
+            <p>Subscribe to a paid plan below to unlock full limits.</p>
+          </article>
+        ) : entitlements ? (
+          <article className="orch-card purchase-status-card">
+            <h3>Current Plan: {PLAN_DISPLAY_LABELS[entitlements.planCode] ?? entitlements.planCode.toUpperCase()}</h3>
+            <p>AI Credits / month: <strong>{entitlements.aiCreditsMonthly}</strong> · Active Flows: <strong>{entitlements.maxActiveFlows}</strong> · Knowledge Sources: <strong>{entitlements.maxKnowledgeSources}</strong></p>
           </article>
         ) : null}
 
@@ -368,7 +390,7 @@ export function PurchasePage() {
         <div className="orch-support purchase-cta">
           <h2>Complete Purchase</h2>
           <p>
-            Selected plan: <strong>{selectedPlan.toUpperCase()}</strong>. Approve UPI AutoPay mandate during checkout.
+            Selected plan: <strong>{PLAN_DISPLAY_LABELS[selectedPlan] ?? selectedPlan.toUpperCase()}</strong>. Approve UPI AutoPay mandate during checkout.
           </p>
           <div className="orch-hero-actions">
             <button

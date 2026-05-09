@@ -1,6 +1,8 @@
 import { firstRow, hasRows, requireRow } from "../db/sql-helpers.js";
 import { pool } from "../db/pool.js";
 import { requireMetaConnection } from "./meta-whatsapp-service.js";
+import { getUserPlanEntitlements } from "./billing-service.js";
+import { assertPlanCapLimit } from "./plan-entitlement-service.js";
 
 export interface FlowTrigger {
   id: string;
@@ -183,6 +185,16 @@ export async function publishFlow(
   const current = await getFlow(userId, flowId);
   if (!current) {
     return null;
+  }
+  if (publish) {
+    const entitlements = await getUserPlanEntitlements(userId);
+    const publishedFlows = await getPublishedFlowsForUser(userId);
+    const otherPublished = publishedFlows.filter(f => f.id !== flowId);
+    await assertPlanCapLimit({
+      used: otherPublished.length,
+      limit: entitlements.maxActiveFlows,
+      module: "flows",
+    });
   }
   if (publish && current.channel === "api") {
     if (!current.connection_id) {

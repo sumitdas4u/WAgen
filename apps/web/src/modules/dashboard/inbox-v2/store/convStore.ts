@@ -133,6 +133,7 @@ const DEFAULT_FILTERS: ConvFilters = {
 
 function mergeMessage(existing: ConversationMessage[], message: ConversationMessage): ConversationMessage[] {
   const echoId = message.echo_id?.trim() || null;
+  const incomingIsTemp = Boolean(echoId && message.id === `temp-${echoId}`);
   let inserted = false;
   const merged: ConversationMessage[] = [];
 
@@ -143,7 +144,8 @@ function mergeMessage(existing: ConversationMessage[], message: ConversationMess
 
     if (sameId || sameEcho || sameTempId) {
       if (!inserted) {
-        merged.push(message);
+        const currentIsReal = Boolean(echoId && current.echo_id === echoId && current.id !== `temp-${echoId}`);
+        merged.push(incomingIsTemp && currentIsReal ? current : message);
         inserted = true;
       }
       continue;
@@ -243,10 +245,10 @@ export const useConvStore = create<ConvStore>((set) => ({
 
   patchMessageDelivery: (convId, msgId, status, errorCode, errorMsg, retryCount) => set((s) => {
     const existing = s.messagesByConvId[convId] ?? [];
-    const hasMessage = existing.some((m) => m.id === msgId);
+    const hasMessage = existing.some((m) => m.id === msgId || m.echo_id === msgId || m.id === `temp-${msgId}`);
     if (!hasMessage) return s;
     const patched = existing.map((m) =>
-      m.id === msgId
+      (m.id === msgId || m.echo_id === msgId || m.id === `temp-${msgId}`)
         ? {
             ...m,
             delivery_status: status,

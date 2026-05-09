@@ -8,7 +8,7 @@
 <link rel="canonical" href="https://wagenai.com/pricing"/>
 <meta name="robots" content="index,follow"/>
 <meta property="og:title" content="WagenAI Pricing — WhatsApp AI Chatbot Plans from ₹799/month India"/><meta property="og:description" content="WagenAI pricing starts at ₹799/month. Includes WhatsApp AI bot, website widget, and lead capture. Cheaper than WATI (₹2,499) and AiSensy (₹1,500). Free trial."/><meta property="og:type" content="website"/>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How much does WagenAI cost?","acceptedAnswer":{"@type":"Answer","text":"WagenAI starts at ₹799/month with unlimited conversations and 300 AI credits. Growth is ₹1,499/month with 700 AI credits and Pro is ₹2,999/month with 1,500 AI credits."}}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How much does WagenAI cost?","acceptedAnswer":{"@type":"Answer","text":"WagenAI starts at ₹799/month with unlimited conversations and 300 AI credits. Growth is ₹1,499/month with 600 AI credits and Pro is ₹2,999/month with 1,200 AI credits."}}]}</script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
 :root{
@@ -197,6 +197,8 @@ details[open] .fi{transform:rotate(45deg);}
 .overage-box p{font-size:.9rem;color:var(--muted);}
 .overage-box p b{color:var(--text);}
 .ov-pill{background:rgba(29,185,84,.08);border:1px solid var(--border-green);border-radius:8px;padding:8px 18px;font-weight:800;font-size:1.1rem;color:var(--green-deep);}
+.trial-banner{display:flex;align-items:center;gap:12px;background:var(--bg3);border:1px solid var(--border-green);border-radius:10px;padding:12px 18px;margin-bottom:20px;font-size:.9rem;color:var(--text);max-width:1060px;margin-left:auto;margin-right:auto;}
+.trial-badge{background:var(--green);color:#fff;font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
 .toggle-wrap{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:36px;}
 .tgl-lbl{font-size:.9rem;font-weight:600;color:var(--muted);}
 .tgl-lbl.on{color:var(--text);}
@@ -205,6 +207,25 @@ details[open] .fi{transform:rotate(45deg);}
 .tgl-dot{width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:4px;left:4px;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.15);pointer-events:none;}
 .tgl.active .tgl-dot{transform:translateX(24px);}
 .save-pill{background:rgba(29,185,84,.1);color:var(--green-deep);border-radius:100px;padding:3px 10px;font-size:.74rem;font-weight:700;}
+
+/* ── PLAN COMPARISON TABLE ── */
+.plan-cmp{width:100%;border-collapse:collapse;margin-top:36px;font-size:.86rem;border-radius:16px;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.07);}
+.plan-cmp thead tr{background:var(--black);}
+.plan-cmp th{padding:14px 16px;text-align:center;color:#fff;font-size:.75rem;letter-spacing:.05em;text-transform:uppercase;}
+.plan-cmp th:first-child{text-align:left;}
+.plan-cmp th.cmp-hi{background:var(--green);}
+.plan-cmp td{padding:13px 16px;text-align:center;border-bottom:1px solid var(--border);background:#fff;}
+.plan-cmp td:first-child{text-align:left;font-weight:600;background:#fff;}
+.plan-cmp td.cmp-hi{background:rgba(29,185,84,.04);}
+.plan-cmp tr:last-child td{border-bottom:none;}
+.plan-cmp tr:last-child td:first-child{border-radius:0 0 0 12px;}
+.plan-cmp tr:last-child td:last-child{border-radius:0 0 12px 0;}
+.plan-cmp .section-row td{background:var(--bg2);font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;padding:8px 16px;}
+.cmp-val{font-weight:700;font-size:.88rem;}
+.cmp-yes{color:var(--green);font-weight:700;}
+.cmp-no{color:var(--muted-lt);}
+.cmp-price{font-weight:800;font-size:.95rem;}
+.cmp-tbl-wrap{overflow-x:auto;border-radius:16px;border:1.5px solid var(--border);}
 
 /* ── COMPETITOR TABLE ── */
 .comp-tbl{width:100%;border-collapse:collapse;margin-top:36px;font-size:.86rem;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);}
@@ -314,6 +335,10 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 
       <button class="tgl" id="billing-toggle" onclick="toggleBilling()"><span class="tgl-dot"></span></button>
       <span class="tgl-lbl" id="lbl-annual">Annual <span class="save-pill">2 months free</span></span>
     </div>
+    <div class="trial-banner reveal">
+      <span class="trial-badge">Free Trial</span>
+      <span>Try WagenAI free for 14 days — no credit card required. Get 200 AI credits, 1 active flow, 1 knowledge source, and 1,000 broadcast recipients during your trial.</span>
+    </div>
     <div class="pricing-grid reveal">
       <!-- STARTER -->
       <div class="p-card">
@@ -326,14 +351,12 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 
         </div>
         <div class="p-convos"><b>Unlimited conversations</b><br/>AI automation uses 300 credits/month</div>
         <div class="p-feats">
-          <div class="pf"><span class="pf-ck">✓</span><span>WhatsApp Bot (QR Mode)</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>Website Chat Widget</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>AI Lead Capture</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>2 Document Uploads</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>Website URL Training</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>Hindi & Indian Languages</span></div>
-          <div class="pf"><span class="pf-x">–</span><span style="color:var(--muted-lt)">WhatsApp Business API</span></div>
-          <div class="pf"><span class="pf-x">–</span><span style="color:var(--muted-lt)">Priority Support</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>WhatsApp Business API</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>300 AI Credits / month</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>1 Active Flow</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Unlimited Broadcast</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>2 Knowledge Sources</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Email support</span></div>
         </div>
         <button class="p-btn out">Start Free Trial</button>
       </div>
@@ -345,17 +368,18 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 
         <div class="p-price-box">
           <div><span class="p-amt" id="price-growth">₹1,499</span><span class="p-orig" id="orig-growth" style="display:none">₹1,875</span></div>
           <div class="p-per">/month</div>
-          <div class="p-cpp" id="cpp-growth">700 AI credits included</div>
+          <div class="p-cpp" id="cpp-growth">600 AI credits included</div>
         </div>
-        <div class="p-convos"><b>Unlimited conversations</b><br/>AI automation uses 700 credits/month</div>
+        <div class="p-convos"><b>Unlimited conversations</b><br/>AI automation uses 600 credits/month</div>
         <div class="p-feats">
-          <div class="pf"><span class="pf-ck">✓</span><span>Everything in Starter</span></div>
           <div class="pf"><span class="pf-ck">✓</span><span>WhatsApp Business API</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>5 Document Uploads</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>Priority Email Support</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>Advanced Lead Dashboard</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span style="color:var(--muted)">Workflow Sync</span></div>
-          <div class="pf"><span class="pf-x">–</span><span style="color:var(--muted-lt)">Dedicated Account Manager</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>600 AI Credits / month</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>3 Active Flows (Advanced Flows)</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Unlimited Broadcast</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>5 Knowledge Sources</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Sequences &amp; Webhooks</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Google Sheets &amp; Calendar</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Priority ticket support</span></div>
         </div>
         <button class="p-btn fill">Start Free Trial</button>
       </div>
@@ -366,17 +390,17 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 
         <div class="p-price-box">
           <div><span class="p-amt" id="price-pro">₹2,999</span><span class="p-orig" id="orig-pro" style="display:none">₹3,750</span></div>
           <div class="p-per">/month</div>
-          <div class="p-cpp" id="cpp-pro">1,500 AI credits included</div>
+          <div class="p-cpp" id="cpp-pro">1,200 AI credits included</div>
         </div>
-        <div class="p-convos"><b>Unlimited conversations</b><br/>AI automation uses 1,500 credits/month</div>
+        <div class="p-convos"><b>Unlimited conversations</b><br/>AI automation uses 1,200 credits/month</div>
         <div class="p-feats">
-          <div class="pf"><span class="pf-ck">✓</span><span>Everything in Growth</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>1,500 AI credits/month</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>15 Document Uploads</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>Dedicated Account Manager</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span>Priority Phone Support</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span style="color:var(--muted)">API Access</span></div>
-          <div class="pf"><span class="pf-ck">✓</span><span style="color:var(--muted)">Google Sheet Sync</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>WhatsApp Business API</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>1,200 AI Credits / month</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>25 Active Flows (Advanced Flows)</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Unlimited Broadcast</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>15 Knowledge Sources</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Public API &amp; API Keys</span></div>
+          <div class="pf"><span class="pf-ck">✓</span><span>Priority support</span></div>
         </div>
         <button class="p-btn out">Start Free Trial</button>
       </div>
@@ -389,6 +413,129 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 
 </section>
 
 <section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr reveal">
+      <div class="sec-lbl">Plan Details</div>
+      <h2>Compare all plans — <span class="g">feature by feature</span></h2>
+      <p class="sec-sub">Every limit, every feature, side by side. No asterisks, no surprises.</p>
+    </div>
+    <div class="cmp-tbl-wrap reveal">
+      <table class="plan-cmp">
+        <thead>
+          <tr>
+            <th style="width:34%">Feature</th>
+            <th>Trial</th>
+            <th>Starter<br/><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.8rem;opacity:.8">₹799/mo</span></th>
+            <th class="cmp-hi">Growth<br/><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.8rem;opacity:.9">₹1,499/mo</span></th>
+            <th>Pro<br/><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.8rem;opacity:.8">₹2,999/mo</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- WhatsApp -->
+          <tr class="section-row"><td colspan="5">WhatsApp</td></tr>
+          <tr>
+            <td>WhatsApp Business API</td>
+            <td class="cmp-yes">✓</td>
+            <td class="cmp-yes">✓</td>
+            <td class="cmp-hi cmp-yes">✓</td>
+            <td class="cmp-yes">✓</td>
+          </tr>
+          <!-- AI & Automation -->
+          <tr class="section-row"><td colspan="5">AI &amp; Automation</td></tr>
+          <tr>
+            <td>AI Credits / month</td>
+            <td class="cmp-val">200</td>
+            <td class="cmp-val">300</td>
+            <td class="cmp-hi cmp-val">600</td>
+            <td class="cmp-val">1,200</td>
+          </tr>
+          <tr>
+            <td>Knowledge Sources</td>
+            <td class="cmp-val">1</td>
+            <td class="cmp-val">2</td>
+            <td class="cmp-hi cmp-val">5</td>
+            <td class="cmp-val">15</td>
+          </tr>
+          <!-- Flows -->
+          <tr class="section-row"><td colspan="5">Flow Builder</td></tr>
+          <tr>
+            <td>Active Flows</td>
+            <td class="cmp-val">1</td>
+            <td class="cmp-val">1</td>
+            <td class="cmp-hi cmp-val">3</td>
+            <td class="cmp-val">25</td>
+          </tr>
+          <tr>
+            <td>Advanced Flow Features</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-hi cmp-yes">✓</td>
+            <td class="cmp-yes">✓</td>
+          </tr>
+          <!-- Broadcast -->
+          <tr class="section-row"><td colspan="5">Broadcast &amp; Campaigns</td></tr>
+          <tr>
+            <td>Monthly Broadcast Recipients</td>
+            <td class="cmp-val">1,000</td>
+            <td class="cmp-yes">Unlimited</td>
+            <td class="cmp-hi cmp-yes">Unlimited</td>
+            <td class="cmp-yes">Unlimited</td>
+          </tr>
+          <tr>
+            <td>Sequences</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-hi cmp-yes">✓</td>
+            <td class="cmp-yes">✓</td>
+          </tr>
+          <!-- Integrations -->
+          <tr class="section-row"><td colspan="5">Integrations</td></tr>
+          <tr>
+            <td>Google Sheets &amp; Calendar</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-hi cmp-yes">✓</td>
+            <td class="cmp-yes">✓</td>
+          </tr>
+          <tr>
+            <td>Webhooks</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-hi cmp-yes">✓</td>
+            <td class="cmp-yes">✓</td>
+          </tr>
+          <tr>
+            <td>Public API &amp; API Keys</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-no">–</td>
+            <td class="cmp-hi cmp-no">–</td>
+            <td class="cmp-yes">✓</td>
+          </tr>
+          <!-- Support -->
+          <tr class="section-row"><td colspan="5">Support</td></tr>
+          <tr>
+            <td>Support Channel</td>
+            <td class="cmp-val">Email</td>
+            <td class="cmp-val">Email</td>
+            <td class="cmp-hi cmp-val">Priority ticket</td>
+            <td class="cmp-val">Priority</td>
+          </tr>
+          <!-- Price -->
+          <tr class="section-row"><td colspan="5">Pricing</td></tr>
+          <tr>
+            <td>Monthly price</td>
+            <td class="cmp-yes cmp-price">Free</td>
+            <td class="cmp-price">₹799</td>
+            <td class="cmp-hi cmp-price" style="color:var(--green)">₹1,499</td>
+            <td class="cmp-price">₹2,999</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
   <div class="sw">
     <div class="sec-ctr reveal">
       <div class="sec-lbl">How We Compare</div>
@@ -488,8 +635,8 @@ runChat();
 let annual = false;
 const prices = {
   starter: { m: '₹799', a: '₹7,990', mo: '₹9,588', cpp_m: '300 AI credits included', cpp_a: '300 AI credits/month, billed yearly' },
-  growth:  { m: '₹1,499', a: '₹14,990', mo: '₹17,988', cpp_m: '700 AI credits included', cpp_a: '700 AI credits/month, billed yearly' },
-  pro:     { m: '₹2,999', a: '₹29,990', mo: '₹35,988', cpp_m: '1,500 AI credits included', cpp_a: '1,500 AI credits/month, billed yearly' },
+  growth:  { m: '₹1,499', a: '₹14,990', mo: '₹17,988', cpp_m: '600 AI credits included', cpp_a: '600 AI credits/month, billed yearly' },
+  pro:     { m: '₹2,999', a: '₹29,990', mo: '₹35,988', cpp_m: '1,200 AI credits included', cpp_a: '1,200 AI credits/month, billed yearly' },
 };
 function toggleBilling() {
   annual = !annual;

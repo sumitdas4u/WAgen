@@ -473,7 +473,6 @@ export function DetailsSidebar({ convId, onClose }: Props) {
 
           {/* Lead Intelligence */}
           <Accordion id="lead-intel" title="Lead Intelligence" open={openSections.has("lead-intel")} onToggle={() => toggleSection("lead-intel")} wagenVariant="blue">
-            <div className="iv-acc-row"><span className="iv-acc-key">Score</span><span className="iv-acc-val">{conv.score}</span></div>
             <div className="iv-acc-row"><span className="iv-acc-key">Stage</span><span className="iv-acc-val">{conv.stage}</span></div>
             <div className="iv-acc-row"><span className="iv-acc-key">Kind</span><span className="iv-acc-val">{conv.lead_kind}</span></div>
             <div className="iv-acc-row" style={{ alignItems: "center" }}>

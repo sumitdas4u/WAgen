@@ -10,7 +10,7 @@ import {
   ingestWebsiteUrl
 } from "../services/knowledge-ingestion-service.js";
 import { createFileIngestionJobs, listIngestionJobs } from "../services/knowledge-ingestion-jobs-service.js";
-import { deleteKnowledgeSource, getKnowledgeStats, listKnowledgeChunks, listKnowledgeSources } from "../services/rag-service.js";
+import { assertKnowledgeSourceLimit, deleteKnowledgeSource, getKnowledgeStats, listKnowledgeChunks, listKnowledgeSources } from "../services/rag-service.js";
 import { requireAiCredit, AiTokensDepletedError, estimateTextTokens } from "../services/ai-token-service.js";
 
 const ManualSchema = z.object({
@@ -66,6 +66,8 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Manual text must be at least 20 characters" });
       }
 
+      await assertKnowledgeSourceLimit(request.authUser.userId);
+
       try {
         await requireAiCredit(request.authUser.userId, "kb_ingest_chunk", {
           estimatedTokens: estimateTextTokens(parsed.data.text)
@@ -91,6 +93,8 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "Invalid website URL" });
       }
 
+      await assertKnowledgeSourceLimit(request.authUser.userId);
+
       try {
         await requireAiCredit(request.authUser.userId, "kb_ingest_chunk");
       } catch (e) {
@@ -106,6 +110,8 @@ export async function knowledgeRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   const ingestFilesHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+    await assertKnowledgeSourceLimit(request.authUser.userId);
+
     try {
       await requireAiCredit(request.authUser.userId, "kb_ingest_chunk");
     } catch (e) {

@@ -383,6 +383,8 @@ export interface PlanEntitlements {
   aiCreditsMonthly?: number;
   annualAmountInr?: number;
   prioritySupport: boolean;
+  broadcastMonthlyRecipients?: number;
+  flowPublishAllowed?: boolean;
   modules?: {
     inbox: boolean;
     contacts: boolean;
@@ -3191,6 +3193,7 @@ export interface BroadcastSummary {
   failed: number;
   suppressed: number;
   frequencyLimited: number;
+  monthlyRecipientsUsed?: number;
 }
 
 export interface BroadcastReport {

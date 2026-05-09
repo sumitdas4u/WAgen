@@ -120,13 +120,13 @@ describe("template send optimistic → WS replace", () => {
     expect(msgs).toHaveLength(1);
     expect(msgs[0].id).toBe("real-conversation-msg-uuid-5678");
 
-    // Then optimistic tries to add (late onSuccess) — same echo_id, merged/replaced
+    // Then optimistic tries to add (late onSuccess) — same echo_id, real message wins
     store.appendMessage(CONV_ID, optimisticTemplateMsg());
 
     msgs = useConvStore.getState().messagesByConvId[CONV_ID];
-    // mergeMessage finds sameEcho match → replaces with optimistic (pending)
-    // This is acceptable — next WS update will flip delivery_status
     expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe("real-conversation-msg-uuid-5678");
+    expect(msgs[0].delivery_status).toBe("sent");
   });
 
   it("does not duplicate if WS message.created fires twice", () => {
@@ -149,5 +149,17 @@ describe("template send optimistic → WS replace", () => {
 
     const msgs = useConvStore.getState().messagesByConvId[CONV_ID];
     expect(msgs[0].delivery_status).toBe("delivered");
+  });
+
+  it("patchMessageDelivery can update an optimistic msg by queued echo id", () => {
+    const store = useConvStore.getState();
+
+    store.appendMessage(CONV_ID, optimisticTemplateMsg());
+    store.patchMessageDelivery(CONV_ID, QUEUED_ID, "failed", "131049", "Engagement policy blocked delivery");
+
+    const msgs = useConvStore.getState().messagesByConvId[CONV_ID];
+    expect(msgs[0].delivery_status).toBe("failed");
+    expect(msgs[0].error_code).toBe("131049");
+    expect(msgs[0].error_message).toBe("Engagement policy blocked delivery");
   });
 });

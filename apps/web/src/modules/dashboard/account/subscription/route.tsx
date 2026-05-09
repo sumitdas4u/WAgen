@@ -21,8 +21,8 @@ import "./../account.css";
 const PLAN_LABELS: Record<string, string> = {
   trial: "Trial",
   starter: "Starter",
-  pro: "Pro",
-  business: "Business"
+  pro: "Growth",
+  business: "Pro"
 };
 const AI_RECHARGE_PACKS = [120, 260, 600];
 

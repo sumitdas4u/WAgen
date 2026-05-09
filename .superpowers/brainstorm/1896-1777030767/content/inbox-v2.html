@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WAgen Inbox V2 — Chatwoot-style</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f8fafc;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+a { text-decoration: none; color: inherit; }
+button { cursor: pointer; font-family: inherit; }
+
+/* ─── Top info bar ──────────────────────────── */
+.topbar {
+  background: #122033;
+  color: #93c5fd;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 5px;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+/* ─── Root shell ────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: 220px 300px minmax(0,1fr) 280px;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════ */
+/* LEFT NAV TREE                               */
+/* ═══════════════════════════════════════════ */
+.nav-sidebar {
+  background: #fff;
+  border-right: 1px solid #e2eaf4;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nav-org {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+}
+
+.org-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.org-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #122033;
+  flex: 1;
+}
+
+.nav-search {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.nav-search input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 28px;
+  border: 1px solid #e2eaf4;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: #122033;
+  outline: none;
+  background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 8px center;
+}
+
+.nav-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.nav-section-label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  padding: 10px 14px 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #5f6f86;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 80ms;
+}
+
+.nav-item:hover { background: #f8fafc; }
+.nav-item.active { background: #f0f4ff; color: #2563eb; }
+.nav-item.active .nav-count { background: #dbeafe; color: #2563eb; }
+
+.nav-icon { font-size: 0.9rem; width: 18px; text-align: center; }
+
+.nav-count {
+  margin-left: auto;
+  background: #f1f5f9;
+  color: #5f6f86;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.nav-sub-item {
+  padding: 5px 14px 5px 38px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #5f6f86;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-sub-item:hover { background: #f8fafc; color: #122033; }
+.nav-sub-item.active { color: #2563eb; background: #f0f4ff; }
+
+.channel-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+
+.nav-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.agent-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(135deg,#dcfce7,#bbf7d0);
+  color: #166534;
+  font-size: 0.6rem; font-weight: 800;
+  display: grid; place-items: center;
+  position: relative;
+}
+
+.online-dot {
+  position: absolute; bottom: 0; right: 0;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #22c55e; border: 2px solid #fff;
+}
+
+.agent-name { font-size: 0.74rem; font-weight: 700; color: #334155; }
+.agent-role { font-size: 0.62rem; color: #94a3b8; }
+
+/* ═══════════════════════════════════════════ */
+/* CONVERSATION LIST                           */
+/* ═══════════════════════════════════════════ */
+.conv-panel {
+  border-right: 1px solid #e2eaf4;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.conv-panel-head {
+  padding: 12px 14px 0;
+  flex-shrink: 0;
+}
+
+.conv-panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.conv-panel-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #122033;
+  letter-spacing: -0.02em;
+}
+
+.conv-panel-status {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.conv-panel-icons {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn {
+  width: 26px; height: 26px;
+  border: 1px solid #e2eaf4;
+  border-radius: 6px;
+  background: #fff;
+  display: grid; place-items: center;
+  font-size: 0.8rem; color: #5f6f86;
+}
+
+/* Mine / Unassigned / All tabs */
+.mine-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #edf2f7;
+  margin: 0 -14px;
+  padding: 0 14px;
+}
+
+.mtab {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #94a3b8;
+  padding: 7px 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mtab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+.mtab-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  background: #f1f5f9;
+  color: #5f6f86;
+  padding: 1px 5px;
+  border-radius: 999px;
+}
+
+.mtab.active .mtab-badge { background: #dbeafe; color: #2563eb; }
+
+/* Status filter row */
+.status-filter-row {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px 4px;
+  flex-shrink: 0;
+}
+
+.sfilter {
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2eaf4;
+  background: #fff;
+  color: #5f6f86;
+  cursor: pointer;
+}
+
+.sfilter.active { background: #f0f4ff; border-color: #c7d6f7; color: #2563eb; }
+
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Conversation row */
+.crow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 80ms;
+  position: relative;
+}
+
+.crow:hover { background: #fafbfd; }
+.crow.selected { background: #f0f4ff; border-left: 3px solid #2563eb; padding-left: 11px; }
+
+.cav {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 0.68rem; font-weight: 800;
+  flex-shrink: 0;
+  position: relative;
+  overflow: visible;
+}
+
+.av-blue { background: linear-gradient(135deg,#dbeafe,#c7d6f7); color:#2563eb; }
+.av-green { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color:#166534; }
+.av-purple { background: linear-gradient(135deg,#ede9fe,#ddd6fe); color:#7c3aed; }
+.av-amber { background: linear-gradient(135deg,#fef3c7,#fde68a); color:#92400e; }
+.av-rose { background: linear-gradient(135deg,#ffe4e6,#fecdd3); color:#be123c; }
+.av-teal { background: linear-gradient(135deg,#ccfbf1,#99f6e4); color:#0f766e; }
+
+.ch-badge {
+  position: absolute;
+  bottom: -2px; right: -2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  display: grid; place-items: center;
+  font-size: 0.45rem;
+  font-weight: 800;
+}
+
+.ch-wa { background: #25d366; color: #fff; }
+.ch-fb { background: #1877f2; color: #fff; }
+.ch-em { background: #f59e0b; color: #fff; }
+.ch-api { background: #7c3aed; color: #fff; }
+
+.cbody { flex: 1; min-width: 0; }
+
+.chead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1px;
+}
+
+.csrc {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ctime { font-size: 0.62rem; font-weight: 600; color: #94a3b8; }
+
+.cname {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #122033;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csnip {
+  font-size: 0.72rem;
+  color: #5f6f86;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cmeta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
+.clabel {
+  font-size: 0.58rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.score-hot { background: #ffe4e6; color: #be123c; }
+.score-warm { background: #fef3c7; color: #92400e; }
+.score-cold { background: #dbeafe; color: #1d4ed8; }
+.label-device { background: #ede9fe; color: #7c3aed; }
+.label-billing { background: #dcfce7; color: #166534; }
+.label-lead { background: #fef3c7; color: #92400e; }
+.label-complaint { background: #ffe4e6; color: #be123c; }
+
+.cunread {
+  position: absolute;
+  top: 10px; right: 12px;
+  background: #25d366;
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 800;
+  border-radius: 999px;
+  min-width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+}
+
+.cprio {
+  position: absolute;
+  top: 10px; right: 12px;
+  color: #f43f5e;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.cai-paused {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #f59e0b;
+  display: flex; align-items: center; gap: 2px;
+}
+
+/* ═══════════════════════════════════════════ */
+/* THREAD                                      */
+/* ═══════════════════════════════════════════ */
+.thread-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f8fafc;
+  border-right: 1px solid #e2eaf4;
+}
+
+/* Thread header */
+.th-header {
+  background: #fff;
+  border-bottom: 1px solid #e2eaf4;
+  padding: 10px 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.th-left { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
+
+.th-info { min-width: 0; }
+
+.th-name {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #122033;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.th-warn { color: #f59e0b; font-size: 0.75rem; }
+
+.th-src {
+  font-size: 0.68rem;
+  color: #5f6f86;
+  display: flex; align-items: center; gap: 3px;
+}
+
+.th-close { font-size: 0.68rem; color: #2563eb; cursor: pointer; margin-left: 8px; }
+
+.th-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+.th-icon-btn {
+  width: 30px; height: 30px;
+  border: 1px solid #e2eaf4;
+  border-radius: 8px;
+  background: #fff;
+  display: grid; place-items: center;
+  font-size: 0.8rem; color: #5f6f86;
+}
+
+.resolve-btn {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #25d366;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  display: flex; align-items: center; gap: 4px;
+}
+
+.resolve-caret {
+  width: 26px; height: 30px;
+  border: 0; border-left: 1px solid rgba(255,255,255,0.3);
+  background: #25d366;
+  color: #fff; font-size: 0.7rem;
+  display: grid; place-items: center;
+  border-radius: 0 8px 8px 0;
+}
+
+.resolve-group { display: flex; }
+.resolve-group .resolve-btn { border-radius: 8px 0 0 8px; }
+
+/* Messages */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.date-sep {
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 10px 0 6px;
+}
+
+.msg-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+
+.mrow { display: flex; align-items: flex-end; gap: 6px; }
+.mrow.out { flex-direction: row-reverse; }
+
+.mav {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg,#dbeafe,#c7d6f7); color: #2563eb;
+  font-size: 0.5rem; font-weight: 800;
+  display: grid; place-items: center; flex-shrink: 0;
+}
+.mav.hidden { visibility: hidden; }
+
+.bubble {
+  max-width: 68%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.79rem;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.bubble.in {
+  background: #fff;
+  border: 1px solid #e2eaf4;
+  border-bottom-left-radius: 3px;
+}
+
+.bubble.out {
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+  border-bottom-right-radius: 3px;
+  color: #1e3a5f;
+}
+
+.bubble.note {
+  background: #fef9c3;
+  border: 1px solid #fef08a;
+  border-bottom-right-radius: 3px;
+  color: #713f12;
+  max-width: 80%;
+}
+
+.bubble-quote {
+  border-left: 3px solid #2563eb;
+  padding: 3px 8px;
+  margin-bottom: 6px;
+  font-size: 0.7rem;
+  color: #5f6f86;
+  background: rgba(37,99,235,0.05);
+  border-radius: 3px;
+}
+
+.bubble-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 4px; margin-top: 4px;
+}
+
+.btime { font-size: 0.58rem; color: #94a3b8; }
+
+.ds { font-size: 0.62rem; }
+.ds-read { color: #2563eb; }
+.ds-del { color: #94a3b8; }
+.ds-fail { color: #f43f5e; }
+
+.note-top {
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #ca8a04;
+  margin-bottom: 4px;
+  display: flex; align-items: center; gap: 4px;
+}
+
+.mention { color: #2563eb; font-weight: 700; }
+
+/* Activity pill */
+.activity-pill {
+  display: flex; justify-content: center;
+  padding: 4px 0;
+}
+
+.activity-pill span {
+  font-size: 0.64rem;
+  color: #5f6f86;
+  background: #f1f5f9;
+  border: 1px solid #e2eaf4;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+/* Typing */
+.typing-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+
+.typing-dots {
+  display: flex; gap: 3px;
+  background: #fff; border: 1px solid #e2eaf4;
+  padding: 8px 12px; border-radius: 12px;
+  border-bottom-left-radius: 3px;
+}
+
+.tdot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #94a3b8;
+  animation: tdAnim 1.2s infinite;
+}
+.tdot:nth-child(2) { animation-delay: 0.2s; }
+.tdot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes tdAnim {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Compose */
+.compose {
+  background: #fff;
+  border-top: 1px solid #e2eaf4;
+  flex-shrink: 0;
+}
+
+.compose-tabs {
+  display: flex;
+  padding: 0 14px;
+  border-bottom: 1px solid #f1f5f9;
+  gap: 4px;
+}
+
+.ctab {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #94a3b8;
+  padding: 9px 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.ctab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+.compose-expand {
+  margin-left: auto;
+  align-self: center;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.format-bar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 14px 2px;
+}
+
+.fmt-btn {
+  width: 28px; height: 26px;
+  border: 0; background: transparent;
+  border-radius: 5px; font-size: 0.78rem;
+  color: #5f6f86; display: grid; place-items: center;
+}
+
+.fmt-btn:hover { background: #f1f5f9; }
+.fmt-sep { width: 1px; height: 16px; background: #e2eaf4; margin: 0 3px; }
+
+.compose-textarea {
+  width: 100%;
+  min-height: 52px;
+  max-height: 120px;
+  padding: 8px 14px;
+  border: none;
+  outline: none;
+  font-size: 0.8rem;
+  color: #334155;
+  resize: none;
+  font-family: inherit;
+  line-height: 1.4;
+  background: transparent;
+}
+
+.compose-textarea::placeholder { color: #94a3b8; }
+
+.compose-footer {
+  display: flex;
+  align-items: center;
+  padding: 6px 14px 10px;
+  gap: 6px;
+}
+
+.foot-icon {
+  width: 30px; height: 30px;
+  border: 1px solid #e2eaf4;
+  border-radius: 7px;
+  background: #fff;
+  display: grid; place-items: center;
+  font-size: 0.85rem; color: #5f6f86;
+}
+
+.send-wrap { display: flex; margin-left: auto; }
+
+.send-btn {
+  height: 32px; padding: 0 16px;
+  background: #2563eb; color: #fff;
+  border: 0; border-radius: 8px 0 0 8px;
+  font-size: 0.76rem; font-weight: 700;
+  display: flex; align-items: center; gap: 5px;
+}
+
+.send-caret {
+  width: 28px; height: 32px;
+  background: #1d4ed8; color: #fff;
+  border: 0; border-radius: 0 8px 8px 0;
+  font-size: 0.7rem;
+  display: grid; place-items: center;
+}
+
+/* Canned response popup */
+.canned-popup {
+  position: absolute;
+  bottom: 130px;
+  left: 520px;
+  width: 380px;
+  background: #fff;
+  border: 1px solid #e2eaf4;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+  padding: 8px;
+  z-index: 50;
+}
+
+.canned-input {
+  width: 100%; padding: 6px 10px;
+  border: 1px solid #e2eaf4; border-radius: 7px;
+  font-size: 0.76rem; outline: none; margin-bottom: 4px;
+}
+
+.canned-row {
+  padding: 7px 10px; border-radius: 7px;
+  cursor: pointer; font-size: 0.74rem; color: #334155;
+}
+
+.canned-row:hover, .canned-row.active { background: #f0f4ff; }
+
+.canned-key {
+  font-size: 0.62rem; font-weight: 800;
+  color: #2563eb; font-family: monospace;
+  margin-right: 6px;
+}
+
+/* ═══════════════════════════════════════════ */
+/* RIGHT: DETAILS SIDEBAR                      */
+/* ═══════════════════════════════════════════ */
+.details-panel {
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.det-tabs {
+  display: flex;
+  border-bottom: 2px solid #edf2f7;
+  flex-shrink: 0;
+}
+
+.dtab {
+  flex: 1; text-align: center;
+  font-size: 0.76rem; font-weight: 700;
+  color: #94a3b8;
+  padding: 10px 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+}
+
+.dtab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+.det-body { flex: 1; overflow-y: auto; }
+
+/* Contact card */
+.contact-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  text-align: center;
+}
+
+.contact-photo {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: linear-gradient(135deg,#ffe4e6,#fecdd3);
+  color: #be123c; font-size: 1rem; font-weight: 800;
+  display: grid; place-items: center;
+  margin-bottom: 8px;
+}
+
+.contact-name {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 0.9rem; font-weight: 700; color: #122033;
+  display: flex; align-items: center; gap: 5px;
+}
+
+.contact-title { font-size: 0.72rem; color: #5f6f86; margin-top: 2px; }
+
+.contact-fields { width: 100%; margin-top: 10px; }
+
+.cf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.74rem;
+  color: #334155;
+  text-align: left;
+}
+
+.cf-icon { color: #94a3b8; font-size: 0.8rem; width: 16px; }
+
+.cf-copy {
+  margin-left: auto;
+  color: #94a3b8; font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.contact-socials {
+  display: flex; gap: 8px; margin-top: 10px;
+  justify-content: center;
+}
+
+.social-icon {
+  width: 26px; height: 26px; border-radius: 6px;
+  border: 1px solid #e2eaf4;
+  display: grid; place-items: center;
+  font-size: 0.7rem; color: #5f6f86;
+  cursor: pointer;
+}
+
+.contact-actions {
+  display: flex; gap: 6px;
+  margin-top: 10px; justify-content: center;
+}
+
+.cact-btn {
+  width: 30px; height: 28px;
+  border: 1px solid #e2eaf4; border-radius: 7px;
+  background: #fff; font-size: 0.8rem; color: #5f6f86;
+  display: grid; place-items: center;
+}
+
+.cact-btn.danger { border-color: #fecdd3; color: #f43f5e; }
+
+/* Accordion sections */
+.acc {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.acc-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; cursor: pointer;
+  font-size: 0.76rem; font-weight: 700; color: #334155;
+}
+
+.acc-head:hover { background: #fafbfd; }
+
+.acc-plus {
+  width: 20px; height: 20px;
+  border: 1px solid #e2eaf4; border-radius: 5px;
+  background: #fff; font-size: 0.75rem;
+  display: grid; place-items: center; color: #5f6f86;
+}
+
+.acc-body {
+  padding: 0 14px 12px;
+}
+
+.acc-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 3px 0; font-size: 0.72rem;
+}
+
+.acc-key { color: #94a3b8; font-size: 0.63rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.acc-val { color: #334155; font-weight: 600; }
+
+.status-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 999px;
+  font-size: 0.6rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+.sp-open { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.sp-urgent { background: #ffe4e6; color: #be123c; border: 1px solid #fecdd3; }
+.sp-warm { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.sp-hot { background: #ffe4e6; color: #be123c; border: 1px solid #fecdd3; }
+
+.label-row-det { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+
+.det-lbl {
+  font-size: 0.62rem; font-weight: 700;
+  padding: 2px 7px; border-radius: 4px;
+}
+
+.ai-toggle-section {
+  display: flex; align-items: center;
+  justify-content: space-between; padding: 5px 0;
+}
+
+.toggle-track {
+  width: 34px; height: 18px; border-radius: 999px;
+  background: #f43f5e; position: relative; cursor: pointer;
+}
+
+.toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.flow-block {
+  background: #f8fafc; border: 1px solid #e2eaf4;
+  border-radius: 8px; padding: 8px 10px; margin-top: 6px;
+}
+
+.flow-name-det { font-size: 0.74rem; font-weight: 700; color: #122033; }
+.flow-meta-det { font-size: 0.62rem; color: #94a3b8; margin-top: 1px; }
+
+.det-action-row { display: flex; gap: 6px; margin-top: 8px; }
+
+.det-btn {
+  flex: 1; height: 28px; border: 1px solid #e2eaf4;
+  border-radius: 7px; background: #fff;
+  font-size: 0.68rem; font-weight: 700; color: #334155;
+}
+
+.det-btn.primary { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.det-btn.blue { background: #f0f4ff; border-color: #c7d6f7; color: #2563eb; }
+.det-btn.danger { background: #fff5f5; border-color: #fecdd3; color: #be123c; }
+
+.prev-conv-item {
+  font-size: 0.72rem; padding: 5px 0;
+  border-bottom: 1px solid #f8fafc;
+  display: flex; justify-content: space-between;
+}
+
+.prev-conv-item:last-child { border-bottom: none; }
+
+.prev-src { color: #5f6f86; }
+.prev-date { color: #94a3b8; font-size: 0.65rem; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #e2eaf4; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">WAgen Inbox V2 — UI Mockup · Chatwoot-inspired layout · http://localhost:62193</div>
+
+<div style="flex:1;overflow:hidden;display:flex;">
+<div class="shell">
+
+  <!-- ══ LEFT NAV TREE ══ -->
+  <div class="nav-sidebar">
+    <div class="nav-org">
+      <div class="org-logo">W</div>
+      <div>
+        <div class="org-name">WAgen</div>
+      </div>
+      <span style="color:#94a3b8;font-size:0.8rem;margin-left:auto;">▾</span>
+    </div>
+
+    <div class="nav-search">
+      <input placeholder="Search…">
+    </div>
+
+    <div class="nav-tree">
+      <div class="nav-item">
+        <span class="nav-icon">📥</span> My Inbox
+        <span class="nav-count">11</span>
+      </div>
+
+      <div class="nav-section-label">Conversations</div>
+      <div class="nav-item active">
+        <span class="nav-icon">💬</span> All Conversations
+        <span class="nav-count">47</span>
+      </div>
+      <div class="nav-sub-item">Mentions</div>
+      <div class="nav-sub-item">Unattended</div>
+
+      <div class="nav-section-label">Folders</div>
+      <div class="nav-sub-item">🔥 Hot Leads</div>
+      <div class="nav-sub-item">⚠️ Pending Review</div>
+
+      <div class="nav-section-label">Teams</div>
+      <div class="nav-sub-item">Sales</div>
+      <div class="nav-sub-item">Support L1</div>
+      <div class="nav-sub-item">Support L2</div>
+
+      <div class="nav-section-label">Channels</div>
+      <div class="nav-sub-item"><div class="channel-dot" style="background:#25d366"></div> WhatsApp API</div>
+      <div class="nav-sub-item"><div class="channel-dot" style="background:#25d366"></div> WhatsApp QR</div>
+      <div class="nav-sub-item"><div class="channel-dot" style="background:#1877f2"></div> Facebook</div>
+      <div class="nav-sub-item"><div class="channel-dot" style="background:#f59e0b"></div> Email</div>
+      <div class="nav-sub-item"><div class="channel-dot" style="background:#7c3aed"></div> Web Widget</div>
+    </div>
+
+    <div class="nav-agent">
+      <div class="agent-avatar">
+        MM
+        <div class="online-dot"></div>
+      </div>
+      <div>
+        <div class="agent-name">Mathew M</div>
+        <div class="agent-role">mathew@wagen.co</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CONVERSATION LIST ══ -->
+  <div class="conv-panel">
+    <div class="conv-panel-head">
+      <div class="conv-panel-title-row">
+        <div class="conv-panel-title">Conversations</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="conv-panel-status">Open</span>
+          <div class="conv-panel-icons">
+            <button class="icon-btn" title="Filter">⊟</button>
+            <button class="icon-btn" title="Sort">↕</button>
+            <button class="icon-btn" title="New">✏</button>
+          </div>
+        </div>
+      </div>
+      <div class="mine-tabs">
+        <div class="mtab active">Mine <span class="mtab-badge">11</span></div>
+        <div class="mtab">Unassigned <span class="mtab-badge">5</span></div>
+        <div class="mtab">All <span class="mtab-badge">47</span></div>
+      </div>
+    </div>
+
+    <!-- Status filter strip -->
+    <div class="status-filter-row">
+      <button class="sfilter active">Open</button>
+      <button class="sfilter">Pending</button>
+      <button class="sfilter">Resolved</button>
+      <button class="sfilter">Snoozed</button>
+    </div>
+
+    <div class="conv-list">
+
+      <!-- Row 1: Selected -->
+      <div class="crow selected">
+        <div class="cav av-rose">
+          RK
+          <div class="ch-badge ch-api">A</div>
+        </div>
+        <div class="cbody">
+          <div class="chead">
+            <span class="csrc">⊙ WAgen API</span>
+            <span class="ctime">1d · 34m</span>
+          </div>
+          <div class="cname">Rahul Kumar</div>
+          <div class="csnip">↩ @Ben Nugent Can we use Captain …</div>
+          <div class="cmeta">
+            <span class="clabel label-complaint">complaint</span>
+            <span class="clabel label-device">urgent</span>
+            <span class="cai-paused">⏸ 23m</span>
+          </div>
+        </div>
+        <div class="cprio">!!</div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="crow">
+        <div class="cav av-green">
+          PS
+          <div class="ch-badge ch-wa">W</div>
+        </div>
+        <div class="cbody">
+          <div class="chead">
+            <span class="csrc">⊙ WAgen WhatsApp</span>
+            <span class="ctime">1d · 37m</span>
+          </div>
+          <div class="cname">Priya Sharma</div>
+          <div class="csnip">↩ Sure! Can you please provide me wi…</div>
+          <div class="cmeta">
+            <span class="clabel score-warm">warm</span>
+            <span class="clabel label-lead">lead</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 3 -->
+      <div class="crow">
+        <div class="cav av-amber">
+          NV
+          <div class="ch-badge ch-fb">F</div>
+        </div>
+        <div class="cbody">
+          <div class="chead">
+            <span class="csrc">⊙ Facebook</span>
+            <span class="ctime">1d · 37m</span>
+          </div>
+          <div class="cname">Nathaniel Vannuchi</div>
+          <div class="csnip">Hey there, I need some help with billing…</div>
+          <div class="cmeta">
+            <span class="clabel label-billing">billing</span>
+            <span class="clabel label-lead">lead</span>
+          </div>
+        </div>
+        <div class="cprio" style="color:#f59e0b;font-size:0.65rem;">!!</div>
+      </div>
+
+      <!-- Row 4 -->
+      <div class="crow">
+        <div class="cav av-teal">
+          CJ
+          <div class="ch-badge ch-wa">W</div>
+        </div>
+        <div class="cbody">
+          <div class="chead">
+            <span class="csrc">⊙ WAgen WhatsApp QR</span>
+            <span class="ctime">1d · 37m</span>
+          </div>
+          <div class="cname">Claus Jira</div>
+          <div class="csnip">↩ I'm sorry to hear that. Can you plea…</div>
+          <div class="cmeta">
+            <span class="clabel score-cold">cold</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 5 -->
+      <div class="crow">
+        <div class="cav av-purple">
+          MP
+          <div class="ch-badge ch-em">E</div>
+        </div>
+        <div class="cbody">
+          <div class="chead">
+            <span class="csrc">⊙ Email</span>
+            <span class="ctime">1d · 37m</span>
+          </div>
+          <div class="cname">Meera Petruk</div>
+          <div class="csnip">↩ I'm sorry to hear that. Can you plea…</div>
+          <div class="cmeta">
+            <span class="clabel score-hot">hot</span>
+          </div>
+        </div>
+        <div class="cprio">!!</div>
+      </div>
+
+      <!-- Row 6 -->
+      <div class="crow">
+        <div class="cav av-blue">
+          CM
+          <div class="ch-badge ch-em">E</div>
+        </div>
+        <div class="cbody">
+          <div class="chead">
+            <span class="csrc">⊙ Email</span>
+            <span class="ctime">1d · 37m</span>
+          </div>
+          <div class="cname">Candice Matherson</div>
+          <div class="csnip">↩ How may I help you?</div>
+          <div class="cmeta">
+            <span class="clabel label-billing">billing</span>
+            <span class="clabel label-lead">lead</span>
+          </div>
+        </div>
+        <div class="cunread">1</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ THREAD ══ -->
+  <div class="thread-panel" style="position:relative;">
+    <div class="th-header">
+      <div class="th-left">
+        <div class="cav av-rose" style="width:34px;height:34px;">RK</div>
+        <div class="th-info">
+          <div class="th-name">
+            Rahul Kumar
+            <span class="th-warn" title="AI paused">⚠</span>
+          </div>
+          <div class="th-src">
+            ⊙ WAgen API
+            <span class="th-close">· Close details</span>
+          </div>
+        </div>
+      </div>
+      <div class="th-actions">
+        <button class="th-icon-btn" title="Mute">🔕</button>
+        <button class="th-icon-btn" title="Share">↑</button>
+        <div class="resolve-group">
+          <button class="resolve-btn">Resolve</button>
+          <button class="resolve-caret">▾</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="messages">
+      <div class="date-sep">Jan 15</div>
+
+      <!-- Inbound group -->
+      <div class="msg-group">
+        <div class="mrow">
+          <div class="mav">RK</div>
+          <div class="bubble in">
+            Hi, I need some help setting up my new device.
+            <div class="bubble-footer">
+              <span class="btime">12:32 PM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Outbound group -->
+      <div class="msg-group">
+        <div class="mrow out">
+          <div class="bubble out">
+            No problem! Can you please tell me the make and model of your device and what specifically you need help with?
+            <div class="bubble-footer">
+              <span class="btime">12:32 PM</span>
+              <span class="ds ds-read">✓✓</span>
+            </div>
+          </div>
+          <div class="mav hidden">MM</div>
+        </div>
+      </div>
+
+      <!-- Activity pills -->
+      <div class="activity-pill">
+        <span>Assigned to support m2 by Mathew M</span>
+      </div>
+      <div class="activity-pill">
+        <span>Mathew M self-assigned this conversation</span>
+      </div>
+      <div class="activity-pill">
+        <span>Mathew M set the priority to high</span>
+      </div>
+      <div class="activity-pill">
+        <span>Mathew M added <strong>device-setup</strong></span>
+      </div>
+
+      <!-- Private note -->
+      <div class="msg-group">
+        <div class="mrow out">
+          <div class="bubble note">
+            <div class="note-top">🔒 Private Note</div>
+            <span class="mention">@Ben Nugent</span> Can we use Captain here to automate these queries?
+            <div class="bubble-footer">
+              <span class="btime">Jan 16, 2:16 PM</span>
+              <span style="font-size:0.7rem;color:#94a3b8;">🔒</span>
+            </div>
+          </div>
+          <div class="mav hidden">MM</div>
+        </div>
+      </div>
+
+      <!-- Latest inbound — unread highlight -->
+      <div class="msg-group">
+        <div class="mrow">
+          <div class="mav">RK</div>
+          <div class="bubble in" style="border-color:#c7d6f7;background:#f0f4ff;">
+            It's been 2 hours now. Still no update. I need urgent help — the delivery is very late!
+            <div class="bubble-footer">
+              <span class="btime">12:47 PM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Typing -->
+      <div class="typing-row">
+        <div class="mav">RK</div>
+        <div class="typing-dots">
+          <div class="tdot"></div>
+          <div class="tdot"></div>
+          <div class="tdot"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canned popup -->
+    <div class="canned-popup">
+      <input class="canned-input" value="/" placeholder="Search canned responses…">
+      <div class="canned-row active">
+        <span class="canned-key">/sorry</span> I sincerely apologize for the inconvenience caused…
+      </div>
+      <div class="canned-row">
+        <span class="canned-key">/delay</span> We're experiencing a delay. Your order will arrive by…
+      </div>
+      <div class="canned-row">
+        <span class="canned-key">/escalate</span> I've escalated your issue to our senior team…
+      </div>
+    </div>
+
+    <!-- Compose -->
+    <div class="compose">
+      <div class="compose-tabs">
+        <div class="ctab active">Reply</div>
+        <div class="ctab">Private Note</div>
+        <span class="compose-expand">⛶</span>
+      </div>
+      <div class="format-bar">
+        <button class="fmt-btn"><b>B</b></button>
+        <button class="fmt-btn"><i>I</i></button>
+        <button class="fmt-btn"><u style="text-decoration:underline;font-size:0.7rem;">U</u></button>
+        <button class="fmt-btn" style="font-size:0.65rem;">🔗</button>
+        <button class="fmt-btn">♡</button>
+        <div class="fmt-sep"></div>
+        <button class="fmt-btn">≡</button>
+        <button class="fmt-btn" style="font-size:0.65rem;">1.</button>
+        <button class="fmt-btn"><code style="font-size:0.65rem;">{}</code></button>
+      </div>
+      <textarea class="compose-textarea" placeholder="Shift + enter for new line. Start with '/' to select a Canned Response.">/</textarea>
+      <div class="compose-footer">
+        <button class="foot-icon" title="Emoji">😊</button>
+        <button class="foot-icon" title="Attach">📎</button>
+        <button class="foot-icon" title="Voice">🎙</button>
+        <button class="foot-icon" title="AI Assist" style="color:#2563eb;border-color:#c7d6f7;">✨</button>
+        <button class="foot-icon" title="Template">📋</button>
+        <button class="foot-icon" title="Translate">🌐</button>
+        <div class="send-wrap">
+          <button class="send-btn">Send ↵</button>
+          <button class="send-caret">▾</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ DETAILS SIDEBAR ══ -->
+  <div class="details-panel">
+    <div class="det-tabs">
+      <div class="dtab active">Contact</div>
+      <div class="dtab">Copilot ✨</div>
+    </div>
+
+    <div class="det-body">
+      <!-- Contact card -->
+      <div class="contact-card">
+        <div class="contact-photo">RK</div>
+        <div class="contact-name">
+          Rahul Kumar
+          <span style="font-size:0.75rem;color:#94a3b8;cursor:pointer;">⏱</span>
+          <span style="font-size:0.75rem;color:#94a3b8;cursor:pointer;">↗</span>
+        </div>
+        <div class="contact-title">Customer · Drift Burner</div>
+
+        <div class="contact-fields">
+          <div class="cf-row">
+            <span class="cf-icon">✉</span>
+            rahul@driftburner.in
+            <span class="cf-copy">⎘</span>
+          </div>
+          <div class="cf-row">
+            <span class="cf-icon">📞</span>
+            +91 98765 43210
+            <span class="cf-copy">⎘</span>
+          </div>
+          <div class="cf-row">
+            <span class="cf-icon">🏢</span>
+            Drift Burner
+          </div>
+          <div class="cf-row">
+            <span class="cf-icon">📍</span>
+            Mumbai, India 🇮🇳
+          </div>
+        </div>
+
+        <div class="contact-socials">
+          <div class="social-icon">f</div>
+          <div class="social-icon">𝕏</div>
+          <div class="social-icon">in</div>
+        </div>
+
+        <div class="contact-actions">
+          <button class="cact-btn" title="Note">📝</button>
+          <button class="cact-btn" title="Edit">✏</button>
+          <button class="cact-btn" title="Merge">⧖</button>
+          <button class="cact-btn danger" title="Block">🚫</button>
+        </div>
+      </div>
+
+      <!-- Conversation Actions accordion -->
+      <div class="acc">
+        <div class="acc-head">
+          Conversation Actions
+          <div class="acc-plus">+</div>
+        </div>
+        <div class="acc-body">
+          <div class="acc-row">
+            <span class="acc-key">Status</span>
+            <span class="status-pill sp-open">Open</span>
+          </div>
+          <div class="acc-row" style="margin-top:5px;">
+            <span class="acc-key">Priority</span>
+            <span class="status-pill sp-urgent">Urgent</span>
+          </div>
+          <div class="acc-row" style="margin-top:5px;">
+            <span class="acc-key">Assigned</span>
+            <span class="acc-val">Mathew M</span>
+          </div>
+          <div style="margin-top:8px;">
+            <div class="acc-key" style="margin-bottom:4px;">Labels</div>
+            <div class="label-row-det">
+              <span class="det-lbl label-complaint">complaint</span>
+              <span class="det-lbl label-device">device-setup</span>
+              <span style="font-size:0.62rem;color:#2563eb;cursor:pointer;">+ Add</span>
+            </div>
+          </div>
+          <div class="det-action-row">
+            <button class="det-btn primary">✓ Resolve</button>
+            <button class="det-btn">⏰ Snooze ▾</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lead Intelligence (WAgen-unique) -->
+      <div class="acc" style="border-left: 2px solid #2563eb;">
+        <div class="acc-head" style="color:#2563eb;">
+          🧠 Lead Intelligence
+          <div class="acc-plus">+</div>
+        </div>
+        <div class="acc-body">
+          <div class="acc-row">
+            <span class="acc-key">Score</span>
+            <span class="status-pill sp-hot">🔥 Hot</span>
+          </div>
+          <div class="acc-row" style="margin-top:4px;">
+            <span class="acc-key">Stage</span>
+            <span class="acc-val">Hot Lead</span>
+          </div>
+          <div class="acc-row" style="margin-top:4px;">
+            <span class="acc-key">Kind</span>
+            <span class="acc-val">Complaint</span>
+          </div>
+          <div class="ai-toggle-section" style="margin-top:6px;">
+            <div>
+              <div style="font-size:0.72rem;font-weight:700;color:#334155;">AI Auto-Reply</div>
+              <div style="font-size:0.62rem;color:#f59e0b;">Paused · 23m remaining</div>
+            </div>
+            <div class="toggle-track">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow Assignment (WAgen-unique) -->
+      <div class="acc" style="border-left: 2px solid #7c3aed;">
+        <div class="acc-head" style="color:#7c3aed;">
+          ⚡ Flow Assignment
+          <div class="acc-plus">+</div>
+        </div>
+        <div class="acc-body">
+          <div class="flow-block">
+            <div class="flow-name-det">Customer Support Flow v2</div>
+            <div class="flow-meta-det">Last triggered: 10:14 AM</div>
+          </div>
+          <div class="det-action-row">
+            <button class="det-btn">Change Flow</button>
+            <button class="det-btn blue">▶ Trigger</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Conversation Participants -->
+      <div class="acc">
+        <div class="acc-head">
+          Conversation Participants
+          <div class="acc-plus">+</div>
+        </div>
+      </div>
+
+      <!-- Macros -->
+      <div class="acc">
+        <div class="acc-head">
+          Macros
+          <div class="acc-plus">+</div>
+        </div>
+      </div>
+
+      <!-- Contact Attributes -->
+      <div class="acc">
+        <div class="acc-head">
+          Contact Attributes
+          <div class="acc-plus">+</div>
+        </div>
+        <div class="acc-body">
+          <div class="acc-row">
+            <span class="acc-key">Opted In</span>
+            <span class="acc-val" style="color:#166534;">✓ Yes</span>
+          </div>
+          <div class="acc-row" style="margin-top:3px;">
+            <span class="acc-key">Last Seen</span>
+            <span class="acc-val">12:49 PM</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Conversation Information -->
+      <div class="acc">
+        <div class="acc-head">
+          Conversation Information
+          <div class="acc-plus">+</div>
+        </div>
+      </div>
+
+      <!-- Previous Conversations -->
+      <div class="acc">
+        <div class="acc-head">
+          Previous Conversations
+          <div class="acc-plus">+</div>
+        </div>
+        <div class="acc-body">
+          <div class="prev-conv-item">
+            <span class="prev-src">Order inquiry · Resolved</span>
+            <span class="prev-date">Apr 20</span>
+          </div>
+          <div class="prev-conv-item">
+            <span class="prev-src">Product info · Resolved</span>
+            <span class="prev-date">Apr 15</span>
+          </div>
+          <div class="prev-conv-item">
+            <span class="prev-src">Delivery issue · Resolved</span>
+            <span class="prev-date">Apr 2</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</div>
+
+</body>
+</html>

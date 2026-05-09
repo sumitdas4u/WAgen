@@ -57,6 +57,38 @@ function getTemplateBody(t: MessageTemplate): string {
   return t.components.find((c) => c.type === "BODY")?.text ?? t.name;
 }
 
+function renderTemplatePreview(t: MessageTemplate, vars: Record<string, string>): string {
+  const replaceVars = (value: string) =>
+    value.replace(PLACEHOLDER_RE, (match) => vars[match]?.trim() || vars[`{{${String(match).replace(/[{}]/g, "").trim()}}}`]?.trim() || match);
+  return replaceVars(getTemplateBody(t));
+}
+
+function buildOptimisticTemplatePayload(t: MessageTemplate, vars: Record<string, string>): Record<string, unknown> {
+  const replaceVars = (value: string | undefined) =>
+    value?.replace(PLACEHOLDER_RE, (match) => vars[match]?.trim() || vars[`{{${String(match).replace(/[{}]/g, "").trim()}}}`]?.trim() || match);
+  const components = t.components.flatMap((component) => {
+    if (component.type === "BUTTONS") {
+      return (component.buttons ?? []).map((button, index) => ({
+        type: "button",
+        id: `template-button-${index}`,
+        text: button.text
+      }));
+    }
+    return [{
+      type: component.type.toLowerCase(),
+      text: replaceVars(component.text)
+    }];
+  });
+  return {
+    type: "template",
+    templateName: t.name,
+    language: t.language,
+    previewText: renderTemplatePreview(t, vars),
+    headerMediaUrl: vars.headerMediaUrl || t.headerMediaUrl || undefined,
+    components
+  };
+}
+
 function extractTemplatePlaceholders(text: string | null | undefined): string[] {
   if (!text) return [];
   const matches = [...text.matchAll(PLACEHOLDER_RE)];
@@ -290,7 +322,8 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
       showToast("Template sent");
       if (data.messageId) {
         const template = templatesQuery.data?.find((t) => t.id === variables.templateId);
-        const bodyText = template ? getTemplateBody(template) : "Template sent";
+        const bodyText = template ? renderTemplatePreview(template, variables.vars) : "Template sent";
+        const payload = template ? buildOptimisticTemplatePayload(template, variables.vars) : null;
         const tempId = `temp-${data.messageId}`;
         optimisticMap.current.set(data.messageId, tempId);
         appendMessage(convId, {
@@ -299,7 +332,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
           direction: "outbound",
           sender_name: null,
           message_text: bodyText,
-          content_type: "text",
+          content_type: template ? "template" : "text",
           is_private: false,
           in_reply_to_id: null,
           echo_id: data.messageId,
@@ -307,7 +340,9 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
           error_code: null,
           error_message: null,
           retry_count: 0,
-          payload_json: null,
+          payload_json: payload,
+          message_type: template ? "template" : "text",
+          message_content: payload,
           source_type: "manual",
           ai_model: null,
           total_tokens: null,

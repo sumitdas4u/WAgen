@@ -44,6 +44,11 @@ function getScoreBand(score: number): "hot" | "warm" | "cold" {
   return "cold";
 }
 
+function getScoreBandLabel(score: number): string {
+  const band = getScoreBand(score);
+  return band.charAt(0).toUpperCase() + band.slice(1);
+}
+
 interface Props {
   conv: Conversation;
   labels: Label[];
@@ -108,7 +113,7 @@ export function ConversationRow({ conv, labels, active, onClick, selected, hasSe
         {priorityDot}
         {conv.ai_paused && <span className="iv-ai-paused">⏸</span>}
         {conv.score > 0 && (
-          <span className={`iv-score-chip iv-score-${getScoreBand(conv.score)}`}>{conv.score}</span>
+          <span className={`iv-score-chip iv-score-${getScoreBand(conv.score)}`}>{getScoreBandLabel(conv.score)}</span>
         )}
       </div>
     </div>

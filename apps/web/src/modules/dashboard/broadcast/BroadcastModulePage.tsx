@@ -585,6 +585,25 @@ function BroadcastListPage({ token }: { token: string }) {
         </div>
       </div>
 
+      {/* Monthly recipient cap banner */}
+      {(() => {
+        const cap = bootstrap?.planEntitlements?.broadcastMonthlyRecipients;
+        const used = summary?.monthlyRecipientsUsed;
+        if (cap == null || used == null) return null;
+        const exceeded = used >= cap;
+        return (
+          <div className={`sch-info-banner${exceeded ? " sch-info-banner--warn" : ""}`} style={{ marginBottom: 12 }}>
+            <span className="sch-info-icon">&#9432;</span>
+            <span>
+              {used.toLocaleString()} of {cap.toLocaleString()} monthly broadcast recipients used this month.
+              {exceeded
+                ? " Monthly limit reached — upgrade your plan to send more."
+                : ` You can reach ${(cap - used).toLocaleString()} more recipients this month.`}
+            </span>
+          </div>
+        );
+      })()}
+
       {/* Overview */}
       <div className="bl-overview-card">
         <div className="bl-overview-head">

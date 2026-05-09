@@ -120,4 +120,163 @@ describe("upsertWebhookContact", () => {
 
     expect(updateCall?.[1]?.[3]).toEqual(["vip"]);
   });
+
+  it("matches an existing imported local phone when inbound webhook includes country code", async () => {
+    const localPhoneContact = {
+      ...mocks.existingContact,
+      phone_number: "9875492875",
+      tags: ["Nursing home"]
+    };
+
+    mocks.clientQueryMock.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("SELECT *") && sql.includes("FROM contacts")) {
+        if (String(sql).includes("right(regexp_replace")) {
+          return { rows: [localPhoneContact], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("FROM conversations")) {
+        return { rows: [{ id: "conv-1" }], rowCount: 1 };
+      }
+      if (sql.includes("UPDATE contacts")) {
+        return {
+          rows: [{
+            ...localPhoneContact,
+            display_name: params?.[0],
+            email: params?.[1],
+            contact_type: params?.[2],
+            tags: params?.[3],
+            linked_conversation_id: params?.[15]
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes("UPDATE conversations")) {
+        return { rows: [], rowCount: 1 };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    const contact = await upsertWebhookContact({
+      userId: "user-1",
+      phoneNumber: "919875492875",
+      displayName: "Calcutta Institute"
+    });
+
+    expect(contact.id).toBe(localPhoneContact.id);
+    expect(contact.tags).toEqual(["Nursing home"]);
+
+    const insertCall = mocks.clientQueryMock.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO contacts"));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it("updates only the phone to include the webhook country code when suffix-matched", async () => {
+    const localPhoneContact = {
+      ...mocks.existingContact,
+      display_name: "Mr Souvik Saha",
+      phone_number: "8584033451",
+      contact_type: "lead",
+      tags: ["demo-user"]
+    };
+
+    mocks.clientQueryMock.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("SELECT *") && sql.includes("FROM contacts")) {
+        if (String(sql).includes("right(regexp_replace")) {
+          return { rows: [localPhoneContact], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("FROM conversations")) {
+        return { rows: [{ id: "conv-1" }], rowCount: 1 };
+      }
+      if (sql.includes("UPDATE contacts")) {
+        return {
+          rows: [{
+            ...localPhoneContact,
+            display_name: params?.[0],
+            email: params?.[1],
+            contact_type: params?.[2],
+            tags: params?.[3],
+            linked_conversation_id: params?.[15],
+            phone_number: params?.[16]
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes("UPDATE conversations")) {
+        return { rows: [], rowCount: 1 };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    const contact = await upsertWebhookContact({
+      userId: "user-1",
+      phoneNumber: "918584033451",
+      displayName: null
+    });
+
+    expect(contact.id).toBe(localPhoneContact.id);
+    expect(contact.phone_number).toBe("918584033451");
+    expect(contact.display_name).toBe("Mr Souvik Saha");
+    expect(contact.contact_type).toBe("lead");
+    expect(contact.tags).toEqual(["demo-user"]);
+
+    const insertCall = mocks.clientQueryMock.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO contacts"));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it("matches country-code prefixes generically, not only India +91", async () => {
+    const localPhoneContact = {
+      ...mocks.existingContact,
+      phone_number: "2025550188",
+      tags: ["usa-lead"]
+    };
+
+    mocks.clientQueryMock.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("SELECT *") && sql.includes("FROM contacts")) {
+        if (String(sql).includes("right(regexp_replace")) {
+          return { rows: [localPhoneContact], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("FROM conversations")) {
+        return { rows: [{ id: "conv-1" }], rowCount: 1 };
+      }
+      if (sql.includes("UPDATE contacts")) {
+        return {
+          rows: [{
+            ...localPhoneContact,
+            display_name: params?.[0],
+            email: params?.[1],
+            contact_type: params?.[2],
+            tags: params?.[3],
+            linked_conversation_id: params?.[15]
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes("UPDATE conversations")) {
+        return { rows: [], rowCount: 1 };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    const contact = await upsertWebhookContact({
+      userId: "user-1",
+      phoneNumber: "12025550188",
+      displayName: "US Lead"
+    });
+
+    expect(contact.id).toBe(localPhoneContact.id);
+    expect(contact.tags).toEqual(["usa-lead"]);
+  });
 });

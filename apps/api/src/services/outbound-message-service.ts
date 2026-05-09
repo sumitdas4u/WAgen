@@ -24,6 +24,7 @@ import { sendWidgetConversationMessage } from "./widget-chat-gateway-service.js"
 import { whatsappSessionManager } from "./whatsapp-session-manager.js";
 import { getPayloadMediaUrl, summarizeFlowMessage, type FlowMessagePayload, validateFlowMessagePayload } from "./outbound-message-types.js";
 import { classifyDeliveryFailure } from "./message-delivery-data-service.js";
+import { getMessageTemplate, resolveTemplatePayload } from "./template-service.js";
 import type { Campaign, CampaignMessage } from "./campaign-service.js";
 import { executeQueuedGenericWebhookLog } from "./generic-webhook-service.js";
 import { executeSequenceOutboundMessage } from "./sequence-execution-service.js";
@@ -349,9 +350,10 @@ async function updateOutboundMessageState(input: {
        SET delivery_status = 'failed',
            error_message = COALESCE($2, error_message)
        WHERE conversation_id = $1
+         AND echo_id = $3
          AND delivery_status = 'pending'
        RETURNING id`,
-      [row.conversation_id, row.error_message ?? null]
+      [row.conversation_id, row.error_message ?? null, input.id]
     );
     for (const fm of failedMsgs.rows) {
       realtimeHub.broadcastMessageUpdated(row.user_id, {
@@ -382,6 +384,96 @@ async function updateOutboundMessageState(input: {
       ]
     );
   }
+}
+
+async function trackQueuedConversationTemplateMessage(input: {
+  conversationId: string;
+  userId: string;
+  senderName?: string | null;
+  echoId: string;
+  templateId: string;
+  variableValues: Record<string, string>;
+}): Promise<void> {
+  const template = await getMessageTemplate(input.userId, input.templateId);
+  const resolved = resolveTemplatePayload(template, input.variableValues);
+  const inserted = await pool.query<{
+    id: string;
+    created_at: Date;
+    sender_name: string | null;
+    media_url: string | null;
+    message_type: string | null;
+    message_content: Record<string, unknown> | null;
+    delivery_status: string | null;
+    error_code: string | null;
+    error_message: string | null;
+    source_type: string | null;
+  }>(
+    `INSERT INTO conversation_messages (
+       conversation_id,
+       direction,
+       sender_name,
+       message_text,
+       media_url,
+       message_type,
+       message_content,
+       delivery_status,
+       source_type,
+       echo_id
+     )
+     VALUES ($1, 'outbound', $2, $3, $4, 'template', $5::jsonb, 'pending', 'manual', $6)
+     ON CONFLICT (conversation_id, echo_id)
+     WHERE echo_id IS NOT NULL
+     DO UPDATE SET
+       sender_name = COALESCE(EXCLUDED.sender_name, conversation_messages.sender_name),
+       message_text = EXCLUDED.message_text,
+       media_url = COALESCE(EXCLUDED.media_url, conversation_messages.media_url),
+       message_type = 'template',
+       message_content = EXCLUDED.message_content,
+       delivery_status = CASE
+         WHEN conversation_messages.delivery_status IN ('sent', 'delivered', 'read', 'failed') THEN conversation_messages.delivery_status
+         ELSE 'pending'
+       END
+     RETURNING id, created_at, sender_name, media_url, message_type, message_content, delivery_status, error_code, error_message, source_type`,
+    [
+      input.conversationId,
+      input.senderName ?? null,
+      resolved.summaryText,
+      resolved.messagePayload.headerMediaUrl ?? null,
+      JSON.stringify(resolved.messagePayload),
+      input.echoId
+    ]
+  );
+
+  const row = inserted.rows[0];
+  if (!row) return;
+
+  realtimeHub.broadcastMessageCreated(input.userId, {
+    conversationId: input.conversationId,
+    message: {
+      id: row.id,
+      conversation_id: input.conversationId,
+      direction: "outbound",
+      sender_name: row.sender_name,
+      message_text: resolved.summaryText,
+      content_type: "template",
+      is_private: false,
+      in_reply_to_id: null,
+      echo_id: input.echoId,
+      delivery_status: row.delivery_status ?? "pending",
+      error_code: row.error_code ?? null,
+      error_message: row.error_message ?? null,
+      retry_count: 0,
+      media_url: row.media_url ?? null,
+      message_type: row.message_type ?? "template",
+      message_content: row.message_content ?? resolved.messagePayload,
+      source_type: row.source_type ?? "manual",
+      created_at: row.created_at.toISOString()
+    }
+  });
+  realtimeHub.broadcastConversationUpdated(input.userId, {
+    id: input.conversationId,
+    last_message: { text: resolved.summaryText, sent_at: new Date().toISOString(), direction: "outbound" }
+  });
 }
 
 async function enqueueOutboundJob(payload: OutboundJobPayload, jobKey: string, scheduledAt?: string | null): Promise<void> {
@@ -1057,6 +1149,14 @@ export async function queueConversationTemplateMessage(input: {
     senderName: input.senderName ?? null,
     variableValues: input.variableValues,
     scheduledAt: input.scheduledAt ?? null
+  });
+  await trackQueuedConversationTemplateMessage({
+    conversationId: conversation.id,
+    userId: input.userId,
+    senderName: input.senderName ?? null,
+    echoId: row.id,
+    templateId: input.templateId,
+    variableValues: input.variableValues
   });
   await enqueueOutboundJob({ type: "template_api", messageId: row.id }, row.job_key, row.scheduled_at);
   return {

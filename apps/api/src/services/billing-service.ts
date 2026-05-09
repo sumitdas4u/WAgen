@@ -25,6 +25,8 @@ export interface PlanEntitlements {
   aiCreditsMonthly: number;
   annualAmountInr: number;
   prioritySupport: boolean;
+  broadcastMonthlyRecipients: number;
+  flowPublishAllowed: boolean;
   modules: {
     inbox: boolean;
     contacts: boolean;
@@ -59,7 +61,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Starter",
     amountInr: 799,
     annualAmountInr: 7990,
-    aiCreditsMonthly: 750,
+    aiCreditsMonthly: 300,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_STARTER_ID
@@ -69,7 +71,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Growth",
     amountInr: 1499,
     annualAmountInr: 14990,
-    aiCreditsMonthly: 2000,
+    aiCreditsMonthly: 600,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_PRO_ID
@@ -79,7 +81,7 @@ const BILLING_PLANS: Record<BillingPlanCode, BillingPlanConfig> = {
     label: "Pro",
     amountInr: 2999,
     annualAmountInr: 29990,
-    aiCreditsMonthly: 5000,
+    aiCreditsMonthly: 1200,
     totalCountDefault: 12,
     trialDaysDefault: 0,
     razorpayPlanId: env.RAZORPAY_PLAN_BUSINESS_ID
@@ -90,11 +92,13 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
   trial: {
     maxApiNumbers: 1,
     maxAgentProfiles: 3,
-    maxActiveFlows: 0,
+    maxActiveFlows: 1,
     maxKnowledgeSources: 1,
-    aiCreditsMonthly: 150,
+    aiCreditsMonthly: 200,
     annualAmountInr: 0,
     prioritySupport: false,
+    broadcastMonthlyRecipients: 1000,
+    flowPublishAllowed: true,
     modules: {
       inbox: true,
       contacts: true,
@@ -102,7 +106,7 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
       qrChannel: true,
       webWidget: true,
       broadcast: true,
-      flows: false,
+      flows: true,
       sequences: false,
       webhooks: false,
       apiChannel: true,
@@ -116,9 +120,11 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
     maxAgentProfiles: 5,
     maxActiveFlows: 1,
     maxKnowledgeSources: 2,
-    aiCreditsMonthly: 750,
+    aiCreditsMonthly: 300,
     annualAmountInr: 7990,
     prioritySupport: false,
+    broadcastMonthlyRecipients: 10000000,
+    flowPublishAllowed: true,
     modules: {
       inbox: true,
       contacts: true,
@@ -136,13 +142,15 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
     }
   },
   pro: {
-    maxApiNumbers: 1,
+    maxApiNumbers: 2,
     maxAgentProfiles: 10,
     maxActiveFlows: 3,
     maxKnowledgeSources: 5,
-    aiCreditsMonthly: 2000,
+    aiCreditsMonthly: 600,
     annualAmountInr: 14990,
     prioritySupport: false,
+    broadcastMonthlyRecipients: 10000000,
+    flowPublishAllowed: true,
     modules: {
       inbox: true,
       contacts: true,
@@ -164,9 +172,11 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
     maxAgentProfiles: 30,
     maxActiveFlows: 25,
     maxKnowledgeSources: 15,
-    aiCreditsMonthly: 2500,
+    aiCreditsMonthly: 1200,
     annualAmountInr: 29990,
     prioritySupport: true,
+    broadcastMonthlyRecipients: 10000000,
+    flowPublishAllowed: true,
     modules: {
       inbox: true,
       contacts: true,

@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WAgen Inbox V2 — Exact Clone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #334155;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea { font-family: inherit; }
+
+/* ── Shell ───────────────────────────────────────── */
+.shell {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 340px 1fr 288px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ═══════════════════════════════════════════════════
+   COL 1 — LEFT NAV
+═══════════════════════════════════════════════════ */
+.lnav {
+  background: #fff;
+  border-right: 1px solid #e2eaf4;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Org switcher */
+.org-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 14px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+}
+.org-row:hover { background: #fafbfd; }
+
+.org-logo {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  color: #fff;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 13px; font-weight: 700;
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+
+.org-name {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 13.5px; font-weight: 700;
+  color: #122033;
+  flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.org-caret { color: #94a3b8; font-size: 10px; }
+
+/* Search row */
+.lnav-search {
+  padding: 9px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.lsearch-input-wrap {
+  flex: 1; position: relative;
+}
+
+.lsearch-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px 0 28px;
+  border: 1px solid #e2eaf4;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: #122033;
+  background: #f8fafc;
+  outline: none;
+  transition: border-color 120ms;
+}
+
+.lsearch-input:focus { border-color: #93c5fd; background: #fff; }
+.lsearch-input::placeholder { color: #94a3b8; }
+
+.lsearch-icon {
+  position: absolute; left: 8px; top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8; font-size: 12px;
+  pointer-events: none;
+}
+
+.compose-btn {
+  width: 28px; height: 28px;
+  border: 1px solid #e2eaf4; border-radius: 7px;
+  background: #fff; color: #5f6f86;
+  font-size: 13px;
+  display: grid; place-items: center; flex-shrink: 0;
+}
+.compose-btn:hover { background: #f8fafc; }
+
+/* Nav tree */
+.ltree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.ltree::-webkit-scrollbar { width: 3px; }
+.ltree::-webkit-scrollbar-thumb { background: #e2eaf4; border-radius: 4px; }
+
+.litem {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 14px;
+  font-size: 13px; font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 80ms, color 80ms;
+  position: relative;
+}
+.litem:hover { background: #f8fafc; color: #122033; }
+.litem.active { background: #f0f4ff; color: #2563eb; }
+.litem.active::before {
+  content: "";
+  position: absolute; left: 0; top: 4px; bottom: 4px;
+  width: 3px; background: #2563eb; border-radius: 0 3px 3px 0;
+}
+
+.litem-icon {
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  flex-shrink: 0; color: #94a3b8; font-size: 14px;
+}
+.litem.active .litem-icon { color: #2563eb; }
+
+.litem-text { flex: 1; }
+
+.litem-count {
+  font-size: 10.5px; font-weight: 800;
+  background: #f1f5f9; color: #5f6f86;
+  padding: 1px 6px; border-radius: 999px;
+  min-width: 20px; text-align: center;
+}
+.litem.active .litem-count { background: #dbeafe; color: #2563eb; }
+
+.lcaret { font-size: 9px; color: #94a3b8; }
+
+/* Section header with collapse */
+.lsection {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px 4px;
+  font-size: 12px; font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.lsection:hover { color: #122033; }
+.lsection .litem-icon { color: #5f6f86; font-size: 13px; }
+.lsection-caret { font-size: 8px; color: #94a3b8; margin-left: auto; }
+
+/* Sub-items (indented) */
+.lsub {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 14px 5px 36px;
+  font-size: 12.5px; font-weight: 500;
+  color: #5f6f86;
+  cursor: pointer;
+  transition: background 80ms, color 80ms;
+}
+.lsub:hover { background: #fafbfd; color: #334155; }
+.lsub.active { color: #2563eb; background: #f0f4ff; font-weight: 600; }
+
+.ch-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+
+/* Agent footer */
+.lagent {
+  padding: 10px 14px;
+  border-top: 1px solid #f1f5f9;
+  display: flex; align-items: center; gap: 9px;
+  flex-shrink: 0;
+}
+.lagent-av {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(135deg,#dcfce7,#bbf7d0);
+  color: #166534; font-size: 10.5px; font-weight: 800;
+  display: grid; place-items: center;
+  flex-shrink: 0; position: relative;
+}
+.lagent-online {
+  position: absolute; bottom: 0; right: 0;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #22c55e; border: 2px solid #fff;
+}
+.lagent-name { font-size: 12.5px; font-weight: 700; color: #334155; }
+.lagent-email { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+
+/* ═══════════════════════════════════════════════════
+   COL 2 — CONVERSATION LIST
+═══════════════════════════════════════════════════ */
+.clist-panel {
+  border-right: 1px solid #e2eaf4;
+  background: #fff;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+/* Panel header */
+.clist-head {
+  padding: 12px 14px 0;
+  flex-shrink: 0;
+}
+
+.clist-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.clist-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 16px; font-weight: 700;
+  color: #122033; letter-spacing: -0.025em;
+}
+
+.clist-title-right { display: flex; align-items: center; gap: 7px; }
+
+.open-pill {
+  font-size: 10px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  background: #dcfce7; color: #166534;
+  border: 1px solid #bbf7d0;
+  padding: 2px 8px; border-radius: 999px;
+}
+
+.hicon {
+  width: 26px; height: 26px;
+  border: 1px solid #e2eaf4; border-radius: 7px;
+  background: #fff; color: #5f6f86; font-size: 12px;
+  display: grid; place-items: center;
+}
+.hicon:hover { background: #f8fafc; }
+
+/* Mine / Unassigned / All tabs */
+.mine-tabs {
+  display: flex;
+  border-bottom: 2px solid #edf2f7;
+  margin: 0 -14px;
+  padding: 0 14px;
+}
+
+.mtab {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 12px;
+  font-size: 13px; font-weight: 600;
+  color: #94a3b8;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer; white-space: nowrap;
+}
+.mtab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+.mtab-n {
+  font-size: 11px; font-weight: 800;
+  background: #f1f5f9; color: #5f6f86;
+  padding: 1px 6px; border-radius: 999px;
+}
+.mtab.active .mtab-n { background: #dbeafe; color: #2563eb; }
+
+/* Conv rows */
+.clist-scroll { flex: 1; overflow-y: auto; }
+.clist-scroll::-webkit-scrollbar { width: 3px; }
+.clist-scroll::-webkit-scrollbar-thumb { background: #e2eaf4; border-radius: 4px; }
+
+.crow {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 80ms;
+  position: relative;
+}
+.crow:hover { background: #fafbfd; }
+.crow.active {
+  background: #f0f4ff;
+  border-left: 2px solid #2563eb;
+  padding-left: 12px;
+}
+
+/* Avatar + channel badge */
+.cav-wrap { position: relative; flex-shrink: 0; }
+
+.cav {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 800;
+}
+.av-blue   { background: linear-gradient(135deg,#dbeafe,#c7d6f7); color:#1d4ed8; }
+.av-green  { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color:#166534; }
+.av-purple { background: linear-gradient(135deg,#ede9fe,#ddd6fe); color:#7c3aed; }
+.av-amber  { background: linear-gradient(135deg,#fef3c7,#fde68a); color:#92400e; }
+.av-rose   { background: linear-gradient(135deg,#ffe4e6,#fecdd3); color:#be123c; }
+.av-teal   { background: linear-gradient(135deg,#ccfbf1,#99f6e4); color:#0f766e; }
+
+.cav-ch {
+  position: absolute; bottom: -2px; right: -2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid #fff;
+  display: grid; place-items: center;
+  font-size: 7px; font-weight: 900; color: #fff;
+}
+.ch-wa  { background: #25d366; }
+.ch-fb  { background: #1877f2; }
+.ch-em  { background: #f59e0b; }
+.ch-api { background: #7c3aed; }
+.ch-web { background: #2563eb; }
+
+/* Row body */
+.crow-body { flex: 1; min-width: 0; }
+
+.crow-top {
+  display: flex; align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1px;
+}
+
+.crow-src {
+  font-size: 10.5px; font-weight: 600; color: #94a3b8;
+  display: flex; align-items: center; gap: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1; min-width: 0;
+}
+
+.crow-time { font-size: 11px; font-weight: 500; color: #94a3b8; flex-shrink: 0; margin-left: 6px; }
+
+.crow-name {
+  font-size: 13.5px; font-weight: 700; color: #122033;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.crow-name.unread { color: #122033; }
+
+.crow-snip {
+  font-size: 12px; font-weight: 500; color: #5f6f86;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 4px;
+  display: flex; align-items: center; gap: 3px;
+}
+
+.reply-arrow { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+.lock-icon { font-size: 10px; color: #94a3b8; }
+
+/* Labels row — colored square dots + text (Chatwoot style) */
+.crow-labels { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+
+.clabel {
+  display: flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 600; color: #334155;
+}
+.clabel-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+/* Right-side indicators */
+.crow-right {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 4px; flex-shrink: 0; margin-left: 6px; padding-top: 2px;
+}
+
+.prio-icon { font-size: 12px; color: #f43f5e; font-weight: 900; letter-spacing: -1px; }
+.prio-amber { color: #f59e0b; }
+
+.unread-badge {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #25d366; color: #fff;
+  font-size: 10px; font-weight: 800;
+  display: grid; place-items: center;
+}
+
+.ai-dot {
+  font-size: 10px; font-weight: 700; color: #f59e0b;
+  display: flex; align-items: center; gap: 2px;
+}
+
+/* ═══════════════════════════════════════════════════
+   COL 3 — THREAD
+═══════════════════════════════════════════════════ */
+.thread {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #fff;
+  border-right: 1px solid #e2eaf4;
+  position: relative;
+}
+
+/* Thread header */
+.th-bar {
+  background: #fff;
+  border-bottom: 1px solid #e2eaf4;
+  padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+  flex-shrink: 0;
+}
+
+.th-contact { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+
+.th-av {
+  width: 36px; height: 36px; border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.th-meta { min-width: 0; }
+
+.th-name {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px; font-weight: 700; color: #122033;
+  display: flex; align-items: center; gap: 6px;
+}
+.th-warn { color: #f59e0b; font-size: 14px; }
+
+.th-src {
+  font-size: 12px; font-weight: 500; color: #5f6f86;
+  display: flex; align-items: center; gap: 5px;
+}
+.th-src-icon { font-size: 12px; }
+.th-close-link { color: #2563eb; font-weight: 600; cursor: pointer; font-size: 12px; }
+
+.th-actions { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+
+.th-icon {
+  width: 32px; height: 32px;
+  border: 1px solid #e2eaf4; border-radius: 8px;
+  background: #fff; color: #5f6f86; font-size: 13px;
+  display: grid; place-items: center;
+}
+.th-icon:hover { background: #f8fafc; }
+
+.resolve-grp { display: flex; }
+.resolve-main {
+  height: 32px; padding: 0 14px;
+  background: #25d366; color: #fff;
+  font-size: 13px; font-weight: 700;
+  border-radius: 8px 0 0 8px;
+  display: flex; align-items: center;
+}
+.resolve-dd {
+  width: 28px; height: 32px;
+  background: #1db954; color: #fff;
+  border-radius: 0 8px 8px 0;
+  font-size: 10px;
+  display: grid; place-items: center;
+  border-left: 1px solid rgba(255,255,255,0.3);
+}
+
+/* Messages scroll */
+.msgs {
+  flex: 1; overflow-y: auto;
+  padding: 20px 16px 12px;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.msgs::-webkit-scrollbar { width: 4px; }
+.msgs::-webkit-scrollbar-thumb { background: #e2eaf4; border-radius: 4px; }
+
+/* Date divider */
+.date-div {
+  text-align: center;
+  font-size: 11px; font-weight: 700;
+  color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 12px 0 8px;
+}
+
+/* Message groups */
+.mgroup { margin-bottom: 10px; display: flex; flex-direction: column; gap: 2px; }
+
+.mrow { display: flex; align-items: flex-end; gap: 8px; }
+.mrow.out { flex-direction: row-reverse; }
+
+.mrow-av {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 9px; font-weight: 800;
+  flex-shrink: 0;
+}
+.mrow-av.hidden { visibility: hidden; }
+.mrow-av.in-av { background: linear-gradient(135deg,#ffe4e6,#fecdd3); color:#be123c; }
+
+.bubble {
+  max-width: 65%;
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 13.5px; line-height: 1.5;
+  position: relative;
+}
+
+/* Inbound: light gray */
+.bubble.in {
+  background: #f1f5f9;
+  color: #334155;
+  border-bottom-left-radius: 4px;
+}
+
+/* Outbound: light blue */
+.bubble.out {
+  background: #e8f0fe;
+  color: #1e3a5f;
+  border-bottom-right-radius: 4px;
+}
+
+/* Private note: yellow */
+.bubble.note {
+  background: #fef9c3;
+  color: #713f12;
+  border: 1px solid #fef08a;
+  border-radius: 14px;
+  max-width: 78%;
+}
+
+.bubble-quote {
+  border-left: 3px solid #2563eb;
+  padding: 3px 8px;
+  margin-bottom: 7px;
+  font-size: 12px; color: #5f6f86;
+  background: rgba(37,99,235,0.06);
+  border-radius: 3px;
+}
+
+.bfoot {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 5px; margin-top: 5px;
+}
+.btime { font-size: 11px; color: #94a3b8; }
+.ds-read { font-size: 11.5px; color: #2563eb; }
+.ds-del  { font-size: 11.5px; color: #94a3b8; }
+.ds-sent { font-size: 11.5px; color: #94a3b8; }
+.ds-fail { font-size: 11.5px; color: #f43f5e; }
+
+.note-hdr {
+  font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #ca8a04;
+  margin-bottom: 5px; display: flex; align-items: center; gap: 4px;
+}
+
+.mention { color: #2563eb; font-weight: 700; }
+
+/* Activity pill */
+.activity {
+  display: flex; justify-content: center; padding: 5px 0;
+}
+.activity span {
+  font-size: 11.5px; color: #5f6f86;
+  background: #f1f5f9; border: 1px solid #e2eaf4;
+  padding: 4px 12px; border-radius: 999px;
+}
+
+/* Typing indicator */
+.typing-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.typing-bubble {
+  display: flex; gap: 4px; align-items: center;
+  background: #f1f5f9;
+  padding: 10px 14px; border-radius: 14px; border-bottom-left-radius: 4px;
+}
+.tdot {
+  width: 6px; height: 6px; border-radius: 50%; background: #94a3b8;
+  animation: td 1.4s infinite ease-in-out;
+}
+.tdot:nth-child(2) { animation-delay: 0.2s; }
+.tdot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes td {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* Collapse arrow (message thread expand) */
+.thread-arrow {
+  position: absolute; right: -12px; top: 50%;
+  transform: translateY(-50%);
+  width: 24px; height: 40px;
+  background: #fff; border: 1px solid #e2eaf4;
+  border-radius: 0 8px 8px 0;
+  display: grid; place-items: center;
+  color: #94a3b8; font-size: 10px;
+  cursor: pointer; z-index: 10;
+}
+
+/* Compose area */
+.compose {
+  background: #fff;
+  border-top: 2px solid #e2eaf4;
+  flex-shrink: 0;
+}
+
+.compose-tabs {
+  display: flex; align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ctab {
+  font-size: 13px; font-weight: 700; color: #94a3b8;
+  padding: 10px 14px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer;
+}
+.ctab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+.ctab-expand { margin-left: auto; color: #94a3b8; font-size: 13px; cursor: pointer; }
+
+.fmt-bar {
+  display: flex; align-items: center; gap: 2px;
+  padding: 6px 14px 3px;
+}
+
+.fbt {
+  width: 28px; height: 26px; border-radius: 5px;
+  color: #5f6f86; font-size: 13px;
+  display: grid; place-items: center;
+  transition: background 80ms;
+}
+.fbt:hover { background: #f1f5f9; }
+.fsep { width: 1px; height: 16px; background: #e2eaf4; margin: 0 3px; }
+
+.compose-area {
+  width: 100%; min-height: 56px; max-height: 140px;
+  padding: 8px 14px;
+  border: none; outline: none; resize: none;
+  font-family: "Manrope", sans-serif;
+  font-size: 13px; color: #334155; line-height: 1.5;
+  background: transparent;
+}
+.compose-area::placeholder { color: #94a3b8; }
+
+.compose-footer {
+  display: flex; align-items: center;
+  padding: 7px 14px 11px; gap: 6px;
+}
+
+.cf-btn {
+  width: 32px; height: 32px;
+  border: 1px solid #e2eaf4; border-radius: 8px;
+  background: #fff; color: #5f6f86; font-size: 15px;
+  display: grid; place-items: center;
+}
+.cf-btn:hover { background: #f8fafc; }
+.cf-btn.ai { border-color: #c7d6f7; color: #2563eb; }
+
+.send-grp { display: flex; margin-left: auto; }
+.send-main {
+  height: 34px; padding: 0 16px;
+  background: #2563eb; color: #fff;
+  font-size: 13px; font-weight: 700;
+  border-radius: 8px 0 0 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.send-dd {
+  width: 28px; height: 34px;
+  background: #1d4ed8; color: #fff;
+  border-radius: 0 8px 8px 0;
+  font-size: 10px; display: grid; place-items: center;
+  border-left: 1px solid rgba(255,255,255,0.25);
+}
+
+/* Canned popup */
+.canned-pop {
+  position: absolute; bottom: 155px; left: 14px; right: 14px;
+  background: #fff;
+  border: 1px solid #e2eaf4; border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  padding: 8px; z-index: 50;
+}
+.canned-input {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid #e2eaf4; border-radius: 7px;
+  font-size: 12.5px; outline: none; margin-bottom: 4px; color: #334155;
+}
+.canned-item {
+  padding: 7px 10px; border-radius: 7px;
+  font-size: 12.5px; color: #334155; cursor: pointer;
+}
+.canned-item:hover, .canned-item.sel { background: #f0f4ff; }
+.canned-key { font-size: 11px; font-weight: 800; color: #2563eb; font-family: monospace; margin-right: 6px; }
+
+/* ═══════════════════════════════════════════════════
+   COL 4 — DETAILS SIDEBAR
+═══════════════════════════════════════════════════ */
+.dets {
+  background: #fff;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* Contact / Copilot tabs */
+.det-tabs {
+  display: flex;
+  border-bottom: 2px solid #edf2f7;
+  flex-shrink: 0;
+}
+.dtab {
+  flex: 1; text-align: center;
+  font-size: 13px; font-weight: 700; color: #94a3b8;
+  padding: 11px 0;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  cursor: pointer;
+}
+.dtab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+.det-scroll { flex: 1; overflow-y: auto; }
+.det-scroll::-webkit-scrollbar { width: 3px; }
+.det-scroll::-webkit-scrollbar-thumb { background: #e2eaf4; border-radius: 4px; }
+
+/* Contact card */
+.det-contact {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 18px 14px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  text-align: center;
+}
+
+.det-av {
+  width: 54px; height: 54px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 17px; font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.det-name {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px; font-weight: 700; color: #122033;
+  display: flex; align-items: center; gap: 6px; margin-bottom: 3px;
+}
+.det-name-icon { font-size: 12px; color: #94a3b8; cursor: pointer; }
+
+.det-title { font-size: 12px; font-weight: 500; color: #5f6f86; margin-bottom: 12px; }
+
+.det-field {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 4px 0; font-size: 12.5px; color: #334155; text-align: left;
+}
+.det-field-icon { color: #94a3b8; font-size: 12px; width: 16px; text-align: center; flex-shrink: 0; }
+.det-field-val { flex: 1; }
+.det-field-copy { color: #94a3b8; font-size: 11px; cursor: pointer; margin-left: auto; }
+
+.det-socials { display: flex; gap: 8px; margin-top: 12px; }
+.social-btn {
+  width: 28px; height: 28px; border-radius: 7px;
+  border: 1px solid #e2eaf4; background: #fff;
+  color: #5f6f86; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center;
+}
+.social-btn:hover { background: #f8fafc; }
+
+.det-actions { display: flex; gap: 8px; margin-top: 12px; }
+.det-act {
+  width: 32px; height: 30px;
+  border: 1px solid #e2eaf4; border-radius: 8px;
+  background: #fff; color: #5f6f86; font-size: 13px;
+  display: grid; place-items: center;
+}
+.det-act:hover { background: #f8fafc; }
+.det-act.danger { border-color: #fecdd3; color: #f43f5e; }
+.det-act.danger:hover { background: #fff5f5; }
+
+/* Accordion */
+.acc { border-bottom: 1px solid #f1f5f9; }
+.acc-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; cursor: pointer;
+  font-size: 13px; font-weight: 700; color: #334155;
+}
+.acc-hd:hover { background: #fafbfd; }
+.acc-plus {
+  width: 22px; height: 22px;
+  border: 1px solid #e2eaf4; border-radius: 6px;
+  background: #fff; color: #5f6f86; font-size: 13px;
+  display: grid; place-items: center;
+  transition: background 80ms;
+}
+.acc-hd:hover .acc-plus { background: #f1f5f9; }
+
+.acc-body { padding: 2px 14px 12px; }
+
+.acc-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0; font-size: 12px;
+}
+.ak { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; }
+.av { font-size: 12.5px; font-weight: 600; color: #334155; }
+
+.spill {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.sp-open   { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.sp-urgent { background: #ffe4e6; color: #be123c; border: 1px solid #fecdd3; }
+.sp-hot    { background: #ffe4e6; color: #be123c; border: 1px solid #fecdd3; }
+.sp-warm   { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.sp-med    { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+.det-labels { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.det-lbl {
+  display: flex; align-items: center; gap: 3px;
+  font-size: 11.5px; font-weight: 600; padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.ai-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0;
+}
+.ai-row-text { }
+.ai-row-label { font-size: 12.5px; font-weight: 700; color: #334155; }
+.ai-row-sub { font-size: 11px; color: #f59e0b; }
+
+.toggle {
+  width: 36px; height: 20px; border-radius: 999px;
+  background: #f43f5e; position: relative; cursor: pointer; flex-shrink: 0;
+  transition: background 200ms;
+}
+.toggle-k {
+  position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: left 200ms;
+}
+
+.flow-card {
+  background: #f8fafc; border: 1px solid #e2eaf4;
+  border-radius: 8px; padding: 9px 11px; margin-top: 6px;
+}
+.flow-n { font-size: 12.5px; font-weight: 700; color: #122033; }
+.flow-m { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+.acc-act-row { display: flex; gap: 6px; margin-top: 8px; }
+.acc-btn {
+  flex: 1; height: 30px;
+  border: 1px solid #e2eaf4; border-radius: 8px;
+  background: #fff; font-size: 11.5px; font-weight: 700; color: #334155;
+}
+.acc-btn:hover { background: #f8fafc; }
+.acc-btn.grn { background: #f0fdf4; border-color: #bbf7d0; color: #166634; }
+.acc-btn.blue { background: #f0f4ff; border-color: #c7d6f7; color: #2563eb; }
+.acc-btn.red { background: #fff5f5; border-color: #fecdd3; color: #be123c; }
+
+.prev-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; border-bottom: 1px solid #f8fafc;
+  font-size: 12px;
+}
+.prev-row:last-child { border-bottom: none; }
+.prev-src { color: #334155; font-weight: 600; }
+.prev-status { color: #94a3b8; font-weight: 500; }
+.prev-date { font-size: 11px; color: #94a3b8; }
+
+/* WAgen-unique section markers */
+.acc.wagen-feature { border-left: 3px solid; }
+.acc.wagen-ai { border-left-color: #2563eb; }
+.acc.wagen-flow { border-left-color: #7c3aed; }
+.acc-hd .wagen-label { font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
+.wagen-ai-label { background: #dbeafe; color: #1d4ed8; }
+.wagen-flow-label { background: #ede9fe; color: #7c3aed; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+<!-- ══════════════ COL 1: LEFT NAV ══════════════ -->
+<nav class="lnav">
+
+  <!-- Org switcher -->
+  <div class="org-row">
+    <div class="org-logo">W</div>
+    <span class="org-name">WAgen</span>
+    <span class="org-caret">▾</span>
+  </div>
+
+  <!-- Search + compose -->
+  <div class="lnav-search">
+    <div class="lsearch-input-wrap">
+      <span class="lsearch-icon">🔍</span>
+      <input class="lsearch-input" placeholder="Search…">
+    </div>
+    <button class="compose-btn" title="New conversation">✏</button>
+  </div>
+
+  <!-- Tree -->
+  <div class="ltree">
+
+    <!-- My Inbox -->
+    <div class="litem">
+      <span class="litem-icon">📥</span>
+      <span class="litem-text">My Inbox</span>
+      <span class="litem-count">11</span>
+    </div>
+
+    <!-- Conversations section -->
+    <div class="lsection">
+      <span class="litem-icon">💬</span>
+      Conversations
+      <span class="lsection-caret">▾</span>
+    </div>
+    <div class="lsub active">All Conversations</div>
+    <div class="lsub">Mentions</div>
+    <div class="lsub">Unattended</div>
+
+    <!-- Folders -->
+    <div class="lsection">
+      <span class="litem-icon">📁</span>
+      Folders
+      <span class="lsection-caret">▾</span>
+    </div>
+    <div class="lsub">Priority Conversations</div>
+    <div class="lsub">🔥 Hot Leads</div>
+
+    <!-- Teams -->
+    <div class="lsection">
+      <span class="litem-icon">👥</span>
+      Teams
+      <span class="lsection-caret">▾</span>
+    </div>
+    <div class="lsub">sales</div>
+    <div class="lsub">support l1</div>
+    <div class="lsub">support m2</div>
+
+    <!-- Channels -->
+    <div class="lsection">
+      <span class="litem-icon">⊙</span>
+      Channels
+      <span class="lsection-caret">▾</span>
+    </div>
+    <div class="lsub"><div class="ch-dot" style="background:#25d366"></div> WAgen WhatsApp API</div>
+    <div class="lsub"><div class="ch-dot" style="background:#25d366"></div> WAgen WhatsApp QR</div>
+    <div class="lsub"><div class="ch-dot" style="background:#1877f2"></div> Facebook</div>
+    <div class="lsub"><div class="ch-dot" style="background:#f59e0b"></div> Email</div>
+    <div class="lsub"><div class="ch-dot" style="background:#2563eb"></div> Web Widget</div>
+
+  </div>
+
+  <!-- Agent footer -->
+  <div class="lagent">
+    <div class="lagent-av">
+      MM
+      <div class="lagent-online"></div>
+    </div>
+    <div style="min-width:0;">
+      <div class="lagent-name">Mathew M</div>
+      <div class="lagent-email">mathew@wagen.co</div>
+    </div>
+  </div>
+</nav>
+
+
+<!-- ══════════════ COL 2: CONV LIST ══════════════ -->
+<div class="clist-panel">
+
+  <div class="clist-head">
+    <div class="clist-title-row">
+      <span class="clist-title">Conversations</span>
+      <div class="clist-title-right">
+        <span class="open-pill">Open</span>
+        <button class="hicon" title="Filter">⊟</button>
+        <button class="hicon" title="Sort">↕</button>
+        <button class="hicon" title="Expand">↔</button>
+      </div>
+    </div>
+
+    <div class="mine-tabs">
+      <div class="mtab active">Mine <span class="mtab-n">11</span></div>
+      <div class="mtab">Unassigned <span class="mtab-n">5</span></div>
+      <div class="mtab">All <span class="mtab-n">47</span></div>
+    </div>
+  </div>
+
+  <div class="clist-scroll">
+
+    <!-- Row 1 — active, private note snippet, high priority -->
+    <div class="crow active">
+      <div class="cav-wrap">
+        <div class="cav av-rose">RK</div>
+        <div class="cav-ch ch-api">A</div>
+      </div>
+      <div class="crow-body">
+        <div class="crow-top">
+          <span class="crow-src">⊙ WAgen API</span>
+          <span class="crow-time">1d · 34m</span>
+        </div>
+        <div class="crow-name">Rahul Kumar</div>
+        <div class="crow-snip">
+          <span class="lock-icon">🔒</span>
+          @Ben Nugent Can we use Captain …
+        </div>
+        <div class="crow-labels">
+          <span class="clabel"><div class="clabel-dot" style="background:#f43f5e;"></div>device-setup</span>
+        </div>
+      </div>
+      <div class="crow-right">
+        <span class="prio-icon">!!</span>
+        <span class="ai-dot">⏸23m</span>
+      </div>
+    </div>
+
+    <!-- Row 2 — WhatsApp -->
+    <div class="crow">
+      <div class="cav-wrap">
+        <div class="cav av-green">PS</div>
+        <div class="cav-ch ch-wa">W</div>
+      </div>
+      <div class="crow-body">
+        <div class="crow-top">
+          <span class="crow-src">⊙ WAgen WhatsApp</span>
+          <span class="crow-time">1d · 37m</span>
+        </div>
+        <div class="crow-name">Priya Sharma</div>
+        <div class="crow-snip"><span class="reply-arrow">↩</span>Sure! Can you please provide me wi…</div>
+        <div class="crow-labels">
+          <span class="clabel"><div class="clabel-dot" style="background:#25d366;"></div>lead</span>
+          <span class="clabel"><div class="clabel-dot" style="background:#f59e0b;"></div>warm</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 3 — Facebook, priority amber -->
+    <div class="crow">
+      <div class="cav-wrap">
+        <div class="cav av-amber">NV</div>
+        <div class="cav-ch ch-fb">f</div>
+      </div>
+      <div class="crow-body">
+        <div class="crow-top">
+          <span class="crow-src">⊙ Facebook</span>
+          <span class="crow-time">1d · 37m</span>
+        </div>
+        <div class="crow-name">Nathaniel Vannuchi</div>
+        <div class="crow-snip"><span class="reply-arrow">↩</span>Hey there, I need some help with billing…</div>
+        <div class="crow-labels">
+          <span class="clabel"><div class="clabel-dot" style="background:#2563eb;"></div>billing</span>
+          <span class="clabel"><div class="clabel-dot" style="background:#f59e0b;"></div>lead</span>
+        </div>
+      </div>
+      <div class="crow-right"><span class="prio-icon prio-amber">!!</span></div>
+    </div>
+
+    <!-- Row 4 — WhatsApp QR -->
+    <div class="crow">
+      <div class="cav-wrap">
+        <div class="cav av-teal">CJ</div>
+        <div class="cav-ch ch-wa">W</div>
+      </div>
+      <div class="crow-body">
+        <div class="crow-top">
+          <span class="crow-src">⊙ WAgen WhatsApp QR</span>
+          <span class="crow-time">1d · 37m</span>
+        </div>
+        <div class="crow-name">Claus Jira</div>
+        <div class="crow-snip"><span class="reply-arrow">↩</span>I'm sorry to hear that. Can you plea…</div>
+        <div class="crow-labels">
+          <span class="clabel"><div class="clabel-dot" style="background:#94a3b8;"></div>cold</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 5 — Email, priority red -->
+    <div class="crow">
+      <div class="cav-wrap">
+        <div class="cav av-purple">MP</div>
+        <div class="cav-ch ch-em">@</div>
+      </div>
+      <div class="crow-body">
+        <div class="crow-top">
+          <span class="crow-src">⊙ Email</span>
+          <span class="crow-time">1d · 37m</span>
+        </div>
+        <div class="crow-name">Meera Petruk</div>
+        <div class="crow-snip"><span class="reply-arrow">↩</span>I'm sorry to hear that. Can you plea…</div>
+        <div class="crow-labels">
+          <span class="clabel"><div class="clabel-dot" style="background:#f43f5e;"></div>complaint</span>
+        </div>
+      </div>
+      <div class="crow-right"><span class="prio-icon">!!</span></div>
+    </div>
+
+    <!-- Row 6 — Email, unread badge -->
+    <div class="crow">
+      <div class="cav-wrap">
+        <div class="cav av-blue">CM</div>
+        <div class="cav-ch ch-em">@</div>
+      </div>
+      <div class="crow-body">
+        <div class="crow-top">
+          <span class="crow-src">⊙ Email</span>
+          <span class="crow-time">1d · 37m</span>
+        </div>
+        <div class="crow-name">Candice Matherson</div>
+        <div class="crow-snip"><span class="reply-arrow">↩</span>How may I help you?</div>
+        <div class="crow-labels">
+          <span class="clabel"><div class="clabel-dot" style="background:#2563eb;"></div>billing</span>
+          <span class="clabel"><div class="clabel-dot" style="background:#f59e0b;"></div>lead</span>
+        </div>
+      </div>
+      <div class="crow-right">
+        <div class="unread-badge">1</div>
+      </div>
+    </div>
+
+    <!-- Row 7 -->
+    <div class="crow">
+      <div class="cav-wrap">
+        <div class="cav av-blue">AK</div>
+        <div class="cav-ch ch-em">@</div>
+      </div>
+      <div class="crow-body">
+        <div class="crow-top">
+          <span class="crow-src">⊙ Email</span>
+          <span class="crow-time">1d · 42m</span>
+        </div>
+        <div class="crow-name">Arjun Kapoor</div>
+        <div class="crow-snip"><span class="reply-arrow">↩</span>When will my order be dispatched?</div>
+        <div class="crow-labels">
+          <span class="clabel"><div class="clabel-dot" style="background:#25d366;"></div>lead</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════ COL 3: THREAD ══════════════ -->
+<div class="thread">
+
+  <!-- Header -->
+  <div class="th-bar">
+    <div class="th-contact">
+      <div class="cav av-rose th-av" style="width:36px;height:36px;font-size:11px;font-weight:800;display:grid;place-items:center;border-radius:50%;">RK</div>
+      <div class="th-meta">
+        <div class="th-name">
+          Rahul Kumar
+          <span class="th-warn" title="AI paused">⚠</span>
+        </div>
+        <div class="th-src">
+          <span class="th-src-icon">⊙</span>
+          WAgen API
+          <span class="th-close-link">· Close details</span>
+        </div>
+      </div>
+    </div>
+    <div class="th-actions">
+      <button class="th-icon" title="Mute notifications">🔕</button>
+      <button class="th-icon" title="Share">↑</button>
+      <div class="resolve-grp">
+        <button class="resolve-main">Resolve</button>
+        <button class="resolve-dd">▾</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="msgs">
+    <div class="date-div">Jan 15, 12:32 PM</div>
+
+    <!-- Inbound single -->
+    <div class="mgroup">
+      <div class="mrow">
+        <div class="mrow-av in-av">RK</div>
+        <div class="bubble in">
+          Hi, I need some help setting up my new device.
+          <div class="bfoot"><span class="btime">Jan 15, 12:32 PM</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Outbound single -->
+    <div class="mgroup">
+      <div class="mrow out">
+        <div class="bubble out">
+          No problem! Can you please tell me the make and model of your device and what specifically you need help with?
+          <div class="bfoot">
+            <span class="btime">Jan 15, 12:32 PM</span>
+            <span class="ds-read">✓✓</span>
+          </div>
+        </div>
+        <div class="mrow-av hidden"></div>
+      </div>
+    </div>
+
+    <!-- Activity pills -->
+    <div class="activity"><span>Assigned to support m2 by Mathew M</span></div>
+    <div class="activity"><span>Mathew M self-assigned this conversation</span></div>
+    <div class="activity"><span>Mathew M set the priority to high</span></div>
+    <div class="activity"><span>Mathew M added <strong>device-setup</strong></span></div>
+
+    <!-- Private note -->
+    <div class="mgroup">
+      <div class="mrow out">
+        <div class="bubble note">
+          <div class="note-hdr">🔒 Private Note</div>
+          <span class="mention">@Ben Nugent</span> Can we use Captain here to automate these queries?
+          <div class="bfoot">
+            <span class="btime">Jan 16, 2:16 PM</span>
+            <span style="font-size:11px;color:#94a3b8;">🔒</span>
+          </div>
+        </div>
+        <div class="mrow-av hidden"></div>
+      </div>
+    </div>
+
+    <!-- Unread inbound -->
+    <div class="mgroup">
+      <div class="mrow">
+        <div class="mrow-av in-av">RK</div>
+        <div class="bubble in" style="background:#e8f4ff;border:1px solid #bfdbfe;">
+          It's been 2 hours now. Still no update. I need urgent help — the delivery is very late!
+          <div class="bfoot"><span class="btime">12:47 PM</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Typing -->
+    <div class="typing-row">
+      <div class="mrow-av in-av">RK</div>
+      <div class="typing-bubble">
+        <div class="tdot"></div>
+        <div class="tdot"></div>
+        <div class="tdot"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Canned response popup -->
+  <div class="canned-pop">
+    <input class="canned-input" value="/" placeholder="Search canned responses…">
+    <div class="canned-item sel"><span class="canned-key">/sorry</span>I sincerely apologize for the inconvenience caused…</div>
+    <div class="canned-item"><span class="canned-key">/delay</span>We're experiencing a delay. Your order will arrive by…</div>
+    <div class="canned-item"><span class="canned-key">/escalate</span>I've escalated your issue to our senior team and…</div>
+  </div>
+
+  <!-- Compose -->
+  <div class="compose">
+    <div class="compose-tabs">
+      <div class="ctab active">Reply</div>
+      <div class="ctab">Private Note</div>
+      <span class="ctab-expand">⛶</span>
+    </div>
+    <div class="fmt-bar">
+      <button class="fbt"><b>B</b></button>
+      <button class="fbt"><i>I</i></button>
+      <button class="fbt" style="font-size:10px;">🔗</button>
+      <button class="fbt">♡</button>
+      <button class="fbt">❤</button>
+      <div class="fsep"></div>
+      <button class="fbt">≡</button>
+      <button class="fbt" style="font-size:11px;font-weight:700;">1.</button>
+      <button class="fbt" style="font-family:monospace;font-size:11px;">&lt;/&gt;</button>
+    </div>
+    <textarea class="compose-area" placeholder="Shift + enter for new line. Start with '/' to select a Canned Response.">/</textarea>
+    <div class="compose-footer">
+      <button class="cf-btn" title="Emoji">😊</button>
+      <button class="cf-btn" title="Attach file">📎</button>
+      <button class="cf-btn" title="Voice message">🎙</button>
+      <button class="cf-btn ai" title="AI Assist">✨</button>
+      <div class="send-grp">
+        <button class="send-main">Send ↵</button>
+        <button class="send-dd">▾</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════ COL 4: DETAILS ══════════════ -->
+<div class="dets">
+
+  <div class="det-tabs">
+    <div class="dtab active">Contact</div>
+    <div class="dtab">Copilot ✨</div>
+  </div>
+
+  <div class="det-scroll">
+
+    <!-- Contact card -->
+    <div class="det-contact">
+      <div class="det-av av-rose">RK</div>
+      <div class="det-name">
+        Rahul Kumar
+        <span class="det-name-icon">⏱</span>
+        <span class="det-name-icon">↗</span>
+      </div>
+      <div class="det-title">Customer · Drift Burner</div>
+
+      <div class="det-field">
+        <span class="det-field-icon">✉</span>
+        <span class="det-field-val">rahul@driftburner.in</span>
+        <span class="det-field-copy">⎘</span>
+      </div>
+      <div class="det-field">
+        <span class="det-field-icon">📞</span>
+        <span class="det-field-val">+91 98765 43210</span>
+        <span class="det-field-copy">⎘</span>
+      </div>
+      <div class="det-field">
+        <span class="det-field-icon">🏢</span>
+        <span class="det-field-val">Drift Burner</span>
+      </div>
+      <div class="det-field">
+        <span class="det-field-icon">📍</span>
+        <span class="det-field-val">Mumbai, India 🇮🇳</span>
+      </div>
+
+      <div class="det-socials">
+        <button class="social-btn">f</button>
+        <button class="social-btn">𝕏</button>
+        <button class="social-btn">in</button>
+      </div>
+
+      <div class="det-actions">
+        <button class="det-act" title="Message">💬</button>
+        <button class="det-act" title="Edit">✏</button>
+        <button class="det-act" title="Merge">⧖</button>
+        <button class="det-act danger" title="Block">🚫</button>
+      </div>
+    </div>
+
+    <!-- Conversation Actions -->
+    <div class="acc">
+      <div class="acc-hd">Conversation Actions <div class="acc-plus">+</div></div>
+      <div class="acc-body">
+        <div class="acc-row">
+          <span class="ak">Status</span>
+          <span class="spill sp-open">Open</span>
+        </div>
+        <div class="acc-row" style="margin-top:4px;">
+          <span class="ak">Priority</span>
+          <span class="spill sp-urgent">Urgent</span>
+        </div>
+        <div class="acc-row" style="margin-top:4px;">
+          <span class="ak">Assigned to</span>
+          <span class="av">Mathew M</span>
+        </div>
+        <div style="margin-top:8px;">
+          <span class="ak">Labels</span>
+          <div class="det-labels" style="margin-top:5px;">
+            <span class="det-lbl" style="background:#ffe4e6;color:#be123c;">complaint</span>
+            <span class="det-lbl" style="background:#ede9fe;color:#7c3aed;">device-setup</span>
+            <span style="font-size:12px;color:#2563eb;cursor:pointer;margin-left:2px;">+ Add</span>
+          </div>
+        </div>
+        <div class="acc-act-row">
+          <button class="acc-btn grn">✓ Resolve</button>
+          <button class="acc-btn">⏰ Snooze ▾</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lead Intelligence — WAgen unique -->
+    <div class="acc wagen-feature wagen-ai">
+      <div class="acc-hd">
+        🧠 Lead Intelligence
+        <span class="wagen-label wagen-ai-label">WAgen</span>
+        <div class="acc-plus" style="margin-left:auto;">+</div>
+      </div>
+      <div class="acc-body">
+        <div class="acc-row">
+          <span class="ak">Score</span>
+          <span class="spill sp-hot">🔥 Hot</span>
+        </div>
+        <div class="acc-row" style="margin-top:4px;">
+          <span class="ak">Stage</span>
+          <span class="av">Hot Lead</span>
+        </div>
+        <div class="acc-row" style="margin-top:4px;">
+          <span class="ak">Kind</span>
+          <span class="av">Complaint</span>
+        </div>
+        <div class="ai-row" style="margin-top:4px;">
+          <div class="ai-row-text">
+            <div class="ai-row-label">AI Auto-Reply</div>
+            <div class="ai-row-sub">Paused · 23m remaining</div>
+          </div>
+          <div class="toggle"><div class="toggle-k"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flow Assignment — WAgen unique -->
+    <div class="acc wagen-feature wagen-flow">
+      <div class="acc-hd">
+        ⚡ Flow Assignment
+        <span class="wagen-label wagen-flow-label">WAgen</span>
+        <div class="acc-plus" style="margin-left:auto;">+</div>
+      </div>
+      <div class="acc-body">
+        <div class="flow-card">
+          <div class="flow-n">Customer Support Flow v2</div>
+          <div class="flow-m">Last triggered: 10:14 AM today</div>
+        </div>
+        <div class="acc-act-row">
+          <button class="acc-btn">Change</button>
+          <button class="acc-btn blue">▶ Trigger</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Conversation Participants -->
+    <div class="acc">
+      <div class="acc-hd">Conversation Participants <div class="acc-plus">+</div></div>
+    </div>
+
+    <!-- Macros -->
+    <div class="acc">
+      <div class="acc-hd">Macros <div class="acc-plus">+</div></div>
+    </div>
+
+    <!-- Contact Attributes -->
+    <div class="acc">
+      <div class="acc-hd">Contact Attributes <div class="acc-plus">+</div></div>
+      <div class="acc-body">
+        <div class="acc-row"><span class="ak">Opted In</span><span class="av" style="color:#166534;">✓ Yes</span></div>
+        <div class="acc-row" style="margin-top:3px;"><span class="ak">Last Seen</span><span class="av">12:49 PM</span></div>
+        <div class="acc-row" style="margin-top:3px;"><span class="ak">Channel</span><span class="av">WhatsApp API</span></div>
+      </div>
+    </div>
+
+    <!-- Conversation Information -->
+    <div class="acc">
+      <div class="acc-hd">Conversation Information <div class="acc-plus">+</div></div>
+      <div class="acc-body">
+        <div class="acc-row"><span class="ak">Created</span><span class="av">Apr 24, 10:14 AM</span></div>
+        <div class="acc-row" style="margin-top:3px;"><span class="ak">ID</span><span class="av" style="font-family:monospace;font-size:11px;">#conv-2847</span></div>
+      </div>
+    </div>
+
+    <!-- Previous Conversations -->
+    <div class="acc">
+      <div class="acc-hd">Previous Conversations <div class="acc-plus">+</div></div>
+      <div class="acc-body">
+        <div class="prev-row">
+          <div><div class="prev-src">Order inquiry</div><div class="prev-status" style="font-size:11px;">Resolved</div></div>
+          <span class="prev-date">Apr 20</span>
+        </div>
+        <div class="prev-row">
+          <div><div class="prev-src">Product info</div><div class="prev-status" style="font-size:11px;">Resolved</div></div>
+          <span class="prev-date">Apr 15</span>
+        </div>
+        <div class="prev-row">
+          <div><div class="prev-src">Delivery issue</div><div class="prev-status" style="font-size:11px;">Resolved</div></div>
+          <span class="prev-date">Apr 2</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /det-scroll -->
+</div><!-- /dets -->
+
+</div><!-- /shell -->
+</body>
+</html>

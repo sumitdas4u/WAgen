@@ -618,6 +618,11 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
       setValidationNotice(null);
       return true;
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg === "plan_limit_exceeded") {
+        setValidationNotice("Flow limit reached for your plan. Upgrade to activate more flows.");
+        return false;
+      }
       console.error("[FlowEditor] save failed", err);
       setValidationNotice("Failed to save flow changes.");
       return false;
@@ -1095,7 +1100,13 @@ function FlowsPage() {
       setFlows((cur) => cur.map((f) => (f.id === flow.id ? summarizeFlow(updated) : f)));
       setListNotice(null);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "plan_limit_exceeded") {
+        navigate("/dashboard/account/subscription?upgrade=flows");
+        return;
+      }
       console.error("Failed to toggle publish", e);
+      setListNotice("Failed to publish flow. Please try again.");
     }
   };
 
