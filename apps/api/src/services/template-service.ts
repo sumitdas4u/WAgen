@@ -1,4 +1,5 @@
 import { pool } from "../db/pool.js";
+import { writeMetaComplianceEvent } from "./admin-service.js";
 import { aiService } from "./ai-service.js";
 import { chargeUser } from "./ai-token-service.js";
 import { uploadTemplateHeaderMedia } from "./supabase-storage-service.js";
@@ -1052,16 +1053,34 @@ export async function applyTemplateWebhookUpdate(event: {
   const metaTemplateId = String(event.message_template_id);
   const newStatus = (event.event ?? "").toUpperCase();
 
-  await pool.query(
+  const updated = await pool.query<{ user_id: string; name: string }>(
     `UPDATE message_templates
      SET status = $1,
          meta_rejection_reason = COALESCE($2, meta_rejection_reason),
          updated_at = NOW()
-     WHERE template_id = $3`,
+     WHERE template_id = $3
+     RETURNING user_id, name`,
     [newStatus, event.reason ?? null, metaTemplateId]
   );
 
   console.info(`[TemplateWebhook] status update templateId=${metaTemplateId} status=${newStatus}`);
+
+  const row = updated.rows[0];
+  if (row && (newStatus === "REJECTED" || newStatus === "PAUSED" || newStatus === "FLAGGED" || newStatus === "DISABLED")) {
+    const wsResult = await pool.query<{ id: string }>(
+      `SELECT id FROM workspaces WHERE owner_id = $1 LIMIT 1`,
+      [row.user_id]
+    );
+    const workspaceId = wsResult.rows[0]?.id;
+    if (workspaceId) {
+      void writeMetaComplianceEvent({
+        workspaceId,
+        eventType: "template_rejected",
+        severity: newStatus === "REJECTED" ? "warn" : "warn",
+        detailJson: { templateId: metaTemplateId, templateName: row.name, status: newStatus, reason: event.reason ?? null },
+      });
+    }
+  }
 }
 
 export async function generateTemplateWithAI(

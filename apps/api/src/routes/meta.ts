@@ -21,6 +21,8 @@ import {
 import { checkConnectionDailyCap } from "../services/message-delivery-service.js";
 import { validateFlowMessagePayload } from "../services/outbound-message-types.js";
 import { applyTemplateWebhookUpdate } from "../services/template-service.js";
+import { writeMetaComplianceEvent } from "../services/admin-service.js";
+import { pool } from "../db/pool.js";
 import { readFile } from "node:fs/promises";
 
 const CompleteEmbeddedSignupSchema = z.object({
@@ -402,8 +404,8 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
     await handleMetaWebhookPayload(payload);
     await enqueueMetaDeliveryStatusEvents(payload);
 
-    // Handle template status update events
-    const parsed = payload as { entry?: Array<{ changes?: Array<{ field?: string; value?: unknown }> }> };
+    // Handle template status, account quality, and messaging limit events
+    const parsed = payload as { entry?: Array<{ id?: string; changes?: Array<{ field?: string; value?: unknown }> }> };
     for (const entry of parsed.entry ?? []) {
       for (const change of entry.changes ?? []) {
         if (change.field === "message_template_status_update" && change.value) {
@@ -413,6 +415,65 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
             );
           } catch (err) {
             console.error("[MetaWebhook] template status update failed", err);
+          }
+        }
+
+        // account_update: WABA-level flags (restricted, flagged, banned)
+        if (change.field === "account_update" && change.value) {
+          try {
+            const val = change.value as Record<string, unknown>;
+            const wabaId = String(entry.id ?? "");
+            if (wabaId) {
+              const wsRes = await pool.query<{ workspace_id: string; connection_id: string }>(
+                `SELECT w.id AS workspace_id, c.id AS connection_id
+                 FROM whatsapp_business_connections c
+                 JOIN workspaces w ON w.id = c.workspace_id
+                 WHERE c.waba_id = $1 LIMIT 1`,
+                [wabaId]
+              );
+              const wsRow = wsRes.rows[0];
+              if (wsRow) {
+                void writeMetaComplianceEvent({
+                  workspaceId: wsRow.workspace_id,
+                  connectionId: wsRow.connection_id,
+                  eventType: "account_flagged",
+                  severity: "critical",
+                  detailJson: { wabaId, event: val },
+                });
+              }
+            }
+          } catch (err) {
+            console.error("[MetaWebhook] account_update compliance failed", err);
+          }
+        }
+
+        // phone_number_quality_update: quality rating / messaging limit changes
+        if (change.field === "phone_number_quality_update" && change.value) {
+          try {
+            const val = change.value as Record<string, unknown>;
+            const phoneNumberId = String(val.phone_number_id ?? val.display_phone_number ?? "");
+            if (phoneNumberId) {
+              const wsRes = await pool.query<{ workspace_id: string; connection_id: string }>(
+                `SELECT w.id AS workspace_id, c.id AS connection_id
+                 FROM whatsapp_business_connections c
+                 JOIN workspaces w ON w.id = c.workspace_id
+                 WHERE c.phone_number_id = $1 OR c.phone_number = $1 LIMIT 1`,
+                [phoneNumberId]
+              );
+              const wsRow = wsRes.rows[0];
+              if (wsRow) {
+                const isLimitReduction = val.current_limit !== undefined || val.messaging_limit_tier !== undefined;
+                void writeMetaComplianceEvent({
+                  workspaceId: wsRow.workspace_id,
+                  connectionId: wsRow.connection_id,
+                  eventType: isLimitReduction ? "messaging_limit_reduced" : "quality_score_low",
+                  severity: "warn",
+                  detailJson: { phoneNumberId, event: val },
+                });
+              }
+            }
+          } catch (err) {
+            console.error("[MetaWebhook] phone_number_quality_update compliance failed", err);
           }
         }
       }

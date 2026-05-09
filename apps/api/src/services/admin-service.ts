@@ -1160,6 +1160,24 @@ export interface MetaComplianceEvent {
   createdAt: string;
 }
 
+export async function writeMetaComplianceEvent(opts: {
+  workspaceId: string;
+  connectionId?: string | null;
+  eventType: string;
+  severity?: "warn" | "critical";
+  detailJson?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO meta_compliance_events (workspace_id, connection_id, event_type, severity, detail_json)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [opts.workspaceId, opts.connectionId ?? null, opts.eventType, opts.severity ?? "warn", opts.detailJson ?? {}]
+    );
+  } catch (e) {
+    console.error("[MetaCompliance] failed to write event", e);
+  }
+}
+
 export async function listMetaComplianceEvents(options: { limit?: number } = {}): Promise<MetaComplianceEvent[]> {
   const limit = Math.min(options.limit ?? 200, 500);
   const result = await pool.query<{

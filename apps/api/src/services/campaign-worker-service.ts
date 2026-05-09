@@ -15,6 +15,7 @@ import {
 } from "./queue-service.js";
 import { isKillSwitchEnabled } from "./kill-switch-service.js";
 import { publishAdminActivity } from "./admin-activity-publisher.js";
+import { recalculateBroadcastReputation } from "./broadcast-reputation-service.js";
 
 interface CampaignDispatchJob {
   campaignId: string;
@@ -130,6 +131,10 @@ async function processCampaignDispatch(job: CampaignDispatchJob): Promise<void> 
   }
 
   await markCampaignCompleted(job.campaignId);
+  // Recalculate broadcast reputation immediately so admin page reflects this campaign
+  void recalculateBroadcastReputation(campaign.user_id).catch((e) => {
+    console.error("[CampaignWorker] reputation recalc failed", e);
+  });
 }
 
 async function retrySweep(): Promise<void> {
