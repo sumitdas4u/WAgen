@@ -370,10 +370,11 @@ function getPricePerCreditPaise(): number {
   return value;
 }
 
+// Prices are base amounts in paise, EXCLUSIVE of GST.
 const AI_RECHARGE_PACKS: Record<number, number> = {
-  120: 49_900,
-  260: 99_900,
-  600: 199_900
+  1200: 49_900,
+  2600: 99_900,
+  6000: 199_900
 };
 
 export const AI_RECHARGE_PACK_CREDITS = Object.freeze(
@@ -390,6 +391,18 @@ function getGstRatePercent(): number {
     return 18;
   }
   return value;
+}
+
+function computeTaxFromBase(basePaise: number, gstRatePercent = getGstRatePercent()): RechargeOrderPriceBreakdown {
+  const safeBase = Math.max(0, Math.floor(basePaise));
+  const safeRate = Math.max(0, gstRatePercent);
+  const gstPaise = Math.round(safeBase * safeRate / 100);
+  return {
+    taxablePaise: safeBase,
+    gstPaise,
+    totalPaise: safeBase + gstPaise,
+    gstRatePercent: safeRate
+  };
 }
 
 function computeTaxBreakdown(totalPaise: number, gstRatePercent = getGstRatePercent()): RechargeOrderPriceBreakdown {
@@ -460,7 +473,7 @@ function toAutoRechargeSettings(row: AutoRechargeSettingsRow): AutoRechargeSetti
     workspaceId: row.workspace_id,
     enabled: row.enabled,
     thresholdCredits: toNonNegativeInteger(row.threshold_credits, 0),
-    rechargeCredits: toPositiveInteger(row.recharge_credits, 260),
+    rechargeCredits: toPositiveInteger(row.recharge_credits, 250),
     maxRechargesPerDay: toPositiveInteger(row.max_recharges_per_day, 1),
     gatewayCustomerId: row.gateway_customer_id,
     gatewayTokenId: row.gateway_token_id,
@@ -1349,7 +1362,7 @@ export function computeRechargePriceForCredits(creditsInput: number): RechargeOr
   if (!totalPaise) {
     throw new Error(`Invalid AI recharge pack. Choose one of: ${AI_RECHARGE_PACK_CREDITS.join(", ")} credits.`);
   }
-  const taxBreakdown = computeTaxBreakdown(totalPaise, getGstRatePercent());
+  const taxBreakdown = computeTaxFromBase(totalPaise, getGstRatePercent());
   return {
     credits,
     ...taxBreakdown

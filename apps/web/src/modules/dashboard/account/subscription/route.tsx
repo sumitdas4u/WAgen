@@ -393,10 +393,6 @@ export function Component() {
               <p className="acc-stat-value" style={{ fontSize: "1rem" }}>{overview.plan.name ?? planCode}</p>
             </div>
             <div className="acc-stat-cell">
-              <p className="acc-stat-label">Monthly credits</p>
-              <p className="acc-stat-value">{overview.plan.monthlyCredits.toLocaleString()}</p>
-            </div>
-            <div className="acc-stat-cell">
               <p className="acc-stat-label">Status</p>
               <p className="acc-stat-value" style={{ fontSize: "0.85rem" }}>
                 <span className={`acc-plan-pill ${overview.subscription.status === "active" ? "plan-business" : "plan-trial"}`}>

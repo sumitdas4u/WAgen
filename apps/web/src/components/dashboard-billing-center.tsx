@@ -34,9 +34,9 @@ declare global {
 type BillingSubTab = "usage" | "transactions" | "billing";
 
 const AI_RECHARGE_PACK_PRICES: Record<number, number> = {
-  120: 49_900,
-  260: 99_900,
-  600: 199_900
+  1200: 49_900,
+  2600: 99_900,
+  6000: 199_900
 };
 const AI_RECHARGE_PACKS = Object.keys(AI_RECHARGE_PACK_PRICES).map(Number);
 
@@ -106,7 +106,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
   const [rechargeLoading, setRechargeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [rechargeCredits, setRechargeCredits] = useState<string>("120");
+  const [rechargeCredits, setRechargeCredits] = useState<string>("1200");
 
   const [profileDraft, setProfileDraft] = useState({
     legalName: "",
@@ -123,7 +123,7 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
   const [autoDraft, setAutoDraft] = useState({
     enabled: false,
     thresholdCredits: "50",
-    rechargeCredits: "260",
+    rechargeCredits: "1200",
     maxRechargesPerDay: "1",
     gatewayCustomerId: "",
     gatewayTokenId: ""
@@ -218,10 +218,10 @@ export function DashboardBillingCenter({ token, onCreditsRefresh }: DashboardBil
 
   const rechargeBreakdown = useMemo(() => {
     const requestedCredits = Math.floor(Number(rechargeCredits) || 0);
-    const credits = AI_RECHARGE_PACK_PRICES[requestedCredits] ? requestedCredits : 120;
-    const totalPaise = AI_RECHARGE_PACK_PRICES[credits] ?? AI_RECHARGE_PACK_PRICES[120]!;
-    const taxablePaise = Math.round(totalPaise / 1.18);
-    const gstPaise = totalPaise - taxablePaise;
+    const credits = AI_RECHARGE_PACK_PRICES[requestedCredits] ? requestedCredits : 1200;
+    const taxablePaise = AI_RECHARGE_PACK_PRICES[credits] ?? AI_RECHARGE_PACK_PRICES[1200]!;
+    const gstPaise = Math.round(taxablePaise * 0.18);
+    const totalPaise = taxablePaise + gstPaise;
     return { credits, totalPaise, taxablePaise, gstPaise };
   }, [rechargeCredits]);
   const monthlyAiCredits = overview?.aiCredits?.monthly ?? overview?.credits.total ?? 0;

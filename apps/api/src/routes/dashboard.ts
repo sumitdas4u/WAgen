@@ -7,8 +7,8 @@ import { getKnowledgeStats } from "../services/rag-service.js";
 import { getUserById } from "../services/user-service.js";
 import { whatsappSessionManager } from "../services/whatsapp-session-manager.js";
 import { getMetaBusinessStatus } from "../services/meta-whatsapp-service.js";
-import { getWorkspaceCreditsByUserId } from "../services/workspace-billing-service.js";
 import { getAgentProfileSummary } from "../services/agent-profile-service.js";
+import { getTokenStatus } from "../services/ai-token-service.js";
 import { InMemoryCache } from "../utils/cache.js";
 
 const bootstrapCache = new InMemoryCache<object>(20_000);
@@ -62,13 +62,13 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: "User not found" });
       }
 
-      const [planEntitlements, credits, whatsapp, metaApi, agentSummary] = await Promise.all([
+      const [planEntitlements, whatsapp, metaApi, agentSummary] = await Promise.all([
         getUserPlanEntitlements(userId),
-        getWorkspaceCreditsByUserId(userId),
         whatsappSessionManager.getStatus(userId),
         getMetaBusinessStatus(userId),
         getAgentProfileSummary(userId)
       ]);
+      const credits = await getTokenStatus(userId, planEntitlements.planCode);
 
       const response = {
         userSummary: {
@@ -82,12 +82,12 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
         planEntitlements,
         featureFlags: buildDashboardFeatureFlags(),
         creditsSummary: {
-          total_credits: credits.totalCredits,
-          used_credits: credits.usedCredits,
-          remaining_credits: credits.remainingCredits,
-          low_credit: credits.lowCredit,
-          low_credit_threshold_percent: credits.lowCreditThresholdPercent,
-          low_credit_message: credits.lowCreditMessage
+          total_credits: credits.monthlyQuota,
+          used_credits: credits.monthlyQuota - credits.balance,
+          remaining_credits: credits.balance,
+          low_credit: credits.isLow,
+          low_credit_threshold_percent: 10,
+          low_credit_message: credits.isLow ? "AI credits running low" : null
         },
         agentSummary: {
           configuredProfiles: agentSummary.configuredProfiles,

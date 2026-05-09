@@ -79,11 +79,11 @@ inr_cost = usd_cost × 84
 
 | Credits | Price (INR) |
 |---|---|
-| 120 | ₹499 |
-| 260 | ₹999 |
-| 600 | ₹1,999 |
+| 100 | ₹449 |
+| 250 | ₹1,099 |
+| 500 | ₹2,199 |
 
-Prices are inclusive of 18% GST.
+Prices are exclusive of 18% GST (GST added at checkout).
 
 ---
 

@@ -56,9 +56,9 @@ function sleep(ms: number) {
 }
 
 const AI_RECHARGE_PACK_PRICES: Record<number, number> = {
-  120: 49_900,
-  260: 99_900,
-  600: 199_900
+  1200: 49_900,
+  2600: 99_900,
+  6000: 199_900
 };
 const AI_RECHARGE_PACKS = Object.keys(AI_RECHARGE_PACK_PRICES).map(Number);
 
@@ -174,7 +174,7 @@ export function Component() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [rechargeCredits, setRechargeCredits] = useState("120");
+  const [rechargeCredits, setRechargeCredits] = useState("1200");
   const [rechargeInfo, setRechargeInfo] = useState<string | null>(null);
   const [rechargeError, setRechargeError] = useState<string | null>(null);
 
@@ -201,10 +201,10 @@ export function Component() {
 
   const breakdown = useMemo(() => {
     const requestedCredits = Math.floor(Number(rechargeCredits) || 0);
-    const credits = AI_RECHARGE_PACK_PRICES[requestedCredits] ? requestedCredits : 120;
-    const totalPaise = AI_RECHARGE_PACK_PRICES[credits] ?? AI_RECHARGE_PACK_PRICES[120]!;
-    const taxablePaise = Math.round(totalPaise / 1.18);
-    const gstPaise = totalPaise - taxablePaise;
+    const credits = AI_RECHARGE_PACK_PRICES[requestedCredits] ? requestedCredits : 1200;
+    const taxablePaise = AI_RECHARGE_PACK_PRICES[credits] ?? AI_RECHARGE_PACK_PRICES[1200]!;
+    const gstPaise = Math.round(taxablePaise * 0.18);
+    const totalPaise = taxablePaise + gstPaise;
     return { credits, totalPaise, taxablePaise, gstPaise };
   }, [rechargeCredits]);
 
