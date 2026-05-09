@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { checkSignupFraud } from "../services/fraud-detection-service.js";
 import { z } from "zod";
 import {
   authenticateUser,
@@ -29,6 +30,7 @@ import {
   getTokenUsageByDay
 } from "../services/ai-token-service.js";
 import { env } from "../config/env.js";
+import { pool } from "../db/pool.js";
 
 const SignupSchema = z.object({
   name: z.string().min(2),
@@ -121,9 +123,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.status(409).send({ error: "Email already in use. Please log in." });
     }
 
+    const ip = (request.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
+      ?? request.socket.remoteAddress;
+
     try {
       const user = await createUser(parsed.data);
       void creditSignupTokens(user.id);
+      // Store signup IP and run fraud checks fire-and-forget — never block signup
+      void pool.query("UPDATE users SET signup_ip = $1 WHERE id = $2", [ip ?? null, user.id]);
+      void checkSignupFraud(user.id, user.email, ip);
       const token = issueToken(user.id, user.email);
       return reply.send({ token, user });
     } catch (error) {

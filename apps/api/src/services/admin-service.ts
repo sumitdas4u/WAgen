@@ -1949,6 +1949,22 @@ export async function getAdminAlerts(): Promise<AdminAlert[]> {
   return alerts;
 }
 
+// ── Impersonation Log ─────────────────────────────────────────────────────────
+
+export async function writeAdminImpersonationLog(opts: {
+  adminEmail: string;
+  workspaceId: string;
+  targetUserId: string;
+  ipAddress?: string;
+}): Promise<string> {
+  const result = await pool.query<{ id: string }>(
+    `INSERT INTO admin_impersonation_logs (admin_email, workspace_id, target_user_id, ip_address)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [opts.adminEmail, opts.workspaceId, opts.targetUserId, opts.ipAddress ?? null]
+  );
+  return result.rows[0]?.id ?? "";
+}
+
 // ── Admin Sessions ────────────────────────────────────────────────────────────
 
 export interface AdminSession {

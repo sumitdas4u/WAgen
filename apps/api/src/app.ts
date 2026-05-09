@@ -63,6 +63,7 @@ interface AuthTokenPayload {
   userId?: string;
   email: string;
   role?: "super_admin";
+  impersonatedBy?: string;
 }
 
 function readCookieValue(cookieHeader: string | undefined, key: string): string | null {
@@ -179,9 +180,17 @@ export async function buildApp() {
       if (!payload.userId) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
+      // Impersonated tokens are read-only
+      if (payload.impersonatedBy) {
+        const method = request.method.toUpperCase();
+        if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+          return reply.status(403).send({ error: "Write operations are not permitted during impersonation" });
+        }
+      }
       request.authUser = {
         userId: payload.userId,
-        email: payload.email
+        email: payload.email,
+        impersonatedBy: payload.impersonatedBy,
       };
     } catch {
       reply.status(401).send({ error: "Unauthorized" });

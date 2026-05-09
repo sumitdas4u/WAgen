@@ -5,6 +5,7 @@ declare module "fastify" {
     authUser: {
       userId: string;
       email: string;
+      impersonatedBy?: string;
     };
     adminUser?: {
       email: string;

@@ -178,7 +178,7 @@ function DashboardShellLayout() {
   const navigate = useNavigate();
   const matches = useMatches();
   const queryClient = useQueryClient();
-  const { logout, user } = useAuth();
+  const { logout, user, impersonatedBy } = useAuth();
   const { bootstrap, loading, token } = useDashboardShell();
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -442,7 +442,24 @@ function DashboardShellLayout() {
 
   return (
     <main className="dashboard-shell dashboard-clone-shell dashboard-flat-shell">
-      <section className="clone-workspace">
+      {impersonatedBy && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+          background: "#f97316", color: "#fff", padding: "8px 20px",
+          fontSize: "0.82rem", fontWeight: 600,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+        }}>
+          <span>👁 Viewing as {user?.email} — impersonated by {impersonatedBy}. Read-only mode.</span>
+          <button
+            onClick={() => { void logout(); }}
+            style={{ background: "rgba(255,255,255,0.25)", border: "none", borderRadius: 6, padding: "4px 12px", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: "0.8rem" }}
+          >
+            Exit
+          </button>
+        </div>
+      )}
+      <section className="clone-workspace" style={impersonatedBy ? { paddingTop: 40 } : undefined}>
         <aside
           className={
             isMobileViewport

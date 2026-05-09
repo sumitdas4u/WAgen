@@ -47,7 +47,10 @@ import {
   globalAdminSearch,
   getAdminAlerts,
   listAdminSessions,
+  writeAdminImpersonationLog,
 } from "../services/admin-service.js";
+import { createQueueWorkerConnection } from "../services/queue-service.js";
+import { ADMIN_ACTIVITY_CHANNEL } from "../services/admin-activity-publisher.js";
 import { getUsageAnalytics } from "../services/conversation-service.js";
 import {
   adjustWorkspaceCreditsByAdmin,
@@ -876,6 +879,89 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       if (!parsed.success) return reply.status(400).send({ error: "Invalid query" });
       const sessions = await listAdminSessions(parsed.data.limit);
       return { sessions };
+    }
+  );
+
+  // ── Impersonation ──────────────────────────────────────────────────────────
+  const ImpersonateParamsSchema = z.object({ workspaceId: z.string().uuid() });
+
+  fastify.post(
+    "/api/admin/workspaces/:workspaceId/impersonate",
+    { preHandler: [fastify.requireSuperAdmin], config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = ImpersonateParamsSchema.safeParse(request.params);
+      if (!parsed.success) return reply.status(400).send({ error: "Invalid params" });
+
+      const adminEmail = (request.user as { email?: string })?.email ?? "unknown";
+      const wsResult = await import("../db/pool.js").then((m) =>
+        m.pool.query<{ owner_id: string; name: string; email: string }>(
+          `SELECT w.owner_id, w.name, u.email
+           FROM workspaces w JOIN users u ON u.id = w.owner_id
+           WHERE w.id = $1 LIMIT 1`,
+          [parsed.data.workspaceId]
+        )
+      );
+      const ws = wsResult.rows[0];
+      if (!ws) return reply.status(404).send({ error: "Workspace not found" });
+
+      const ip = (request.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
+        ?? request.socket.remoteAddress;
+
+      await writeAdminImpersonationLog({
+        adminEmail,
+        workspaceId: parsed.data.workspaceId,
+        targetUserId: ws.owner_id,
+        ipAddress: ip,
+      });
+      await writeAdminAuditLog({
+        adminEmail,
+        action: "workspace.impersonate",
+        targetUserId: ws.owner_id,
+        details: { workspaceId: parsed.data.workspaceId, workspaceName: ws.name },
+      });
+
+      const token = fastify.jwt.sign(
+        { userId: ws.owner_id, email: ws.email, impersonatedBy: adminEmail },
+        { expiresIn: "30m" }
+      );
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+      return { token, expiresAt, userId: ws.owner_id, workspaceName: ws.name, userEmail: ws.email };
+    }
+  );
+
+  // ── Live Activity SSE ──────────────────────────────────────────────────────
+  fastify.get(
+    "/api/admin/activity/stream",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const subscriber = createQueueWorkerConnection();
+      if (!subscriber) {
+        reply.raw.writeHead(503, { "Content-Type": "text/plain" });
+        reply.raw.end("Redis unavailable");
+        reply.hijack();
+        return reply;
+      }
+
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      reply.hijack();
+
+      await subscriber.subscribe(ADMIN_ACTIVITY_CHANNEL);
+      subscriber.on("message", (_ch: string, msg: string) => {
+        reply.raw.write(`data: ${msg}\n\n`);
+      });
+
+      const ping = setInterval(() => { reply.raw.write(": ping\n\n"); }, 20_000);
+
+      request.raw.on("close", () => {
+        clearInterval(ping);
+        void subscriber.unsubscribe().then(() => subscriber.disconnect());
+      });
     }
   );
 }

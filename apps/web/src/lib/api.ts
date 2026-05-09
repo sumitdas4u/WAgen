@@ -1260,6 +1260,22 @@ export function fetchAdminSessions(token: string, limit?: number) {
   return apiRequest<{ sessions: AdminSession[] }>(`/api/admin/sessions${qs}`, { token });
 }
 
+// ── Impersonation ─────────────────────────────────────────────────────────────
+
+export interface ImpersonationResult {
+  token: string;
+  expiresAt: string;
+  userId: string;
+  workspaceName: string;
+  userEmail: string;
+}
+
+export function impersonateWorkspace(token: string, workspaceId: string) {
+  return apiRequest<ImpersonationResult>(`/api/admin/workspaces/${workspaceId}/impersonate`, {
+    method: "POST", token,
+  });
+}
+
 export interface AiWalletStatus {
   balance: number;
   planCode: string;

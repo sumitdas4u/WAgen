@@ -21,6 +21,7 @@ interface AuthContextValue {
   token: string | null;
   user: User | null;
   loading: boolean;
+  impersonatedBy: string | null;
   signupAndLogin: (payload: {
     name: string;
     email: string;
@@ -38,6 +39,22 @@ interface AuthContextValue {
 }
 
 const TOKEN_KEY = "typo_token";
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    return JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function getImpersonatedBy(token: string | null): string | null {
+  if (!token) return null;
+  const payload = decodeJwtPayload(token);
+  return typeof payload?.impersonatedBy === "string" ? payload.impersonatedBy : null;
+}
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -102,7 +119,20 @@ function runGoogleAuthPopup(input?: {
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  const [token, setToken] = useState<string | null>(() => {
+    // Accept impersonation token from URL param (opened by super admin panel)
+    const params = new URLSearchParams(window.location.search);
+    const impersonateParam = params.get("impersonate");
+    if (impersonateParam) {
+      localStorage.setItem(TOKEN_KEY, impersonateParam);
+      // Clean URL without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("impersonate");
+      window.history.replaceState({}, "", url.toString());
+      return impersonateParam;
+    }
+    return localStorage.getItem(TOKEN_KEY);
+  });
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -156,6 +186,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       token,
       user,
       loading,
+      impersonatedBy: getImpersonatedBy(token),
       signupAndLogin: async (payload) => {
         const response = await signup(payload);
         setAuthenticatedState(response);

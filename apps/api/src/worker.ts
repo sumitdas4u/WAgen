@@ -7,6 +7,8 @@ import { startOutboundWorker, stopOutboundWorker } from "./services/outbound-mes
 import { closeQueueInfrastructure } from "./services/queue-service.js";
 import { startSequenceWorker, stopSequenceWorker } from "./services/sequence-worker-service.js";
 import { startDailyReportWorker, stopDailyReportWorker } from "./services/daily-report-worker-service.js";
+import { recalculateBroadcastReputation } from "./services/broadcast-reputation-service.js";
+import { recalculateWorkspaceHealth } from "./services/workspace-health-service.js";
 import { pool } from "./db/pool.js";
 
 await runMigrations({
@@ -38,8 +40,17 @@ async function pingWorkerHeartbeats() {
 void pingWorkerHeartbeats();
 const heartbeatInterval = setInterval(() => { void pingWorkerHeartbeats(); }, 30_000);
 
+// Daily crons — run at startup then every 6 hours
+async function runDailyCrons() {
+  try { await recalculateBroadcastReputation(); } catch (e) { console.error("[DailyCron] broadcast reputation failed", e); }
+  try { await recalculateWorkspaceHealth(); } catch (e) { console.error("[DailyCron] workspace health failed", e); }
+}
+void runDailyCrons();
+const dailyCronInterval = setInterval(() => { void runDailyCrons(); }, 6 * 60 * 60 * 1000);
+
 const shutdown = async () => {
   clearInterval(heartbeatInterval);
+  clearInterval(dailyCronInterval);
   await stopCampaignWorker();
   await stopDeliveryWebhookWorker();
   await stopOutboundWorker();

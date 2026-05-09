@@ -10,6 +10,7 @@ import {
   deleteWorkspaceNote,
   fetchWorkspaceSpendLimits,
   setWorkspaceSpendLimits,
+  impersonateWorkspace,
   type AdminWorkspaceDetail,
   type CreditLedgerEntry,
   type AdminNote,
@@ -49,6 +50,9 @@ export function WorkspaceDetailPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Impersonation state
+  const [impersonating, setImpersonating] = useState(false);
 
   // Plan override state
   const [overridePlan, setOverridePlan] = useState("");
@@ -90,6 +94,18 @@ export function WorkspaceDetailPage() {
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, [token, workspaceId]);
+
+  const handleImpersonate = async () => {
+    if (!workspaceId) return;
+    setImpersonating(true);
+    try {
+      const res = await impersonateWorkspace(token, workspaceId);
+      const url = new URL(window.location.origin);
+      url.searchParams.set("impersonate", res.token);
+      window.open(url.toString(), "_blank");
+    } catch (e) { setError((e as Error).message); }
+    finally { setImpersonating(false); }
+  };
 
   const handlePlanOverride = async () => {
     if (!workspaceId || !overridePlan) return;
@@ -161,10 +177,20 @@ export function WorkspaceDetailPage() {
         <button className="ghost-btn" style={{ marginBottom: "0.75rem", fontSize: "0.8rem" }} onClick={() => navigate("/super-admin/workspaces")}>
           ← Back to Workspaces
         </button>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-          <h1 style={{ fontSize: "1.35rem", fontWeight: 700, color: "#122033", margin: 0 }}>{workspace.workspaceName}</h1>
-          <Badge label={workspace.status} variant={workspace.status} />
-          {workspace.planCode && <Badge label={workspace.planCode} variant={workspace.subscriptionStatus === "active" ? "active" : "default"} />}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <h1 style={{ fontSize: "1.35rem", fontWeight: 700, color: "#122033", margin: 0 }}>{workspace.workspaceName}</h1>
+            <Badge label={workspace.status} variant={workspace.status} />
+            {workspace.planCode && <Badge label={workspace.planCode} variant={workspace.subscriptionStatus === "active" ? "active" : "default"} />}
+          </div>
+          <button
+            className="ghost-btn"
+            style={{ fontSize: "0.82rem", padding: "6px 14px", border: "1.5px solid #f97316", color: "#ea580c", background: "#fff7ed" }}
+            disabled={impersonating}
+            onClick={() => void handleImpersonate()}
+          >
+            {impersonating ? "Opening…" : "Impersonate"}
+          </button>
         </div>
         <p style={{ color: "#64748b", fontSize: "0.85rem", margin: "4px 0 0" }}>
           {workspace.ownerEmail} · Joined {new Date(workspace.createdAt).toLocaleDateString()}
