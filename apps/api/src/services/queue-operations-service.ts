@@ -404,39 +404,6 @@ export async function registerQueueOperations(app: FastifyInstance): Promise<voi
   );
 
   app.post(
-    "/api/admin/queues/:queueName/retry-failed",
-    { preHandler: [app.requireSuperAdmin] },
-    async (request, reply) => {
-      const paramsParsed = QueueActionParamsSchema.safeParse(request.params);
-      if (!paramsParsed.success) {
-        return reply.status(400).send({ error: "Invalid queue params" });
-      }
-
-      const bodyParsed = QueueActionBodySchema.safeParse(request.body ?? {});
-      if (!bodyParsed.success) {
-        return reply.status(400).send({ error: "Invalid queue action payload" });
-      }
-
-      const queue = getManagedQueue(paramsParsed.data.queueName);
-      if (!queue) {
-        return reply.status(503).send({ error: "Queue is unavailable" });
-      }
-
-      await queue.retryJobs({
-        state: "failed",
-        count: bodyParsed.data.count ?? 100
-      });
-      queueMetricsCache = null;
-
-      return {
-        ok: true,
-        queue: queue.name,
-        action: "retry-failed"
-      };
-    }
-  );
-
-  app.post(
     "/api/admin/queues/:queueName/promote-delayed",
     { preHandler: [app.requireSuperAdmin] },
     async (request, reply) => {
