@@ -20,6 +20,7 @@ import {
 } from "./outbound-message-types.js";
 import { fanoutEvent } from "./event-fanout-service.js";
 import { isKillSwitchEnabled } from "./kill-switch-service.js";
+import { recordBroadcastEngagement, type EngagementEventType } from "./broadcast-engagement-service.js";
 
 interface MetaConnectionRow {
   id: string;
@@ -185,6 +186,7 @@ interface WebhookMessage {
     button_reply?: { title?: string; id?: string };
     list_reply?: { title?: string; description?: string; id?: string };
   };
+  context?: { id?: string; from?: string };
 }
 
 interface WebhookContact {
@@ -3329,15 +3331,30 @@ async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
     return;
   }
 
+  let contactId: string | null = null;
   try {
-    await upsertWebhookContact({
+    const contact = await upsertWebhookContact({
       userId: connectionRow.user_id,
       phoneNumber: normalizedTask.from,
       displayName: normalizedTask.senderName ?? undefined
     });
+    contactId = contact.id;
   } catch (error) {
     console.warn(`[MetaWebhook] contact upsert failed user=${connectionRow.user_id} from=${normalizedTask.from}`, error);
   }
+
+  const contextWamid = task.message.context?.id ?? null;
+  let engagementEventType: EngagementEventType;
+  if (task.message.type === "button" && contextWamid) {
+    engagementEventType = "clicked_button";
+  } else if (contextWamid) {
+    engagementEventType = "replied_quote";
+  } else {
+    engagementEventType = "replied_any";
+  }
+  recordBroadcastEngagement({ eventType: engagementEventType, wamid: contextWamid, contactId }).catch((err) =>
+    console.warn("[MetaWebhook] engagement record failed", err)
+  );
 
   const result = await processIncomingMessage({
     userId: connectionRow.user_id,

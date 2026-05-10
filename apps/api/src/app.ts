@@ -51,6 +51,7 @@ import { labelRoutes } from "./routes/labels.js";
 import { registerQueueDashboard } from "./services/queue-dashboard-service.js";
 import { registerQueueOperations } from "./services/queue-operations-service.js";
 import { registerWidgetChatGatewayRoutes } from "./services/widget-chat-gateway-service.js";
+import { trackingRoutes } from "./routes/tracking.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -254,6 +255,7 @@ export async function buildApp() {
   await contactSegmentRoutes(app);
   await campaignRoutes(app);
   await broadcastRoutes(app);
+  await trackingRoutes(app);
   await deliveryRoutes(app);
   await genericWebhookRoutes(app);
   await sequenceRoutes(app);

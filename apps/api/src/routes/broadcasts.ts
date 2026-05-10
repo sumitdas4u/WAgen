@@ -10,11 +10,19 @@ import {
   uploadBroadcastMedia
 } from "../services/broadcast-service.js";
 import type { CampaignMessageStatus, RetargetStatus } from "../services/campaign-service.js";
+import { getBroadcastEngagementTimeline } from "../services/broadcast-engagement-service.js";
 
 const CampaignMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  status: z.enum(["queued", "sending", "sent", "delivered", "read", "failed", "skipped"] as [CampaignMessageStatus, ...CampaignMessageStatus[]]).optional()
+  status: z.enum([
+    "queued", "sending", "sent", "delivered", "read", "failed", "skipped",
+    "clicked", "replied", "quote_replied"
+  ] as [CampaignMessageStatus, ...CampaignMessageStatus[]]).optional()
+});
+
+const EngagementTimelineQuerySchema = z.object({
+  granularity: z.enum(["hour", "day", "week"]).default("day")
 });
 
 const RetargetPreviewQuerySchema = z.object({
@@ -159,6 +167,20 @@ export async function broadcastRoutes(fastify: FastifyInstance): Promise<void> {
       } catch (error) {
         return reply.status(400).send({ error: (error as Error).message });
       }
+    }
+  );
+
+  fastify.get(
+    "/api/broadcasts/:campaignId/engagement-timeline",
+    { preHandler: [fastify.requireAuth] },
+    async (request, reply) => {
+      const { campaignId } = request.params as { campaignId: string };
+      const parsed = EngagementTimelineQuerySchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid query parameters" });
+      }
+      const timeline = await getBroadcastEngagementTimeline(campaignId, parsed.data.granularity);
+      return { timeline };
     }
   );
 
