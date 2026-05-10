@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import {
   createContactSegment,
   cancelCampaignRun,
@@ -8,6 +9,7 @@ import {
   deleteContactSegment,
   downloadContactsTemplate,
   fetchBroadcastReport,
+  fetchBroadcastEngagementTimeline,
   fetchBroadcastRetargetPreview,
   fetchBroadcasts,
   fetchMetaDailyCap,
@@ -21,6 +23,7 @@ import {
   previewBroadcastAudienceWorkbookImport,
   sendTestTemplate,
   type Campaign,
+  type CampaignMessageStatus,
   type ContactImportColumnMapping,
   type ContactImportPreview,
   type CampaignMediaOverrides,
@@ -563,6 +566,8 @@ function BroadcastListPage({ token }: { token: string }) {
     { label: "Sent", value: summary?.sent ?? 0, pctVal: pct(summary?.sent ?? 0, summary?.recipients ?? 0), icon: "✓" },
     { label: "Delivered", value: summary?.delivered ?? 0, pctVal: pct(summary?.delivered ?? 0, summary?.recipients ?? 0), icon: "✓✓" },
     { label: "Engaged", value: summary?.engaged ?? 0, pctVal: pct(summary?.engaged ?? 0, summary?.recipients ?? 0), icon: "↩" },
+    { label: "Clicked", value: summary?.clicked ?? 0, pctVal: pct(summary?.clicked ?? 0, summary?.recipients ?? 0), icon: "🖱" },
+    { label: "Replied", value: summary?.replied ?? 0, pctVal: pct(summary?.replied ?? 0, summary?.recipients ?? 0), icon: "↩" },
     { label: "Not in WhatsApp", value: summary?.suppressed ?? 0, pctVal: pct(summary?.suppressed ?? 0, summary?.recipients ?? 0), icon: "⊘" },
     { label: "Frequency Limit", value: summary?.frequencyLimited ?? 0, pctVal: pct(summary?.frequencyLimited ?? 0, summary?.recipients ?? 0), icon: "∞" },
     { label: "Failed", value: summary?.failed ?? 0, pctVal: pct(summary?.failed ?? 0, summary?.recipients ?? 0), icon: "!" }
@@ -757,6 +762,8 @@ function BroadcastListPage({ token }: { token: string }) {
                 "Sent",
                 "Delivered",
                 "Read",
+                "Clicked",
+                "Replied",
                 "Engaged",
                 "Not in WhatsApp",
                 "Frequency Limit",
@@ -823,6 +830,18 @@ function BroadcastListPage({ token }: { token: string }) {
                         <div>{broadcast.read_count}</div>
                         <div className="bl-count-pct">{readPct}</div>
                       </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div>{broadcast.clicked_count ?? 0}</div>
+                      <div className="bl-count-pct">{pct(broadcast.clicked_count ?? 0, broadcast.total_count)}</div>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div>{broadcast.replied_count ?? 0}</div>
+                      <div className="bl-count-pct">{pct(broadcast.replied_count ?? 0, broadcast.total_count)}</div>
                     </div>
                   </td>
                   <td>{(() => { const nd = Math.max(0, broadcast.sent_count - broadcast.delivered_count - broadcast.read_count - broadcast.failed_count - broadcast.skipped_count); return <><div>{nd}</div><div className="bl-count-pct">{pct(nd, broadcast.total_count)}</div></>; })()}</td>
@@ -937,14 +956,45 @@ function BroadcastListPage({ token }: { token: string }) {
   );
 }
 
+type EngagementFilter = "clicked" | "replied" | "quote_replied" | null;
+
+function formatPeriodLabel(period: string, granularity: "hour" | "day" | "week"): string {
+  const d = new Date(period);
+  if (granularity === "hour") {
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  if (granularity === "week") {
+    return `Week of ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [engagementFilter, setEngagementFilter] = useState<EngagementFilter>(null);
+  const [granularity, setGranularity] = useState<"hour" | "day" | "week">("day");
+
+  const activeStatus: CampaignMessageStatus | undefined =
+    engagementFilter === "clicked" ? "clicked" :
+    engagementFilter === "replied" ? "replied" :
+    engagementFilter === "quote_replied" ? "quote_replied" :
+    undefined;
+
   const reportQuery = useQuery({
-    queryKey: dashboardQueryKeys.broadcastReport(campaignId, "all", 0),
-    queryFn: () => fetchBroadcastReport(token, campaignId).then((response) => response.report),
+    queryKey: dashboardQueryKeys.broadcastReport(campaignId, activeStatus ?? "all", 0),
+    queryFn: () =>
+      fetchBroadcastReport(token, campaignId, activeStatus ? { status: activeStatus } : undefined).then(
+        (response) => response.report
+      ),
     refetchInterval: (query) =>
       query.state.data && shouldPollCampaign(query.state.data.campaign.status) ? 4000 : false
+  });
+
+  const timelineQuery = useQuery({
+    queryKey: dashboardQueryKeys.broadcastEngagementTimeline(campaignId, granularity),
+    queryFn: () =>
+      fetchBroadcastEngagementTimeline(token, campaignId, granularity).then((r) => r.timeline)
   });
 
   const cancelMutation = useMutation({
@@ -957,22 +1007,52 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
     }
   });
 
-  const report = reportQuery.data;
-  if (!report) {
+  const baseReportQuery = useQuery({
+    queryKey: dashboardQueryKeys.broadcastReport(campaignId, "all", 0),
+    queryFn: () => fetchBroadcastReport(token, campaignId).then((response) => response.report),
+    refetchInterval: (query) =>
+      query.state.data && shouldPollCampaign(query.state.data.campaign.status) ? 4000 : false
+  });
+
+  const report = reportQuery.data ?? baseReportQuery.data;
+  const baseReport = baseReportQuery.data;
+
+  if (!report || !baseReport) {
     return <div className="broadcast-loading">Loading broadcast report…</div>;
   }
   const isLiveUpdating = shouldPollCampaign(report.campaign.status);
 
   const totalCount = report.campaign.total_count;
-  const detailStats = [
-    { label: "Recipients", value: totalCount, pct: null },
-    { label: "Sent", value: report.buckets.sent, pct: pct(report.buckets.sent, totalCount) },
-    { label: "Delivered", value: report.buckets.delivered, pct: pct(report.buckets.delivered, totalCount) },
-    { label: "Read", value: report.buckets.read, pct: pct(report.buckets.read, totalCount) },
-    { label: "Failed", value: report.buckets.failed, pct: pct(report.buckets.failed, totalCount) },
-    { label: "Skipped", value: report.buckets.skipped, pct: pct(report.buckets.skipped, totalCount) },
-    { label: "Not Delivered", value: Math.max(0, report.buckets.sent - report.buckets.delivered - report.buckets.read - report.buckets.failed), pct: pct(Math.max(0, report.buckets.sent - report.buckets.delivered - report.buckets.read - report.buckets.failed), totalCount) }
+
+  type StatTab = { label: string; value: number; pct: string | null; filter: EngagementFilter; color?: string };
+  const detailStats: StatTab[] = [
+    { label: "Recipients", value: totalCount, pct: null, filter: null },
+    { label: "Sent", value: baseReport.buckets.sent, pct: pct(baseReport.buckets.sent, totalCount), filter: null },
+    { label: "Delivered", value: baseReport.buckets.delivered, pct: pct(baseReport.buckets.delivered, totalCount), filter: null },
+    { label: "Read", value: baseReport.buckets.read, pct: pct(baseReport.buckets.read, totalCount), filter: null },
+    { label: "Clicked", value: baseReport.buckets.clicked, pct: pct(baseReport.buckets.clicked, totalCount), filter: "clicked", color: "#7c3aed" },
+    { label: "Replied", value: baseReport.buckets.replied, pct: pct(baseReport.buckets.replied, totalCount), filter: "replied", color: "#0891b2" },
+    { label: "Failed", value: baseReport.buckets.failed, pct: pct(baseReport.buckets.failed, totalCount), filter: null },
+    { label: "Skipped", value: baseReport.buckets.skipped, pct: pct(baseReport.buckets.skipped, totalCount), filter: null }
   ];
+
+  const timelineData = (timelineQuery.data ?? []).map((b) => ({
+    ...b,
+    label: formatPeriodLabel(b.period, granularity),
+    clicks: b.clicked_button + b.clicked_url,
+    replies: b.replied_any + b.replied_quote
+  }));
+
+  const hasEngagementData = timelineData.length > 0;
+
+  const tableColumns =
+    engagementFilter === "clicked"
+      ? ["Phone", "Status", "Clicked At"]
+      : engagementFilter === "replied"
+      ? ["Phone", "Status", "Replied At"]
+      : engagementFilter === "quote_replied"
+      ? ["Phone", "Status", "Quote Replied At"]
+      : ["Phone", "Status", "Sent", "Delivered", "Read", "Error"];
 
   return (
     <section className="broadcast-page">
@@ -1032,36 +1112,129 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
         </div>
       </div>
 
-      {/* Stats overview */}
+      {/* Stats overview — clickable tabs */}
       <div className="bl-overview-card">
         <div className="bl-overview-head">
           <span className="bl-overview-title">Delivery Overview</span>
+          {engagementFilter !== null ? (
+            <button
+              type="button"
+              style={{ fontSize: "0.75rem", color: "#7c3aed", background: "none", border: "none", cursor: "pointer", padding: "0.1rem 0.4rem" }}
+              onClick={() => setEngagementFilter(null)}
+            >
+              ✕ Clear filter
+            </button>
+          ) : null}
         </div>
         <div className="bl-overview-stats" style={{ gridTemplateColumns: `repeat(${detailStats.length}, minmax(0,1fr))` }}>
-          {detailStats.map((stat) => (
-            <div key={stat.label} className="bl-stat-cell">
-              <div className="bl-stat-label">{stat.label}</div>
-              <div className="bl-stat-value">
-                {stat.value}
-                {stat.pct !== null ? <span className="bl-stat-pct">{stat.pct}</span> : null}
+          {detailStats.map((stat) => {
+            const isActive = stat.filter !== null && engagementFilter === stat.filter;
+            const isClickable = stat.filter !== null;
+            return (
+              <div
+                key={stat.label}
+                className="bl-stat-cell"
+                style={{
+                  cursor: isClickable ? "pointer" : undefined,
+                  background: isActive ? "#f5f3ff" : undefined,
+                  borderBottom: isActive ? `2px solid ${stat.color ?? "#7c3aed"}` : undefined,
+                  transition: "background 0.15s"
+                }}
+                onClick={isClickable ? () => setEngagementFilter(isActive ? null : stat.filter) : undefined}
+                title={isClickable ? `Filter by ${stat.label.toLowerCase()}` : undefined}
+              >
+                <div className="bl-stat-label" style={isClickable ? { color: stat.color ?? "#5f6f86" } : undefined}>
+                  {stat.label}
+                </div>
+                <div className="bl-stat-value" style={isActive ? { color: stat.color ?? "#122033" } : undefined}>
+                  {stat.value}
+                  {stat.pct !== null ? <span className="bl-stat-pct">{stat.pct}</span> : null}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
+      {/* Engagement timeline chart */}
+      {hasEngagementData ? (
+        <div className="bl-overview-card" style={{ marginTop: "1rem" }}>
+          <div className="bl-overview-head" style={{ justifyContent: "space-between" }}>
+            <span className="bl-overview-title">Engagement Over Time</span>
+            <div style={{ display: "flex", gap: "0.25rem" }}>
+              {(["hour", "day", "week"] as const).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGranularity(g)}
+                  style={{
+                    fontSize: "0.72rem",
+                    fontWeight: granularity === g ? 700 : 500,
+                    padding: "0.2rem 0.55rem",
+                    borderRadius: "6px",
+                    border: `1px solid ${granularity === g ? "#7c3aed" : "#e2e8f0"}`,
+                    background: granularity === g ? "#f5f3ff" : "#fff",
+                    color: granularity === g ? "#7c3aed" : "#5f6f86",
+                    cursor: "pointer"
+                  }}
+                >
+                  {g.charAt(0).toUpperCase() + g.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ padding: "1rem 1rem 0.5rem" }}>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={timelineData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="clickGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="replyGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0891b2" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#0891b2" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={30} />
+                <Tooltip
+                  contentStyle={{ fontSize: "0.78rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}
+                  formatter={(value, name) => [value, name === "clicks" ? "Clicked" : "Replied"]}
+                />
+                <Area type="monotone" dataKey="clicks" name="clicks" stroke="#7c3aed" strokeWidth={2} fill="url(#clickGrad)" dot={false} />
+                <Area type="monotone" dataKey="replies" name="replies" stroke="#0891b2" strokeWidth={2} fill="url(#replyGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      ) : null}
+
       {/* Delivery log table */}
-      <section className="broadcast-table-shell">
+      <section className="broadcast-table-shell" style={{ marginTop: "1rem" }}>
         <div className="bl-table-toolbar">
-          <span className="bl-table-title">Recipient delivery log</span>
+          <span className="bl-table-title">
+            {engagementFilter === "clicked"
+              ? "Clicked recipients"
+              : engagementFilter === "replied"
+              ? "Replied recipients"
+              : engagementFilter === "quote_replied"
+              ? "Quote-replied recipients"
+              : "Recipient delivery log"}
+          </span>
           <div className="bl-toolbar-right">
-            <span style={{ fontSize: "0.78rem", color: "#94a3b8" }}>Every recipient status and message failure in a clearer audit trail</span>
+            <span style={{ fontSize: "0.78rem", color: "#94a3b8" }}>
+              {engagementFilter !== null
+                ? `Showing ${report.messages.length} ${engagementFilter.replace("_", " ")} recipients`
+                : "Every recipient status and message failure in a clearer audit trail"}
+            </span>
           </div>
         </div>
         <table className="broadcast-table">
           <thead>
             <tr>
-              {["Phone", "Status", "Sent", "Delivered", "Read", "Error"].map((heading) => (
+              {tableColumns.map((heading) => (
                 <th key={heading}>{heading}</th>
               ))}
             </tr>
@@ -1075,17 +1248,29 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
                     {formatCampaignStatus(message.status as Campaign["status"])}
                   </span>
                 </td>
-                <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
-                <td>{message.delivered_at ? formatDateTime(message.delivered_at) : "—"}</td>
-                <td>{message.read_at ? formatDateTime(message.read_at) : "—"}</td>
-                <td style={{ color: message.error_message ? "#be123c" : "#94a3b8", fontSize: "0.8rem" }}>
-                  {message.error_message || "—"}
-                </td>
+                {engagementFilter === "clicked" ? (
+                  <td>{message.clicked_at ? formatDateTime(message.clicked_at) : "—"}</td>
+                ) : engagementFilter === "replied" ? (
+                  <td>{message.replied_at ? formatDateTime(message.replied_at) : "—"}</td>
+                ) : engagementFilter === "quote_replied" ? (
+                  <td>{message.quote_replied_at ? formatDateTime(message.quote_replied_at) : "—"}</td>
+                ) : (
+                  <>
+                    <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
+                    <td>{message.delivered_at ? formatDateTime(message.delivered_at) : "—"}</td>
+                    <td>{message.read_at ? formatDateTime(message.read_at) : "—"}</td>
+                    <td style={{ color: message.error_message ? "#be123c" : "#94a3b8", fontSize: "0.8rem" }}>
+                      {message.error_message || "—"}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
             {report.messages.length === 0 ? (
               <tr>
-                <td colSpan={6} className="broadcast-empty-state">No delivery records yet.</td>
+                <td colSpan={tableColumns.length} className="broadcast-empty-state">
+                  {engagementFilter !== null ? `No ${engagementFilter.replace("_", " ")} recipients yet.` : "No delivery records yet."}
+                </td>
               </tr>
             ) : null}
           </tbody>

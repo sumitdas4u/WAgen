@@ -3113,7 +3113,7 @@ export function sendTestTemplateMessage(
 }
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
-export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
+export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped" | "clicked" | "replied" | "quote_replied";
 export type CampaignTemplateVariableSource = "contact" | "static" | "now";
 export type BroadcastType = "standard" | "retarget";
 export type RetargetStatus = "sent" | "delivered" | "read" | "failed" | "skipped";
@@ -3159,6 +3159,9 @@ export interface Campaign {
   read_count: number;
   failed_count: number;
   skipped_count: number;
+  clicked_count: number;
+  replied_count: number;
+  quote_replied_count: number;
   smart_retry_enabled: boolean;
   smart_retry_until: string | null;
   created_at: string;
@@ -3180,6 +3183,9 @@ export interface CampaignMessage {
   sent_at: string | null;
   delivered_at: string | null;
   read_at: string | null;
+  clicked_at: string | null;
+  replied_at: string | null;
+  quote_replied_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -3194,13 +3200,24 @@ export interface BroadcastSummary {
   suppressed: number;
   frequencyLimited: number;
   monthlyRecipientsUsed?: number;
+  clicked: number;
+  replied: number;
+  quote_replied: number;
 }
 
 export interface BroadcastReport {
   campaign: Campaign;
   messages: CampaignMessage[];
   total: number;
-  buckets: Record<RetargetStatus, number>;
+  buckets: Record<RetargetStatus, number> & { clicked: number; replied: number; quote_replied: number };
+}
+
+export interface EngagementTimelineBucket {
+  period: string;
+  clicked_button: number;
+  clicked_url: number;
+  replied_any: number;
+  replied_quote: number;
 }
 
 export interface CampaignLaunchPreview {
@@ -3495,6 +3512,17 @@ export function fetchBroadcastRetargetPreview(
 ) {
   return apiRequest<{ preview: BroadcastRetargetPreview }>(
     `/api/broadcasts/${campaignId}/retarget-preview?status=${encodeURIComponent(status)}`,
+    { token }
+  );
+}
+
+export function fetchBroadcastEngagementTimeline(
+  token: string,
+  campaignId: string,
+  granularity: "hour" | "day" | "week" = "day"
+) {
+  return apiRequest<{ timeline: EngagementTimelineBucket[] }>(
+    `/api/broadcasts/${campaignId}/engagement-timeline?granularity=${granularity}`,
     { token }
   );
 }

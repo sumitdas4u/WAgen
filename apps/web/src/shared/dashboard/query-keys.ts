@@ -59,6 +59,8 @@ export const dashboardQueryKeys = {
     [...dashboardBroadcastRoot, "report", campaignId, status, page] as const,
   broadcastRetargetPreview: (campaignId: string, status: string) =>
     [...dashboardBroadcastRoot, "retarget-preview", campaignId, status] as const,
+  broadcastEngagementTimeline: (campaignId: string, granularity: string) =>
+    [...dashboardBroadcastRoot, "engagement-timeline", campaignId, granularity] as const,
   sequenceRoot: dashboardSequenceRoot,
   sequences: [...dashboardSequenceRoot, "list"] as const,
   sequenceDetail: (sequenceId: string) => [...dashboardSequenceRoot, "detail", sequenceId] as const,
