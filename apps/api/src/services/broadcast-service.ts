@@ -29,6 +29,9 @@ export interface BroadcastSummary {
   suppressed: number;
   frequencyLimited: number;
   monthlyRecipientsUsed: number;
+  clicked: number;
+  replied: number;
+  quote_replied: number;
 }
 
 export interface BroadcastRetargetPreview {
@@ -42,7 +45,11 @@ export interface BroadcastReport {
   campaign: Campaign;
   messages: CampaignMessage[];
   total: number;
-  buckets: Record<RetargetStatus, number>;
+  buckets: Record<RetargetStatus, number> & {
+    clicked: number;
+    replied: number;
+    quote_replied: number;
+  };
 }
 
 function buildRetargetClause(status: RetargetStatus): string {
@@ -72,6 +79,9 @@ export async function getBroadcastSummary(userId: string): Promise<BroadcastSumm
       engaged: string;
       failed: string;
       suppressed: string;
+      clicked: string;
+      replied: string;
+      quote_replied: string;
     }>(
       `SELECT
          COUNT(*)::text AS total_broadcasts,
@@ -80,7 +90,10 @@ export async function getBroadcastSummary(userId: string): Promise<BroadcastSumm
          COALESCE(SUM(delivered_count), 0)::text AS delivered,
          COALESCE(SUM(read_count), 0)::text AS engaged,
          COALESCE(SUM(failed_count), 0)::text AS failed,
-         COALESCE(SUM(skipped_count), 0)::text AS suppressed
+         COALESCE(SUM(skipped_count), 0)::text AS suppressed,
+         COALESCE(SUM(clicked_count), 0)::text AS clicked,
+         COALESCE(SUM(replied_count), 0)::text AS replied,
+         COALESCE(SUM(quote_replied_count), 0)::text AS quote_replied
        FROM campaigns
        WHERE user_id = $1`,
       [userId]
@@ -106,6 +119,9 @@ export async function getBroadcastSummary(userId: string): Promise<BroadcastSumm
     suppressed: Number(row?.suppressed ?? 0),
     frequencyLimited: 0,
     monthlyRecipientsUsed: parseInt(monthlyResult.rows[0]?.monthly_used ?? "0", 10),
+    clicked: Number(row?.clicked ?? 0),
+    replied: Number(row?.replied ?? 0),
+    quote_replied: Number(row?.quote_replied ?? 0),
   };
 }
 
@@ -127,13 +143,19 @@ export async function getBroadcastReport(
       read_count: string;
       failed_count: string;
       skipped_count: string;
+      clicked_count: string;
+      replied_count: string;
+      quote_replied_count: string;
     }>(
       `SELECT
          COUNT(*) FILTER (WHERE sent_at IS NOT NULL)::text AS sent_count,
          COUNT(*) FILTER (WHERE delivered_at IS NOT NULL OR status IN ('delivered', 'read'))::text AS delivered_count,
          COUNT(*) FILTER (WHERE read_at IS NOT NULL OR status = 'read')::text AS read_count,
          COUNT(*) FILTER (WHERE status = 'failed')::text AS failed_count,
-         COUNT(*) FILTER (WHERE status = 'skipped')::text AS skipped_count
+         COUNT(*) FILTER (WHERE status = 'skipped')::text AS skipped_count,
+         COUNT(*) FILTER (WHERE clicked_at IS NOT NULL)::text AS clicked_count,
+         COUNT(*) FILTER (WHERE replied_at IS NOT NULL)::text AS replied_count,
+         COUNT(*) FILTER (WHERE quote_replied_at IS NOT NULL)::text AS quote_replied_count
        FROM campaign_messages
        WHERE campaign_id = $1`,
       [campaignId]
@@ -150,7 +172,10 @@ export async function getBroadcastReport(
       delivered: Number(buckets?.delivered_count ?? 0),
       read: Number(buckets?.read_count ?? 0),
       failed: Number(buckets?.failed_count ?? 0),
-      skipped: Number(buckets?.skipped_count ?? 0)
+      skipped: Number(buckets?.skipped_count ?? 0),
+      clicked: Number(buckets?.clicked_count ?? 0),
+      replied: Number(buckets?.replied_count ?? 0),
+      quote_replied: Number(buckets?.quote_replied_count ?? 0),
     }
   };
 }
