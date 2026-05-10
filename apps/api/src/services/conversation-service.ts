@@ -866,6 +866,8 @@ export async function trackOutboundMessage(
   payload?: FlowMessagePayload | null,
   wamid?: string | null
 ): Promise<void> {
+  let updatedExistingMessage = false;
+
   // echo_id dedup: if the row already exists, update it with the latest wamid/status instead of inserting
   if (usage?.echoId) {
     const updated = await pool.query<{ id: string }>(
@@ -883,56 +885,15 @@ export async function trackOutboundMessage(
        RETURNING id`,
       [conversationId, usage.echoId, wamid ?? null]
     );
-    if ((updated.rowCount ?? 0) > 0) return;
+    updatedExistingMessage = (updated.rowCount ?? 0) > 0;
   }
-  const validatedPayload = payload ? validateFlowMessagePayload(payload) : null;
-  const msgType = validatedPayload ? deriveRendererMessageType(validatedPayload) : "text";
-  const msgContent = validatedPayload ? JSON.stringify(validatedPayload) : null;
 
-  // Try with new columns; fall back if migration not yet applied.
-  try {
-    await pool.query(
-      `INSERT INTO conversation_messages (
-         conversation_id,
-         direction,
-         sender_name,
-         message_text,
-         prompt_tokens,
-         completion_tokens,
-         total_tokens,
-         ai_model,
-         retrieval_chunks,
-         media_url,
-         message_type,
-         message_content,
-         wamid,
-         sent_at,
-         source_type,
-         webhook_url,
-         echo_id
-       )
-       VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13, $14, $15)`,
-      [
-        conversationId,
-        usage?.senderName ?? null,
-        message,
-        usage?.promptTokens ?? null,
-        usage?.completionTokens ?? null,
-        usage?.totalTokens ?? null,
-        usage?.aiModel ?? null,
-        usage?.retrievalChunks ?? null,
-        mediaUrl ?? null,
-        msgType,
-        msgContent,
-        wamid ?? null,
-        usage?.sourceType ?? "manual",
-        usage?.webhookUrl ?? null,
-        usage?.echoId ?? null
-      ]
-    );
-  } catch {
-    // message_type / message_content missing (migration 0016 not yet applied).
-    // Preserve media_url from migration 0015 so images survive.
+  if (!updatedExistingMessage) {
+    const validatedPayload = payload ? validateFlowMessagePayload(payload) : null;
+    const msgType = validatedPayload ? deriveRendererMessageType(validatedPayload) : "text";
+    const msgContent = validatedPayload ? JSON.stringify(validatedPayload) : null;
+
+    // Try with new columns; fall back if migration not yet applied.
     try {
       await pool.query(
         `INSERT INTO conversation_messages (
@@ -945,9 +906,16 @@ export async function trackOutboundMessage(
            total_tokens,
            ai_model,
            retrieval_chunks,
-           media_url
+           media_url,
+           message_type,
+           message_content,
+           wamid,
+           sent_at,
+           source_type,
+           webhook_url,
+           echo_id
          )
-         VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9)`,
+         VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13, $14, $15)`,
         [
           conversationId,
           usage?.senderName ?? null,
@@ -957,35 +925,72 @@ export async function trackOutboundMessage(
           usage?.totalTokens ?? null,
           usage?.aiModel ?? null,
           usage?.retrievalChunks ?? null,
-          mediaUrl ?? null
+          mediaUrl ?? null,
+          msgType,
+          msgContent,
+          wamid ?? null,
+          usage?.sourceType ?? "manual",
+          usage?.webhookUrl ?? null,
+          usage?.echoId ?? null
         ]
       );
     } catch {
-      // Last resort: pre-0015 schema without media_url
-      await pool.query(
-        `INSERT INTO conversation_messages (
-           conversation_id,
-           direction,
-           sender_name,
-           message_text,
-           prompt_tokens,
-           completion_tokens,
-           total_tokens,
-           ai_model,
-           retrieval_chunks
-         )
-         VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          conversationId,
-          usage?.senderName ?? null,
-          message,
-          usage?.promptTokens ?? null,
-          usage?.completionTokens ?? null,
-          usage?.totalTokens ?? null,
-          usage?.aiModel ?? null,
-          usage?.retrievalChunks ?? null
-        ]
-      );
+      // message_type / message_content missing (migration 0016 not yet applied).
+      // Preserve media_url from migration 0015 so images survive.
+      try {
+        await pool.query(
+          `INSERT INTO conversation_messages (
+             conversation_id,
+             direction,
+             sender_name,
+             message_text,
+             prompt_tokens,
+             completion_tokens,
+             total_tokens,
+             ai_model,
+             retrieval_chunks,
+             media_url
+           )
+           VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            conversationId,
+            usage?.senderName ?? null,
+            message,
+            usage?.promptTokens ?? null,
+            usage?.completionTokens ?? null,
+            usage?.totalTokens ?? null,
+            usage?.aiModel ?? null,
+            usage?.retrievalChunks ?? null,
+            mediaUrl ?? null
+          ]
+        );
+      } catch {
+        // Last resort: pre-0015 schema without media_url
+        await pool.query(
+          `INSERT INTO conversation_messages (
+             conversation_id,
+             direction,
+             sender_name,
+             message_text,
+             prompt_tokens,
+             completion_tokens,
+             total_tokens,
+             ai_model,
+             retrieval_chunks
+           )
+           VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            conversationId,
+            usage?.senderName ?? null,
+            message,
+            usage?.promptTokens ?? null,
+            usage?.completionTokens ?? null,
+            usage?.totalTokens ?? null,
+            usage?.aiModel ?? null,
+            usage?.retrievalChunks ?? null
+          ]
+        );
+      }
     }
   }
 
