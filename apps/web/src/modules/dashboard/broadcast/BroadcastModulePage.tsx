@@ -958,7 +958,7 @@ function BroadcastListPage({ token }: { token: string }) {
   );
 }
 
-type EngagementFilter = "clicked" | "replied" | "quote_replied" | null;
+type EngagementFilter = CampaignMessageStatus | null;
 
 function formatPeriodLabel(period: string, granularity: "hour" | "day" | "week"): string {
   const d = new Date(period);
@@ -977,11 +977,7 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   const [engagementFilter, setEngagementFilter] = useState<EngagementFilter>(null);
   const [granularity, setGranularity] = useState<"hour" | "day" | "week">("day");
 
-  const activeStatus: CampaignMessageStatus | undefined =
-    engagementFilter === "clicked" ? "clicked" :
-    engagementFilter === "replied" ? "replied" :
-    engagementFilter === "quote_replied" ? "quote_replied" :
-    undefined;
+  const activeStatus: CampaignMessageStatus | undefined = engagementFilter ?? undefined;
 
   const reportQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcastReport(campaignId, activeStatus ?? "all", 0),
@@ -1026,16 +1022,16 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
 
   const totalCount = report.campaign.total_count;
 
-  type StatTab = { label: string; value: number; pct: string | null; filter: EngagementFilter; color?: string };
+  type StatTab = { label: string; value: number; pct: string | null; filter: EngagementFilter; color?: string; activeColor?: string };
   const detailStats: StatTab[] = [
     { label: "Recipients", value: totalCount, pct: null, filter: null },
-    { label: "Sent", value: baseReport.buckets.sent, pct: pct(baseReport.buckets.sent, totalCount), filter: null },
-    { label: "Delivered", value: baseReport.buckets.delivered, pct: pct(baseReport.buckets.delivered, totalCount), filter: null },
-    { label: "Read", value: baseReport.buckets.read, pct: pct(baseReport.buckets.read, totalCount), filter: null },
-    { label: "Clicked", value: baseReport.buckets.clicked, pct: pct(baseReport.buckets.clicked, totalCount), filter: "clicked", color: "#7c3aed" },
-    { label: "Replied", value: baseReport.buckets.replied, pct: pct(baseReport.buckets.replied, totalCount), filter: "replied", color: "#0891b2" },
-    { label: "Failed", value: baseReport.buckets.failed, pct: pct(baseReport.buckets.failed, totalCount), filter: null },
-    { label: "Skipped", value: baseReport.buckets.skipped, pct: pct(baseReport.buckets.skipped, totalCount), filter: null }
+    { label: "Sent", value: baseReport.buckets.sent, pct: pct(baseReport.buckets.sent, totalCount), filter: "sent", color: "#64748b", activeColor: "#334155" },
+    { label: "Delivered", value: baseReport.buckets.delivered, pct: pct(baseReport.buckets.delivered, totalCount), filter: "delivered", color: "#0284c7", activeColor: "#0369a1" },
+    { label: "Read", value: baseReport.buckets.read, pct: pct(baseReport.buckets.read, totalCount), filter: "read", color: "#16a34a", activeColor: "#15803d" },
+    { label: "Clicked", value: baseReport.buckets.clicked, pct: pct(baseReport.buckets.clicked, totalCount), filter: "clicked", color: "#7c3aed", activeColor: "#6d28d9" },
+    { label: "Replied", value: baseReport.buckets.replied, pct: pct(baseReport.buckets.replied, totalCount), filter: "replied", color: "#0891b2", activeColor: "#0e7490" },
+    { label: "Failed", value: baseReport.buckets.failed, pct: pct(baseReport.buckets.failed, totalCount), filter: "failed", color: "#dc2626", activeColor: "#b91c1c" },
+    { label: "Skipped", value: baseReport.buckets.skipped, pct: pct(baseReport.buckets.skipped, totalCount), filter: "skipped", color: "#92400e", activeColor: "#78350f" }
   ];
 
   const timelineData = (timelineQuery.data ?? []).map((b) => ({
@@ -1048,13 +1044,14 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   const hasEngagementData = timelineData.length > 0;
 
   const tableColumns =
-    engagementFilter === "clicked"
-      ? ["Phone", "Status", "Clicked At"]
-      : engagementFilter === "replied"
-      ? ["Phone", "Status", "Replied At"]
-      : engagementFilter === "quote_replied"
-      ? ["Phone", "Status", "Quote Replied At"]
-      : ["Phone", "Status", "Sent", "Delivered", "Read", "Error"];
+    engagementFilter === "clicked" ? ["Phone", "Status", "Clicked At"] :
+    engagementFilter === "replied" ? ["Phone", "Status", "Replied At"] :
+    engagementFilter === "quote_replied" ? ["Phone", "Status", "Quote Replied At"] :
+    engagementFilter === "read" ? ["Phone", "Status", "Sent", "Delivered", "Read"] :
+    engagementFilter === "delivered" ? ["Phone", "Status", "Sent", "Delivered"] :
+    engagementFilter === "failed" ? ["Phone", "Status", "Sent", "Error"] :
+    engagementFilter === "skipped" ? ["Phone", "Status", "Skipped"] :
+    ["Phone", "Status", "Sent", "Delivered", "Read", "Error"];
 
   return (
     <section className="broadcast-page">
@@ -1131,24 +1128,34 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
         <div className="bl-overview-stats" style={{ gridTemplateColumns: `repeat(${detailStats.length}, minmax(0,1fr))` }}>
           {detailStats.map((stat) => {
             const isActive = stat.filter !== null && engagementFilter === stat.filter;
-            const isClickable = stat.filter !== null;
+            const isRecipientsCell = stat.filter === null;
+            const isClickable = !isRecipientsCell || engagementFilter !== null;
+            const bg = isActive ? `${stat.color}14` : undefined;
             return (
               <div
                 key={stat.label}
                 className="bl-stat-cell"
                 style={{
                   cursor: isClickable ? "pointer" : undefined,
-                  background: isActive ? "#f5f3ff" : undefined,
-                  borderBottom: isActive ? `2px solid ${stat.color ?? "#7c3aed"}` : undefined,
+                  background: bg,
+                  borderBottom: isActive ? `2px solid ${stat.color}` : undefined,
                   transition: "background 0.15s"
                 }}
-                onClick={isClickable ? () => setEngagementFilter(isActive ? null : stat.filter) : undefined}
-                title={isClickable ? `Filter by ${stat.label.toLowerCase()}` : undefined}
+                onClick={
+                  isRecipientsCell
+                    ? engagementFilter !== null ? () => setEngagementFilter(null) : undefined
+                    : () => setEngagementFilter(isActive ? null : stat.filter)
+                }
+                title={
+                  isRecipientsCell
+                    ? engagementFilter !== null ? "Clear filter" : undefined
+                    : `Filter by ${stat.label.toLowerCase()}`
+                }
               >
-                <div className="bl-stat-label" style={isClickable ? { color: stat.color ?? "#5f6f86" } : undefined}>
+                <div className="bl-stat-label" style={stat.color ? { color: isActive ? stat.activeColor : stat.color } : undefined}>
                   {stat.label}
                 </div>
-                <div className="bl-stat-value" style={isActive ? { color: stat.color ?? "#122033" } : undefined}>
+                <div className="bl-stat-value" style={isActive ? { color: stat.activeColor } : undefined}>
                   {stat.value}
                   {stat.pct !== null ? <span className="bl-stat-pct">{stat.pct}</span> : null}
                 </div>
@@ -1217,18 +1224,14 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
       <section className="broadcast-table-shell" style={{ marginTop: "1rem" }}>
         <div className="bl-table-toolbar">
           <span className="bl-table-title">
-            {engagementFilter === "clicked"
-              ? "Clicked recipients"
-              : engagementFilter === "replied"
-              ? "Replied recipients"
-              : engagementFilter === "quote_replied"
-              ? "Quote-replied recipients"
+            {engagementFilter !== null
+              ? `${engagementFilter.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} recipients`
               : "Recipient delivery log"}
           </span>
           <div className="bl-toolbar-right">
             <span style={{ fontSize: "0.78rem", color: "#94a3b8" }}>
               {engagementFilter !== null
-                ? `Showing ${report.messages.length} ${engagementFilter.replace("_", " ")} recipients`
+                ? `${report.messages.length} recipient${report.messages.length !== 1 ? "s" : ""}`
                 : "Every recipient status and message failure in a clearer audit trail"}
             </span>
           </div>
@@ -1256,6 +1259,24 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
                   <td>{message.replied_at ? formatDateTime(message.replied_at) : "—"}</td>
                 ) : engagementFilter === "quote_replied" ? (
                   <td>{message.quote_replied_at ? formatDateTime(message.quote_replied_at) : "—"}</td>
+                ) : engagementFilter === "read" ? (
+                  <>
+                    <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
+                    <td>{message.delivered_at ? formatDateTime(message.delivered_at) : "—"}</td>
+                    <td>{message.read_at ? formatDateTime(message.read_at) : "—"}</td>
+                  </>
+                ) : engagementFilter === "delivered" ? (
+                  <>
+                    <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
+                    <td>{message.delivered_at ? formatDateTime(message.delivered_at) : "—"}</td>
+                  </>
+                ) : engagementFilter === "failed" ? (
+                  <>
+                    <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
+                    <td style={{ color: "#be123c", fontSize: "0.8rem" }}>{message.error_message || "—"}</td>
+                  </>
+                ) : engagementFilter === "skipped" ? (
+                  <td style={{ color: "#92400e", fontSize: "0.8rem" }}>{message.error_message || "Suppressed"}</td>
                 ) : (
                   <>
                     <td>{message.sent_at ? formatDateTime(message.sent_at) : "—"}</td>
@@ -1271,7 +1292,7 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
             {report.messages.length === 0 ? (
               <tr>
                 <td colSpan={tableColumns.length} className="broadcast-empty-state">
-                  {engagementFilter !== null ? `No ${engagementFilter.replace("_", " ")} recipients yet.` : "No delivery records yet."}
+                  {engagementFilter !== null ? `No ${engagementFilter.replace(/_/g, " ")} recipients yet.` : "No delivery records yet."}
                 </td>
               </tr>
             ) : null}
