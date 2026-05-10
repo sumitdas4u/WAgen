@@ -14,7 +14,9 @@ import { getMessageTemplate, resolveTemplatePayload, uploadMediaUrlToMetaId } fr
 import { applyDateOffset, parseDateString, type DateOffset } from "../utils/date-offset.js";
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
-export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
+export type CampaignMessageStatus =
+  | "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped"
+  | "clicked" | "replied" | "quote_replied";
 export type CampaignTemplateVariableSource = "contact" | "static" | "now";
 export type BroadcastType = "standard" | "retarget";
 export type RetargetStatus = Extract<CampaignMessageStatus, "sent" | "delivered" | "read" | "failed" | "skipped">;
@@ -54,6 +56,9 @@ export interface Campaign {
   read_count: number;
   failed_count: number;
   skipped_count: number;
+  clicked_count: number;
+  replied_count: number;
+  quote_replied_count: number;
   enforce_marketing_policy: boolean;
   smart_retry_enabled: boolean;
   smart_retry_until: string | null;
@@ -76,6 +81,9 @@ export interface CampaignMessage {
   sent_at: string | null;
   delivered_at: string | null;
   read_at: string | null;
+  clicked_at: string | null;
+  replied_at: string | null;
+  quote_replied_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -656,8 +664,16 @@ export async function listCampaignMessages(
 
   let statusClause = "";
   if (opts?.status) {
-    params.push(opts.status);
-    statusClause = `AND status = $${params.length}`;
+    if (opts.status === "clicked") {
+      statusClause = "AND clicked_at IS NOT NULL";
+    } else if (opts.status === "replied") {
+      statusClause = "AND replied_at IS NOT NULL";
+    } else if (opts.status === "quote_replied") {
+      statusClause = "AND quote_replied_at IS NOT NULL";
+    } else {
+      params.push(opts.status);
+      statusClause = `AND status = $${params.length}`;
+    }
   }
 
   const [messageResult, countResult] = await Promise.all([
