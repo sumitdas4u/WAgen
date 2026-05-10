@@ -64,6 +64,12 @@ function buildRetargetClause(status: RetargetStatus): string {
       return "cm.status = 'failed'";
     case "skipped":
       return "cm.status = 'skipped'";
+    case "clicked":
+      return "cm.clicked_at IS NOT NULL";
+    case "replied":
+      return "cm.replied_at IS NOT NULL";
+    case "quote_replied":
+      return "cm.quote_replied_at IS NOT NULL";
     default:
       return "FALSE";
   }

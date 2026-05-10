@@ -26,7 +26,7 @@ const EngagementTimelineQuerySchema = z.object({
 });
 
 const RetargetPreviewQuerySchema = z.object({
-  status: z.enum(["sent", "delivered", "read", "failed", "skipped"] as [RetargetStatus, ...RetargetStatus[]])
+  status: z.enum(["sent", "delivered", "read", "failed", "skipped", "clicked", "replied", "quote_replied"] as [RetargetStatus, ...RetargetStatus[]])
 });
 
 export async function broadcastRoutes(fastify: FastifyInstance): Promise<void> {

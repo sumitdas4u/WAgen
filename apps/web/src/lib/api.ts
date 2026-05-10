@@ -3116,7 +3116,7 @@ export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "com
 export type CampaignMessageStatus = "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped" | "clicked" | "replied" | "quote_replied";
 export type CampaignTemplateVariableSource = "contact" | "static" | "now";
 export type BroadcastType = "standard" | "retarget";
-export type RetargetStatus = "sent" | "delivered" | "read" | "failed" | "skipped";
+export type RetargetStatus = "sent" | "delivered" | "read" | "failed" | "skipped" | "clicked" | "replied" | "quote_replied";
 
 export interface DateOffset {
   direction: "add" | "subtract";

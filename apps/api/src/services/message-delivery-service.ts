@@ -49,6 +49,7 @@ import type { FlowMessagePayload } from "./outbound-message-types.js";
 import { getQueueRedisConnection } from "./queue-service.js";
 import { realtimeHub } from "./realtime-hub.js";
 import { dispatchTemplateMessage, getMessageTemplate } from "./template-service.js";
+import { buildTrackingToken } from "../routes/tracking.js";
 
 const MAX_RETRIES = 1;
 const rateLimitLocks = new Map<string, number>();
@@ -468,6 +469,45 @@ export async function deliverConversationTemplateMessage(input: {
   }
 }
 
+const PLACEHOLDER_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
+
+function extractPlaceholderKeys(text: string): string[] {
+  const keys: string[] = [];
+  for (const m of text.matchAll(PLACEHOLDER_RE)) {
+    const raw = m[1].trim().toLowerCase();
+    keys.push(raw);
+  }
+  return [...new Set(keys)];
+}
+
+function injectUrlTrackingTokens(
+  template: Awaited<ReturnType<typeof getMessageTemplate>>,
+  variables: Record<string, string>,
+  campaignMsgId: string
+): Record<string, string> {
+  const result = { ...variables };
+
+  for (const component of template.components) {
+    if (component.type !== "BUTTONS") continue;
+    for (const button of component.buttons ?? []) {
+      if (button.type !== "URL" || !button.url) continue;
+      const placeholders = extractPlaceholderKeys(button.url);
+      if (placeholders.length === 0) continue;
+      // Only inject when the static part of the button URL ends with /t/
+      // (user sets template URL to https://DOMAIN/t/{{1}} and the variable is the destination URL)
+      const staticBase = button.url.replace(PLACEHOLDER_RE, "").trimEnd();
+      if (!staticBase.endsWith("/t/") && !staticBase.endsWith("/t")) continue;
+      for (const key of placeholders) {
+        const originalValue = result[key];
+        if (!originalValue?.startsWith("http")) continue;
+        result[key] = buildTrackingToken(campaignMsgId, originalValue);
+      }
+    }
+  }
+
+  return result;
+}
+
 export async function deliverCampaignMessage(input: {
   userId: string;
   campaign: Campaign;
@@ -556,10 +596,16 @@ export async function deliverCampaignMessage(input: {
       linkedNumber: activeTemplate.linkedNumber
     });
 
+    const variableValues = injectUrlTrackingTokens(
+      activeTemplate,
+      input.message.resolved_variables_json ?? {},
+      input.message.id
+    );
+
     const sent = await dispatchTemplateMessage(input.userId, {
       templateId: activeTemplateId,
       to: input.message.phone_number,
-      variableValues: input.message.resolved_variables_json ?? {}
+      variableValues
     });
 
     await markCampaignMessageSent(input.message.id, sent.messageId ?? null);

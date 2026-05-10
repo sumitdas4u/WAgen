@@ -19,7 +19,7 @@ export type CampaignMessageStatus =
   | "clicked" | "replied" | "quote_replied";
 export type CampaignTemplateVariableSource = "contact" | "static" | "now";
 export type BroadcastType = "standard" | "retarget";
-export type RetargetStatus = Extract<CampaignMessageStatus, "sent" | "delivered" | "read" | "failed" | "skipped">;
+export type RetargetStatus = Extract<CampaignMessageStatus, "sent" | "delivered" | "read" | "failed" | "skipped" | "clicked" | "replied" | "quote_replied">;
 
 export interface CampaignTemplateVariableBinding {
   source: CampaignTemplateVariableSource;
@@ -161,6 +161,12 @@ function buildRetargetClause(status: RetargetStatus): string {
       return "cm.status = 'failed'";
     case "skipped":
       return "cm.status = 'skipped'";
+    case "clicked":
+      return "cm.clicked_at IS NOT NULL";
+    case "replied":
+      return "cm.replied_at IS NOT NULL";
+    case "quote_replied":
+      return "cm.quote_replied_at IS NOT NULL";
     default:
       return "FALSE";
   }

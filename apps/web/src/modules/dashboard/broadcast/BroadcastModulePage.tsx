@@ -66,6 +66,8 @@ const RETARGET_OPTIONS: Array<{ value: RetargetStatus; label: string }> = [
   { value: "sent", label: "Sent" },
   { value: "delivered", label: "Delivered" },
   { value: "read", label: "Read" },
+  { value: "clicked", label: "Clicked" },
+  { value: "replied", label: "Replied" },
   { value: "failed", label: "Failed" },
   { value: "skipped", label: "Not delivered" }
 ];
