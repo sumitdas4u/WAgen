@@ -281,6 +281,13 @@ function formatCampaignStatus(status: Campaign["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function formatRetryLabel(campaign: Campaign): string | null {
+  if (!campaign.next_retry_at || (campaign.retry_queued_count ?? 0) <= 0) {
+    return null;
+  }
+  return `${campaign.retry_queued_count} retry${campaign.retry_queued_count === 1 ? "" : "ies"} at ${formatDateTime(campaign.next_retry_at)}`;
+}
+
 function shouldPollCampaign(status: Campaign["status"]): boolean {
   return status === "running" || status === "scheduled";
 }
@@ -797,9 +804,14 @@ function BroadcastListPage({ token }: { token: string }) {
                     <div className="bl-cell-name" style={{ color: "#2563eb" }}>{broadcast.name}</div>
                   </td>
                   <td>
-                    <span className={`bl-status-pill status-${broadcast.status}`}>
-                      {formatCampaignStatus(broadcast.status)}
-                    </span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                      <span className={`bl-status-pill status-${broadcast.status}`}>
+                        {formatCampaignStatus(broadcast.status)}
+                      </span>
+                      {formatRetryLabel(broadcast) ? (
+                        <span className="bl-count-pct">{formatRetryLabel(broadcast)}</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td>
                     <div className="bl-count-wrap">
@@ -1071,6 +1083,11 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
             <span className={`bl-status-pill status-${report.campaign.status}`}>
               {formatCampaignStatus(report.campaign.status)}
             </span>
+            {formatRetryLabel(report.campaign) ? (
+              <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#b45309", background: "#fffbeb", padding: "0.15rem 0.5rem", borderRadius: "999px", border: "1px solid #fde68a" }}>
+                {formatRetryLabel(report.campaign)}
+              </span>
+            ) : null}
             <span style={{ fontSize: "0.78rem", color: "#5f6f86" }}>
               Created {formatDateTime(report.campaign.created_at)}
             </span>

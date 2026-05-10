@@ -62,6 +62,8 @@ export interface Campaign {
   enforce_marketing_policy: boolean;
   smart_retry_enabled: boolean;
   smart_retry_until: string | null;
+  next_retry_at?: string | null;
+  retry_queued_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -331,7 +333,25 @@ export async function createCampaign(userId: string, input: CreateCampaignInput)
 
 export async function listCampaigns(userId: string): Promise<Campaign[]> {
   const result = await pool.query<Campaign>(
-    `SELECT * FROM campaigns WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 100`,
+    `SELECT
+       c.*,
+       retry_stats.next_retry_at,
+       COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count
+     FROM campaigns c
+     LEFT JOIN LATERAL (
+       SELECT
+         MIN(cm.next_retry_at) AS next_retry_at,
+         COUNT(*) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at IS NOT NULL
+         )::int AS retry_queued_count
+       FROM campaign_messages cm
+       WHERE cm.campaign_id = c.id
+     ) retry_stats ON TRUE
+     WHERE c.user_id = $1
+     ORDER BY c.updated_at DESC
+     LIMIT 100`,
     [userId]
   );
   return result.rows;
@@ -339,7 +359,25 @@ export async function listCampaigns(userId: string): Promise<Campaign[]> {
 
 export async function getCampaign(userId: string, campaignId: string): Promise<Campaign | null> {
   const result = await pool.query<Campaign>(
-    `SELECT * FROM campaigns WHERE user_id = $1 AND id = $2 LIMIT 1`,
+    `SELECT
+       c.*,
+       retry_stats.next_retry_at,
+       COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count
+     FROM campaigns c
+     LEFT JOIN LATERAL (
+       SELECT
+         MIN(cm.next_retry_at) AS next_retry_at,
+         COUNT(*) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at IS NOT NULL
+         )::int AS retry_queued_count
+       FROM campaign_messages cm
+       WHERE cm.campaign_id = c.id
+     ) retry_stats ON TRUE
+     WHERE c.user_id = $1
+       AND c.id = $2
+     LIMIT 1`,
     [userId, campaignId]
   );
   return result.rows[0] ?? null;

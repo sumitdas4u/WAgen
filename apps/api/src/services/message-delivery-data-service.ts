@@ -726,7 +726,21 @@ async function refreshFailureRateAlert(userId: string, campaignId?: string | nul
   const failureRate = total > 0 ? Number(((failed / total) * 100).toFixed(2)) : 0;
 
   if (total >= HIGH_FAILURE_MIN_ATTEMPTS && failureRate > env.DELIVERY_FAILURE_ALERT_THRESHOLD_PERCENT) {
-    if (campaignId && failureRate >= Math.max(20, env.DELIVERY_FAILURE_ALERT_THRESHOLD_PERCENT)) {
+    let hasPendingSmartRetries = false;
+    if (campaignId) {
+      const pendingRetries = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM campaign_messages
+         WHERE campaign_id = $1
+           AND status = 'queued'
+           AND retry_count > 0
+           AND next_retry_at IS NOT NULL`,
+        [campaignId]
+      );
+      hasPendingSmartRetries = Number(firstRow(pendingRetries)?.count ?? 0) > 0;
+    }
+
+    if (campaignId && !hasPendingSmartRetries && failureRate >= Math.max(20, env.DELIVERY_FAILURE_ALERT_THRESHOLD_PERCENT)) {
       await pool.query(
         `UPDATE campaigns
          SET status = 'paused',
