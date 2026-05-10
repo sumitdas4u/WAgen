@@ -282,10 +282,23 @@ function formatCampaignStatus(status: Campaign["status"]): string {
 }
 
 function formatRetryLabel(campaign: Campaign): string | null {
-  if (!campaign.next_retry_at || (campaign.retry_queued_count ?? 0) <= 0) {
+  const sendingCount = campaign.retry_sending_count ?? 0;
+  if (sendingCount > 0) {
+    return `Retrying now: ${sendingCount}`;
+  }
+
+  const queuedCount = campaign.retry_queued_count ?? 0;
+  if (!campaign.next_retry_at || queuedCount <= 0) {
     return null;
   }
-  return `${campaign.retry_queued_count} retry${campaign.retry_queued_count === 1 ? "" : "ies"} at ${formatDateTime(campaign.next_retry_at)}`;
+
+  const retryAt = new Date(campaign.next_retry_at);
+  const countLabel = `${queuedCount} retry${queuedCount === 1 ? "" : "ies"}`;
+  if (retryAt.getTime() <= Date.now()) {
+    return `Retry due now: ${countLabel} since ${formatDateTime(campaign.next_retry_at)}`;
+  }
+
+  return `Next retry: ${countLabel} on ${formatDateTime(campaign.next_retry_at)}`;
 }
 
 function shouldPollCampaign(status: Campaign["status"]): boolean {

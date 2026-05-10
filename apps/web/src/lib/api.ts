@@ -3166,6 +3166,7 @@ export interface Campaign {
   smart_retry_until: string | null;
   next_retry_at?: string | null;
   retry_queued_count?: number;
+  retry_sending_count?: number;
   created_at: string;
   updated_at: string;
 }

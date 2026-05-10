@@ -64,6 +64,7 @@ export interface Campaign {
   smart_retry_until: string | null;
   next_retry_at?: string | null;
   retry_queued_count?: number;
+  retry_sending_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -336,7 +337,8 @@ export async function listCampaigns(userId: string): Promise<Campaign[]> {
     `SELECT
        c.*,
        retry_stats.next_retry_at,
-       COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count
+       COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count,
+       COALESCE(retry_stats.retry_sending_count, 0) AS retry_sending_count
      FROM campaigns c
      LEFT JOIN LATERAL (
        SELECT
@@ -345,7 +347,11 @@ export async function listCampaigns(userId: string): Promise<Campaign[]> {
            WHERE cm.status = 'queued'
              AND cm.retry_count > 0
              AND cm.next_retry_at IS NOT NULL
-         )::int AS retry_queued_count
+         )::int AS retry_queued_count,
+         COUNT(*) FILTER (
+           WHERE cm.status = 'sending'
+             AND cm.retry_count > 0
+         )::int AS retry_sending_count
        FROM campaign_messages cm
        WHERE cm.campaign_id = c.id
      ) retry_stats ON TRUE
@@ -362,7 +368,8 @@ export async function getCampaign(userId: string, campaignId: string): Promise<C
     `SELECT
        c.*,
        retry_stats.next_retry_at,
-       COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count
+       COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count,
+       COALESCE(retry_stats.retry_sending_count, 0) AS retry_sending_count
      FROM campaigns c
      LEFT JOIN LATERAL (
        SELECT
@@ -371,7 +378,11 @@ export async function getCampaign(userId: string, campaignId: string): Promise<C
            WHERE cm.status = 'queued'
              AND cm.retry_count > 0
              AND cm.next_retry_at IS NOT NULL
-         )::int AS retry_queued_count
+         )::int AS retry_queued_count,
+         COUNT(*) FILTER (
+           WHERE cm.status = 'sending'
+             AND cm.retry_count > 0
+         )::int AS retry_sending_count
        FROM campaign_messages cm
        WHERE cm.campaign_id = c.id
      ) retry_stats ON TRUE
