@@ -1092,7 +1092,10 @@ export function GenericWebhooksPage() {
                     {logs.map((log) => (
                       <tr key={log.id}>
                         <td>{new Date(log.createdAt).toLocaleString()}</td>
-                        <td>{log.status}</td>
+                        <td>
+                          {log.displayStatus ?? log.deliveryStatus ?? log.status}
+                          {log.deliveryErrorMessage ? ` - ${log.deliveryErrorMessage}` : ""}
+                        </td>
                         <td>{log.customerPhone ?? "—"}</td>
                         <td>{log.customerName ?? "—"}</td>
                         <td>{log.workflowId ?? "No match"}</td>

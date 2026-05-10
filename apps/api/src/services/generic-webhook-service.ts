@@ -21,6 +21,7 @@ export type GenericWebhookChannelMode = "api" | "qr";
 export type GenericWebhookDelayUnit = "minutes" | "hours" | "days";
 export type GenericWebhookTagOperation = "append" | "replace" | "add_if_empty";
 export type GenericWebhookLogStatus = "queued" | "completed" | "skipped" | "failed";
+export type GenericWebhookDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
 export interface GenericWebhookCondition {
   comparator: string;
@@ -98,12 +99,16 @@ export interface GenericWebhookLog {
   requestId: string;
   workflowId: string | null;
   status: GenericWebhookLogStatus;
+  displayStatus: GenericWebhookLogStatus | GenericWebhookDeliveryStatus;
   customerName: string | null;
   customerPhone: string | null;
   contactId: string | null;
   templateId: string | null;
   providerMessageId: string | null;
   errorMessage: string | null;
+  deliveryStatus: GenericWebhookDeliveryStatus | null;
+  deliveryErrorCode: string | null;
+  deliveryErrorMessage: string | null;
   payloadJson: JsonRecord;
   resultJson: JsonRecord;
   createdAt: string;
@@ -144,12 +149,16 @@ interface GenericWebhookLogRow {
   request_id: string;
   workflow_id: string | null;
   status: GenericWebhookLogStatus;
+  display_status: GenericWebhookLogStatus | GenericWebhookDeliveryStatus;
   customer_name: string | null;
   customer_phone: string | null;
   contact_id: string | null;
   template_id: string | null;
   provider_message_id: string | null;
   error_message: string | null;
+  delivery_status: GenericWebhookDeliveryStatus | null;
+  delivery_error_code: string | null;
+  delivery_error_message: string | null;
   payload_json: JsonRecord;
   result_json: JsonRecord;
   created_at: string;
@@ -355,12 +364,16 @@ function mapLog(row: GenericWebhookLogRow): GenericWebhookLog {
     requestId: row.request_id,
     workflowId: row.workflow_id,
     status: row.status,
+    displayStatus: row.display_status,
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
     contactId: row.contact_id,
     templateId: row.template_id,
     providerMessageId: row.provider_message_id,
     errorMessage: row.error_message,
+    deliveryStatus: row.delivery_status,
+    deliveryErrorCode: row.delivery_error_code,
+    deliveryErrorMessage: row.delivery_error_message,
     payloadJson: row.payload_json ?? {},
     resultJson: row.result_json ?? {},
     createdAt: row.created_at
@@ -838,11 +851,48 @@ export async function deleteGenericWebhookWorkflow(userId: string, integrationId
 
 export async function listGenericWebhookLogs(userId: string, integrationId: string): Promise<GenericWebhookLog[]> {
   const result = await pool.query<GenericWebhookLogRow>(
-    `SELECT id, request_id, workflow_id, status, customer_name, customer_phone, contact_id, template_id, provider_message_id, error_message, payload_json, result_json, created_at
-     FROM generic_webhook_logs
-     WHERE user_id = $1
-       AND integration_id = $2
-     ORDER BY created_at DESC
+    `SELECT
+       gwl.id,
+       gwl.request_id,
+       gwl.workflow_id,
+       gwl.status,
+       COALESCE(cm.delivery_status, gwl.status) AS display_status,
+       gwl.customer_name,
+       gwl.customer_phone,
+       gwl.contact_id,
+       gwl.template_id,
+       gwl.provider_message_id,
+       gwl.error_message,
+       cm.delivery_status,
+       cm.error_code AS delivery_error_code,
+       cm.error_message AS delivery_error_message,
+       gwl.payload_json,
+       gwl.result_json,
+       gwl.created_at
+     FROM generic_webhook_logs gwl
+     LEFT JOIN LATERAL (
+       SELECT om.id, om.conversation_id, om.provider_message_id
+       FROM outbound_messages om
+       WHERE om.generic_webhook_log_id = gwl.id
+         AND om.type = 'template_api'
+       ORDER BY om.updated_at DESC, om.created_at DESC
+       LIMIT 1
+     ) om ON true
+     LEFT JOIN LATERAL (
+       SELECT cm.delivery_status, cm.error_code, cm.error_message
+       FROM conversation_messages cm
+       WHERE cm.conversation_id = om.conversation_id
+         AND (
+           cm.echo_id = om.id::text
+           OR cm.wamid = om.provider_message_id
+           OR cm.wamid = gwl.provider_message_id
+         )
+       ORDER BY cm.created_at DESC
+       LIMIT 1
+     ) cm ON true
+     WHERE gwl.user_id = $1
+       AND gwl.integration_id = $2
+     ORDER BY gwl.created_at DESC
      LIMIT 100`,
     [userId, integrationId]
   );

@@ -4049,6 +4049,7 @@ export type GenericWebhookChannelMode = "api" | "qr";
 export type GenericWebhookDelayUnit = "minutes" | "hours" | "days";
 export type GenericWebhookTagOperation = "append" | "replace" | "add_if_empty";
 export type GenericWebhookLogStatus = "queued" | "completed" | "skipped" | "failed";
+export type GenericWebhookDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
 export interface GenericWebhookCondition {
   comparator: string;
@@ -4127,12 +4128,16 @@ export interface GenericWebhookLog {
   requestId: string;
   workflowId: string | null;
   status: GenericWebhookLogStatus;
+  displayStatus?: GenericWebhookLogStatus | GenericWebhookDeliveryStatus;
   customerName: string | null;
   customerPhone: string | null;
   contactId: string | null;
   templateId: string | null;
   providerMessageId: string | null;
   errorMessage: string | null;
+  deliveryStatus?: GenericWebhookDeliveryStatus | null;
+  deliveryErrorCode?: string | null;
+  deliveryErrorMessage?: string | null;
   payloadJson: Record<string, unknown>;
   resultJson: Record<string, unknown>;
   createdAt: string;
