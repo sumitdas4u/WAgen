@@ -577,6 +577,9 @@ async function loadCampaignExecutionInput(campaignMessageId: string): Promise<{ 
        c.enforce_marketing_policy,
        c.smart_retry_enabled,
        c.smart_retry_until,
+       c.clicked_count,
+       c.replied_count,
+       c.quote_replied_count,
        c.created_at AS campaign_created_at,
        c.updated_at AS campaign_updated_at,
        u.name AS sender_name
