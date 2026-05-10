@@ -64,7 +64,12 @@ export interface Campaign {
   smart_retry_until: string | null;
   next_retry_at?: string | null;
   retry_queued_count?: number;
+  retry_due_at?: string | null;
+  retry_due_count?: number;
   retry_sending_count?: number;
+  retry_success_count?: number;
+  retry_failed_count?: number;
+  retry_total_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -338,20 +343,51 @@ export async function listCampaigns(userId: string): Promise<Campaign[]> {
        c.*,
        retry_stats.next_retry_at,
        COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count,
-       COALESCE(retry_stats.retry_sending_count, 0) AS retry_sending_count
+       retry_stats.retry_due_at,
+       COALESCE(retry_stats.retry_due_count, 0) AS retry_due_count,
+       COALESCE(retry_stats.retry_sending_count, 0) AS retry_sending_count,
+       COALESCE(retry_stats.retry_success_count, 0) AS retry_success_count,
+       COALESCE(retry_stats.retry_failed_count, 0) AS retry_failed_count,
+       COALESCE(retry_stats.retry_total_count, 0) AS retry_total_count
      FROM campaigns c
      LEFT JOIN LATERAL (
        SELECT
-         MIN(cm.next_retry_at) AS next_retry_at,
+         MIN(cm.next_retry_at) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at > NOW()
+         ) AS next_retry_at,
          COUNT(*) FILTER (
            WHERE cm.status = 'queued'
              AND cm.retry_count > 0
-             AND cm.next_retry_at IS NOT NULL
+             AND cm.next_retry_at > NOW()
          )::int AS retry_queued_count,
+         MIN(cm.next_retry_at) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at <= NOW()
+         ) AS retry_due_at,
+         COUNT(*) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at <= NOW()
+         )::int AS retry_due_count,
          COUNT(*) FILTER (
            WHERE cm.status = 'sending'
              AND cm.retry_count > 0
-         )::int AS retry_sending_count
+         )::int AS retry_sending_count,
+         COUNT(*) FILTER (
+           WHERE cm.retry_count > 0
+             AND cm.status IN ('sent', 'delivered', 'read', 'clicked', 'replied', 'quote_replied')
+         )::int AS retry_success_count,
+         COUNT(*) FILTER (
+           WHERE cm.retry_count > 0
+             AND cm.status = 'failed'
+             AND cm.next_retry_at IS NULL
+         )::int AS retry_failed_count,
+         COUNT(*) FILTER (
+           WHERE cm.retry_count > 0
+         )::int AS retry_total_count
        FROM campaign_messages cm
        WHERE cm.campaign_id = c.id
      ) retry_stats ON TRUE
@@ -369,20 +405,51 @@ export async function getCampaign(userId: string, campaignId: string): Promise<C
        c.*,
        retry_stats.next_retry_at,
        COALESCE(retry_stats.retry_queued_count, 0) AS retry_queued_count,
-       COALESCE(retry_stats.retry_sending_count, 0) AS retry_sending_count
+       retry_stats.retry_due_at,
+       COALESCE(retry_stats.retry_due_count, 0) AS retry_due_count,
+       COALESCE(retry_stats.retry_sending_count, 0) AS retry_sending_count,
+       COALESCE(retry_stats.retry_success_count, 0) AS retry_success_count,
+       COALESCE(retry_stats.retry_failed_count, 0) AS retry_failed_count,
+       COALESCE(retry_stats.retry_total_count, 0) AS retry_total_count
      FROM campaigns c
      LEFT JOIN LATERAL (
        SELECT
-         MIN(cm.next_retry_at) AS next_retry_at,
+         MIN(cm.next_retry_at) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at > NOW()
+         ) AS next_retry_at,
          COUNT(*) FILTER (
            WHERE cm.status = 'queued'
              AND cm.retry_count > 0
-             AND cm.next_retry_at IS NOT NULL
+             AND cm.next_retry_at > NOW()
          )::int AS retry_queued_count,
+         MIN(cm.next_retry_at) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at <= NOW()
+         ) AS retry_due_at,
+         COUNT(*) FILTER (
+           WHERE cm.status = 'queued'
+             AND cm.retry_count > 0
+             AND cm.next_retry_at <= NOW()
+         )::int AS retry_due_count,
          COUNT(*) FILTER (
            WHERE cm.status = 'sending'
              AND cm.retry_count > 0
-         )::int AS retry_sending_count
+         )::int AS retry_sending_count,
+         COUNT(*) FILTER (
+           WHERE cm.retry_count > 0
+             AND cm.status IN ('sent', 'delivered', 'read', 'clicked', 'replied', 'quote_replied')
+         )::int AS retry_success_count,
+         COUNT(*) FILTER (
+           WHERE cm.retry_count > 0
+             AND cm.status = 'failed'
+             AND cm.next_retry_at IS NULL
+         )::int AS retry_failed_count,
+         COUNT(*) FILTER (
+           WHERE cm.retry_count > 0
+         )::int AS retry_total_count
        FROM campaign_messages cm
        WHERE cm.campaign_id = c.id
      ) retry_stats ON TRUE

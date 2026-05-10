@@ -281,24 +281,76 @@ function formatCampaignStatus(status: Campaign["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function formatRetryLabel(campaign: Campaign): string | null {
-  const sendingCount = campaign.retry_sending_count ?? 0;
-  if (sendingCount > 0) {
-    return `Retrying now: ${sendingCount}`;
-  }
+type RetryTone = "scheduled" | "due" | "running" | "done" | "failed" | "mixed";
 
+type RetryUiInfo = {
+  summary: string | null;
+  tone: RetryTone;
+  rows: Array<{ label: string; value: string; tone?: RetryTone }>;
+};
+
+function buildRetryInfo(campaign: Campaign): RetryUiInfo | null {
+  const total = campaign.retry_total_count ?? 0;
   const queuedCount = campaign.retry_queued_count ?? 0;
-  if (!campaign.next_retry_at || queuedCount <= 0) {
+  const dueCount = campaign.retry_due_count ?? 0;
+  const sendingCount = campaign.retry_sending_count ?? 0;
+  const successCount = campaign.retry_success_count ?? 0;
+  const failedCount = campaign.retry_failed_count ?? 0;
+
+  if (total <= 0 && queuedCount <= 0 && dueCount <= 0 && sendingCount <= 0) {
     return null;
   }
 
-  const retryAt = new Date(campaign.next_retry_at);
-  const countLabel = `${queuedCount} retry${queuedCount === 1 ? "" : "ies"}`;
-  if (retryAt.getTime() <= Date.now()) {
-    return `Retry due now: ${countLabel} since ${formatDateTime(campaign.next_retry_at)}`;
+  const rows: RetryUiInfo["rows"] = [];
+  if (queuedCount > 0 && campaign.next_retry_at) {
+    rows.push({ label: "Next retry", value: `${queuedCount} on ${formatDateTime(campaign.next_retry_at)}`, tone: "scheduled" });
+  }
+  if (dueCount > 0) {
+    rows.push({ label: "Due now", value: `${dueCount}${campaign.retry_due_at ? ` since ${formatDateTime(campaign.retry_due_at)}` : ""}`, tone: "due" });
+  }
+  if (sendingCount > 0) {
+    rows.push({ label: "Retrying now", value: String(sendingCount), tone: "running" });
+  }
+  if (successCount > 0) {
+    rows.push({ label: "Recovered", value: String(successCount), tone: "done" });
+  }
+  if (failedCount > 0) {
+    rows.push({ label: "Failed after retry", value: String(failedCount), tone: "failed" });
   }
 
-  return `Next retry: ${countLabel} on ${formatDateTime(campaign.next_retry_at)}`;
+  if (sendingCount > 0) {
+    return { summary: `Retrying now: ${sendingCount}`, tone: "running", rows };
+  }
+
+  if (dueCount > 0) {
+    return {
+      summary: `Retry due now: ${dueCount}${campaign.retry_due_at ? ` since ${formatDateTime(campaign.retry_due_at)}` : ""}`,
+      tone: "due",
+      rows
+    };
+  }
+
+  if (queuedCount > 0 && campaign.next_retry_at) {
+    return { summary: `Next retry: ${queuedCount} on ${formatDateTime(campaign.next_retry_at)}`, tone: "scheduled", rows };
+  }
+
+  if (failedCount > 0 && successCount > 0) {
+    return { summary: `Retry finished: ${successCount} recovered, ${failedCount} failed`, tone: "mixed", rows };
+  }
+
+  if (failedCount > 0) {
+    return { summary: `Retry finished: ${failedCount} failed`, tone: "failed", rows };
+  }
+
+  if (successCount > 0) {
+    return { summary: `Retry finished: ${successCount} recovered`, tone: "done", rows };
+  }
+
+  return null;
+}
+
+function formatRetryLabel(campaign: Campaign): string | null {
+  return buildRetryInfo(campaign)?.summary ?? null;
 }
 
 function shouldPollCampaign(status: Campaign["status"]): boolean {
@@ -1044,6 +1096,7 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
     return <div className="broadcast-loading">Loading broadcast report…</div>;
   }
   const isLiveUpdating = shouldPollCampaign(report.campaign.status);
+  const retryInfo = buildRetryInfo(report.campaign);
 
   const totalCount = report.campaign.total_count;
 
@@ -1096,9 +1149,9 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
             <span className={`bl-status-pill status-${report.campaign.status}`}>
               {formatCampaignStatus(report.campaign.status)}
             </span>
-            {formatRetryLabel(report.campaign) ? (
-              <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#b45309", background: "#fffbeb", padding: "0.15rem 0.5rem", borderRadius: "999px", border: "1px solid #fde68a" }}>
-                {formatRetryLabel(report.campaign)}
+            {retryInfo?.summary ? (
+              <span className={`broadcast-retry-pill is-${retryInfo.tone}`}>
+                {retryInfo.summary}
               </span>
             ) : null}
             <span style={{ fontSize: "0.78rem", color: "#5f6f86" }}>
@@ -1142,6 +1195,27 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
       </div>
 
       {/* Stats overview — clickable tabs */}
+      {retryInfo ? (
+        <div className="broadcast-retry-panel">
+          <div>
+            <div className="broadcast-retry-title">Retry Status</div>
+            <div className="broadcast-retry-subtitle">
+              {report.campaign.smart_retry_enabled
+                ? `Smart retry is enabled${report.campaign.smart_retry_until ? ` until ${formatDateTime(report.campaign.smart_retry_until)}` : ""}.`
+                : "Retry information for messages that have already retried."}
+            </div>
+          </div>
+          <div className="broadcast-retry-grid">
+            {retryInfo.rows.map((row) => (
+              <div key={row.label} className={`broadcast-retry-stat is-${row.tone ?? retryInfo.tone}`}>
+                <span>{row.label}</span>
+                <strong>{row.value}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="bl-overview-card">
         <div className="bl-overview-head">
           <span className="bl-overview-title">Delivery Overview</span>
