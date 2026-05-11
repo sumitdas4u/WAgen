@@ -185,11 +185,6 @@ export function ApiChannelPage() {
   const lastMetaSyncLabel = parseMetaTimestamp(readMetaString(metaHealthRecord, "syncedAt"));
   const businessVerificationLower = (businessVerificationStatus ?? "").toLowerCase();
   const businessVerificationPending = !/(verified|approved|complete)/.test(businessVerificationLower);
-  const sharedBillingSupported = Boolean(metaConfig?.sharedBillingSupported);
-  const billingStatusLabel = formatMetaStatusLabel(
-    selectedConnection?.billingStatus,
-    sharedBillingSupported ? "Pending" : "Not configured"
-  );
   const defaultReplyMode = defaultReplyConfig?.mode ?? "manual";
   const defaultReplyFlowId = defaultReplyConfig?.flowId ?? "";
 
@@ -365,9 +360,6 @@ export function ApiChannelPage() {
     disconnectMutation.mutate();
   };
 
-  const handleAddNew = async () => {
-    await openBusinessApiSetup();
-  };
 
   const handleSaveDefaultReply = async () => {
     if (!defaultReplyConfig) {
