@@ -281,6 +281,12 @@ function formatCampaignStatus(status: Campaign["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function formatMessageStatus(status: string, retryCount: number): string {
+  if (retryCount > 0 && status === "queued") return "Retrying";
+  if (retryCount > 0 && status === "sending") return "Retrying…";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
 type RetryTone = "scheduled" | "due" | "running" | "done" | "failed" | "mixed";
 
 type RetryUiInfo = {
@@ -1035,7 +1041,7 @@ function BroadcastListPage({ token }: { token: string }) {
   );
 }
 
-type EngagementFilter = CampaignMessageStatus | null;
+type EngagementFilter = CampaignMessageStatus | "retrying" | null;
 
 function formatPeriodLabel(period: string, granularity: "hour" | "day" | "week"): string {
   const d = new Date(period);
@@ -1054,7 +1060,7 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   const [engagementFilter, setEngagementFilter] = useState<EngagementFilter>(null);
   const [granularity, setGranularity] = useState<"hour" | "day" | "week">("day");
 
-  const activeStatus: CampaignMessageStatus | undefined = engagementFilter ?? undefined;
+  const activeStatus: CampaignMessageStatus | "retrying" | undefined = engagementFilter ?? undefined;
 
   const reportQuery = useQuery({
     queryKey: dashboardQueryKeys.broadcastReport(campaignId, activeStatus ?? "all", 0),
@@ -1099,6 +1105,10 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   const retryInfo = buildRetryInfo(report.campaign);
 
   const totalCount = report.campaign.total_count;
+  const retryingCount =
+    (report.campaign.retry_queued_count ?? 0) +
+    (report.campaign.retry_due_count ?? 0) +
+    (report.campaign.retry_sending_count ?? 0);
 
   type StatTab = { label: string; value: number; pct: string | null; filter: EngagementFilter; color?: string; activeColor?: string };
   const detailStats: StatTab[] = [
@@ -1109,7 +1119,10 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
     { label: "Clicked", value: baseReport.buckets.clicked, pct: pct(baseReport.buckets.clicked, totalCount), filter: "clicked", color: "#7c3aed", activeColor: "#6d28d9" },
     { label: "Replied", value: baseReport.buckets.replied, pct: pct(baseReport.buckets.replied, totalCount), filter: "replied", color: "#0891b2", activeColor: "#0e7490" },
     { label: "Failed", value: baseReport.buckets.failed, pct: pct(baseReport.buckets.failed, totalCount), filter: "failed", color: "#dc2626", activeColor: "#b91c1c" },
-    { label: "Skipped", value: baseReport.buckets.skipped, pct: pct(baseReport.buckets.skipped, totalCount), filter: "skipped", color: "#92400e", activeColor: "#78350f" }
+    { label: "Skipped", value: baseReport.buckets.skipped, pct: pct(baseReport.buckets.skipped, totalCount), filter: "skipped", color: "#92400e", activeColor: "#78350f" },
+    ...(retryingCount > 0
+      ? [{ label: "Retrying", value: retryingCount, pct: null, filter: "retrying" as EngagementFilter, color: "#b45309", activeColor: "#92400e" }]
+      : [])
   ];
 
   const timelineData = (timelineQuery.data ?? []).map((b) => ({
@@ -1122,6 +1135,7 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
   const hasEngagementData = timelineData.length > 0;
 
   const tableColumns =
+    engagementFilter === "retrying" ? ["Phone", "Status", "Retries", "Last Error", "Next Retry"] :
     engagementFilter === "clicked" ? ["Phone", "Status", "Clicked At"] :
     engagementFilter === "replied" ? ["Phone", "Status", "Replied At"] :
     engagementFilter === "quote_replied" ? ["Phone", "Status", "Quote Replied At"] :
@@ -1353,11 +1367,21 @@ function BroadcastDetailPage({ token, campaignId }: { token: string; campaignId:
               <tr key={message.id}>
                 <td style={{ fontWeight: 600 }}>{message.phone_number}</td>
                 <td>
-                  <span className={`bl-status-pill status-${String(message.status)}`}>
-                    {formatCampaignStatus(message.status as Campaign["status"])}
+                  <span className={`bl-status-pill status-${message.retry_count > 0 && (message.status === "queued" || message.status === "sending") ? "retrying" : String(message.status)}`}>
+                    {formatMessageStatus(message.status, message.retry_count)}
                   </span>
                 </td>
-                {engagementFilter === "clicked" ? (
+                {engagementFilter === "retrying" ? (
+                  <>
+                    <td style={{ fontSize: "0.8rem", color: "#b45309", fontWeight: 600 }}>
+                      {message.retry_count === 1 ? "1st retry" : message.retry_count === 2 ? "2nd retry" : `${message.retry_count}th retry`}
+                    </td>
+                    <td style={{ color: "#be123c", fontSize: "0.8rem" }}>{message.error_message || "—"}</td>
+                    <td style={{ fontSize: "0.8rem", color: message.next_retry_at ? "#0369a1" : "#94a3b8" }}>
+                      {message.next_retry_at ? formatDateTime(message.next_retry_at) : message.status === "sending" ? "Sending now…" : "—"}
+                    </td>
+                  </>
+                ) : engagementFilter === "clicked" ? (
                   <td>{message.clicked_at ? formatDateTime(message.clicked_at) : "—"}</td>
                 ) : engagementFilter === "replied" ? (
                   <td>{message.replied_at ? formatDateTime(message.replied_at) : "—"}</td>

@@ -3496,7 +3496,7 @@ export function fetchBroadcastSummary(token: string) {
 export function fetchBroadcastReport(
   token: string,
   campaignId: string,
-  options?: { limit?: number; offset?: number; status?: CampaignMessageStatus }
+  options?: { limit?: number; offset?: number; status?: CampaignMessageStatus | "retrying" }
 ) {
   const params = new URLSearchParams();
   if (typeof options?.limit === "number") {

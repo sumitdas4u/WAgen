@@ -17,8 +17,8 @@ const CampaignMessagesQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   status: z.enum([
     "queued", "sending", "sent", "delivered", "read", "failed", "skipped",
-    "clicked", "replied", "quote_replied"
-  ] as [CampaignMessageStatus, ...CampaignMessageStatus[]]).optional()
+    "clicked", "replied", "quote_replied", "retrying"
+  ] as [CampaignMessageStatus | "retrying", ...(CampaignMessageStatus | "retrying")[]]).optional()
 });
 
 const EngagementTimelineQuerySchema = z.object({

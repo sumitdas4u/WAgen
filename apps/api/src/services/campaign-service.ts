@@ -792,6 +792,8 @@ export async function listCampaignMessages(
       statusClause = "AND replied_at IS NOT NULL";
     } else if (opts.status === "quote_replied") {
       statusClause = "AND quote_replied_at IS NOT NULL";
+    } else if ((opts.status as string) === "retrying") {
+      statusClause = "AND status IN ('queued', 'sending') AND retry_count > 0";
     } else {
       params.push(opts.status);
       statusClause = `AND status = $${params.length}`;
