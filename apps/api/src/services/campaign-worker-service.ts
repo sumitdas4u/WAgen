@@ -61,6 +61,20 @@ export async function enqueueCampaign(campaignId: string, userId: string): Promi
     throw new Error("Campaign dispatch queue is unavailable because REDIS_URL is not configured.");
   }
 
+  const jobId = campaignDispatchJobId(campaignId);
+
+  // If an existing job has finished (completed or failed), BullMQ will not
+  // re-add it under the same jobId. Remove it first so the retry can proceed.
+  const existing = await queue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === "completed" || state === "failed" || state === "unknown") {
+      await existing.remove().catch(() => undefined);
+    } else if (state === "waiting" || state === "active" || state === "delayed") {
+      return; // already queued — nothing to do
+    }
+  }
+
   await queue.add(
     "dispatch-campaign",
     {
@@ -68,7 +82,7 @@ export async function enqueueCampaign(campaignId: string, userId: string): Promi
       userId
     },
     {
-      jobId: campaignDispatchJobId(campaignId),
+      jobId,
       ...sharedRetryOptions(),
       ...sharedJobCleanup()
     }
