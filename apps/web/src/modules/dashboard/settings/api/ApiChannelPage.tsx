@@ -413,9 +413,7 @@ export function ApiChannelPage() {
               <p>Connect Meta Embedded Signup for stable production messaging at scale, then pause or resume replies without disconnecting the API number.</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <button type="button" className="ghost-btn" disabled={currentBusy} onClick={() => void handleAddNew()}>
-                Add New
-              </button>
+
               <button
                 type="button"
                 className={channelEnabled ? "go-live-switch on" : "go-live-switch"}
@@ -713,7 +711,7 @@ export function ApiChannelPage() {
         </div>
         <p className="tiny-note">
           {isConnected
-            ? "Use Add New to start onboarding another number. Toggle only pauses replies. Reconnect or Disconnect resets only the selected API connection."
+            ? "Toggle only pauses replies. Reconnect or Disconnect resets only the selected API connection."
             : "This channel is currently disconnected. Connect now to start the Meta onboarding flow again."}
         </p>
       </article>
