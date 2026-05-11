@@ -134,7 +134,7 @@ export async function getBroadcastSummary(userId: string): Promise<BroadcastSumm
 export async function getBroadcastReport(
   userId: string,
   campaignId: string,
-  options?: { limit?: number; offset?: number; status?: CampaignMessageStatus }
+  options?: { limit?: number; offset?: number; status?: CampaignMessageStatus | "retrying" }
 ): Promise<BroadcastReport | null> {
   const campaign = await getCampaign(userId, campaignId);
   if (!campaign) {

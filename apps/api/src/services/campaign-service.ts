@@ -773,7 +773,7 @@ export async function cancelCampaign(userId: string, campaignId: string): Promis
 export async function listCampaignMessages(
   userId: string,
   campaignId: string,
-  opts?: { limit?: number; offset?: number; status?: CampaignMessageStatus }
+  opts?: { limit?: number; offset?: number; status?: CampaignMessageStatus | "retrying" }
 ): Promise<{ messages: CampaignMessage[]; total: number }> {
   const campaign = await getCampaign(userId, campaignId);
   if (!campaign) {
