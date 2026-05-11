@@ -540,7 +540,7 @@ export function ApiChannelPage() {
                   onClick={() => setSelectedConnectionId(connection.id)}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1.2fr 1fr 0.8fr 0.8fr 0.8fr auto",
+                    gridTemplateColumns: "1.2fr 1fr 0.8fr 0.8fr auto",
                     gap: "1rem",
                     alignItems: "center",
                     width: "100%",
@@ -566,10 +566,6 @@ export function ApiChannelPage() {
                   <div>
                     <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Status</div>
                     <div style={{ fontWeight: 600, color: active ? "#15803d" : "#b45309" }}>{getConnectionActiveLabel(connection)}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Billing</div>
-                    <div style={{ fontWeight: 600, color: "#0f172a" }}>{formatMetaStatusLabel(connection.billingStatus, "Pending")}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Limit</div>
@@ -649,21 +645,8 @@ export function ApiChannelPage() {
               <div><h3>Connection</h3><p>{selectedConnection?.status ?? "Unknown"}</p></div>
               <div><h3>Message Limit</h3><p>{formatMetaStatusLabel(messagingLimitTier)}</p></div>
               <div><h3>Last Meta Sync</h3><p>{lastMetaSyncLabel ?? "Not synced"}</p></div>
-              {sharedBillingSupported ? (
-                <>
-                  <div><h3>Billing Mode</h3><p>{formatMetaStatusLabel(selectedConnection?.billingMode, "Partner")}</p></div>
-                  <div><h3>Billing Status</h3><p>{billingStatusLabel}</p></div>
-                  <div><h3>Currency</h3><p>{selectedConnection?.billingCurrency ?? metaConfig?.sharedBillingCurrency ?? "Not set"}</p></div>
-                </>
-              ) : null}
             </div>
 
-            {selectedConnection?.billingError ? (
-              <div className="api-setup-alert">
-                <strong>Billing Issue</strong>
-                <p>{selectedConnection.billingError}</p>
-              </div>
-            ) : null}
           </>
         )}
 

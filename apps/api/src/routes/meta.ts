@@ -427,7 +427,7 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
               const wsRes = await pool.query<{ workspace_id: string; connection_id: string }>(
                 `SELECT w.id AS workspace_id, c.id AS connection_id
                  FROM whatsapp_business_connections c
-                 JOIN workspaces w ON w.id = c.workspace_id
+                 JOIN workspaces w ON w.owner_id = c.user_id
                  WHERE c.waba_id = $1 LIMIT 1`,
                 [wabaId]
               );
@@ -456,8 +456,8 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
               const wsRes = await pool.query<{ workspace_id: string; connection_id: string }>(
                 `SELECT w.id AS workspace_id, c.id AS connection_id
                  FROM whatsapp_business_connections c
-                 JOIN workspaces w ON w.id = c.workspace_id
-                 WHERE c.phone_number_id = $1 OR c.phone_number = $1 LIMIT 1`,
+                 JOIN workspaces w ON w.owner_id = c.user_id
+                 WHERE c.phone_number_id = $1 OR c.display_phone_number = $1 LIMIT 1`,
                 [phoneNumberId]
               );
               const wsRow = wsRes.rows[0];

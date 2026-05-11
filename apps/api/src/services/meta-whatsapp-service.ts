@@ -1016,15 +1016,19 @@ async function graphGetWithFieldFallback(
   accessToken: string,
   fieldSets: string[]
 ): Promise<Record<string, unknown> | null> {
+  let lastError: unknown;
   for (const fields of fieldSets) {
     try {
       const response = await graphGet<Record<string, unknown>>(path, accessToken, { fields });
       if (response && typeof response === "object") {
         return response;
       }
-    } catch {
-      // Try next field-set variant.
+    } catch (err) {
+      lastError = err;
     }
+  }
+  if (lastError) {
+    console.warn(`[MetaGraphFallback] all field variants failed for ${path}: ${(lastError as Error).message}`);
   }
   return null;
 }
@@ -1313,6 +1317,30 @@ async function upsertConnection(args: {
     typeof args.expiresInSeconds === "number" && args.expiresInSeconds > 0
       ? new Date(Date.now() + args.expiresInSeconds * 1000).toISOString()
       : null;
+
+  // If the same physical number was previously connected with a different phone_number_id
+  // (e.g. after a WABA reset), re-key the disconnected row so ON CONFLICT picks it up
+  // instead of creating a duplicate row for the same linked number.
+  if (linkedNumber) {
+    await pool.query(
+      `UPDATE whatsapp_business_connections
+       SET phone_number_id = $3
+       WHERE id = (
+         SELECT id FROM whatsapp_business_connections
+         WHERE user_id = $1
+           AND linked_number = $2
+           AND status = 'disconnected'
+           AND phone_number_id != $3
+         ORDER BY updated_at DESC
+         LIMIT 1
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM whatsapp_business_connections
+         WHERE phone_number_id = $3 AND user_id != $1
+       )`,
+      [args.userId, linkedNumber, args.phoneNumberId]
+    );
+  }
 
   const result = await pool.query<MetaConnectionRow>(
     `INSERT INTO whatsapp_business_connections (
@@ -2015,7 +2043,7 @@ export async function getMetaBusinessStatus(
     try {
       refreshedRows.push(
         await refreshConnectionStatusFromMeta(row, {
-          forceRefresh: options?.forceRefresh ?? true
+          forceRefresh: options?.forceRefresh ?? false
         })
       );
     } catch (error) {
@@ -2432,26 +2460,44 @@ export async function disconnectMetaBusinessConnection(
     return false;
   }
 
-  const targetWabaIds = Array.from(new Set(requestedRows.map((row) => row.waba_id).filter(Boolean)));
-  const rows = connectionId
-    ? await listConnectionsByWabaIds(userId, targetWabaIds)
-    : requestedRows;
-  if (rows.length === 0) {
-    return false;
-  }
-
+  // Determine which WABAs to unsubscribe and which tokens to revoke.
+  // For a single-connection disconnect, skip if siblings share the same WABA or token
+  // to avoid breaking other active numbers.
   const unsubRowsByWaba = new Map<string, MetaConnectionRow>();
   const revokeRowsByToken = new Map<string, MetaConnectionRow>();
-  for (const row of rows) {
-    if (!unsubRowsByWaba.has(row.waba_id)) {
-      unsubRowsByWaba.set(row.waba_id, row);
+
+  if (connectionId) {
+    const targetRow = requestedRows[0]!;
+
+    const wabaSiblings = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM whatsapp_business_connections
+       WHERE user_id = $1 AND waba_id = $2 AND id != $3 AND status != 'disconnected'`,
+      [userId, targetRow.waba_id, targetRow.id]
+    );
+    if (parseInt(wabaSiblings.rows[0]?.count ?? "0") === 0) {
+      unsubRowsByWaba.set(targetRow.waba_id, targetRow);
     }
-    if (!revokeRowsByToken.has(row.access_token_encrypted)) {
-      revokeRowsByToken.set(row.access_token_encrypted, row);
+
+    const tokenSiblings = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM whatsapp_business_connections
+       WHERE user_id = $1 AND access_token_encrypted = $2 AND id != $3 AND status != 'disconnected'`,
+      [userId, targetRow.access_token_encrypted, targetRow.id]
+    );
+    if (parseInt(tokenSiblings.rows[0]?.count ?? "0") === 0) {
+      revokeRowsByToken.set(targetRow.access_token_encrypted, targetRow);
+    }
+  } else {
+    for (const row of requestedRows) {
+      if (!unsubRowsByWaba.has(row.waba_id)) {
+        unsubRowsByWaba.set(row.waba_id, row);
+      }
+      if (!revokeRowsByToken.has(row.access_token_encrypted)) {
+        revokeRowsByToken.set(row.access_token_encrypted, row);
+      }
     }
   }
 
-  // Best-effort remote cleanup before local deletion.
+  // Best-effort remote cleanup before local update.
   for (const row of unsubRowsByWaba.values()) {
     try {
       await unsubscribeWebhookSubscription(row);
@@ -2472,7 +2518,7 @@ export async function disconnectMetaBusinessConnection(
     }
   }
 
-  const targetConnectionIds = Array.from(new Set(rows.map((row) => row.id).filter(Boolean)));
+  const targetConnectionIds = Array.from(new Set(requestedRows.map((row) => row.id).filter(Boolean)));
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -2491,6 +2537,7 @@ export async function disconnectMetaBusinessConnection(
     }
 
     if (connectionId) {
+      // Disconnect only the specific connection, not everything under the same WABA.
       await client.query(
         `UPDATE whatsapp_business_connections
          SET status = 'disconnected',
@@ -2502,8 +2549,8 @@ export async function disconnectMetaBusinessConnection(
                'disconnectedBy', 'user_reconnect'
              )
          WHERE user_id = $1
-           AND waba_id = ANY($2::text[])`,
-        [userId, targetWabaIds]
+           AND id = $2::uuid`,
+        [userId, connectionId]
       );
     } else {
       await client.query(
