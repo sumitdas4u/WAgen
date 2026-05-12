@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reminder Module — WAgen</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f4f5f7;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Shell ── */
+  .shell { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 220px;
+    background: #1e1b4b;
+    color: #c7d2fe;
+    flex-shrink: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-logo {
+    padding: 18px 20px;
+    font-size: 18px;
+    font-weight: 800;
+    color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    letter-spacing: -0.5px;
+  }
+
+  .sidebar-logo span { color: #818cf8; }
+
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+
+  .nav-section {
+    padding: 6px 16px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6366f1;
+    margin-top: 8px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    font-size: 13px;
+    color: #a5b4fc;
+    cursor: pointer;
+    border-radius: 0;
+    transition: all 0.15s;
+  }
+
+  .nav-item:hover { background: rgba(99,102,241,0.15); color: #e0e7ff; }
+
+  .nav-item.active {
+    background: rgba(99,102,241,0.25);
+    color: #fff;
+    font-weight: 600;
+    border-right: 3px solid #818cf8;
+  }
+
+  .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+
+  /* ── Main ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .topbar {
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .page-title { font-size: 18px; font-weight: 700; color: #111827; }
+  .page-sub { font-size: 13px; color: #6b7280; margin-top: 1px; }
+
+  .topbar-actions { display: flex; gap: 10px; align-items: center; }
+
+  .btn {
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+  .btn-ghost:hover { border-color: #6366f1; color: #6366f1; }
+
+  /* ── Content ── */
+  .content { padding: 24px 28px; overflow-y: auto; flex: 1; }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px 18px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 6px; }
+  .stat-value { font-size: 24px; font-weight: 800; color: #111827; }
+  .stat-sub { font-size: 11px; color: #6b7280; margin-top: 3px; }
+  .stat-up { color: #10b981; font-weight: 600; }
+
+  /* ── 3-col grid ── */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  .reminder-card {
+    background: #fff;
+    border-radius: 12px;
+    border: 1.5px solid #e5e7eb;
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+
+  .reminder-card.enabled { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
+  .reminder-card.disabled { opacity: 0.75; }
+
+  .card-header {
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .card-header-left { display: flex; align-items: center; gap: 10px; }
+  .card-emoji { font-size: 22px; }
+  .card-title { font-size: 15px; font-weight: 700; color: #111827; }
+  .card-desc { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+
+  /* Toggle */
+  .toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    cursor: pointer;
+  }
+
+  .toggle input { opacity: 0; width: 0; height: 0; }
+
+  .toggle-track {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #d1d5db;
+    border-radius: 22px;
+    transition: background 0.2s;
+  }
+
+  .toggle.on .toggle-track { background: #6366f1; }
+
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  .toggle.on .toggle-thumb { transform: translateX(18px); }
+
+  /* Card sections */
+  .card-section {
+    padding: 14px 18px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .card-section:last-child { border-bottom: none; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    margin-bottom: 12px;
+  }
+
+  .section-badge {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .badge-green { background: #d1fae5; color: #065f46; }
+  .badge-gray { background: #f3f4f6; color: #6b7280; }
+  .badge-blue { background: #dbeafe; color: #1e40af; }
+
+  /* Form fields */
+  .field { margin-bottom: 10px; }
+  .field:last-child { margin-bottom: 0; }
+
+  .field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .field-input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    font-size: 12px;
+    color: #111827;
+    background: #fafafa;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .field-input:focus { border-color: #6366f1; background: #fff; }
+
+  .field-input.disabled {
+    color: #9ca3af;
+    background: #f9fafb;
+  }
+
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .field-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+  /* Tag pills */
+  .tag-input {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 6px 8px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    background: #fafafa;
+    min-height: 34px;
+    align-items: center;
+  }
+
+  .tag-pill {
+    background: #e0e7ff;
+    color: #4338ca;
+    border-radius: 10px;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .tag-pill .x { cursor: pointer; opacity: 0.6; font-size: 10px; }
+  .tag-pill .x:hover { opacity: 1; }
+
+  .tag-add {
+    color: #9ca3af;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+
+  .tag-add:hover { color: #6366f1; }
+
+  /* Radio group */
+  .radio-group { display: flex; gap: 6px; }
+
+  .radio-opt {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    color: #6b7280;
+    transition: all 0.15s;
+  }
+
+  .radio-opt.selected {
+    border-color: #6366f1;
+    background: #eef2ff;
+    color: #4338ca;
+  }
+
+  /* Textarea */
+  .field-textarea {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    font-size: 12px;
+    color: #111827;
+    background: #fafafa;
+    outline: none;
+    resize: none;
+    height: 58px;
+    font-family: inherit;
+    line-height: 1.5;
+    transition: border-color 0.15s;
+  }
+
+  .field-textarea:focus { border-color: #6366f1; background: #fff; }
+
+  .field-textarea.disabled { color: #9ca3af; }
+
+  /* Select */
+  .field-select {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    font-size: 12px;
+    color: #111827;
+    background: #fafafa;
+    outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+
+  .field-select.disabled { color: #9ca3af; }
+
+  /* Status indicator */
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+  }
+
+  .dot-green { background: #10b981; }
+  .dot-gray { background: #d1d5db; }
+
+  /* Disabled overlay */
+  .card-section.dimmed { opacity: 0.45; pointer-events: none; }
+
+  /* Campaign preview strip */
+  .preview-strip {
+    background: #f8faff;
+    border: 1px dashed #c7d2fe;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: #4338ca;
+    margin-top: 8px;
+  }
+
+  .preview-strip strong { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #818cf8; margin-bottom: 3px; }
+
+  /* Footer */
+  .card-footer {
+    padding: 12px 18px;
+    background: #f9fafb;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  .btn-sm {
+    padding: 6px 14px;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+
+  /* ── Dispatch history table ── */
+  .section-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .table-wrap {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+  thead tr { background: #f9fafb; }
+  th { padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; border-bottom: 1px solid #e5e7eb; }
+  td { padding: 11px 16px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+  tr:last-child td { border-bottom: none; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .pill-green { background: #d1fae5; color: #065f46; }
+  .pill-blue { background: #dbeafe; color: #1e40af; }
+  .pill-yellow { background: #fef3c7; color: #92400e; }
+  .pill-gray { background: #f3f4f6; color: #6b7280; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">W<span>A</span>gen</div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Workspace</div>
+      <div class="nav-item"><span class="nav-icon">💬</span> Conversations</div>
+      <div class="nav-item"><span class="nav-icon">👥</span> Contacts</div>
+      <div class="nav-item"><span class="nav-icon">📊</span> Dashboard</div>
+
+      <div class="nav-section">Automation</div>
+      <div class="nav-item"><span class="nav-icon">🔁</span> Sequences</div>
+      <div class="nav-item"><span class="nav-icon">🤖</span> Flows</div>
+      <div class="nav-item active"><span class="nav-icon">🎁</span> Reminders</div>
+
+      <div class="nav-section">Settings</div>
+      <div class="nav-item"><span class="nav-icon">📡</span> Channels</div>
+      <div class="nav-item"><span class="nav-icon">📄</span> Templates</div>
+      <div class="nav-item"><span class="nav-icon">⚙️</span> Settings</div>
+    </nav>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div>
+        <div class="page-title">🎁 Reminder Module</div>
+        <div class="page-sub">Auto-capture important dates & send campaigns on time</div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost">Preview Today's Dispatch</button>
+        <button class="btn btn-primary">Save All Changes</button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- Stats -->
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-label">Dates Captured</div>
+          <div class="stat-value">248</div>
+          <div class="stat-sub"><span class="stat-up">+12</span> this week</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Reminders Sent</div>
+          <div class="stat-value">91</div>
+          <div class="stat-sub">Last 30 days</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Campaigns</div>
+          <div class="stat-value">2</div>
+          <div class="stat-sub">Birthday + Anniversary</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Upcoming Today</div>
+          <div class="stat-value">3</div>
+          <div class="stat-sub">Dispatch at 09:00</div>
+        </div>
+      </div>
+
+      <!-- 3-col card grid -->
+      <div class="cards-grid">
+
+        <!-- ── Birthday Card ── -->
+        <div class="reminder-card enabled">
+          <div class="card-header">
+            <div class="card-header-left">
+              <span class="card-emoji">🎂</span>
+              <div>
+                <div class="card-title">Birthday</div>
+                <div class="card-desc"><span class="status-dot dot-green"></span>Active · 143 dates captured</div>
+              </div>
+            </div>
+            <label class="toggle on">
+              <input type="checkbox" checked>
+              <div class="toggle-track"></div>
+              <div class="toggle-thumb"></div>
+            </label>
+          </div>
+
+          <!-- Capture section -->
+          <div class="card-section">
+            <div class="section-header">
+              📥 Capture
+              <span class="section-badge badge-green">ON</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Ask customer for birthday</label>
+              <div class="radio-group">
+                <div class="radio-opt selected">✓ Enabled</div>
+                <div class="radio-opt">Disabled</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Segment / Tag Filter</label>
+              <div class="tag-input">
+                <span class="tag-pill">VIP <span class="x">✕</span></span>
+                <span class="tag-pill">Repeat <span class="x">✕</span></span>
+                <span class="tag-add">+ Add tag</span>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Capture Message</label>
+              <textarea class="field-textarea">Hey! 🎉 Want us to remember your birthday and surprise you with a special offer?</textarea>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Capture Flow</label>
+              <div class="radio-group">
+                <div class="radio-opt selected">Use Default</div>
+                <div class="radio-opt">Custom Flow</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Cooldown</label>
+              <div class="field-row">
+                <input type="number" class="field-input" value="30">
+                <select class="field-select"><option>Days</option><option>Weeks</option></select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Campaign section -->
+          <div class="card-section">
+            <div class="section-header">
+              🚀 Campaign
+              <span class="section-badge badge-blue">ON DATE</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Campaign Message (within 24h)</label>
+              <textarea class="field-textarea">🎂 Happy Birthday! Celebrate with 20% off your order today only! 🎉</textarea>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Template (outside 24h)</label>
+              <select class="field-select">
+                <option>birthday_offer_v1</option>
+                <option>birthday_generic</option>
+              </select>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label class="field-label">Send Time</label>
+                <input type="time" class="field-input" value="09:00">
+              </div>
+              <div class="field">
+                <label class="field-label">Days Before</label>
+                <input type="number" class="field-input" value="0" min="0" max="7">
+              </div>
+            </div>
+
+            <div class="preview-strip">
+              <strong>Preview</strong>
+              "🎂 Happy Birthday! Celebrate with 20% off your order today only! 🎉"
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <button class="btn btn-ghost btn-sm">Discard</button>
+            <button class="btn btn-primary btn-sm">Save Birthday</button>
+          </div>
+        </div>
+
+        <!-- ── Anniversary Card ── -->
+        <div class="reminder-card enabled">
+          <div class="card-header">
+            <div class="card-header-left">
+              <span class="card-emoji">💍</span>
+              <div>
+                <div class="card-title">Anniversary</div>
+                <div class="card-desc"><span class="status-dot dot-green"></span>Active · 62 dates captured</div>
+              </div>
+            </div>
+            <label class="toggle on">
+              <input type="checkbox" checked>
+              <div class="toggle-track"></div>
+              <div class="toggle-thumb"></div>
+            </label>
+          </div>
+
+          <div class="card-section">
+            <div class="section-header">
+              📥 Capture
+              <span class="section-badge badge-green">ON</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Ask customer for anniversary</label>
+              <div class="radio-group">
+                <div class="radio-opt selected">✓ Enabled</div>
+                <div class="radio-opt">Disabled</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Segment / Tag Filter</label>
+              <div class="tag-input">
+                <span class="tag-pill">All Contacts <span class="x">✕</span></span>
+                <span class="tag-add">+ Add tag</span>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Capture Message</label>
+              <textarea class="field-textarea">💍 Do you have a special anniversary coming up? Share the date and we'll make it memorable!</textarea>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Capture Flow</label>
+              <div class="radio-group">
+                <div class="radio-opt selected">Use Default</div>
+                <div class="radio-opt">Custom Flow</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Cooldown</label>
+              <div class="field-row">
+                <input type="number" class="field-input" value="60">
+                <select class="field-select"><option>Days</option></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-section">
+            <div class="section-header">
+              🚀 Campaign
+              <span class="section-badge badge-blue">ON DATE</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Campaign Message (within 24h)</label>
+              <textarea class="field-textarea">💖 Happy Anniversary! Enjoy a special couple combo tonight — just for you two! 🥂</textarea>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Template (outside 24h)</label>
+              <select class="field-select">
+                <option>anniversary_special_v1</option>
+                <option>anniversary_generic</option>
+              </select>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label class="field-label">Send Time</label>
+                <input type="time" class="field-input" value="08:30">
+              </div>
+              <div class="field">
+                <label class="field-label">Days Before</label>
+                <input type="number" class="field-input" value="1" min="0" max="7">
+              </div>
+            </div>
+
+            <div class="preview-strip">
+              <strong>Preview · Sends 1 day before</strong>
+              "💖 Happy Anniversary! Enjoy a special couple combo tonight — just for you two! 🥂"
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <button class="btn btn-ghost btn-sm">Discard</button>
+            <button class="btn btn-primary btn-sm">Save Anniversary</button>
+          </div>
+        </div>
+
+        <!-- ── Custom Card ── -->
+        <div class="reminder-card disabled">
+          <div class="card-header">
+            <div class="card-header-left">
+              <span class="card-emoji">📅</span>
+              <div>
+                <div class="card-title">Custom Reminder</div>
+                <div class="card-desc"><span class="status-dot dot-gray"></span>Disabled · Not configured</div>
+              </div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox">
+              <div class="toggle-track"></div>
+              <div class="toggle-thumb"></div>
+            </label>
+          </div>
+
+          <div class="card-section dimmed">
+            <div class="section-header">
+              🏷️ Setup
+            </div>
+
+            <div class="field">
+              <label class="field-label">Reminder Name / Label</label>
+              <input type="text" class="field-input disabled" placeholder="e.g. Pet Birthday, Kids Birthday, Renewal">
+            </div>
+
+            <div class="field">
+              <label class="field-label">Field to Store Date</label>
+              <select class="field-select disabled">
+                <option>-- Select or create contact field --</option>
+                <option>pet_birthday</option>
+                <option>+ Create new field…</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card-section dimmed">
+            <div class="section-header">
+              📥 Capture
+              <span class="section-badge badge-gray">OFF</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Ask customer for date</label>
+              <div class="radio-group">
+                <div class="radio-opt">Enabled</div>
+                <div class="radio-opt selected">Disabled</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Capture Message</label>
+              <textarea class="field-textarea disabled" placeholder="What to ask the customer…"></textarea>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Cooldown</label>
+              <div class="field-row">
+                <input type="number" class="field-input disabled" value="30" disabled>
+                <select class="field-select disabled" disabled><option>Days</option></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-section dimmed">
+            <div class="section-header">
+              🚀 Campaign
+              <span class="section-badge badge-gray">OFF</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Campaign Message (within 24h)</label>
+              <textarea class="field-textarea disabled" placeholder="Message to send on the date…"></textarea>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Template (outside 24h)</label>
+              <select class="field-select disabled" disabled>
+                <option>-- Select template --</option>
+              </select>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label class="field-label">Send Time</label>
+                <input type="time" class="field-input disabled" value="09:00" disabled>
+              </div>
+              <div class="field">
+                <label class="field-label">Days Before</label>
+                <input type="number" class="field-input disabled" value="0" disabled>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <button class="btn btn-ghost btn-sm" style="opacity:0.4;pointer-events:none">Discard</button>
+            <button class="btn btn-primary btn-sm" style="opacity:0.4;pointer-events:none">Save Custom</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Dispatch Log -->
+      <div class="section-title">
+        📋 Recent Dispatch Log
+        <span class="section-badge badge-gray" style="font-size:11px;padding:2px 10px;border-radius:10px">Last 7 days</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Contact</th>
+              <th>Type</th>
+              <th>Date</th>
+              <th>Channel</th>
+              <th>Delivery</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Priya Sharma</strong><br><span style="font-size:11px;color:#9ca3af">+91 98765 43210</span></td>
+              <td><span class="pill pill-blue">🎂 Birthday</span></td>
+              <td>12 May 2026</td>
+              <td>Free Message</td>
+              <td style="color:#10b981;font-weight:600">Delivered</td>
+              <td><span class="pill pill-green">Sent</span></td>
+            </tr>
+            <tr>
+              <td><strong>Rahul Mehta</strong><br><span style="font-size:11px;color:#9ca3af">+91 87654 32109</span></td>
+              <td><span class="pill pill-blue">🎂 Birthday</span></td>
+              <td>11 May 2026</td>
+              <td>Template</td>
+              <td style="color:#10b981;font-weight:600">Delivered</td>
+              <td><span class="pill pill-green">Sent</span></td>
+            </tr>
+            <tr>
+              <td><strong>Anita Kapoor</strong><br><span style="font-size:11px;color:#9ca3af">+91 76543 21098</span></td>
+              <td><span class="pill pill-yellow">💍 Anniversary</span></td>
+              <td>10 May 2026</td>
+              <td>Template</td>
+              <td style="color:#f59e0b;font-weight:600">Read</td>
+              <td><span class="pill pill-green">Sent</span></td>
+            </tr>
+            <tr>
+              <td><strong>Vikram Singh</strong><br><span style="font-size:11px;color:#9ca3af">+91 65432 10987</span></td>
+              <td><span class="pill pill-blue">🎂 Birthday</span></td>
+              <td>9 May 2026</td>
+              <td>Free Message</td>
+              <td style="color:#6b7280;font-weight:600">Pending</td>
+              <td><span class="pill pill-yellow">Queued</span></td>
+            </tr>
+            <tr>
+              <td><strong>Sunita Patel</strong><br><span style="font-size:11px;color:#9ca3af">+91 54321 09876</span></td>
+              <td><span class="pill pill-yellow">💍 Anniversary</span></td>
+              <td>8 May 2026</td>
+              <td>Template</td>
+              <td style="color:#ef4444;font-weight:600">Failed</td>
+              <td><span class="pill pill-gray">Error</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,149 @@
+<h2>Reminder Module — Settings Page</h2>
+<p class="subtitle">How should the settings page look? Click your preferred layout.</p>
+
+<div class="cards">
+
+  <!-- Option A: Single expanded card, others collapsed -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="font-family:sans-serif;font-size:12px;padding:12px;background:#f8f9fa;border-radius:6px;line-height:1.6">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#111">⚙️ Reminder Settings</div>
+
+        <!-- Birthday card expanded -->
+        <div style="border:1.5px solid #6366f1;border-radius:8px;padding:10px;margin-bottom:6px;background:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-weight:600">🎂 Birthday</span>
+            <span style="background:#6366f1;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px">ON</span>
+          </div>
+          <div style="color:#555;font-size:11px;border-top:1px solid #eee;padding-top:8px">
+            <div style="margin-bottom:4px">📋 <b>Capture</b> &nbsp; Ask customer: <span style="background:#f1f5f9;padding:1px 5px;border-radius:3px">ON</span></div>
+            <div style="margin-bottom:4px">🏷️ Filter: <span style="background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:10px;font-size:10px">VIP</span> <span style="background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:10px;font-size:10px">+Add</span></div>
+            <div style="margin-bottom:4px">💬 Msg: "Hey! Want us to remember your birthday? 🎉"</div>
+            <div style="margin-bottom:4px">🔄 Flow: <span style="background:#f1f5f9;padding:1px 5px;border-radius:3px">Use Default</span></div>
+            <div style="margin-bottom:8px">⏱️ Cooldown: <span style="background:#f1f5f9;padding:1px 5px;border-radius:3px">30 days</span></div>
+            <div style="border-top:1px solid #eee;padding-top:8px;margin-bottom:4px">🚀 <b>Campaign</b></div>
+            <div style="margin-bottom:4px">📨 Message: "🎂 Happy Birthday! 20% off today!"</div>
+            <div style="margin-bottom:4px">📄 Template: <span style="background:#f1f5f9;padding:1px 5px;border-radius:3px">birthday_offer_v1</span></div>
+            <div>⏰ Send at: <span style="background:#f1f5f9;padding:1px 5px;border-radius:3px">09:00</span> &nbsp; 📅 Days before: <span style="background:#f1f5f9;padding:1px 5px;border-radius:3px">0</span></div>
+          </div>
+        </div>
+
+        <!-- Anniversary collapsed -->
+        <div style="border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:6px;background:#fff;display:flex;justify-content:space-between;align-items:center;cursor:pointer">
+          <span style="color:#888">💍 Anniversary</span>
+          <span style="background:#e5e7eb;color:#666;border-radius:12px;padding:2px 10px;font-size:11px">OFF ▸</span>
+        </div>
+
+        <!-- Custom collapsed -->
+        <div style="border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;background:#fff;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#888">📅 Custom</span>
+          <span style="background:#e5e7eb;color:#666;border-radius:12px;padding:2px 10px;font-size:11px">OFF ▸</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Accordion Cards</h3>
+      <p>One card open at a time. Collapsed cards show just the name + toggle. Clean, focused.</p>
+    </div>
+  </div>
+
+  <!-- Option B: All 3 cards visible as columns -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="font-family:sans-serif;font-size:11px;padding:12px;background:#f8f9fa;border-radius:6px;line-height:1.5">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#111">⚙️ Reminder Settings</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+
+          <div style="border:1.5px solid #6366f1;border-radius:8px;padding:8px;background:#fff">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <span style="font-weight:600;font-size:12px">🎂 Birthday</span>
+              <span style="background:#6366f1;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px">ON</span>
+            </div>
+            <div style="color:#555;font-size:10px">
+              <div style="margin-bottom:3px">Ask customer: ✅</div>
+              <div style="margin-bottom:3px">Filter: VIP</div>
+              <div style="margin-bottom:3px">Flow: Default</div>
+              <div style="margin-bottom:3px">Cooldown: 30d</div>
+              <div style="border-top:1px solid #eee;margin:5px 0;padding-top:5px;font-weight:600">Campaign</div>
+              <div style="margin-bottom:3px">Template: birthday_v1</div>
+              <div>Send: 09:00, Day 0</div>
+            </div>
+          </div>
+
+          <div style="border:1.5px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <span style="font-weight:600;font-size:12px">💍 Anniversary</span>
+              <span style="background:#e5e7eb;color:#666;border-radius:10px;padding:1px 7px;font-size:10px">OFF</span>
+            </div>
+            <div style="color:#bbb;font-size:10px">
+              <div style="margin-bottom:3px">Ask customer: —</div>
+              <div style="margin-bottom:3px">Filter: —</div>
+              <div style="margin-bottom:3px">Flow: Default</div>
+              <div style="margin-bottom:3px">Cooldown: 30d</div>
+              <div style="border-top:1px solid #eee;margin:5px 0;padding-top:5px;font-weight:600">Campaign</div>
+              <div style="margin-bottom:3px">Template: —</div>
+              <div>Send: 09:00</div>
+            </div>
+          </div>
+
+          <div style="border:1.5px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <span style="font-weight:600;font-size:12px">📅 Custom</span>
+              <span style="background:#e5e7eb;color:#666;border-radius:10px;padding:1px 7px;font-size:10px">OFF</span>
+            </div>
+            <div style="color:#bbb;font-size:10px">
+              <div style="margin-bottom:3px">Label: —</div>
+              <div style="margin-bottom:3px">Filter: —</div>
+              <div style="margin-bottom:3px">Flow: Default</div>
+              <div style="margin-bottom:3px">Cooldown: 30d</div>
+              <div style="border-top:1px solid #eee;margin:5px 0;padding-top:5px;font-weight:600">Campaign</div>
+              <div style="margin-bottom:3px">Template: —</div>
+              <div>Send: 09:00</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — 3-Column Grid</h3>
+      <p>All 3 cards always visible side by side. See everything at once. Good for comparison.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Tabbed layout -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="font-family:sans-serif;font-size:12px;padding:12px;background:#f8f9fa;border-radius:6px;line-height:1.6">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#111">⚙️ Reminder Settings</div>
+
+        <!-- Tabs -->
+        <div style="display:flex;gap:0;margin-bottom:10px;border-bottom:2px solid #e5e7eb">
+          <div style="padding:4px 14px;background:#6366f1;color:#fff;border-radius:6px 6px 0 0;font-size:11px;font-weight:600;margin-right:2px">🎂 Birthday</div>
+          <div style="padding:4px 14px;color:#888;border-radius:6px 6px 0 0;font-size:11px;margin-right:2px">💍 Anniversary</div>
+          <div style="padding:4px 14px;color:#888;border-radius:6px 6px 0 0;font-size:11px">📅 Custom</div>
+        </div>
+
+        <!-- Active tab content -->
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:0 8px 8px 8px;padding:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-weight:600">Birthday Reminder</span>
+            <span style="background:#6366f1;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px">● Enabled</span>
+          </div>
+          <div style="color:#555;font-size:11px">
+            <div style="margin-bottom:4px">📋 <b>Capture Settings</b></div>
+            <div style="margin-bottom:3px">Ask customer: ON &nbsp;|&nbsp; Flow: Default &nbsp;|&nbsp; Cooldown: 30d</div>
+            <div style="margin-bottom:8px">Filter: VIP, Repeat Customer</div>
+            <div style="margin-bottom:4px">🚀 <b>Campaign Settings</b></div>
+            <div>Template: birthday_offer_v1 &nbsp;|&nbsp; Send: 09:00 &nbsp;|&nbsp; Day: 0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Tabbed</h3>
+      <p>Tabs at top, one reminder type at a time. More space for each config. Familiar UX pattern.</p>
+    </div>
+  </div>
+
+</div>

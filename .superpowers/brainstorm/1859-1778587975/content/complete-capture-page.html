@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Complete Capture Page — WAgen Reminders</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f1f3f7;
+    min-height: 100vh;
+    color: #1a1a2e;
+  }
+
+  /* ── Shell ── */
+  .shell { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 210px; background: #1e1b4b; color: #c7d2fe;
+    flex-shrink: 0; display: flex; flex-direction: column;
+  }
+  .sidebar-logo {
+    padding: 16px 18px; font-size: 17px; font-weight: 800; color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,0.08); letter-spacing: -0.5px;
+  }
+  .sidebar-logo span { color: #818cf8; }
+  .sidebar-nav { padding: 10px 0; }
+  .nav-section {
+    padding: 6px 16px 3px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em; color: #6366f1; margin-top: 6px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 16px; font-size: 13px; color: #a5b4fc; cursor: pointer;
+  }
+  .nav-item:hover { background: rgba(99,102,241,0.12); color: #e0e7ff; }
+  .nav-item.active {
+    background: rgba(99,102,241,0.22); color: #fff; font-weight: 600;
+    border-right: 3px solid #818cf8;
+  }
+  .nav-icon { font-size: 14px; width: 18px; text-align: center; }
+
+  /* ── Main ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .topbar {
+    background: #fff; border-bottom: 1px solid #e5e7eb;
+    padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .breadcrumb { font-size: 12px; color: #9ca3af; margin-bottom: 2px; }
+  .breadcrumb span { color: #6366f1; font-weight: 600; }
+  .page-title { font-size: 17px; font-weight: 800; color: #111827; }
+
+  .topbar-right { display: flex; gap: 8px; align-items: center; }
+
+  .btn { padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-ghost { background: #fff; color: #6b7280; border: 1.5px solid #e5e7eb; }
+  .btn-ghost:hover { border-color: #6366f1; color: #6366f1; }
+  .btn-danger { background: #fff; color: #ef4444; border: 1.5px solid #fecaca; }
+
+  /* ── Content ── */
+  .content { padding: 22px 24px; overflow-y: auto; flex: 1; }
+
+  /* ── Two-col layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 18px;
+    align-items: start;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: #fff; border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+  }
+  .card + .card { margin-top: 14px; }
+
+  .card-header {
+    padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #f3f4f6; background: #fafafa;
+  }
+  .card-header-left { display: flex; align-items: center; gap: 10px; }
+  .step-circle {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #6366f1; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; flex-shrink: 0;
+  }
+  .step-circle.done { background: #10b981; }
+  .ch-title { font-size: 14px; font-weight: 700; color: #111827; }
+  .ch-desc  { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+
+  .card-body { padding: 16px 18px; }
+
+  /* Fields */
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+
+  .field-label {
+    font-size: 11px; font-weight: 700; color: #374151;
+    margin-bottom: 5px; display: flex; align-items: center; gap: 6px;
+  }
+  .field-hint { font-size: 10px; color: #9ca3af; font-weight: 400; }
+
+  .field-select {
+    width: 100%; padding: 9px 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 12px; color: #111827; background: #fff; outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    padding-right: 30px; cursor: pointer; transition: border-color 0.15s;
+  }
+  .field-select:focus { border-color: #6366f1; }
+  .field-select.sel { border-color: #6366f1; background-color: #fafffe; }
+
+  .field-input {
+    width: 100%; padding: 9px 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 12px; color: #111827; background: #fff; outline: none;
+    transition: border-color 0.15s;
+  }
+  .field-input:focus { border-color: #6366f1; }
+
+  .field-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .field-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+  /* Template preview panel */
+  .template-preview {
+    border: 1.5px solid #c7d2fe;
+    border-radius: 10px; overflow: hidden; margin-top: 10px;
+  }
+  .tp-header {
+    background: #eef2ff; padding: 8px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .tp-header-left { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #4338ca; }
+  .tp-edit { font-size: 10px; color: #818cf8; cursor: pointer; font-weight: 600; }
+  .tp-edit:hover { color: #4338ca; }
+
+  .tp-body { padding: 14px; background: #ece5dd; }
+  .tp-phone {
+    background: #fff; border-radius: 0 12px 12px 12px;
+    padding: 10px 12px; font-size: 12px; color: #111;
+    line-height: 1.6; max-width: 85%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    position: relative;
+  }
+  .tp-phone::before {
+    content: ''; position: absolute; top: 0; left: -7px;
+    border-width: 0 8px 8px 0;
+    border-style: solid;
+    border-color: transparent #fff transparent transparent;
+  }
+  .tp-var {
+    background: #dbeafe; color: #1e40af;
+    border-radius: 4px; padding: 1px 5px;
+    font-size: 11px; font-weight: 700;
+    font-family: monospace;
+  }
+  .tp-buttons { margin-top: 1px; max-width: 85%; }
+  .tp-btn {
+    background: #fff; border-top: 1px solid #e5e5e5;
+    padding: 9px 12px; text-align: center;
+    font-size: 12px; color: #0084c8; font-weight: 700;
+  }
+  .tp-btn:last-child { border-radius: 0 0 12px 12px; }
+  .tp-time { font-size: 10px; color: #7e7e7e; text-align: right; max-width: 85%; margin-top: 3px; }
+
+  /* Variable mapping table */
+  .var-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 2px; }
+  .var-table th {
+    text-align: left; padding: 6px 10px;
+    background: #f9fafb; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .var-table td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  .var-table tr:last-child td { border-bottom: none; }
+  .var-code {
+    font-family: monospace; font-size: 11px;
+    background: #f3f4f6; padding: 2px 7px; border-radius: 5px; color: #374151; white-space: nowrap;
+  }
+  .var-arrow { color: #d1d5db; font-size: 12px; text-align: center; }
+
+  /* Flow list */
+  .flow-list { border: 1.5px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .flow-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-bottom: 1px solid #f3f4f6;
+    cursor: pointer; transition: background 0.1s;
+  }
+  .flow-row:last-child { border-bottom: none; }
+  .flow-row:hover { background: #f5f3ff; }
+  .flow-row.sel { background: #eef2ff; border-left: 3px solid #6366f1; padding-left: 9px; }
+  .flow-row-left { display: flex; align-items: center; gap: 8px; }
+  .flow-icon { font-size: 16px; }
+  .flow-name { font-size: 12px; font-weight: 700; color: #111827; }
+  .flow-meta { font-size: 10px; color: #9ca3af; }
+  .flow-check { color: #6366f1; font-size: 15px; font-weight: 900; }
+  .flow-new {
+    width: 100%; padding: 10px; background: transparent;
+    border: 1.5px dashed #c7d2fe; border-radius: 8px;
+    color: #6366f1; font-size: 12px; font-weight: 600;
+    cursor: pointer; margin-top: 8px; text-align: center;
+    transition: background 0.1s;
+  }
+  .flow-new:hover { background: #eef2ff; }
+
+  /* Trigger group */
+  .trigger-group { display: flex; gap: 6px; }
+  .trigger-opt {
+    flex: 1; padding: 10px 8px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    text-align: center; cursor: pointer; transition: all 0.15s; background: #fafafa;
+  }
+  .trigger-opt .t-icon  { font-size: 18px; display: block; margin-bottom: 4px; }
+  .trigger-opt .t-label { font-size: 11px; font-weight: 700; color: #6b7280; }
+  .trigger-opt .t-sub   { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+  .trigger-opt.sel { border-color: #6366f1; background: #eef2ff; }
+  .trigger-opt.sel .t-label { color: #4338ca; }
+  .trigger-opt.sel .t-sub   { color: #818cf8; }
+
+  /* Conditions */
+  .conditions-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .cond-row {
+    display: grid; grid-template-columns: 1.4fr 90px 1fr 28px;
+    gap: 5px; align-items: center;
+  }
+  .cond-select {
+    padding: 7px 8px; border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 11px; color: #111; background: #fff; outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 7px center;
+    padding-right: 22px; cursor: pointer; width: 100%;
+  }
+  .cond-input {
+    padding: 7px 9px; border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 11px; color: #111; background: #fff; outline: none; width: 100%;
+  }
+  .cond-del {
+    width: 28px; height: 28px; border: 1.5px solid #fecaca;
+    background: #fff; border-radius: 6px; color: #ef4444;
+    font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+
+  .add-cond {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 10px; border: 1.5px dashed #c7d2fe; border-radius: 7px;
+    color: #6366f1; font-size: 11px; font-weight: 600; cursor: pointer;
+    transition: background 0.1s;
+  }
+  .add-cond:hover { background: #eef2ff; }
+
+  .match-bar {
+    background: #f0fdf4; border: 1px solid #a7f3d0;
+    border-radius: 8px; padding: 9px 14px;
+    font-size: 12px; color: #065f46;
+    display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  }
+  .match-pill {
+    background: #065f46; color: #fff; border-radius: 12px;
+    padding: 2px 10px; font-size: 12px; font-weight: 800;
+  }
+
+  /* Cooldown */
+  .inline-row { display: flex; align-items: center; gap: 8px; }
+  .inline-row .field-input { width: 80px; }
+  .inline-row .field-select { width: 100px; }
+  .inline-row span { font-size: 12px; color: #6b7280; }
+
+  /* ── Right sidebar ── */
+  .right-panel { display: flex; flex-direction: column; gap: 14px; }
+
+  .info-card {
+    background: #fff; border-radius: 12px;
+    border: 1px solid #e5e7eb; padding: 16px 18px;
+  }
+  .ic-title {
+    font-size: 11px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.07em; color: #6b7280; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .status-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 12px;
+  }
+  .status-row:last-child { border-bottom: none; }
+  .status-row .s-label { color: #6b7280; }
+  .status-row .s-value { font-weight: 700; color: #111827; }
+  .status-row .s-value.green { color: #10b981; }
+  .status-row .s-value.blue  { color: #6366f1; }
+
+  .toggle-sm { position: relative; width: 34px; height: 19px; cursor: pointer; }
+  .toggle-sm input { opacity: 0; width: 0; height: 0; }
+  .toggle-sm .track { position: absolute; top:0;left:0;right:0;bottom:0; background:#6366f1; border-radius:19px; }
+  .toggle-sm .thumb { position: absolute; top:2.5px;left:2.5px; width:14px;height:14px; background:#fff; border-radius:50%; transform:translateX(15px); box-shadow:0 1px 2px rgba(0,0,0,0.2); }
+
+  .tip-box {
+    background: #fffbeb; border: 1px solid #fcd34d;
+    border-radius: 8px; padding: 10px 12px;
+    font-size: 11px; color: #92400e; line-height: 1.5;
+  }
+  .tip-box strong { display: block; font-size: 11px; margin-bottom: 3px; }
+
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-indigo { background: #e0e7ff; color: #4338ca; }
+  .badge-gray   { background: #f3f4f6; color: #6b7280; }
+
+  /* section divider */
+  .divider {
+    display: flex; align-items: center; gap: 10px;
+    margin: 4px 0; color: #9ca3af; font-size: 11px; font-weight: 600;
+  }
+  .divider::before, .divider::after {
+    content: ''; flex: 1; height: 1px; background: #e5e7eb;
+  }
+
+  /* footer */
+  .page-footer {
+    background: #fff; border-top: 1px solid #e5e7eb;
+    padding: 14px 24px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .pf-left { font-size: 12px; color: #9ca3af; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">W<span>A</span>gen</div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Workspace</div>
+      <div class="nav-item"><span class="nav-icon">💬</span> Conversations</div>
+      <div class="nav-item"><span class="nav-icon">👥</span> Contacts</div>
+
+      <div class="nav-section">Automation</div>
+      <div class="nav-item"><span class="nav-icon">🔁</span> Sequences</div>
+      <div class="nav-item"><span class="nav-icon">🤖</span> Flows</div>
+      <div class="nav-item active"><span class="nav-icon">🎁</span> Reminders</div>
+
+      <div class="nav-section">Settings</div>
+      <div class="nav-item"><span class="nav-icon">📄</span> Templates</div>
+      <div class="nav-item"><span class="nav-icon">⚙️</span> Settings</div>
+    </nav>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div>
+        <div class="breadcrumb">Reminders → <span>Birthday → Capture Settings</span></div>
+        <div class="page-title">🎂 Birthday Capture</div>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-danger">Disable</button>
+        <button class="btn btn-ghost">Discard</button>
+        <button class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <div class="two-col">
+
+        <!-- LEFT: Form -->
+        <div>
+
+          <!-- Step 1: Template -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-header-left">
+                <div class="step-circle done">1</div>
+                <div>
+                  <div class="ch-title">Permission Template</div>
+                  <div class="ch-desc">Sent to ask the customer — works outside 24h window</div>
+                </div>
+              </div>
+              <span class="badge badge-green">Configured</span>
+            </div>
+            <div class="card-body">
+
+              <div class="field">
+                <label class="field-label">Select Template</label>
+                <select class="field-select sel">
+                  <option>birthday_capture_permission_v1</option>
+                  <option>birthday_ask_v2</option>
+                  <option>generic_opt_in_template</option>
+                </select>
+              </div>
+
+              <!-- Template preview -->
+              <div class="template-preview">
+                <div class="tp-header">
+                  <div class="tp-header-left">
+                    📄 Template Preview
+                    <span class="badge badge-indigo" style="margin-left:4px">birthday_capture_permission_v1</span>
+                  </div>
+                  <span class="tp-edit">Edit in Templates →</span>
+                </div>
+                <div class="tp-body">
+                  <div class="tp-phone">
+                    Hey <span class="tp-var">{{contact.name}}</span>! 🎉<br>
+                    Want us to remember your birthday and surprise you with a special treat?
+                  </div>
+                  <div class="tp-buttons">
+                    <div class="tp-btn">👍 Yes, remember my birthday!</div>
+                    <div class="tp-btn">Not now</div>
+                  </div>
+                  <div class="tp-time">delivered · just now</div>
+                </div>
+              </div>
+
+              <!-- Variable mapping -->
+              <div class="field" style="margin-top:14px">
+                <label class="field-label">
+                  Template Variable Mapping
+                  <span class="field-hint">— map each {{variable}} to a contact field</span>
+                </label>
+                <table class="var-table">
+                  <thead>
+                    <tr>
+                      <th>Template Variable</th>
+                      <th style="text-align:center;width:36px"></th>
+                      <th>Contact Field</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="var-code">{{1}} / contact.name</span></td>
+                      <td class="var-arrow">→</td>
+                      <td>
+                        <select class="field-select sel" style="padding:6px 10px;font-size:11px">
+                          <option>display_name</option>
+                          <option>phone_number</option>
+                          <option>email</option>
+                          <option>custom: first_name</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td><span class="var-code">{{2}} / contact.phone</span></td>
+                      <td class="var-arrow">→</td>
+                      <td>
+                        <select class="field-select sel" style="padding:6px 10px;font-size:11px">
+                          <option>phone_number</option>
+                          <option>display_name</option>
+                        </select>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Step 2: Flow -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-header-left">
+                <div class="step-circle done">2</div>
+                <div>
+                  <div class="ch-title">Date Capture Flow</div>
+                  <div class="ch-desc">Triggered when customer replies YES to the template</div>
+                </div>
+              </div>
+              <span class="badge badge-green">Linked</span>
+            </div>
+            <div class="card-body">
+
+              <div class="field">
+                <label class="field-label">Select Flow <span class="field-hint">— must save date to a contact field</span></label>
+                <div class="flow-list">
+                  <div class="flow-row sel">
+                    <div class="flow-row-left">
+                      <span class="flow-icon">🎂</span>
+                      <div>
+                        <div class="flow-name">Birthday Date Capture</div>
+                        <div class="flow-meta">5 nodes · saves → birthday field · published</div>
+                      </div>
+                    </div>
+                    <span class="flow-check">✓</span>
+                  </div>
+                  <div class="flow-row">
+                    <div class="flow-row-left">
+                      <span class="flow-icon">💬</span>
+                      <div>
+                        <div class="flow-name">Onboarding Flow</div>
+                        <div class="flow-meta">12 nodes · published</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-row">
+                    <div class="flow-row-left">
+                      <span class="flow-icon">🤖</span>
+                      <div>
+                        <div class="flow-name">Lead Qualification</div>
+                        <div class="flow-meta">8 nodes · published</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button class="flow-new">+ Build a new capture flow in Flow Builder →</button>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Step 3: Trigger event -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-header-left">
+                <div class="step-circle">3</div>
+                <div>
+                  <div class="ch-title">Trigger Event</div>
+                  <div class="ch-desc">When should WAgen check if a contact needs to be prompted?</div>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="trigger-group">
+                <div class="trigger-opt sel">
+                  <span class="t-icon">✨</span>
+                  <div class="t-label">On Create</div>
+                  <div class="t-sub">New contact added</div>
+                </div>
+                <div class="trigger-opt">
+                  <span class="t-icon">✏️</span>
+                  <div class="t-label">On Update</div>
+                  <div class="t-sub">Contact updated</div>
+                </div>
+                <div class="trigger-opt">
+                  <span class="t-icon">⚡</span>
+                  <div class="t-label">Both</div>
+                  <div class="t-sub">Create or update</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Audience conditions -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-header-left">
+                <div class="step-circle">4</div>
+                <div>
+                  <div class="ch-title">Audience Filter</div>
+                  <div class="ch-desc">Only prompt contacts who match ALL conditions</div>
+                </div>
+              </div>
+              <span class="badge badge-indigo">3 conditions · 47 contacts</span>
+            </div>
+            <div class="card-body">
+
+              <div class="conditions-list">
+
+                <div class="cond-row">
+                  <select class="cond-select">
+                    <option>contact_type</option>
+                    <option>tags</option>
+                    <option>display_name</option>
+                    <option>phone_number</option>
+                    <option>email</option>
+                    <option>source_type</option>
+                    <option>custom: birthday</option>
+                    <option>custom: anniversary</option>
+                    <option>custom: segment</option>
+                  </select>
+                  <select class="cond-select">
+                    <option>equals</option>
+                    <option>not equals</option>
+                    <option>contains</option>
+                    <option>greater than</option>
+                    <option>less than</option>
+                  </select>
+                  <input class="cond-input" value="customer">
+                  <button class="cond-del">✕</button>
+                </div>
+
+                <div class="cond-row">
+                  <select class="cond-select">
+                    <option>tags</option>
+                    <option>contact_type</option>
+                    <option>display_name</option>
+                    <option>custom: birthday</option>
+                  </select>
+                  <select class="cond-select">
+                    <option>contains</option>
+                    <option>equals</option>
+                    <option>not equals</option>
+                  </select>
+                  <input class="cond-input" value="VIP">
+                  <button class="cond-del">✕</button>
+                </div>
+
+                <div class="cond-row">
+                  <select class="cond-select">
+                    <option selected>custom: birthday</option>
+                    <option>contact_type</option>
+                    <option>tags</option>
+                  </select>
+                  <select class="cond-select">
+                    <option>equals</option>
+                    <option>not equals</option>
+                  </select>
+                  <input class="cond-input" value="" placeholder="(empty — not captured yet)">
+                  <button class="cond-del">✕</button>
+                </div>
+
+              </div>
+
+              <div class="add-cond">
+                <span style="font-size:15px;line-height:1">+</span> Add condition
+              </div>
+
+              <div class="match-bar">
+                <span class="match-pill">47</span>
+                contacts currently match · template will be sent to these contacts
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Step 5: Cooldown -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-header-left">
+                <div class="step-circle">5</div>
+                <div>
+                  <div class="ch-title">Cooldown</div>
+                  <div class="ch-desc">Prevent asking the same contact again too soon</div>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="field">
+                <label class="field-label">Don't re-trigger for</label>
+                <div class="inline-row">
+                  <input type="number" class="field-input" value="30">
+                  <select class="field-select"><option>Days</option><option>Weeks</option><option>Months</option></select>
+                  <span>after last prompt</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- RIGHT: Info panel -->
+        <div class="right-panel">
+
+          <!-- Status summary -->
+          <div class="info-card">
+            <div class="ic-title">🎂 Birthday Status</div>
+            <div class="status-row">
+              <span class="s-label">Capture</span>
+              <span class="s-value green">● Active</span>
+            </div>
+            <div class="status-row">
+              <span class="s-label">Template</span>
+              <span class="s-value blue">birthday_capture_v1</span>
+            </div>
+            <div class="status-row">
+              <span class="s-label">Flow</span>
+              <span class="s-value blue">Birthday Date Capture</span>
+            </div>
+            <div class="status-row">
+              <span class="s-label">Trigger</span>
+              <span class="s-value">On Create</span>
+            </div>
+            <div class="status-row">
+              <span class="s-label">Audience</span>
+              <span class="s-value">47 contacts</span>
+            </div>
+            <div class="status-row">
+              <span class="s-label">Dates captured</span>
+              <span class="s-value green">143 total</span>
+            </div>
+            <div class="status-row">
+              <span class="s-label">Cooldown</span>
+              <span class="s-value">30 days</span>
+            </div>
+          </div>
+
+          <!-- How it works -->
+          <div class="info-card">
+            <div class="ic-title">⚡ How This Works</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+
+              <div style="display:flex;gap:10px;align-items:flex-start">
+                <div style="width:24px;height:24px;background:#7c3aed;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">📄</div>
+                <div style="font-size:12px;color:#374151;line-height:1.5">
+                  <strong style="display:block;color:#111827">1. Template Sent</strong>
+                  When a matching contact is created/updated, WAgen sends the permission template with their name pre-filled.
+                </div>
+              </div>
+
+              <div style="display:flex;gap:10px;align-items:flex-start">
+                <div style="width:24px;height:24px;background:#0369a1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">👆</div>
+                <div style="font-size:12px;color:#374151;line-height:1.5">
+                  <strong style="display:block;color:#111827">2. Customer Taps YES</strong>
+                  The quick-reply button triggers the linked flow automatically.
+                </div>
+              </div>
+
+              <div style="display:flex;gap:10px;align-items:flex-start">
+                <div style="width:24px;height:24px;background:#065f46;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">🤖</div>
+                <div style="font-size:12px;color:#374151;line-height:1.5">
+                  <strong style="display:block;color:#111827">3. Flow Captures Date</strong>
+                  Your flow asks for the date and saves it to the <code style="background:#f3f4f6;padding:1px 5px;border-radius:4px;font-size:11px">birthday</code> contact field.
+                </div>
+              </div>
+
+              <div style="display:flex;gap:10px;align-items:flex-start">
+                <div style="width:24px;height:24px;background:#1e40af;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">🎂</div>
+                <div style="font-size:12px;color:#374151;line-height:1.5">
+                  <strong style="display:block;color:#111827">4. Campaign Fires</strong>
+                  On the birthday date, the campaign scheduler sends the reminder template automatically.
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Tip -->
+          <div class="tip-box">
+            <strong>⚠️ Flow must save to the birthday field</strong>
+            Make sure your selected flow has a "Save to Contact Field" node mapped to <code style="background:rgba(0,0,0,0.06);padding:1px 5px;border-radius:3px;font-size:10px">birthday</code>. Otherwise the campaign will have no data to work from.
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="page-footer">
+      <span class="pf-left">Last saved: 2 minutes ago</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-danger">Disable Birthday Capture</button>
+        <button class="btn btn-ghost">Discard Changes</button>
+        <button class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

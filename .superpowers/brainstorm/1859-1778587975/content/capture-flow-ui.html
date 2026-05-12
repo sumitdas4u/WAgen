@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Date Capture Flow — WAgen</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    min-height: 100vh;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  h2 { color: #e0e7ff; font-size: 18px; margin-bottom: 6px; text-align: center; }
+  .subtitle { color: #818cf8; font-size: 13px; margin-bottom: 28px; text-align: center; }
+
+  .flows-row {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  /* Phone frame */
+  .phone {
+    background: #fff;
+    border-radius: 20px;
+    overflow: hidden;
+    width: 300px;
+    flex-shrink: 0;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    border: 6px solid #111;
+  }
+
+  .phone-bar {
+    background: #075e54;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .phone-avatar {
+    width: 34px; height: 34px;
+    background: #128c7e;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: #fff;
+    flex-shrink: 0;
+  }
+
+  .phone-bar-info { flex: 1; }
+  .phone-name { color: #fff; font-size: 13px; font-weight: 700; }
+  .phone-status { color: #a7f3d0; font-size: 10px; }
+
+  .chat-body {
+    background: #ece5dd;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c9b99a' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    padding: 10px 8px;
+    min-height: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .date-divider {
+    text-align: center;
+    margin: 4px 0;
+  }
+
+  .date-divider span {
+    background: rgba(255,255,255,0.7);
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 10px;
+    color: #555;
+  }
+
+  /* Bot bubble */
+  .bubble-bot {
+    align-self: flex-start;
+    max-width: 82%;
+  }
+
+  .bubble-bot .bubble {
+    background: #fff;
+    border-radius: 0 10px 10px 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: #111;
+    line-height: 1.5;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    position: relative;
+  }
+
+  .bubble-bot .bubble::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -7px;
+    border-width: 0 8px 8px 0;
+    border-style: solid;
+    border-color: transparent #fff transparent transparent;
+  }
+
+  .bubble-time {
+    font-size: 10px;
+    color: #7e7e7e;
+    text-align: right;
+    margin-top: 3px;
+    padding-right: 4px;
+  }
+
+  /* User bubble */
+  .bubble-user {
+    align-self: flex-end;
+    max-width: 82%;
+  }
+
+  .bubble-user .bubble {
+    background: #dcf8c6;
+    border-radius: 10px 0 10px 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: #111;
+    line-height: 1.5;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    position: relative;
+  }
+
+  .bubble-user .bubble::after {
+    content: '';
+    position: absolute;
+    top: 0; right: -7px;
+    border-width: 0 0 8px 8px;
+    border-style: solid;
+    border-color: transparent transparent transparent #dcf8c6;
+  }
+
+  .bubble-user .bubble-time { text-align: right; }
+  .bubble-user .bubble-time::after { content: ' ✓✓'; color: #53bdeb; }
+
+  /* Button replies */
+  .btn-replies {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .btn-reply {
+    background: #fff;
+    border: none;
+    padding: 9px 10px;
+    text-align: center;
+    font-size: 13px;
+    color: #0084c8;
+    font-weight: 600;
+    cursor: pointer;
+    border-top: 1px solid #e5e5e5;
+    transition: background 0.1s;
+  }
+
+  .btn-reply:first-child { border-radius: 0; border-top: 1px solid #e5e5e5; }
+  .btn-reply:last-child { border-radius: 0 0 10px 10px; }
+  .btn-reply:hover { background: #f0f9ff; }
+  .btn-reply.tapped { background: #e0f2fe; }
+
+  /* Input bar */
+  .chat-input {
+    background: #f0f0f0;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid #ddd;
+  }
+
+  .chat-input input {
+    flex: 1;
+    border: none;
+    background: #fff;
+    border-radius: 20px;
+    padding: 8px 14px;
+    font-size: 13px;
+    outline: none;
+  }
+
+  .chat-send {
+    width: 34px; height: 34px;
+    background: #075e54;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 14px; cursor: pointer;
+  }
+
+  /* Step label */
+  .step-label {
+    text-align: center;
+    color: #818cf8;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+
+  /* Arrow between phones */
+  .arrow {
+    color: #4338ca;
+    font-size: 22px;
+    align-self: center;
+    margin-top: -60px;
+    opacity: 0.6;
+  }
+
+  /* State machine diagram */
+  .state-machine {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-top: 28px;
+    width: 100%;
+    max-width: 700px;
+  }
+
+  .sm-title {
+    color: #a5b4fc;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 14px;
+  }
+
+  .sm-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .sm-state {
+    background: #312e81;
+    border: 1.5px solid #6366f1;
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: #e0e7ff;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    min-width: 100px;
+  }
+
+  .sm-state.terminal { border-color: #10b981; background: #064e3b; color: #d1fae5; }
+  .sm-state.error { border-color: #ef4444; background: #7f1d1d; color: #fee2e2; }
+
+  .sm-arrow {
+    color: #6366f1;
+    font-size: 16px;
+    padding: 0 2px;
+  }
+
+  .sm-label {
+    font-size: 10px;
+    color: #818cf8;
+    display: block;
+    margin-top: 3px;
+    font-weight: 400;
+  }
+</style>
+</head>
+<body>
+
+<h2>Date Capture Flow — WhatsApp Conversation</h2>
+<p class="subtitle">What the customer sees when the bot captures their birthday</p>
+
+<div class="flows-row">
+
+  <!-- Step 1: Permission -->
+  <div>
+    <div class="step-label">Step 1 — Ask Permission</div>
+    <div class="phone">
+      <div class="phone-bar">
+        <div class="phone-avatar">🍽️</div>
+        <div class="phone-bar-info">
+          <div class="phone-name">AnyBelly Restaurant</div>
+          <div class="phone-status">online</div>
+        </div>
+      </div>
+      <div class="chat-body">
+        <div class="date-divider"><span>Today</span></div>
+
+        <div class="bubble-bot">
+          <div class="bubble">
+            Hey Priya! 👋 Thanks for reaching out.<br><br>
+            Want us to remember your birthday and surprise you with a special treat? 🎉
+            <div class="btn-replies">
+              <button class="btn-reply">👍 Yes, sounds great!</button>
+              <button class="btn-reply">Not now</button>
+            </div>
+          </div>
+          <div class="bubble-time">9:14 am</div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <input placeholder="Type a message…" disabled>
+        <div class="chat-send">➤</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- Step 2: Customer tapped Yes → Ask date -->
+  <div>
+    <div class="step-label">Step 2 — Customer Says Yes</div>
+    <div class="phone">
+      <div class="phone-bar">
+        <div class="phone-avatar">🍽️</div>
+        <div class="phone-bar-info">
+          <div class="phone-name">AnyBelly Restaurant</div>
+          <div class="phone-status">online</div>
+        </div>
+      </div>
+      <div class="chat-body">
+        <div class="date-divider"><span>Today</span></div>
+
+        <div class="bubble-bot">
+          <div class="bubble">
+            Want us to remember your birthday and surprise you with a special treat? 🎉
+            <div class="btn-replies">
+              <button class="btn-reply tapped">👍 Yes, sounds great!</button>
+              <button class="btn-reply" style="opacity:0.5">Not now</button>
+            </div>
+          </div>
+          <div class="bubble-time">9:14 am</div>
+        </div>
+
+        <div class="bubble-user">
+          <div class="bubble">👍 Yes, sounds great!</div>
+          <div class="bubble-time">9:14 am</div>
+        </div>
+
+        <div class="bubble-bot">
+          <div class="bubble">
+            🎂 Amazing! What's your birthday?<br><br>
+            Please reply with day and month:<br>
+            <strong>DD-MM</strong> &nbsp; (e.g. <code style="background:#f3f4f6;padding:1px 5px;border-radius:4px;font-size:12px">25-12</code>)
+          </div>
+          <div class="bubble-time">9:14 am</div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <input placeholder="e.g. 25-12" value="15-08">
+        <div class="chat-send">➤</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- Step 3: Confirm + Complete -->
+  <div>
+    <div class="step-label">Step 3 — Confirm & Save</div>
+    <div class="phone">
+      <div class="phone-bar">
+        <div class="phone-avatar">🍽️</div>
+        <div class="phone-bar-info">
+          <div class="phone-name">AnyBelly Restaurant</div>
+          <div class="phone-status">online</div>
+        </div>
+      </div>
+      <div class="chat-body">
+        <div class="date-divider"><span>Today</span></div>
+
+        <div class="bubble-bot">
+          <div class="bubble">
+            🎂 Amazing! What's your birthday?<br><br>
+            Please reply with: <strong>DD-MM</strong>
+          </div>
+          <div class="bubble-time">9:14 am</div>
+        </div>
+
+        <div class="bubble-user">
+          <div class="bubble">15-08</div>
+          <div class="bubble-time">9:15 am</div>
+        </div>
+
+        <div class="bubble-bot">
+          <div class="bubble">
+            Perfect! 🎉<br><br>
+            We've saved your birthday as <strong>August 15</strong>.<br><br>
+            Expect a special surprise from us on your big day! 🎁
+          </div>
+          <div class="bubble-time">9:15 am</div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <input placeholder="Type a message…">
+        <div class="chat-send">➤</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- State machine -->
+<div class="state-machine">
+  <div class="sm-title">Session State Machine</div>
+  <div class="sm-row">
+    <div class="sm-state">
+      ASK_PERMISSION
+      <span class="sm-label">Send opt-in msg</span>
+    </div>
+    <div class="sm-arrow">→</div>
+    <div class="sm-state">
+      ASK_DATE
+      <span class="sm-label">User replied "yes"</span>
+    </div>
+    <div class="sm-arrow">→</div>
+    <div class="sm-state">
+      CONFIRM
+      <span class="sm-label">Validate DD-MM</span>
+    </div>
+    <div class="sm-arrow">→</div>
+    <div class="sm-state terminal">
+      COMPLETE
+      <span class="sm-label">Save to contact_field_values</span>
+    </div>
+  </div>
+  <div class="sm-row" style="margin-top:10px">
+    <div class="sm-state error">
+      CANCELLED
+      <span class="sm-label">User said "not now"</span>
+    </div>
+    &nbsp;&nbsp;
+    <div class="sm-state error">
+      EXPIRED
+      <span class="sm-label">No reply within 24h</span>
+    </div>
+    &nbsp;&nbsp;
+    <div class="sm-state error">
+      FAILED
+      <span class="sm-label">Invalid date 3x</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

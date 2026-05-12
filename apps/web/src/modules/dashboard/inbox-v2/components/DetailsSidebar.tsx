@@ -16,7 +16,7 @@ import {
   type ConversationTimelineType
 } from "../api";
 import { useAuth } from "../../../../lib/auth-context";
-import { getAvatarColor } from "./ConversationRow";
+import { getAvatarColor, getNameAvatarColor } from "./ConversationRow";
 
 function getSavedSections(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem("iv-sidebar-sections") ?? '["conv-actions","lead-intel"]') as string[]); }
@@ -251,8 +251,12 @@ export function DetailsSidebar({ convId, onClose }: Props) {
     );
   }
 
-  const avatarColor = getAvatarColor(conv.phone_number);
-  const displayName = contact?.display_name || formatPhone(conv.phone_number);
+  const contactName = contact?.display_name?.trim() || conv.contact_name?.trim() || null;
+  const avatarColor = contactName ? getNameAvatarColor(contactName, conv.phone_number) : getAvatarColor(conv.phone_number);
+  const displayName = contactName || formatPhone(conv.phone_number);
+  const avatarLabel = contactName
+    ? contactName.charAt(0).toUpperCase()
+    : conv.phone_number.replace(/\D/g, "").slice(-2);
 
   return (
     <div className="iv-sidebar">
@@ -264,7 +268,7 @@ export function DetailsSidebar({ convId, onClose }: Props) {
           {/* Contact card */}
           <div className="iv-contact-card">
             <div className={`iv-avatar av-${avatarColor} av-lg`} style={{ margin: "0 auto" }}>
-              {conv.phone_number.replace(/\D/g, "").slice(-2)}
+              {avatarLabel}
             </div>
             <div className="iv-contact-name">{displayName}</div>
             <div className="iv-contact-title">

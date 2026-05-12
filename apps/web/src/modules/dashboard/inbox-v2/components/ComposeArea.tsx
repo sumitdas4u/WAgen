@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useConvStore } from "../store/convStore";
 import { useSendMessage, useCreateNote } from "../queries";
 import { postTyping, listCannedResponses } from "../api";
@@ -241,6 +241,7 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
   const typingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { token } = useAuth();
+  const queryClient = useQueryClient();
   const { byId, appendMessage, upsertConv } = useConvStore();
   const conv = byId[convId];
   const sendMsg = useSendMessage();
@@ -347,6 +348,12 @@ export function ComposeArea({ convId, optimisticMap, replyToMsg, onClearReply }:
           ai_model: null,
           total_tokens: null,
           created_at: new Date().toISOString()
+        });
+
+        [1_000, 3_000, 7_000].forEach((delay) => {
+          window.setTimeout(() => {
+            void queryClient.invalidateQueries({ queryKey: ["iv2-msgs", convId] });
+          }, delay);
         });
       }
     },

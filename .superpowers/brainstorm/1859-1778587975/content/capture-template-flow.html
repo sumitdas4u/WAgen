@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Capture: Template → Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f0e1a;
+    min-height: 100vh;
+    padding: 28px 24px;
+    color: #1a1a2e;
+  }
+
+  h2 { color: #e0e7ff; font-size: 18px; margin-bottom: 4px; text-align: center; }
+  .subtitle { color: #818cf8; font-size: 13px; margin-bottom: 28px; text-align: center; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 24px;
+    max-width: 960px;
+    margin: 0 auto;
+    align-items: start;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1.5px solid #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+  }
+
+  .card-header {
+    padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #f3f4f6;
+    background: #fafafa;
+  }
+
+  .card-header-left { display: flex; align-items: center; gap: 10px; }
+  .card-emoji { font-size: 22px; }
+  .card-title { font-size: 15px; font-weight: 700; color: #111827; }
+  .card-desc  { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+
+  .toggle { position: relative; width: 40px; height: 22px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-track { position: absolute; top:0;left:0;right:0;bottom:0; background:#6366f1; border-radius:22px; }
+  .toggle-thumb { position: absolute; top:3px; left:3px; width:16px; height:16px; background:#fff; border-radius:50%; transform:translateX(18px); box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+
+  .card-section { padding: 14px 18px; border-bottom: 1px solid #f3f4f6; }
+  .card-section:last-child { border-bottom: none; }
+
+  .section-header {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #6b7280; margin-bottom: 12px;
+  }
+
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+  .badge-indigo { background: #e0e7ff; color: #4338ca; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-step   { background: #1e1b4b; color: #a5b4fc; min-width: 20px; text-align:center; border-radius: 50%; padding: 2px 6px; }
+
+  .field { margin-bottom: 10px; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label { font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+  .field-hint  { font-size: 10px; color: #9ca3af; font-weight: 400; margin-left: 4px; }
+
+  .field-select {
+    width: 100%; padding: 9px 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 12px; color: #111827; background: #fafafa;
+    outline: none; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    padding-right: 32px; cursor: pointer; transition: border-color 0.15s;
+  }
+  .field-select:focus { border-color: #6366f1; }
+  .field-select.selected { border-color: #6366f1; background: #fafffe; color: #1a1a2e; }
+
+  .field-input {
+    width: 100%; padding: 8px 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 12px; color: #111827; background: #fafafa; outline: none;
+  }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .tag-input {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    padding: 6px 8px; border: 1.5px solid #e5e7eb;
+    border-radius: 8px; background: #fafafa; min-height: 36px; align-items: center;
+  }
+  .tag-pill {
+    background: #e0e7ff; color: #4338ca;
+    border-radius: 10px; padding: 2px 9px;
+    font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 4px;
+  }
+  .tag-pill .x { cursor: pointer; opacity: 0.6; font-size: 10px; }
+  .tag-add { color: #9ca3af; font-size: 11px; cursor: pointer; }
+  .tag-add:hover { color: #6366f1; }
+
+  /* Selected item preview */
+  .selected-preview {
+    margin-top: 8px;
+    border: 1.5px solid #c7d2fe;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .sp-header {
+    background: #eef2ff;
+    padding: 7px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #4338ca;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .sp-body {
+    padding: 10px 12px;
+    background: #fff;
+    font-size: 12px;
+    color: #374151;
+    line-height: 1.5;
+  }
+
+  .sp-body .wa-btn-preview {
+    margin-top: 8px;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .wa-btn-p {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 6px;
+    padding: 6px 10px;
+    text-align: center;
+    font-size: 11px;
+    color: #0369a1;
+    font-weight: 600;
+  }
+
+  /* Flow picker */
+  .flow-list {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .flow-row {
+    padding: 10px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #f3f4f6;
+    cursor: pointer; transition: background 0.1s;
+  }
+  .flow-row:last-child { border-bottom: none; }
+  .flow-row:hover { background: #f5f3ff; }
+  .flow-row.sel { background: #eef2ff; border-left: 3px solid #6366f1; }
+
+  .flow-row-left { display: flex; align-items: center; gap: 8px; }
+  .flow-icon { font-size: 16px; }
+  .flow-name { font-size: 12px; font-weight: 700; color: #111827; }
+  .flow-meta { font-size: 10px; color: #9ca3af; }
+  .flow-check { color: #6366f1; font-size: 14px; font-weight: 900; }
+
+  .new-flow-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1.5px dashed #c7d2fe;
+    border-radius: 8px;
+    color: #6366f1;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+    text-align: center;
+    transition: all 0.15s;
+  }
+  .new-flow-btn:hover { background: #eef2ff; }
+
+  .card-footer {
+    padding: 12px 18px;
+    background: #f9fafb;
+    display: flex; gap: 8px; justify-content: flex-end;
+    border-top: 1px solid #f3f4f6;
+  }
+  .btn { padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-ghost   { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+
+  /* ── Right side: flow diagram ── */
+  .flow-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding-top: 8px;
+  }
+
+  .fd-node {
+    width: 260px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+
+  .fd-node-header {
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .fd-node-body {
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* Template node */
+  .node-template .fd-node-header { background: #7c3aed; color: #ede9fe; }
+  .node-template .fd-node-body   { background: #1e1b4b; color: #c4b5fd; }
+
+  /* Condition node */
+  .node-condition .fd-node-header { background: #b45309; color: #fef3c7; }
+  .node-condition .fd-node-body   { background: #1c1108; color: #fcd34d; }
+
+  /* Flow node */
+  .node-flow .fd-node-header { background: #065f46; color: #a7f3d0; }
+  .node-flow .fd-node-body   { background: #022c22; color: #6ee7b7; }
+
+  /* Save node */
+  .node-save .fd-node-header { background: #1e40af; color: #bfdbfe; }
+  .node-save .fd-node-body   { background: #0c1c3e; color: #93c5fd; }
+
+  /* End node */
+  .node-end .fd-node-header { background: #374151; color: #d1d5db; }
+  .node-end .fd-node-body   { background: #111827; color: #9ca3af; }
+
+  .fd-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+  }
+
+  .fd-line { width: 2px; height: 24px; background: #4338ca; opacity: 0.5; }
+  .fd-arrowhead { color: #4338ca; font-size: 14px; margin-top: -6px; opacity: 0.8; }
+  .fd-label {
+    font-size: 10px; color: #818cf8; font-weight: 600;
+    background: rgba(99,102,241,0.15);
+    padding: 2px 10px; border-radius: 10px;
+    margin: 4px 0;
+  }
+
+  .fd-branch {
+    display: flex; gap: 16px; margin: 0;
+    position: relative;
+  }
+
+  .fd-branch-line {
+    position: absolute;
+    top: 0; left: 50%;
+    width: calc(50% + 8px);
+    height: 2px; background: #dc2626; opacity: 0.4;
+    transform: translateX(-100%);
+  }
+
+  .step-badge {
+    width: 22px; height: 22px;
+    background: #312e81;
+    border: 1.5px solid #6366f1;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800; color: #a5b4fc;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<h2>Birthday Capture — Template → Flow</h2>
+<p class="subtitle">Template sends permission ask · Customer replies YES · Flow captures the date</p>
+
+<div class="layout">
+
+  <!-- LEFT: Settings Card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <span class="card-emoji">🎂</span>
+        <div>
+          <div class="card-title">Birthday</div>
+          <div class="card-desc" style="color:#10b981">● Active · 143 dates captured</div>
+        </div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" checked>
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+
+    <!-- Step 1: Template -->
+    <div class="card-section">
+      <div class="section-header">
+        <span class="badge badge-step">1</span>
+        Permission Template
+        <span class="badge badge-indigo">WhatsApp Template</span>
+      </div>
+
+      <div class="field">
+        <label class="field-label">
+          Select Template
+          <span class="field-hint">— sent to ask permission</span>
+        </label>
+        <select class="field-select selected">
+          <option>birthday_capture_permission_v1</option>
+          <option>birthday_ask_v2</option>
+          <option>generic_opt_in</option>
+        </select>
+
+        <div class="selected-preview">
+          <div class="sp-header">
+            Template Preview
+            <span style="color:#818cf8;font-weight:400;text-transform:none;letter-spacing:0">birthday_capture_permission_v1</span>
+          </div>
+          <div class="sp-body">
+            Hey {{1}}! 🎉 Want us to remember your birthday and surprise you with a special treat?
+            <div class="wa-btn-preview">
+              <div class="wa-btn-p">👍 Yes, remember my birthday!</div>
+              <div class="wa-btn-p">Not now</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Flow -->
+    <div class="card-section">
+      <div class="section-header">
+        <span class="badge badge-step">2</span>
+        Date Capture Flow
+        <span class="badge badge-green">Triggered on YES</span>
+      </div>
+
+      <div class="field">
+        <label class="field-label">
+          Select Flow
+          <span class="field-hint">— starts when customer taps YES</span>
+        </label>
+
+        <div class="flow-list">
+          <div class="flow-row sel">
+            <div class="flow-row-left">
+              <span class="flow-icon">🎂</span>
+              <div>
+                <div class="flow-name">Birthday Date Capture</div>
+                <div class="flow-meta">5 nodes · saves birthday field · published</div>
+              </div>
+            </div>
+            <span class="flow-check">✓</span>
+          </div>
+          <div class="flow-row">
+            <div class="flow-row-left">
+              <span class="flow-icon">💬</span>
+              <div>
+                <div class="flow-name">Onboarding Flow</div>
+                <div class="flow-meta">12 nodes · published</div>
+              </div>
+            </div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-row-left">
+              <span class="flow-icon">🤖</span>
+              <div>
+                <div class="flow-name">Lead Qualification</div>
+                <div class="flow-meta">8 nodes · published</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="new-flow-btn">+ Build capture flow in Flow Builder →</button>
+      </div>
+    </div>
+
+    <!-- Audience -->
+    <div class="card-section">
+      <div class="section-header">🎯 Audience</div>
+      <div class="field">
+        <label class="field-label">Segment / Tag Filter</label>
+        <div class="tag-input">
+          <span class="tag-pill">VIP <span class="x">✕</span></span>
+          <span class="tag-pill">Repeat <span class="x">✕</span></span>
+          <span class="tag-add">+ Add tag</span>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Cooldown</label>
+        <div class="field-row">
+          <input type="number" class="field-input" value="30">
+          <select class="field-select"><option>Days</option></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-footer">
+      <button class="btn btn-ghost">Discard</button>
+      <button class="btn btn-primary">Save Birthday</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Flow diagram -->
+  <div class="flow-diagram">
+
+    <div class="fd-node node-template">
+      <div class="fd-node-header">📄 Step 1 — Template Sent</div>
+      <div class="fd-node-body">
+        <strong>birthday_capture_permission_v1</strong><br>
+        "Hey Priya! Want us to remember your birthday? 🎉"<br><br>
+        <span style="opacity:0.7;font-size:11px">Quick Reply Buttons → YES / NOT NOW</span>
+      </div>
+    </div>
+
+    <div class="fd-arrow">
+      <div class="fd-line"></div>
+      <div class="fd-label">Customer replies</div>
+      <div class="fd-line"></div>
+      <div class="fd-arrowhead">▼</div>
+    </div>
+
+    <div class="fd-node node-condition">
+      <div class="fd-node-header">🔀 Condition — Reply Check</div>
+      <div class="fd-node-body">
+        <span style="color:#fbbf24">If reply = "YES"</span> → Start Flow<br>
+        <span style="color:#f87171">If reply = "NOT NOW"</span> → Mark cancelled<br>
+        <span style="color:#9ca3af;font-size:11px">No reply within 24h → session expires</span>
+      </div>
+    </div>
+
+    <div class="fd-arrow">
+      <div class="fd-line"></div>
+      <div class="fd-label" style="background:rgba(16,185,129,0.15);color:#6ee7b7">YES branch</div>
+      <div class="fd-line"></div>
+      <div class="fd-arrowhead" style="color:#10b981">▼</div>
+    </div>
+
+    <div class="fd-node node-flow">
+      <div class="fd-node-header">🤖 Step 2 — Flow Triggered</div>
+      <div class="fd-node-body">
+        <strong>Birthday Date Capture Flow</strong><br>
+        "Great! What's your birthday? Reply DD-MM"<br><br>
+        <span style="opacity:0.7;font-size:11px">Flow handles validation, re-ask on wrong format, confirmation</span>
+      </div>
+    </div>
+
+    <div class="fd-arrow">
+      <div class="fd-line"></div>
+      <div class="fd-label">Flow completes</div>
+      <div class="fd-line"></div>
+      <div class="fd-arrowhead">▼</div>
+    </div>
+
+    <div class="fd-node node-save">
+      <div class="fd-node-header">💾 Saved to Contact Field</div>
+      <div class="fd-node-body">
+        <strong>contact_field_values</strong><br>
+        field: <code style="background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:3px">birthday</code>
+        &nbsp; value: <code style="background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:3px">1990-08-15</code><br><br>
+        <span style="opacity:0.7;font-size:11px">+ reminder_prompt_log updated · session marked COMPLETE</span>
+      </div>
+    </div>
+
+    <div class="fd-arrow">
+      <div class="fd-line"></div>
+      <div class="fd-arrowhead">▼</div>
+    </div>
+
+    <div class="fd-node node-end">
+      <div class="fd-node-header">✅ Done</div>
+      <div class="fd-node-body">
+        Date captured. Reminder module will send campaign on birthday date via scheduler.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

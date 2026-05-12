@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Capture Mode — WAgen</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f0e1a;
+    min-height: 100vh;
+    padding: 28px 24px;
+    color: #1a1a2e;
+  }
+
+  h2 { color: #e0e7ff; font-size: 18px; margin-bottom: 4px; text-align: center; }
+  .subtitle { color: #818cf8; font-size: 13px; margin-bottom: 28px; text-align: center; }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    max-width: 980px;
+    margin: 0 auto;
+  }
+
+  .col-label {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    display: inline-block;
+  }
+
+  .label-default { background: #312e81; color: #a5b4fc; }
+  .label-custom  { background: #1e3a2f; color: #6ee7b7; }
+
+  .col-head { text-align: center; margin-bottom: 12px; }
+
+  /* Card */
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1.5px solid #e5e7eb;
+  }
+
+  .card.active-default { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+  .card.active-custom  { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.12); }
+
+  .card-header {
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #f3f4f6;
+    background: #fafafa;
+  }
+
+  .card-header-left { display: flex; align-items: center; gap: 10px; }
+  .card-emoji { font-size: 22px; }
+  .card-title { font-size: 15px; font-weight: 700; color: #111827; }
+  .card-desc  { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+
+  .toggle { position: relative; width: 40px; height: 22px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-track { position: absolute; top:0;left:0;right:0;bottom:0; background:#6366f1; border-radius:22px; }
+  .toggle-thumb { position: absolute; top:3px;left:3px; width:16px;height:16px; background:#fff; border-radius:50%; transform:translateX(18px); box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+
+  .card-section { padding: 14px 18px; border-bottom: 1px solid #f3f4f6; }
+  .card-section:last-child { border-bottom: none; }
+
+  .section-header {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #6b7280; margin-bottom: 12px;
+  }
+
+  .badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 10px;
+    font-weight: 700; text-transform: none; letter-spacing: 0;
+  }
+  .badge-indigo { background: #e0e7ff; color: #4338ca; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-gray   { background: #f3f4f6; color: #6b7280; }
+
+  .field { margin-bottom: 10px; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label { font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 4px; display: block; }
+
+  .field-input {
+    width: 100%; padding: 7px 10px;
+    border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 12px; color: #111827; background: #fafafa;
+    outline: none; transition: border-color 0.15s;
+  }
+  .field-input:focus { border-color: #6366f1; background: #fff; }
+
+  .field-textarea {
+    width: 100%; padding: 8px 10px;
+    border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 12px; color: #111827; background: #fafafa;
+    outline: none; resize: none; height: 64px;
+    font-family: inherit; line-height: 1.5;
+    transition: border-color 0.15s;
+  }
+  .field-textarea:focus { border-color: #6366f1; background: #fff; }
+
+  .field-select {
+    width: 100%; padding: 7px 10px;
+    border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 12px; color: #111827; background: #fafafa;
+    outline: none; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    padding-right: 28px; cursor: pointer;
+  }
+
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .tag-input {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    padding: 6px 8px; border: 1.5px solid #e5e7eb;
+    border-radius: 7px; background: #fafafa;
+    min-height: 34px; align-items: center;
+  }
+  .tag-pill {
+    background: #e0e7ff; color: #4338ca;
+    border-radius: 10px; padding: 2px 9px;
+    font-size: 11px; font-weight: 600;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .tag-pill .x { cursor: pointer; opacity: 0.6; font-size: 10px; }
+  .tag-add { color: #9ca3af; font-size: 11px; cursor: pointer; padding: 2px 4px; }
+  .tag-add:hover { color: #6366f1; }
+
+  /* Mode switcher */
+  .mode-switcher {
+    display: flex; border: 1.5px solid #e5e7eb;
+    border-radius: 8px; overflow: hidden; margin-bottom: 12px;
+  }
+
+  .mode-opt {
+    flex: 1; padding: 8px 10px;
+    text-align: center; font-size: 12px; font-weight: 600;
+    cursor: pointer; color: #9ca3af;
+    border-right: 1px solid #e5e7eb;
+    background: #fafafa; transition: all 0.15s;
+  }
+  .mode-opt:last-child { border-right: none; }
+
+  .mode-opt.sel-default { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+  .mode-opt.sel-custom  { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+
+  /* Preview bubble */
+  .wa-preview {
+    background: #ece5dd;
+    border-radius: 10px;
+    padding: 10px;
+    margin-top: 2px;
+  }
+
+  .wa-bubble {
+    background: #fff;
+    border-radius: 0 10px 10px 10px;
+    padding: 9px 11px;
+    font-size: 12px;
+    color: #111;
+    line-height: 1.5;
+    max-width: 90%;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    position: relative;
+  }
+
+  .wa-bubble::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -7px;
+    border-width: 0 8px 8px 0;
+    border-style: solid;
+    border-color: transparent #fff transparent transparent;
+  }
+
+  .wa-buttons {
+    margin-top: 4px; max-width: 90%;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+
+  .wa-btn {
+    background: #fff;
+    padding: 8px 10px;
+    text-align: center;
+    font-size: 12px;
+    color: #0084c8;
+    font-weight: 600;
+    border-top: 1px solid #e5e5e5;
+    border-radius: 0;
+  }
+  .wa-btn:last-child { border-radius: 0 0 10px 10px; }
+
+  .wa-time { font-size: 10px; color: #7e7e7e; text-align: right; margin-top: 3px; }
+
+  /* Flow picker */
+  .flow-picker {
+    border: 1.5px solid #a7f3d0;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #f0fdf4;
+  }
+
+  .flow-picker-header {
+    padding: 10px 12px;
+    background: #ecfdf5;
+    border-bottom: 1px solid #a7f3d0;
+    font-size: 11px;
+    font-weight: 700;
+    color: #065f46;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .flow-row {
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #d1fae5;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .flow-row:last-child { border-bottom: none; }
+  .flow-row:hover { background: #d1fae5; }
+  .flow-row.selected { background: #d1fae5; }
+
+  .flow-row-left { display: flex; align-items: center; gap: 8px; }
+  .flow-icon { font-size: 15px; }
+  .flow-name { font-size: 12px; font-weight: 700; color: #111827; }
+  .flow-meta { font-size: 10px; color: #6b7280; }
+  .flow-check { color: #10b981; font-weight: 900; font-size: 14px; }
+
+  /* Info box */
+  .info-box {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: #92400e;
+    line-height: 1.5;
+    margin-top: 8px;
+  }
+
+  .info-box strong { display: block; margin-bottom: 2px; }
+
+  .info-box-blue {
+    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: #1e40af;
+    line-height: 1.5;
+    margin-top: 8px;
+  }
+
+  .info-box-blue strong { display: block; margin-bottom: 2px; }
+
+  .card-footer {
+    padding: 12px 18px;
+    background: #f9fafb;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  .btn { padding: 7px 16px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-ghost   { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+
+  .divider-or {
+    text-align: center;
+    color: #6b7280;
+    font-size: 11px;
+    margin: 8px 0;
+    position: relative;
+  }
+  .divider-or::before, .divider-or::after {
+    content: '';
+    position: absolute;
+    top: 50%; width: 40%;
+    height: 1px; background: #e5e7eb;
+  }
+  .divider-or::before { left: 0; }
+  .divider-or::after  { right: 0; }
+</style>
+</head>
+<body>
+
+<h2>Birthday Card — Capture Section</h2>
+<p class="subtitle">Two modes: Default (edit text in settings) vs Custom Flow (use Flow Builder)</p>
+
+<div class="split">
+
+  <!-- ── DEFAULT MODE ── -->
+  <div>
+    <div class="col-head">
+      <span class="col-label label-default">Mode 1 — Use Default</span>
+    </div>
+    <div class="card active-default">
+      <div class="card-header">
+        <div class="card-header-left">
+          <span class="card-emoji">🎂</span>
+          <div>
+            <div class="card-title">Birthday</div>
+            <div class="card-desc">Capture settings</div>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" checked>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+
+      <div class="card-section">
+        <div class="section-header">
+          📥 Capture Mode
+          <span class="badge badge-indigo">Default Flow</span>
+        </div>
+
+        <!-- Mode switcher -->
+        <div class="mode-switcher">
+          <div class="mode-opt sel-default">⚡ Use Default</div>
+          <div class="mode-opt">🔧 Custom Flow</div>
+        </div>
+
+        <div class="info-box-blue">
+          <strong>Built-in capture conversation</strong>
+          Edit the message text below. WAgen handles the rest — buttons, date validation, saving.
+        </div>
+      </div>
+
+      <div class="card-section">
+        <div class="section-header">✏️ Capture Messages</div>
+
+        <div class="field">
+          <label class="field-label">Permission Message</label>
+          <textarea class="field-textarea">Hey! 🎉 Want us to remember your birthday and surprise you with a special treat?</textarea>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Ask Date Message</label>
+          <textarea class="field-textarea" style="height:48px">🎂 Great! Share your birthday as DD-MM (e.g. 25-12)</textarea>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Confirmation Message</label>
+          <textarea class="field-textarea" style="height:48px">Perfect! 🎉 We've saved your birthday. Expect a surprise on your big day! 🎁</textarea>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Live Preview</label>
+          <div class="wa-preview">
+            <div class="wa-bubble">
+              Hey! 🎉 Want us to remember your birthday and surprise you with a special treat?
+              <div class="wa-buttons">
+                <div class="wa-btn">👍 Yes, please!</div>
+                <div class="wa-btn">Not now</div>
+              </div>
+            </div>
+            <div class="wa-time">delivered · just now</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-section">
+        <div class="section-header">🎯 Audience</div>
+        <div class="field">
+          <label class="field-label">Segment / Tag Filter</label>
+          <div class="tag-input">
+            <span class="tag-pill">VIP <span class="x">✕</span></span>
+            <span class="tag-pill">Repeat <span class="x">✕</span></span>
+            <span class="tag-add">+ Add tag</span>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">Cooldown (days before re-asking)</label>
+          <div class="field-row">
+            <input type="number" class="field-input" value="30">
+            <select class="field-select"><option>Days</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <button class="btn btn-ghost">Discard</button>
+        <button class="btn btn-primary">Save Birthday</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CUSTOM FLOW MODE ── -->
+  <div>
+    <div class="col-head">
+      <span class="col-label label-custom">Mode 2 — Custom Flow</span>
+    </div>
+    <div class="card active-custom">
+      <div class="card-header">
+        <div class="card-header-left">
+          <span class="card-emoji">🎂</span>
+          <div>
+            <div class="card-title">Birthday</div>
+            <div class="card-desc">Capture settings</div>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" checked>
+          <div class="toggle-track" style="background:#10b981"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+
+      <div class="card-section">
+        <div class="section-header">
+          📥 Capture Mode
+          <span class="badge badge-green">Custom Flow</span>
+        </div>
+
+        <!-- Mode switcher -->
+        <div class="mode-switcher">
+          <div class="mode-opt">⚡ Use Default</div>
+          <div class="mode-opt sel-custom">🔧 Custom Flow</div>
+        </div>
+
+        <div class="info-box">
+          <strong>⚠️ Requires a flow in Flow Builder</strong>
+          Your flow must save the date to the <strong>birthday</strong> contact field. The reminder module will trigger your flow when conditions match.
+        </div>
+      </div>
+
+      <div class="card-section">
+        <div class="section-header">🔧 Select Flow</div>
+
+        <div class="field">
+          <label class="field-label">Pick a flow from your Flow Builder</label>
+          <div class="flow-picker">
+            <div class="flow-picker-header">
+              Your Published Flows
+              <span style="color:#10b981;font-size:10px;font-weight:700">3 available</span>
+            </div>
+            <div class="flow-row selected">
+              <div class="flow-row-left">
+                <span class="flow-icon">🎂</span>
+                <div>
+                  <div class="flow-name">Birthday Capture Flow</div>
+                  <div class="flow-meta">6 nodes · saves birthday field · published</div>
+                </div>
+              </div>
+              <span class="flow-check">✓</span>
+            </div>
+            <div class="flow-row">
+              <div class="flow-row-left">
+                <span class="flow-icon">💬</span>
+                <div>
+                  <div class="flow-name">Onboarding Flow</div>
+                  <div class="flow-meta">12 nodes · published</div>
+                </div>
+              </div>
+            </div>
+            <div class="flow-row">
+              <div class="flow-row-left">
+                <span class="flow-icon">🤖</span>
+                <div>
+                  <div class="flow-name">Lead Qualification</div>
+                  <div class="flow-meta">8 nodes · published</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider-or">or</div>
+
+        <div class="field">
+          <button class="btn btn-ghost" style="width:100%;text-align:center;display:block;padding:10px">
+            + Build a new flow in Flow Builder →
+          </button>
+        </div>
+      </div>
+
+      <div class="card-section">
+        <div class="section-header">🎯 Audience</div>
+        <div class="field">
+          <label class="field-label">Segment / Tag Filter</label>
+          <div class="tag-input">
+            <span class="tag-pill">All Contacts <span class="x">✕</span></span>
+            <span class="tag-add">+ Add tag</span>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">Cooldown (days before re-triggering)</label>
+          <div class="field-row">
+            <input type="number" class="field-input" value="30">
+            <select class="field-select"><option>Days</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <button class="btn btn-ghost">Discard</button>
+        <button class="btn btn-primary" style="background:#10b981">Save Birthday</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

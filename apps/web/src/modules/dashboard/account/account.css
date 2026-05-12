@@ -704,6 +704,102 @@
   text-align: right;
 }
 
+.acc-daily-chart {
+  position: relative;
+}
+
+.acc-daily-chart-scroll {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 106px;
+  overflow-x: auto;
+  padding: 0 0.1rem 0.25rem;
+}
+
+.acc-daily-bar-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  display: flex;
+  flex: 1 0 18px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 18px;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+}
+
+.acc-daily-bar {
+  width: 100%;
+  background: #2563eb;
+  border-radius: 3px 3px 0 0;
+  opacity: 0.75;
+  transition: opacity 120ms ease, box-shadow 120ms ease;
+}
+
+.acc-daily-bar-item:hover .acc-daily-bar,
+.acc-daily-bar-item:focus-visible .acc-daily-bar {
+  opacity: 0.95;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+
+.acc-daily-label {
+  color: #94a3b8;
+  font-size: 0.58rem;
+  line-height: 1;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+}
+
+.acc-daily-tooltip {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 150px;
+  max-width: min(220px, calc(100vw - 24px));
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: #122033;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2);
+  font-size: 0.72rem;
+}
+
+.acc-daily-tooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #122033;
+}
+
+.acc-daily-tooltip-date {
+  color: #cbd5e1;
+  font-weight: 700;
+}
+
+.acc-daily-tooltip-value {
+  color: #fff;
+  font-size: 0.82rem;
+}
+
+.acc-daily-tooltip-calls {
+  color: #dbeafe;
+}
+
 /* ── Toggle switch (auto-recharge) ────────────────────────────────────────── */
 .acc-toggle-row {
   display: flex;

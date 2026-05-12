@@ -1,6 +1,6 @@
 import "./../account.css";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FocusEvent, type PointerEvent } from "react";
 import {
   createWorkspaceBillingRechargeOrder,
   fetchAiWallet,
@@ -95,9 +95,56 @@ function creditsUsed(row: AiUsageByAction | AiUsageByDay): number {
   return row.credits_used ?? row.tokens_used;
 }
 
+function fmtDayLabel(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return iso;
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
+}
+
+type DailyUsageTooltip = {
+  calls: string;
+  credits: string;
+  date: string;
+  x: number;
+  y: number;
+};
+
 function DailyChart({ data }: { data: AiUsageByDay[] }) {
+  const [tooltip, setTooltip] = useState<DailyUsageTooltip | null>(null);
+
   if (data.length === 0) return null;
+
   const max = Math.max(...data.map(d => creditsUsed(d)), 1);
+  const dailyTotals = data.reduce(
+    (totals, day) => ({
+      calls: totals.calls + day.calls,
+      credits: totals.credits + creditsUsed(day)
+    }),
+    { calls: 0, credits: 0 }
+  );
+  const tooltipFor = (day: AiUsageByDay, x: number, y: number) => {
+    const credits = creditsUsed(day);
+    const clampedX = Math.max(96, Math.min(window.innerWidth - 96, x));
+    setTooltip({
+      calls: `${day.calls.toLocaleString()} ${day.calls === 1 ? "call" : "calls"}`,
+      credits: `${credits.toLocaleString()} AI credits`,
+      date: fmtDayLabel(day.day),
+      x: clampedX,
+      y: Math.max(48, y)
+    });
+  };
+  const showPointerTooltip = (event: PointerEvent<HTMLButtonElement>, day: AiUsageByDay) => {
+    tooltipFor(day, event.clientX, event.clientY - 10);
+  };
+  const showFocusTooltip = (event: FocusEvent<HTMLButtonElement>, day: AiUsageByDay) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    tooltipFor(day, rect.left + rect.width / 2, rect.top - 8);
+  };
+
   return (
     <div className="acc-card">
       <div className="acc-card-head">
@@ -105,36 +152,51 @@ function DailyChart({ data }: { data: AiUsageByDay[] }) {
         <span style={{ fontSize: "0.75rem", color: "#5f6f86" }}>Last 30 days</span>
       </div>
       <div className="acc-card-body" style={{ paddingBottom: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "80px", overflowX: "auto" }}>
-          {data.map(d => {
-            const used = creditsUsed(d);
-            const h = Math.max(4, Math.round((used / max) * 80));
-            const label = d.day.slice(5); // MM-DD
-            return (
-              <div
-                key={d.day}
-                title={`${d.day}: ${used.toLocaleString()} AI credits (${d.calls} calls)`}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", flex: "1 0 18px", minWidth: "18px", cursor: "default" }}
-              >
-                <div
-                  style={{
-                    width: "100%",
-                    height: `${h}px`,
-                    background: "#2563eb",
-                    borderRadius: "3px 3px 0 0",
-                    opacity: 0.75,
-                    transition: "opacity 120ms ease"
-                  }}
-                />
-                <span style={{ fontSize: "0.58rem", color: "#94a3b8", writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap" }}>
-                  {label}
-                </span>
-              </div>
-            );
-          })}
+        <div className="acc-daily-chart">
+          {tooltip && (
+            <div
+              className="acc-daily-tooltip"
+              role="tooltip"
+              style={{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }}
+            >
+              <span className="acc-daily-tooltip-date">{tooltip.date}</span>
+              <strong className="acc-daily-tooltip-value">{tooltip.credits}</strong>
+              <span className="acc-daily-tooltip-calls">{tooltip.calls}</span>
+            </div>
+          )}
+          <div className="acc-daily-chart-scroll">
+            {data.map(d => {
+              const used = creditsUsed(d);
+              const h = Math.max(4, Math.round((used / max) * 80));
+              const label = d.day.slice(5); // MM-DD
+              return (
+                <button
+                  key={d.day}
+                  type="button"
+                  className="acc-daily-bar-item"
+                  aria-label={`${fmtDayLabel(d.day)}: ${used.toLocaleString()} AI credits, ${d.calls.toLocaleString()} ${d.calls === 1 ? "call" : "calls"}`}
+                  onBlur={() => setTooltip(null)}
+                  onFocus={(event) => showFocusTooltip(event, d)}
+                  onPointerEnter={(event) => showPointerTooltip(event, d)}
+                  onPointerLeave={() => setTooltip(null)}
+                  onPointerMove={(event) => showPointerTooltip(event, d)}
+                >
+                  <div
+                    className="acc-daily-bar"
+                    style={{
+                      height: `${h}px`
+                    }}
+                  />
+                  <span className="acc-daily-label">
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "#5f6f86" }}>
-          Total: <strong>{data.reduce((s, d) => s + creditsUsed(d), 0).toLocaleString()}</strong> AI credits across <strong>{data.reduce((s, d) => s + d.calls, 0).toLocaleString()}</strong> calls in the last 30 days
+          Total: <strong>{dailyTotals.credits.toLocaleString()}</strong> AI credits across <strong>{dailyTotals.calls.toLocaleString()}</strong> calls in the last 30 days
         </p>
       </div>
     </div>

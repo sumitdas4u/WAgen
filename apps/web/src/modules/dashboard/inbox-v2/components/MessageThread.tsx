@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { differenceInSeconds } from "date-fns";
 import { useConvStore, type ConversationMessage } from "../store/convStore";
 import { useMessages, useMarkRead, useSetStatus, useRetryMessage, useNotes } from "../queries";
+import { patchAiMode } from "../api";
+import { useAuth } from "../../../../lib/auth-context";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { ComposeArea } from "./ComposeArea";
@@ -45,8 +48,9 @@ interface Props {
 }
 
 export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: Props) {
-  const { byId, messagesByConvId, notesByConvId, typingState } = useConvStore();
+  const { byId, messagesByConvId, notesByConvId, typingState, upsertConv } = useConvStore();
   const conv = byId[convId];
+  const { token } = useAuth();
 
   const messages = useMemo(() => {
     const msgs = messagesByConvId[convId] ?? [];
@@ -69,6 +73,10 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
   const markRead = useMarkRead();
   const setStatus = useSetStatus();
   const retryMsg = useRetryMessage();
+  const aiToggleMut = useMutation({
+    mutationFn: (paused: boolean) => patchAiMode(token!, convId, paused),
+    onSuccess: (_data, paused) => upsertConv({ id: convId, ai_paused: paused, manual_takeover: paused })
+  });
   const [replyToMsg, setReplyToMsg] = useState<ConversationMessage | null>(null);
   const [showSuggestion, setShowSuggestion] = useState(true);
   const lastReadSyncKeyRef = useRef<string | null>(null);
@@ -236,6 +244,16 @@ export function MessageThread({ convId, optimisticMap, onBack, onOpenDetails }: 
           <div className="iv-thread-meta">{conv.channel_type === "api" ? "WhatsApp API" : conv.channel_type === "web" ? "Web Widget" : "WhatsApp QR"}</div>
         </div>
         <div className="iv-thread-actions">
+          <button
+            type="button"
+            className={`iv-ai-toggle-btn ${conv.ai_paused ? "is-paused" : "is-active"}`}
+            disabled={aiToggleMut.isPending || !token}
+            title={conv.ai_paused ? "Resume AI replies" : "Pause AI replies"}
+            onClick={() => aiToggleMut.mutate(!conv.ai_paused)}
+          >
+            <span className="iv-ai-toggle-dot" />
+            {conv.ai_paused ? "AI Paused" : "AI Active"}
+          </button>
           <button
             type="button"
             className="iv-mobile-action-btn iv-mobile-info-btn"

@@ -269,6 +269,59 @@ function mapConnection(row: MetaConnectionRow): MetaConnection {
   };
 }
 
+function getConnectionPhysicalKey(row: MetaConnectionRow): string {
+  const linkedNumber =
+    normalizePhoneDigits(row.linked_number) ??
+    normalizePhoneDigits(row.display_phone_number);
+  return linkedNumber ? `linked:${linkedNumber}` : `phone:${row.phone_number_id}`;
+}
+
+function getConnectionPreference(row: MetaConnectionRow): number {
+  if (row.status === "connected") {
+    return row.enabled ? 0 : 1;
+  }
+  if (row.status === "pending") {
+    return 2;
+  }
+  return 3;
+}
+
+function getSortableTime(value: string | null | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compareConnectionRows(a: MetaConnectionRow, b: MetaConnectionRow): number {
+  const preferenceDelta = getConnectionPreference(a) - getConnectionPreference(b);
+  if (preferenceDelta !== 0) {
+    return preferenceDelta;
+  }
+
+  const updatedDelta = getSortableTime(b.updated_at) - getSortableTime(a.updated_at);
+  if (updatedDelta !== 0) {
+    return updatedDelta;
+  }
+
+  return getSortableTime(b.created_at) - getSortableTime(a.created_at);
+}
+
+function collapseDuplicatePhysicalConnectionRows(rows: MetaConnectionRow[]): MetaConnectionRow[] {
+  const byPhysicalNumber = new Map<string, MetaConnectionRow>();
+
+  for (const row of rows) {
+    const key = getConnectionPhysicalKey(row);
+    const current = byPhysicalNumber.get(key);
+    if (!current || compareConnectionRows(row, current) < 0) {
+      byPhysicalNumber.set(key, row);
+    }
+  }
+
+  return Array.from(byPhysicalNumber.values()).sort(compareConnectionRows);
+}
+
 function normalizePhoneDigits(input: string | null | undefined): string | null {
   if (!input) {
     return null;
@@ -1336,7 +1389,7 @@ async function upsertConnection(args: {
        )
        AND NOT EXISTS (
          SELECT 1 FROM whatsapp_business_connections
-         WHERE phone_number_id = $3 AND user_id != $1
+         WHERE phone_number_id = $3
        )`,
       [args.userId, linkedNumber, args.phoneNumberId]
     );
@@ -2054,15 +2107,16 @@ export async function getMetaBusinessStatus(
     }
   }
 
+  const visibleRows = collapseDuplicatePhysicalConnectionRows(refreshedRows);
   const currentRow =
-    refreshedRows.find((row) => row.status !== "disconnected") ??
+    visibleRows.find((row) => row.status !== "disconnected") ??
     null;
 
   return {
-    connected: refreshedRows.some((row) => row.status === "connected"),
-    enabled: refreshedRows.some((row) => row.status === "connected" && row.enabled),
+    connected: visibleRows.some((row) => row.status === "connected"),
+    enabled: visibleRows.some((row) => row.status === "connected" && row.enabled),
     connection: currentRow ? mapConnection(currentRow) : null,
-    connections: refreshedRows.map(mapConnection)
+    connections: visibleRows.map(mapConnection)
   };
 }
 

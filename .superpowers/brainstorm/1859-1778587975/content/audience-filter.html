@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audience Filter — WAgen Reminders</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f0e1a;
+    min-height: 100vh;
+    padding: 28px 24px;
+    color: #1a1a2e;
+  }
+
+  h2 { color: #e0e7ff; font-size: 18px; margin-bottom: 4px; text-align: center; }
+  .subtitle { color: #818cf8; font-size: 13px; margin-bottom: 28px; text-align: center; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 24px;
+    max-width: 980px;
+    margin: 0 auto;
+    align-items: start;
+  }
+
+  /* Card */
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1.5px solid #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+  }
+
+  .card-header {
+    padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #f3f4f6; background: #fafafa;
+  }
+  .card-header-left { display: flex; align-items: center; gap: 10px; }
+  .card-emoji { font-size: 22px; }
+  .card-title { font-size: 15px; font-weight: 700; color: #111827; }
+  .card-desc  { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+
+  .toggle { position: relative; width: 40px; height: 22px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-track { position: absolute; top:0;left:0;right:0;bottom:0; background:#6366f1; border-radius:22px; }
+  .toggle-thumb { position: absolute; top:3px; left:3px; width:16px; height:16px; background:#fff; border-radius:50%; transform:translateX(18px); box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+
+  .card-section { padding: 16px 18px; border-bottom: 1px solid #f3f4f6; }
+  .card-section:last-child { border-bottom: none; }
+
+  .section-header {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #6b7280; margin-bottom: 14px;
+  }
+
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+  .badge-indigo { background: #e0e7ff; color: #4338ca; }
+  .badge-step   { background: #1e1b4b; color: #a5b4fc; border-radius: 50%; padding: 2px 6px; min-width:20px; text-align:center; }
+
+  .field { margin-bottom: 10px; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label { font-size: 11px; font-weight: 600; color: #374151; margin-bottom: 5px; display: block; }
+  .field-hint  { font-size: 10px; color: #9ca3af; font-weight: 400; }
+
+  .field-select {
+    width: 100%; padding: 8px 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 12px; color: #111827; background: #fafafa; outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    padding-right: 30px; cursor: pointer;
+  }
+
+  .field-input {
+    width: 100%; padding: 8px 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 12px; color: #111827; background: #fafafa; outline: none;
+  }
+
+  /* Trigger event selector */
+  .trigger-group {
+    display: flex; gap: 6px;
+  }
+
+  .trigger-opt {
+    flex: 1; padding: 9px 8px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    text-align: center; cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .trigger-opt .t-icon { font-size: 16px; display: block; margin-bottom: 3px; }
+  .trigger-opt .t-label { font-size: 11px; font-weight: 700; color: #6b7280; }
+  .trigger-opt .t-desc  { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+
+  .trigger-opt.sel {
+    border-color: #6366f1;
+    background: #eef2ff;
+  }
+  .trigger-opt.sel .t-label { color: #4338ca; }
+  .trigger-opt.sel .t-desc  { color: #818cf8; }
+
+  /* Conditions builder */
+  .conditions-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .condition-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 1fr 28px;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .cond-select {
+    padding: 7px 10px;
+    border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 11px; color: #111827; background: #fafafa; outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+    padding-right: 24px; cursor: pointer; width: 100%;
+  }
+
+  .cond-input {
+    padding: 7px 10px;
+    border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 11px; color: #111827; background: #fafafa; outline: none;
+    width: 100%;
+  }
+
+  .cond-remove {
+    width: 28px; height: 28px;
+    border: 1.5px solid #fecaca;
+    background: #fff;
+    border-radius: 6px;
+    color: #ef4444;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .add-condition {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 10px;
+    border: 1.5px dashed #c7d2fe;
+    border-radius: 7px;
+    color: #6366f1;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: background 0.1s;
+  }
+  .add-condition:hover { background: #eef2ff; }
+
+  /* Match summary */
+  .match-summary {
+    background: #f0fdf4;
+    border: 1px solid #a7f3d0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #065f46;
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 10px;
+  }
+
+  .match-count {
+    background: #065f46;
+    color: #fff;
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  /* Cooldown */
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .card-footer {
+    padding: 12px 18px;
+    background: #f9fafb;
+    display: flex; gap: 8px; justify-content: flex-end;
+    border-top: 1px solid #f3f4f6;
+  }
+  .btn { padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-ghost   { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+
+  /* ── Right panel: legend ── */
+  .legend {
+    display: flex; flex-direction: column; gap: 14px; padding-top: 4px;
+  }
+
+  .legend-block {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+
+  .legend-title {
+    font-size: 11px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #818cf8; margin-bottom: 10px;
+  }
+
+  .legend-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin-bottom: 8px;
+  }
+  .legend-row:last-child { margin-bottom: 0; }
+
+  .legend-icon {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .li-create { background: #d1fae5; }
+  .li-update { background: #dbeafe; }
+  .li-both   { background: #ede9fe; }
+
+  .legend-text { font-size: 12px; }
+  .legend-text strong { display: block; color: #e0e7ff; font-weight: 700; font-size: 12px; margin-bottom: 2px; }
+  .legend-text span   { color: #9ca3af; font-size: 11px; line-height: 1.4; }
+
+  .field-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .field-table th { text-align: left; color: #6366f1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 0 6px; font-weight: 700; }
+  .field-table td { padding: 5px 0; border-bottom: 1px solid rgba(99,102,241,0.1); color: #a5b4fc; vertical-align: top; }
+  .field-table td:first-child { color: #e0e7ff; font-weight: 600; width: 45%; padding-right: 8px; font-family: monospace; font-size: 11px; }
+  .field-table tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<h2>Birthday Card — Audience Filter</h2>
+<p class="subtitle">Trigger on contact Create / Update · Same filter engine as Sequences</p>
+
+<div class="layout">
+
+  <!-- LEFT: Settings Card (Audience section only) -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left">
+        <span class="card-emoji">🎂</span>
+        <div>
+          <div class="card-title">Birthday</div>
+          <div class="card-desc" style="color:#10b981">● Active · 143 dates captured</div>
+        </div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" checked>
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+
+    <!-- Trigger event -->
+    <div class="card-section">
+      <div class="section-header">
+        <span class="badge badge-step">3</span>
+        Trigger Event
+      </div>
+
+      <div class="trigger-group">
+        <div class="trigger-opt sel">
+          <span class="t-icon">✨</span>
+          <div class="t-label">On Create</div>
+          <div class="t-desc">New contact added</div>
+        </div>
+        <div class="trigger-opt">
+          <span class="t-icon">✏️</span>
+          <div class="t-label">On Update</div>
+          <div class="t-desc">Contact updated</div>
+        </div>
+        <div class="trigger-opt">
+          <span class="t-icon">⚡</span>
+          <div class="t-label">Both</div>
+          <div class="t-desc">Create or update</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Conditions -->
+    <div class="card-section">
+      <div class="section-header">
+        🔍 Audience Conditions
+        <span class="badge badge-indigo">ALL must match</span>
+      </div>
+
+      <div class="conditions-list">
+
+        <!-- Condition 1: contact_type = customer -->
+        <div class="condition-row">
+          <select class="cond-select">
+            <option>contact_type</option>
+            <option>tags</option>
+            <option>display_name</option>
+            <option>phone_number</option>
+            <option>email</option>
+            <option>source_type</option>
+            <option>custom: birthday</option>
+            <option>custom: anniversary</option>
+            <option>custom: segment</option>
+          </select>
+          <select class="cond-select">
+            <option>equals</option>
+            <option>not equals</option>
+            <option>contains</option>
+            <option>greater than</option>
+            <option>less than</option>
+          </select>
+          <input class="cond-input" value="customer">
+          <button class="cond-remove">✕</button>
+        </div>
+
+        <!-- Condition 2: tags contains VIP -->
+        <div class="condition-row">
+          <select class="cond-select">
+            <option>tags</option>
+            <option>contact_type</option>
+            <option>display_name</option>
+            <option>phone_number</option>
+            <option>email</option>
+            <option>custom: birthday</option>
+          </select>
+          <select class="cond-select">
+            <option>contains</option>
+            <option>equals</option>
+            <option>not equals</option>
+          </select>
+          <input class="cond-input" value="VIP">
+          <button class="cond-remove">✕</button>
+        </div>
+
+        <!-- Condition 3: custom birthday is empty -->
+        <div class="condition-row">
+          <select class="cond-select">
+            <option>custom: birthday</option>
+            <option>contact_type</option>
+            <option>tags</option>
+          </select>
+          <select class="cond-select">
+            <option>equals</option>
+            <option>not equals</option>
+            <option>contains</option>
+          </select>
+          <input class="cond-input" value="" placeholder="empty = not set">
+          <button class="cond-remove">✕</button>
+        </div>
+
+      </div>
+
+      <div class="add-condition">
+        <span style="font-size:16px;line-height:1">+</span> Add condition
+      </div>
+
+      <div class="match-summary">
+        <span class="match-count">47</span>
+        contacts currently match these conditions
+      </div>
+    </div>
+
+    <!-- Cooldown -->
+    <div class="card-section">
+      <div class="section-header">⏱️ Cooldown</div>
+      <div class="field">
+        <label class="field-label">
+          Don't re-trigger for
+          <span class="field-hint">— prevents asking the same contact again too soon</span>
+        </label>
+        <div class="field-row">
+          <input type="number" class="field-input" value="30">
+          <select class="field-select"><option>Days</option><option>Weeks</option></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-footer">
+      <button class="btn btn-ghost">Discard</button>
+      <button class="btn btn-primary">Save Birthday</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Legend -->
+  <div class="legend">
+
+    <div class="legend-block">
+      <div class="legend-title">Trigger Events</div>
+      <div class="legend-row">
+        <div class="legend-icon li-create">✨</div>
+        <div class="legend-text">
+          <strong>On Create</strong>
+          <span>Fires when a new contact is added. Good for capturing dates at onboarding.</span>
+        </div>
+      </div>
+      <div class="legend-row">
+        <div class="legend-icon li-update">✏️</div>
+        <div class="legend-text">
+          <strong>On Update</strong>
+          <span>Fires when an existing contact record changes (tag added, field updated).</span>
+        </div>
+      </div>
+      <div class="legend-row">
+        <div class="legend-icon li-both">⚡</div>
+        <div class="legend-text">
+          <strong>Both</strong>
+          <span>Fires on create or update. Widest reach — recommended for most cases.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend-block">
+      <div class="legend-title">Available Filter Fields</div>
+      <table class="field-table">
+        <tr><th>Field</th><th>Example values</th></tr>
+        <tr><td>contact_type</td><td>customer, lead, prospect</td></tr>
+        <tr><td>tags</td><td>VIP, Repeat, New</td></tr>
+        <tr><td>display_name</td><td>Priya, Rahul…</td></tr>
+        <tr><td>phone_number</td><td>+91…</td></tr>
+        <tr><td>email</td><td>user@example.com</td></tr>
+        <tr><td>source_type</td><td>whatsapp, web, api</td></tr>
+        <tr><td>custom: birthday</td><td>empty = not yet captured</td></tr>
+        <tr><td>custom: anniversary</td><td>empty = not yet captured</td></tr>
+        <tr><td>custom: segment</td><td>restaurant, retail…</td></tr>
+        <tr><td>custom: [any field]</td><td>any contact custom field</td></tr>
+      </table>
+    </div>
+
+    <div class="legend-block">
+      <div class="legend-title">Tip — Avoid Duplicate Asks</div>
+      <div style="font-size:12px;color:#a5b4fc;line-height:1.6">
+        Add condition: <br>
+        <code style="background:rgba(99,102,241,0.2);padding:2px 8px;border-radius:4px;color:#c7d2fe">custom: birthday</code>
+        &nbsp;<code style="background:rgba(99,102,241,0.2);padding:2px 8px;border-radius:4px;color:#c7d2fe">equals</code>
+        &nbsp;<code style="background:rgba(99,102,241,0.2);padding:2px 8px;border-radius:4px;color:#c7d2fe">(empty)</code>
+        <br><br>
+        This ensures we only ask contacts who don't already have a birthday saved.
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>
