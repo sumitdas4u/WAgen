@@ -1,4 +1,9 @@
-import { getConversationById, setConversationManualAndPaused, trackOutboundMessage } from "./conversation-service.js";
+import {
+  getConversationById,
+  getConversationReplyContextMessageId,
+  setConversationManualAndPaused,
+  trackOutboundMessage
+} from "./conversation-service.js";
 import { queueApiConversationSend } from "./api-outbound-router-service.js";
 import { queueConversationOutboundMessage } from "./outbound-message-service.js";
 import { realtimeHub } from "./realtime-hub.js";
@@ -41,6 +46,8 @@ export async function sendConversationFlowMessage(input: {
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
     echoId?: string | null;
+    inReplyToId?: string | null;
+    contextMessageId?: string | null;
   };
 }): Promise<{
   conversationId: string;
@@ -61,6 +68,11 @@ export async function sendConversationFlowMessage(input: {
     throw new Error("Message text is required.");
   }
   const echoId = input.echoId ?? input.usage?.echoId ?? null;
+  let contextMessageId = input.usage?.contextMessageId ?? null;
+  if (input.usage?.inReplyToId && !contextMessageId && conversation.channel_type === "api") {
+    const quoted = await getConversationReplyContextMessageId(conversation.id, input.usage.inReplyToId);
+    contextMessageId = quoted;
+  }
 
   if (conversation.channel_type === "api") {
     const queued = await queueApiConversationSend({
@@ -69,7 +81,7 @@ export async function sendConversationFlowMessage(input: {
       source: input.usage?.markAsAiReply ? "ai" : "chat",
       payload: deliveryPayload,
       senderName: input.senderName ?? null,
-      usage: { ...input.usage, echoId }
+      usage: { ...input.usage, echoId, contextMessageId }
     });
 
     // Pre-track to conversation_messages immediately so the dashboard can
@@ -134,6 +146,7 @@ export async function sendManualConversationMessage(input: {
   mediaMimeType?: string | null;
   senderName?: string | null;
   echoId?: string | null;
+  inReplyToId?: string | null;
 }): Promise<{ conversationId: string; channelType: "web" | "qr" | "api"; delivered: boolean }> {
   const message = input.text.trim();
   if (!message && !input.mediaUrl) {
@@ -175,7 +188,11 @@ export async function sendManualConversationMessage(input: {
     mediaMimeType: input.mediaMimeType ?? null,
     displayText,
     senderName: input.senderName ?? null,
-    echoId: input.echoId ?? null
+    echoId: input.echoId ?? null,
+    usage: {
+      echoId: input.echoId ?? null,
+      inReplyToId: input.inReplyToId ?? null
+    }
   });
 
   if (input.lockToManual !== false) {

@@ -1269,6 +1269,17 @@ class WhatsAppSessionManager {
     );
   }
 
+  async sendTypingPresence(input: { userId: string; phoneNumber: string; typing: boolean }): Promise<void> {
+    const runtime = this.sessions.get(input.userId);
+    if (!runtime || runtime.status !== "connected") {
+      throw new Error("WhatsApp QR session is not connected.");
+    }
+
+    const to = this.resolveOutboundChatJid(input.userId, input.phoneNumber);
+    await runtime.socket.presenceSubscribe(to);
+    await runtime.socket.sendPresenceUpdate(input.typing ? "composing" : "paused", to);
+  }
+
   private queueKey(userId: string, jid: string): string {
     return `${userId}::${jid}`;
   }

@@ -4,8 +4,9 @@ import { pool } from "../db/pool.js";
 import { aiService } from "../services/ai-service.js";
 import { AiTokensDepletedError, chargeUser, estimateTextTokens, requireAiCredit } from "../services/ai-token-service.js";
 import { queueApiConversationSend } from "../services/api-outbound-router-service.js";
-import { requireMetaConnection } from "../services/meta-whatsapp-service.js";
+import { requireMetaConnection, sendMetaTypingIndicator } from "../services/meta-whatsapp-service.js";
 import { sendManualConversationMessage } from "../services/channel-outbound-service.js";
+import { whatsappSessionManager } from "../services/whatsapp-session-manager.js";
 import {
   listLeadsWithSummary,
   listConversationMessagesPage,
@@ -40,6 +41,7 @@ const ManualMessageSchema = z.object({
   mediaUrl: z.string().optional(),
   mediaMimeType: z.string().optional(),
   echoId: z.string().uuid().optional(),
+  inReplyToId: z.string().uuid().nullable().optional(),
   lockToManual: z.boolean().optional()
 });
 
@@ -918,7 +920,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           mediaUrl,
           mediaMimeType,
           senderName,
-          echoId: parsed.data.echoId ?? null
+          echoId: parsed.data.echoId ?? null,
+          inReplyToId: parsed.data.inReplyToId ?? null
         });
         return { ok: true, delivered };
       } catch (error) {
@@ -1070,7 +1073,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       }
 
       const conversation = await getOrCreateConversation(request.authUser.userId, phoneNumber, { channelType, channelLinkedNumber });
-      return { conversationId: conversation.id };
+      const hydratedConversation = await getConversationForUser(request.authUser.userId, conversation.id);
+      return { conversationId: conversation.id, conversation: hydratedConversation ?? conversation };
     }
   );
 
@@ -1221,6 +1225,70 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       if (!parsed.success) return reply.status(400).send({ error: "Invalid typing payload" });
 
       realtimeHub.broadcastTyping(request.authUser.userId, conversationId, parsed.data.typing, request.authUser.userId, true);
+      if (parsed.data.typing) {
+        const convResult = await pool.query<{
+          phone_number: string;
+          channel_type: "web" | "qr" | "api";
+          channel_linked_number: string | null;
+        }>(
+          `SELECT phone_number, channel_type, channel_linked_number
+           FROM conversations
+           WHERE id = $1 AND user_id = $2
+           LIMIT 1`,
+          [conversationId, request.authUser.userId]
+        );
+        const conv = convResult.rows[0];
+        if (!conv) return reply.status(404).send({ error: "Conversation not found" });
+
+        if (conv.channel_type === "api") {
+          const latestInbound = await pool.query<{ provider_message_id: string | null }>(
+            `SELECT COALESCE(wamid, payload_json->>'messageId') AS provider_message_id
+             FROM conversation_messages
+             WHERE conversation_id = $1
+               AND direction = 'inbound'
+               AND COALESCE(wamid, payload_json->>'messageId') IS NOT NULL
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1`,
+            [conversationId]
+          );
+          const messageId = latestInbound.rows[0]?.provider_message_id ?? null;
+          if (messageId) {
+            sendMetaTypingIndicator({
+              userId: request.authUser.userId,
+              linkedNumber: conv.channel_linked_number,
+              messageId
+            }).catch((error) => {
+              request.log.warn({ err: error, conversationId }, "Meta typing indicator failed");
+            });
+          }
+        } else if (conv.channel_type === "qr") {
+          whatsappSessionManager.sendTypingPresence({
+            userId: request.authUser.userId,
+            phoneNumber: conv.phone_number,
+            typing: true
+          }).catch((error) => {
+            request.log.warn({ err: error, conversationId }, "QR typing presence failed");
+          });
+        }
+      } else {
+        const convResult = await pool.query<{ phone_number: string; channel_type: "web" | "qr" | "api" }>(
+          `SELECT phone_number, channel_type
+           FROM conversations
+           WHERE id = $1 AND user_id = $2
+           LIMIT 1`,
+          [conversationId, request.authUser.userId]
+        );
+        const conv = convResult.rows[0];
+        if (conv?.channel_type === "qr") {
+          whatsappSessionManager.sendTypingPresence({
+            userId: request.authUser.userId,
+            phoneNumber: conv.phone_number,
+            typing: false
+          }).catch((error) => {
+            request.log.warn({ err: error, conversationId }, "QR typing presence reset failed");
+          });
+        }
+      }
       return { ok: true };
     }
   );

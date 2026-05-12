@@ -293,7 +293,8 @@ export async function getOrCreateConversation(
         `UPDATE conversations
          SET channel_type = $1,
              channel_linked_number = $2,
-             assigned_agent_profile_id = $3
+             assigned_agent_profile_id = $3,
+             updated_at = NOW()
          WHERE id = $4
          RETURNING *`,
         [nextChannelType, nextChannelLinkedNumber, nextAssignedAgentId, row.id]
@@ -644,6 +645,8 @@ export async function trackInboundMessage(
     channelLinkedNumber?: string | null;
     mediaUrl?: string | null;
     payloadJson?: unknown;
+    wamid?: string | null;
+    inReplyToWamid?: string | null;
   }
 ): Promise<Conversation> {
   const channelType = options?.channelType ?? "qr";
@@ -708,12 +711,15 @@ export async function trackInboundMessage(
 
   const inboundMediaUrl = options?.mediaUrl ?? null;
   const payloadJsonStr = options?.payloadJson != null ? JSON.stringify(options.payloadJson) : null;
+  const replyToLocalId = options?.inReplyToWamid
+    ? await resolveConversationMessageIdByWamid(conversation.id, options.inReplyToWamid)
+    : null;
   if (inboundMediaUrl) {
     try {
       await pool.query(
-        `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, media_url, payload_json)
-         VALUES ($1, 'inbound', $2, $3, $4, $5::jsonb)`,
-        [conversation.id, senderName ?? null, message, inboundMediaUrl, payloadJsonStr]
+        `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, media_url, payload_json, wamid, in_reply_to_id)
+         VALUES ($1, 'inbound', $2, $3, $4, $5::jsonb, $6, $7)`,
+        [conversation.id, senderName ?? null, message, inboundMediaUrl, payloadJsonStr, options?.wamid ?? null, replyToLocalId]
       );
     } catch {
       await pool.query(
@@ -724,9 +730,9 @@ export async function trackInboundMessage(
     }
   } else {
     await pool.query(
-      `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, payload_json)
-       VALUES ($1, 'inbound', $2, $3, $4::jsonb)`,
-      [conversation.id, senderName ?? null, message, payloadJsonStr]
+      `INSERT INTO conversation_messages (conversation_id, direction, sender_name, message_text, payload_json, wamid, in_reply_to_id)
+       VALUES ($1, 'inbound', $2, $3, $4::jsonb, $5, $6)`,
+      [conversation.id, senderName ?? null, message, payloadJsonStr, options?.wamid ?? null, replyToLocalId]
     );
   }
   const newUnreadCount = await incrementConversationUnreadCount(userId, conversation.id);
@@ -755,11 +761,12 @@ export async function trackInboundMessage(
     created_at: Date;
     media_url: string | null;
     payload_json: Record<string, unknown> | null;
+    in_reply_to_id: string | null;
   };
   let inboundMsg: InboundRealtimeRow | undefined;
   try {
     const inboundMsgRow = await pool.query<InboundRealtimeRow>(
-      `SELECT id, created_at, media_url, payload_json
+      `SELECT id, created_at, media_url, payload_json, in_reply_to_id
        FROM conversation_messages
        WHERE conversation_id = $1 AND direction = 'inbound'
        ORDER BY created_at DESC, id DESC LIMIT 1`,
@@ -775,7 +782,7 @@ export async function trackInboundMessage(
       [conversation.id]
     );
     const row = inboundMsgRow.rows[0];
-    inboundMsg = row ? { ...row, media_url: null, payload_json: null } : undefined;
+    inboundMsg = row ? { ...row, media_url: null, payload_json: null, in_reply_to_id: null } : undefined;
   }
   if (inboundMsg) {
     realtimeHub.broadcastMessageCreated(userId, {
@@ -788,7 +795,7 @@ export async function trackInboundMessage(
         message_text: message,
         content_type: "text",
         is_private: false,
-        in_reply_to_id: null,
+        in_reply_to_id: inboundMsg.in_reply_to_id ?? null,
         echo_id: null,
         delivery_status: "delivered",
         error_code: null,
@@ -861,6 +868,7 @@ export async function trackOutboundMessage(
     sourceType?: "manual" | "broadcast" | "sequence" | "bot" | "api" | "system" | null;
     webhookUrl?: string | null;
     echoId?: string | null;
+    inReplyToId?: string | null;
   },
   mediaUrl?: string | null,
   payload?: FlowMessagePayload | null,
@@ -873,6 +881,7 @@ export async function trackOutboundMessage(
     const updated = await pool.query<{ id: string }>(
       `UPDATE conversation_messages
        SET wamid = COALESCE($3, wamid),
+           in_reply_to_id = COALESCE($4, in_reply_to_id),
            delivery_status = CASE
              WHEN delivery_status IN ('delivered', 'read', 'failed') THEN delivery_status
              ELSE 'sent'
@@ -883,7 +892,7 @@ export async function trackOutboundMessage(
        WHERE conversation_id = $1
          AND echo_id = $2
        RETURNING id`,
-      [conversationId, usage.echoId, wamid ?? null]
+      [conversationId, usage.echoId, wamid ?? null, usage.inReplyToId ?? null]
     );
     updatedExistingMessage = (updated.rowCount ?? 0) > 0;
   }
@@ -913,9 +922,10 @@ export async function trackOutboundMessage(
            sent_at,
            source_type,
            webhook_url,
-           echo_id
+           echo_id,
+           in_reply_to_id
          )
-         VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13, $14, $15)`,
+         VALUES ($1, 'outbound', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), $13, $14, $15, $16)`,
         [
           conversationId,
           usage?.senderName ?? null,
@@ -931,7 +941,8 @@ export async function trackOutboundMessage(
           wamid ?? null,
           usage?.sourceType ?? "manual",
           usage?.webhookUrl ?? null,
-          usage?.echoId ?? null
+          usage?.echoId ?? null,
+          usage?.inReplyToId ?? null
         ]
       );
     } catch {
@@ -1024,6 +1035,7 @@ export async function trackOutboundMessage(
       id: string;
       created_at: Date;
       echo_id: string | null;
+      in_reply_to_id: string | null;
       sender_name: string | null;
       media_url: string | null;
       message_type: string | null;
@@ -1040,6 +1052,7 @@ export async function trackOutboundMessage(
            id,
            created_at,
            echo_id,
+           in_reply_to_id,
            sender_name,
            media_url,
            message_type,
@@ -1059,9 +1072,10 @@ export async function trackOutboundMessage(
         id: string;
         created_at: Date;
         echo_id: string | null;
+        in_reply_to_id: string | null;
         sender_name: string | null;
       }>(
-        `SELECT id, created_at, echo_id, sender_name
+        `SELECT id, created_at, echo_id, NULL::uuid AS in_reply_to_id, sender_name
          FROM conversation_messages
          WHERE conversation_id = $1 AND direction = 'outbound'
          ORDER BY created_at DESC, id DESC LIMIT 1`,
@@ -1092,7 +1106,7 @@ export async function trackOutboundMessage(
           message_text: message,
           content_type: outboundMsg.message_type === "file" ? "document" : outboundMsg.message_type ?? "text",
           is_private: false,
-          in_reply_to_id: null,
+          in_reply_to_id: outboundMsg.in_reply_to_id ?? null,
           echo_id: outboundMsg.echo_id,
           delivery_status: outboundMsg.delivery_status ?? "sent",
           error_code: outboundMsg.error_code ?? null,
@@ -1863,6 +1877,40 @@ export async function listRecentConversationMessages(
   return result.rows.reverse();
 }
 
+async function resolveConversationMessageIdByWamid(conversationId: string, wamid: string): Promise<string | null> {
+  const messageId = wamid.trim();
+  if (!messageId) return null;
+  const result = await pool.query<{ id: string }>(
+    `SELECT id
+     FROM conversation_messages
+     WHERE conversation_id = $1
+       AND (wamid = $2 OR payload_json->>'messageId' = $2)
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [conversationId, messageId]
+  );
+  return result.rows[0]?.id ?? null;
+}
+
+export async function getConversationReplyContextMessageId(
+  conversationId: string,
+  messageId: string
+): Promise<string | null> {
+  const id = messageId.trim();
+  if (!id) return null;
+  const result = await pool.query<{ provider_message_id: string | null }>(
+    `SELECT COALESCE(wamid, payload_json->>'messageId') AS provider_message_id
+     FROM conversation_messages
+     WHERE conversation_id = $1
+       AND id = $2
+       AND COALESCE(wamid, payload_json->>'messageId') IS NOT NULL
+       AND created_at >= NOW() - INTERVAL '30 days'
+     LIMIT 1`,
+    [conversationId, id]
+  );
+  return result.rows[0]?.provider_message_id ?? null;
+}
+
 export async function listConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
   // Try with all columns first; fall back gracefully if new columns don't exist yet (pre-migration).
   try {
@@ -1878,6 +1926,10 @@ export async function listConversationMessages(conversationId: string): Promise<
          ai_model,
          retrieval_chunks,
          media_url,
+         content_type,
+         is_private,
+         in_reply_to_id,
+         echo_id,
          message_type,
          message_content,
          wamid,
@@ -1887,6 +1939,7 @@ export async function listConversationMessages(conversationId: string): Promise<
          read_at,
          error_code,
          error_message,
+         retry_count,
          COALESCE(source_type, 'manual') AS source_type,
          created_at
        FROM conversation_messages
@@ -1911,8 +1964,13 @@ export async function listConversationMessages(conversationId: string): Promise<
            ai_model,
            retrieval_chunks,
            media_url,
+           'text'::text        AS content_type,
+           FALSE               AS is_private,
+           NULL::uuid          AS in_reply_to_id,
+           NULL::text          AS echo_id,
            'text'::text        AS message_type,
            NULL::jsonb         AS message_content,
+           0                   AS retry_count,
            created_at
          FROM conversation_messages
          WHERE conversation_id = $1
@@ -1934,8 +1992,13 @@ export async function listConversationMessages(conversationId: string): Promise<
            ai_model,
            retrieval_chunks,
            NULL::text          AS media_url,
+           'text'::text        AS content_type,
+           FALSE               AS is_private,
+           NULL::uuid          AS in_reply_to_id,
+           NULL::text          AS echo_id,
            'text'::text        AS message_type,
            NULL::jsonb         AS message_content,
+           0                   AS retry_count,
            created_at
          FROM conversation_messages
          WHERE conversation_id = $1
@@ -1986,6 +2049,10 @@ export async function listConversationMessagesPage(
          ai_model,
          retrieval_chunks,
          media_url,
+         content_type,
+         is_private,
+         in_reply_to_id,
+         echo_id,
          message_type,
          message_content,
          wamid,
@@ -1995,6 +2062,7 @@ export async function listConversationMessagesPage(
          read_at,
          error_code,
          error_message,
+         retry_count,
          COALESCE(source_type, 'manual') AS source_type,
          created_at
        FROM conversation_messages
@@ -2031,6 +2099,10 @@ export async function listConversationMessagesPage(
            ai_model,
            retrieval_chunks,
            media_url,
+           'text'::text AS content_type,
+           FALSE AS is_private,
+           NULL::uuid AS in_reply_to_id,
+           NULL::text AS echo_id,
            'text'::text AS message_type,
            NULL::jsonb AS message_content,
            NULL::text AS wamid,
@@ -2040,6 +2112,7 @@ export async function listConversationMessagesPage(
            NULL::timestamptz AS read_at,
            NULL::text AS error_code,
            NULL::text AS error_message,
+           0 AS retry_count,
            'manual'::text AS source_type,
            created_at
          FROM conversation_messages
@@ -2075,6 +2148,10 @@ export async function listConversationMessagesPage(
            ai_model,
            retrieval_chunks,
            NULL::text AS media_url,
+           'text'::text AS content_type,
+           FALSE AS is_private,
+           NULL::uuid AS in_reply_to_id,
+           NULL::text AS echo_id,
            'text'::text AS message_type,
            NULL::jsonb AS message_content,
            NULL::text AS wamid,
@@ -2084,6 +2161,7 @@ export async function listConversationMessagesPage(
            NULL::timestamptz AS read_at,
            NULL::text AS error_code,
            NULL::text AS error_message,
+           0 AS retry_count,
            'manual'::text AS source_type,
            created_at
          FROM conversation_messages

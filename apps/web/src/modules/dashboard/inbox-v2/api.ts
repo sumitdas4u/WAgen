@@ -508,7 +508,7 @@ export function createOutboundConversation(token: string, params: {
   contactId: string;
   channelType: "api" | "qr";
   connectionId?: string | null;
-}): Promise<{ conversationId: string }> {
+}): Promise<{ conversationId: string; conversation?: Conversation }> {
   return apiFetch(token, `/api/conversations/outbound`, {
     method: "POST",
     body: JSON.stringify(params)

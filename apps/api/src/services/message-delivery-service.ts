@@ -190,6 +190,8 @@ export async function sendTrackedApiConversationFlowMessage(input: {
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
     echoId?: string | null;
+    inReplyToId?: string | null;
+    contextMessageId?: string | null;
   };
 }): Promise<{ messageId: string | null }> {
   const lastInboundContact = await getContactByPhoneForUser(input.userId, input.conversation.phone_number);
@@ -242,7 +244,8 @@ export async function sendTrackedApiConversationFlowMessage(input: {
       userId: input.userId,
       to: input.conversation.phone_number,
       payload: input.payload,
-      linkedNumber: input.conversation.channel_linked_number
+      linkedNumber: input.conversation.channel_linked_number,
+      contextMessageId: input.usage?.contextMessageId ?? null
     });
 
     await markDeliveryAttemptSuccess({

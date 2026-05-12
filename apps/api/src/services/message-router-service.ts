@@ -55,6 +55,8 @@ export interface ProcessIncomingMessageInput {
   /** Channel-specific normalized payload stored in conversation_messages.payload_json
    *  and included in the messages.upsert fanout event. */
   rawPayload?: unknown;
+  providerMessageId?: string | null;
+  contextMessageId?: string | null;
   sendReply?: (payload: { text: string }) => Promise<void>;
 }
 
@@ -193,7 +195,9 @@ export async function processIncomingMessage(
       channelType: input.channelType,
       channelLinkedNumber: input.channelLinkedNumber ?? null,
       mediaUrl: input.mediaUrl ?? null,
-      payloadJson: input.rawPayload ?? null
+      payloadJson: input.rawPayload ?? null,
+      wamid: input.providerMessageId ?? null,
+      inReplyToWamid: input.contextMessageId ?? null
     }
   );
   await markContactInboundActivity(input.userId, input.customerIdentifier);

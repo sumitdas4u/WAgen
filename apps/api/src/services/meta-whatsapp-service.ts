@@ -2782,13 +2782,18 @@ async function resolveMetaMediaReference(
 async function buildMetaFlowRequestBody(
   to: string,
   payload: FlowMessagePayload,
-  context: { phoneNumberId: string; accessToken: string }
+  context: { phoneNumberId: string; accessToken: string; contextMessageId?: string | null }
 ): Promise<Record<string, unknown>> {
+  const replyContext = context.contextMessageId?.trim()
+    ? { context: { message_id: context.contextMessageId.trim() } }
+    : {};
+
   switch (payload.type) {
     case "text":
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "text",
         text: {
           body: payload.text.trim()
@@ -2811,6 +2816,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: payload.mediaType,
         [payload.mediaType]: {
           ...("id" in reference && reference.id ? { id: reference.id } : { link: reference.link ?? payload.url.trim() }),
@@ -2827,6 +2833,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "interactive",
         interactive: {
           type: "button",
@@ -2857,6 +2864,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "interactive",
         interactive: {
           type: "button",
@@ -2887,6 +2895,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "interactive",
         interactive: {
           type: "list",
@@ -2939,6 +2948,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "interactive",
         interactive: {
           type: "product",
@@ -2961,6 +2971,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "interactive",
         interactive: {
           type: "product_list",
@@ -2996,6 +3007,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "location",
         location: {
           latitude: payload.latitude,
@@ -3009,6 +3021,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "contacts",
         contacts: [
           {
@@ -3025,6 +3038,7 @@ async function buildMetaFlowRequestBody(
       return {
         messaging_product: "whatsapp",
         to,
+        ...replyContext,
         type: "text",
         text: {
           body: truncateMetaText(
@@ -3160,6 +3174,7 @@ export async function sendMetaFlowMessageDirect(input: {
   payload: FlowMessagePayload;
   phoneNumberId?: string;
   linkedNumber?: string | null;
+  contextMessageId?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection; to: string; summaryText: string }> {
   if (await isKillSwitchEnabled("disable_meta_sending")) {
     throw new Error("Meta sending is disabled by admin kill switch");
@@ -3183,7 +3198,8 @@ export async function sendMetaFlowMessageDirect(input: {
     accessToken,
     await buildMetaFlowRequestBody(normalizedTo, deliveryPayload, {
       phoneNumberId: resolvedRow.phone_number_id,
-      accessToken
+      accessToken,
+      contextMessageId: input.contextMessageId ?? null
     })
   );
 
@@ -3202,12 +3218,40 @@ export async function sendMetaFlowMessageDirect(input: {
   };
 }
 
+export async function sendMetaTypingIndicator(input: {
+  userId: string;
+  messageId: string;
+  phoneNumberId?: string;
+  linkedNumber?: string | null;
+}): Promise<void> {
+  const messageId = input.messageId.trim();
+  if (!messageId) {
+    throw new Error("WhatsApp message ID is required for typing indicator.");
+  }
+
+  const resolvedRow = await resolveMetaSendConnectionRow(input);
+  const accessToken = decryptToken(resolvedRow.access_token_encrypted);
+  await graphPost<{ success?: boolean }>(
+    `/${resolvedRow.phone_number_id}/messages`,
+    accessToken,
+    {
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: messageId,
+      typing_indicator: {
+        type: "text"
+      }
+    }
+  );
+}
+
 export async function sendMetaMessage(input: {
   userId: string;
   to: string;
   payload: FlowMessagePayload;
   phoneNumberId?: string;
   webhookUrl?: string | null;
+  contextMessageId?: string | null;
 }): Promise<{ messageId: string | null; connection: MetaConnection; summaryText: string }> {
   const normalizedTo = input.to.replace(/\D/g, "");
   const [contact, suppressionMap] = await Promise.all([
@@ -3413,9 +3457,12 @@ async function processWebhookTask(task: WebhookMessageTask): Promise<void> {
     senderName: normalizedTask.senderName ?? undefined,
     mediaUrl: normalizedTask.mediaUrl ?? null,
     shouldAutoReply: connectionRow.enabled,
+    providerMessageId: normalizedTask.messageId,
+    contextMessageId: contextWamid,
     rawPayload: {
       messageId: normalizedTask.messageId,
       messageType: normalizedTask.messageType,
+      contextMessageId: contextWamid,
       flowText: normalizedTask.flowText ?? null,
       mimeType: normalizedTask.mimeType ?? null,
       metadata: normalizedTask.metadata ?? null,

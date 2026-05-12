@@ -88,6 +88,8 @@ interface OutboundConversationUsage {
   retrievalChunks?: number | null;
   markAsAiReply?: boolean;
   echoId?: string | null;
+  inReplyToId?: string | null;
+  contextMessageId?: string | null;
 }
 
 interface CampaignExecutionRow {

@@ -4,6 +4,7 @@ import { useAuth } from "../../../../lib/auth-context";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import { isMetaConnectionActive } from "../../../../shared/dashboard/meta-connection-selector";
 import { createOutboundConversation, listInboxContacts, type InboxContact } from "../api";
+import { useConvStore } from "../store/convStore";
 
 interface Props {
   onClose: () => void;
@@ -29,6 +30,7 @@ function formatContactMeta(contact: InboxContact): string {
 export function NewConvModal({ onClose, onCreated }: Props) {
   const { token } = useAuth();
   const { bootstrap } = useDashboardShell();
+  const upsertConv = useConvStore((s) => s.upsertConv);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -85,6 +87,9 @@ export function NewConvModal({ onClose, onCreated }: Props) {
         channelType,
         connectionId: channelType === "api" ? selectedApiConnection?.id : undefined
       });
+      if (result.conversation) {
+        upsertConv(result.conversation);
+      }
       onCreated(result.conversationId);
       onClose();
     } catch (e) {

@@ -104,6 +104,8 @@ export async function queueApiConversationSend(input: {
     retrievalChunks?: number | null;
     markAsAiReply?: boolean;
     echoId?: string | null;
+    inReplyToId?: string | null;
+    contextMessageId?: string | null;
   };
 }): Promise<{
   queuedMessageId: string;
