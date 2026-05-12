@@ -12,6 +12,7 @@ import {
   resumeSequence,
   type SequenceDetail,
   type SequenceEnrollmentStatus,
+  type SequenceListItem,
   updateSequenceDraft,
   type SequenceWriteInput
 } from "../../../lib/api";
@@ -131,9 +132,12 @@ export function useDeleteSequenceMutation(token: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (sequenceId: string) => deleteSequence(token, sequenceId),
-    onSuccess: (_, sequenceId) => {
+    onSuccess: async (_, sequenceId) => {
       queryClient.removeQueries({ queryKey: dashboardQueryKeys.sequenceDetail(sequenceId) });
-      void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.sequenceRoot });
+      queryClient.setQueryData<SequenceListItem[]>(dashboardQueryKeys.sequences, (current) =>
+        current?.filter((sequence) => sequence.id !== sequenceId) ?? current
+      );
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.sequenceRoot });
     }
   });
 }

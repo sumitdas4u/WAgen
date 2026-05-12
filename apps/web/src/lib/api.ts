@@ -35,12 +35,25 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     clearTimeout(timeout);
   }
 
+  const responseText = await response.text();
+
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
+    let payload: { error?: string } = {};
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText) as { error?: string };
+      } catch {
+        payload = {};
+      }
+    }
     throw new Error(payload.error || `Request failed: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  if (!responseText) {
+    return undefined as T;
+  }
+
+  return JSON.parse(responseText) as T;
 }
 
 export interface GoogleSheetsConnection {
