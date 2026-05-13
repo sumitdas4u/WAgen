@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardOverviewResponse } from "../../lib/api";
@@ -7,12 +7,14 @@ import { DashboardShellContextProvider } from "../../shared/dashboard/shell-cont
 import { DashboardHomePage } from "./DashboardHomePage";
 
 const mockFetchDashboardOverview = vi.hoisted(() => vi.fn());
+const mockPreviewCoupon = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
   return {
     ...actual,
-    fetchDashboardOverview: mockFetchDashboardOverview
+    fetchDashboardOverview: mockFetchDashboardOverview,
+    previewCoupon: mockPreviewCoupon
   };
 });
 
@@ -159,14 +161,29 @@ describe("DashboardHomePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchDashboardOverview.mockResolvedValue(createOverview());
+    mockPreviewCoupon.mockResolvedValue({
+      preview: {
+        code: "SAVE20",
+        title: "Save 20%",
+        scope: "subscription",
+        discountType: "percent",
+        discountValue: 20,
+        purchaseType: "subscription",
+        originalAmountPaise: 199900,
+        discountAmountPaise: 39980,
+        finalAmountPaise: 159920,
+        currency: "INR",
+        gatewayNote: "Razorpay offer will be applied at checkout."
+      }
+    });
   });
 
   it("shows connected workspace state from the API channel", async () => {
     renderHome();
 
-    expect(await screen.findByText("Active channel feed")).toBeInTheDocument();
+    expect(await screen.findByText("Workspace Channels")).toBeInTheDocument();
     expect(screen.getAllByText("Official API").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Connected.*connected/)).toBeInTheDocument();
+    expect(screen.getByText("Official API is feeding the dashboard")).toBeInTheDocument();
   });
 
   it("shows setup-first state when no channel is connected", async () => {
@@ -188,8 +205,8 @@ describe("DashboardHomePage", () => {
       }
     }));
 
-    expect(await screen.findByText("No active channel yet")).toBeInTheDocument();
-    expect(screen.getByText("Connect a channel to start receiving conversations.")).toBeInTheDocument();
+    expect(await screen.findByText("Setup required")).toBeInTheDocument();
+    expect(screen.getByText("Connect Website, QR, or Official API")).toBeInTheDocument();
   });
 
   it("uses the default YouTube nocookie embed", async () => {
@@ -197,5 +214,20 @@ describe("DashboardHomePage", () => {
 
     const iframe = await screen.findByTitle("WAgen dashboard demo");
     expect(iframe).toHaveAttribute("src", expect.stringContaining("youtube-nocookie.com/embed/M7lc1UVf-VE"));
+  });
+
+  it("validates offer access codes before sending users to purchase", async () => {
+    renderHome();
+
+    fireEvent.change(screen.getByLabelText("Offer access code"), { target: { value: "SAVE20" } });
+    fireEvent.click(screen.getByRole("button", { name: "Activate ->" }));
+
+    await waitFor(() => {
+      expect(mockPreviewCoupon).toHaveBeenCalledWith("test-token", {
+        code: "SAVE20",
+        purchaseType: "subscription",
+        planCode: "pro"
+      });
+    });
   });
 });

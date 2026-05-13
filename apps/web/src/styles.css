@@ -11182,20 +11182,17 @@ select:focus {
 .dashboard-home {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
   color: #122033;
+  background: #f7f8fa;
 }
 
-.dashboard-home-welcome,
 .dashboard-setup-card,
-.dashboard-connected-card,
-.dashboard-side-card,
-.dashboard-feature-tile,
-.dashboard-chain {
-  border: 1px solid #e2e8f0;
+.dashboard-side-card {
   border-radius: 8px;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .dashboard-home-welcome {
@@ -11203,22 +11200,21 @@ select:focus {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem;
+  padding: 0.25rem 0.35rem;
 }
 
-.dashboard-home-welcome h1,
+.dashboard-home-welcome h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #020617;
+}
+
 .dashboard-setup-card h2,
-.dashboard-connected-card h2,
 .dashboard-side-card h2 {
   margin: 0;
-  font-size: 1.05rem;
-}
-
-.dashboard-home-welcome p,
-.dashboard-connected-card p {
-  margin: 0.25rem 0 0;
-  color: #64748b;
-  font-size: 0.86rem;
+  font-size: 1rem;
+  color: #020617;
 }
 
 .dashboard-home-actions,
@@ -11232,31 +11228,22 @@ select:focus {
 
 .dashboard-home-actions a,
 .dashboard-home-actions button,
-.dashboard-side-card button,
 .dashboard-check-actions a {
-  border: 1px solid #cbd5e1;
+  border: 0;
   border-radius: 6px;
-  background: #fff;
-  color: #0f172a;
-  padding: 0.58rem 0.75rem;
+  background: transparent;
+  color: #334155;
+  padding: 0.4rem 0.5rem;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-}
-
-.dashboard-home-actions a:first-child,
-.dashboard-home-actions button:first-child,
-.dashboard-side-card button:first-of-type {
-  border-color: #0f766e;
-  background: #0f766e;
-  color: #fff;
 }
 
 .dashboard-home-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 1rem;
+  gap: 0.85rem;
   align-items: start;
 }
 
@@ -11267,17 +11254,21 @@ select:focus {
   gap: 1rem;
 }
 
-.dashboard-setup-card,
-.dashboard-connected-card {
-  padding: 1rem;
+.dashboard-setup-card {
+  padding: 1.15rem 1.25rem 0.9rem;
 }
 
 .dashboard-setup-head {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  align-items: start;
-  margin-bottom: 1rem;
+  align-items: center;
+  margin-bottom: 1.1rem;
+}
+
+.dashboard-setup-head h2 {
+  font-size: 1.22rem;
+  font-weight: 600;
 }
 
 .dashboard-setup-head > span {
@@ -11302,6 +11293,39 @@ select:focus {
 .dashboard-home-pill.connected {
   background: #dcfce7;
   color: #166534;
+}
+
+.dashboard-setup-panel {
+  position: relative;
+  border-radius: 8px;
+  background: #eaf7f5;
+  padding: 1.4rem 1.1rem 1.05rem;
+}
+
+.dashboard-setup-step-label {
+  position: absolute;
+  top: -1.05rem;
+  left: 1rem;
+  border-radius: 8px 8px 0 0;
+  background: #f8fffb;
+  color: #047857;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.dashboard-setup-content {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.05fr);
+  gap: 1.15rem;
+  align-items: center;
+}
+
+.dashboard-setup-copy {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 0.8rem;
+  align-items: start;
 }
 
 .dashboard-setup-body {
@@ -11333,27 +11357,48 @@ select:focus {
 }
 
 .dashboard-check-index {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: #0f766e;
-  color: #fff;
+  background: #facc15;
+  color: #014451;
   font-size: 0.78rem;
   font-weight: 800;
 }
 
-.dashboard-check-row h3 {
-  margin: 0 0 0.55rem;
-  font-size: 0.9rem;
+.dashboard-check-row h3,
+.dashboard-setup-copy h3 {
+  margin: 0 0 1.75rem;
+  font-size: 0.95rem;
+  color: #0f3f46;
+}
+
+.dashboard-setup-copy p {
+  margin: 0 0 1.1rem;
+  color: #014451;
+  font-size: 0.86rem;
+}
+
+.dashboard-setup-copy span,
+.dashboard-setup-copy small {
+  display: block;
+  color: #475569;
+  font-size: 0.82rem;
+}
+
+.dashboard-setup-copy small {
+  margin-top: 1rem;
+  color: #1f2937;
 }
 
 .dashboard-demo-video {
-  min-height: 240px;
+  min-height: 280px;
   border-radius: 8px;
   overflow: hidden;
   background: #0f172a;
+  border: 1px solid #0f766e;
 }
 
 .dashboard-demo-video iframe {
@@ -11362,6 +11407,44 @@ select:focus {
   min-height: 280px;
   border: 0;
   display: block;
+}
+
+.dashboard-demo-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-demo-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.dashboard-demo-actions a.primary {
+  border-color: #1d7ff2;
+  background: #1d7ff2;
+  color: #fff;
+  min-width: 220px;
+}
+
+.dashboard-all-steps {
+  display: inline-flex;
+  margin: 0.85rem 0 0 0.35rem;
+  color: #334155;
+  font-size: 0.84rem;
+  text-decoration: none;
 }
 
 .dashboard-connected-card {
@@ -11444,7 +11527,18 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  padding: 0.9rem;
+  padding: 1rem 1.15rem;
+}
+
+.dashboard-side-card > button:not(.dashboard-side-row) {
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #fff;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .dashboard-side-row {
@@ -11469,6 +11563,48 @@ select:focus {
   color: #16a34a;
 }
 
+.dashboard-channel-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.75rem;
+}
+
+.dashboard-channel-summary.connected {
+  background: #ecfdf5;
+}
+
+.dashboard-channel-summary strong {
+  color: #0f172a;
+}
+
+.dashboard-key-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.dashboard-key-features span {
+  position: relative;
+  padding-left: 0.85rem;
+  color: #334155;
+  font-size: 0.82rem;
+}
+
+.dashboard-key-features span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #22c55e;
+}
+
 .dashboard-side-stat {
   margin: 0;
   font-size: 1.75rem;
@@ -11482,6 +11618,7 @@ select:focus {
 @media (max-width: 1100px) {
   .dashboard-home-grid,
   .dashboard-setup-body,
+  .dashboard-setup-content,
   .dashboard-channel-cards {
     grid-template-columns: 1fr;
   }
@@ -11504,14 +11641,40 @@ select:focus {
 
 .dashboard-offer-banner {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(260px, auto);
+  grid-template-columns: minmax(240px, 1fr) minmax(420px, auto);
   gap: 0.8rem;
   align-items: center;
-  margin: 0.75rem 1rem 0;
-  padding: 0.75rem 0.9rem;
+  padding: 1rem 1.15rem;
   border: 1px solid #fde68a;
   border-radius: 8px;
-  background: #fffbeb;
+  background: linear-gradient(105deg, #fff7df 0%, #fff7df 58%, #fde68a 100%);
+}
+
+.dashboard-offer-left {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+}
+
+.dashboard-offer-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #f97316;
+  color: #fff;
+}
+
+.dashboard-offer-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .dashboard-offer-copy {
@@ -11546,6 +11709,23 @@ select:focus {
   padding: 0.58rem 0.65rem;
   font-size: 0.85rem;
   background: #fff;
+}
+
+.dashboard-offer-controls button {
+  min-width: 220px;
+  border: 0;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f59e0b, #f97316);
+  color: #fff;
+  padding: 0.64rem 0.95rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dashboard-offer-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
 }
 
 .dashboard-offer-status {

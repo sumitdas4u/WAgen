@@ -1,54 +1,59 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { fetchDashboardOverview, type DashboardOverviewResponse } from "../../lib/api";
-import { DashboardIcon } from "../../shared/dashboard/icons";
-import type { DashboardIconName } from "../../shared/dashboard/module-contracts";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  fetchDashboardOverview,
+  previewCoupon,
+  type BillingPlan,
+  type CouponPreview,
+  type DashboardOverviewResponse
+} from "../../lib/api";
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 
 const DEFAULT_DEMO_YOUTUBE_ID = "M7lc1UVf-VE";
 const DEMO_SCHEDULE_URL = "https://calendly.com/sumitdas4u/30min";
+const OFFER_PLAN_CODES: BillingPlan["code"][] = ["pro", "starter", "business"];
+const PLAN_LABELS: Record<BillingPlan["code"], string> = {
+  starter: "Starter",
+  pro: "Growth",
+  business: "Pro"
+};
 
 function fmtNumber(value: number | null | undefined): string {
   return Math.max(0, Number(value ?? 0)).toLocaleString();
+}
+
+function fmtInr(paise: number): string {
+  return (paise / 100).toLocaleString("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2
+  });
+}
+
+function getQueryCoupon(search: string): string | null {
+  const code = new URLSearchParams(search).get("coupon")?.trim();
+  return code || null;
 }
 
 function statusLabel(value: boolean): string {
   return value ? "Connected" : "Not connected";
 }
 
-interface FeatureLink {
-  label: string;
-  icon: DashboardIconName;
-  to: string;
-  detail: string;
-}
-
-const FEATURES: FeatureLink[] = [
-  { label: "Chats", icon: "chats", to: "/dashboard/inbox-v2", detail: "Live conversations" },
-  { label: "Contacts", icon: "leads", to: "/dashboard/leads", detail: "Lead directory" },
-  { label: "Broadcast", icon: "broadcast", to: "/dashboard/broadcast", detail: "Campaign sends" },
-  { label: "Sequence", icon: "sequence", to: "/dashboard/sequence", detail: "Follow-up journeys" },
-  { label: "Chat Bot", icon: "agents", to: "/dashboard/agents", detail: "AI agents and flows" },
-  { label: "Analytics", icon: "analytics", to: "/dashboard/analytics", detail: "Reports and delivery" },
-  { label: "Settings", icon: "settings", to: "/dashboard/settings/api", detail: "Channels and API" },
-  { label: "Account", icon: "account", to: "/dashboard/account/details", detail: "Plan and profile" }
-];
-
-const CONNECTION_CHAIN = [
-  { label: "Channels", to: "/dashboard/settings/api" },
-  { label: "Conversations", to: "/dashboard/inbox-v2" },
-  { label: "Contacts", to: "/dashboard/leads" },
-  { label: "AI / Flows / Knowledge", to: "/dashboard/agents" },
-  { label: "Broadcast / Sequence", to: "/dashboard/broadcast" },
-  { label: "Analytics / Billing", to: "/dashboard/analytics" }
-];
+type OfferStatus = "success" | "error" | null;
 
 export function DashboardHomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { token, bootstrap } = useDashboardShell();
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offerCode, setOfferCode] = useState("");
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [offerStatus, setOfferStatus] = useState<OfferStatus>(null);
+  const [offerMessage, setOfferMessage] = useState<string | null>(null);
+  const [offerPreview, setOfferPreview] = useState<CouponPreview | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -59,6 +64,13 @@ export function DashboardHomePage() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  useEffect(() => {
+    const coupon = getQueryCoupon(location.search);
+    if (coupon) {
+      setOfferCode(coupon);
+    }
+  }, [location.search]);
+
   const channels = overview?.channels;
   const websiteConnected = channels?.website.connected ?? Boolean(bootstrap?.channelSummary.website.enabled);
   const qrConnected = channels?.qr.connected ?? bootstrap?.channelSummary.whatsapp.status === "connected";
@@ -68,78 +80,89 @@ export function DashboardHomePage() {
   const demoSrc = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(demoId)}`;
   const userName = bootstrap?.userSummary.name || "there";
   const stepsLeft = overview?.setup?.stepsLeft ?? (connected ? 2 : 3);
-
-  const channelCards = useMemo(
-    () => [
-      {
-        label: "Official API",
-        connected: apiConnected,
-        status: channels?.api.status ?? (apiConnected ? "connected" : "not_connected"),
-        detail: channels?.api.phoneNumber ?? "Recommended primary channel",
-        to: "/dashboard/settings/api"
-      },
-      {
-        label: "WhatsApp QR",
-        connected: qrConnected,
-        status: channels?.qr.status ?? bootstrap?.channelSummary.whatsapp.status ?? "not_connected",
-        detail: channels?.qr.phoneNumber ?? bootstrap?.channelSummary.whatsapp.phoneNumber ?? "QR session channel",
-        to: "/dashboard/settings/qr"
-      },
-      {
-        label: "Website Widget",
-        connected: websiteConnected,
-        status: channels?.website.status ?? (websiteConnected ? "active" : "not_connected"),
-        detail: "Web chat entry point",
-        to: "/dashboard/settings/web"
-      }
-    ],
-    [apiConnected, bootstrap, channels, qrConnected, websiteConnected]
-  );
-
-  const checklist = overview?.setup?.checklist ?? [
-    {
-      id: "connect-channel",
-      label: "Connect a channel",
-      complete: connected,
-      primaryCta: { label: "Connect API", to: "/dashboard/settings/api" },
-      secondaryCtas: [
-        { label: "QR", to: "/dashboard/settings/qr" },
-        { label: "Web", to: "/dashboard/settings/web" }
-      ]
-    },
-    {
-      id: "configure-ai",
-      label: "Configure AI agent and knowledge",
-      complete: Boolean(bootstrap?.agentSummary.hasConfiguredProfile),
-      primaryCta: { label: "AI Agents", to: "/dashboard/agents" },
-      secondaryCtas: [
-        { label: "Knowledge", to: "/dashboard/studio/knowledge" },
-        { label: "Flows", to: "/dashboard/studio/flows" }
-      ]
-    },
-    {
-      id: "start-operating",
-      label: "Start operating",
-      complete: false,
-      primaryCta: { label: "Open Chats", to: "/dashboard/inbox-v2" },
-      secondaryCtas: [
-        { label: "Broadcast", to: "/dashboard/broadcast" },
-        { label: "Analytics", to: "/dashboard/analytics" }
-      ]
-    }
-  ];
-
-  const planCode = bootstrap?.planEntitlements.planCode ?? "trial";
+  const planCode = bootstrap?.planEntitlements.planCode ?? "free";
   const creditsRemaining = bootstrap?.creditsSummary.remaining_credits ?? 0;
   const creditsTotal = bootstrap?.creditsSummary.total_credits ?? 0;
+
+  const channelRows = [
+    {
+      label: "Official API",
+      connected: apiConnected,
+      status: channels?.api.status ?? (apiConnected ? "connected" : "not_connected"),
+      detail: channels?.api.phoneNumber ?? "Recommended setup",
+      to: "/dashboard/settings/api"
+    },
+    {
+      label: "WhatsApp QR",
+      connected: qrConnected,
+      status: channels?.qr.status ?? bootstrap?.channelSummary.whatsapp.status ?? "not_connected",
+      detail: channels?.qr.phoneNumber ?? bootstrap?.channelSummary.whatsapp.phoneNumber ?? "Scan to connect",
+      to: "/dashboard/settings/qr"
+    },
+    {
+      label: "Website Widget",
+      connected: websiteConnected,
+      status: channels?.website.status ?? (websiteConnected ? "active" : "not_connected"),
+      detail: "Website chat channel",
+      to: "/dashboard/settings/web"
+    }
+  ];
+  const activeChannel = channelRows.find((channel) => channel.connected);
+
+  const resolveOffer = async (code: string) => {
+    let lastError: Error | null = null;
+    for (const planCodeToTry of OFFER_PLAN_CODES) {
+      try {
+        const response = await previewCoupon(token, {
+          code,
+          purchaseType: "subscription",
+          planCode: planCodeToTry
+        });
+        return { planCode: planCodeToTry, preview: response.preview };
+      } catch (couponError) {
+        lastError = couponError as Error;
+      }
+    }
+    throw lastError ?? new Error("This offer code is not available for current plans.");
+  };
+
+  const handleOfferSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedCode = offerCode.trim();
+    if (!normalizedCode) {
+      setOfferStatus("error");
+      setOfferMessage("Enter an offer access code first.");
+      setOfferPreview(null);
+      return;
+    }
+
+    setOfferLoading(true);
+    setOfferStatus(null);
+    setOfferMessage(null);
+    setOfferPreview(null);
+    try {
+      const result = await resolveOffer(normalizedCode);
+      const params = new URLSearchParams({
+        coupon: result.preview.code,
+        plan: result.planCode
+      });
+      setOfferStatus("success");
+      setOfferPreview(result.preview);
+      setOfferCode(result.preview.code);
+      setOfferMessage(`Offer ${result.preview.code} is ready for the ${PLAN_LABELS[result.planCode]} plan.`);
+      navigate(`/purchase?${params.toString()}`);
+    } catch (couponError) {
+      setOfferStatus("error");
+      setOfferMessage((couponError as Error).message);
+    } finally {
+      setOfferLoading(false);
+    }
+  };
 
   return (
     <div className="dashboard-home">
       <section className="dashboard-home-welcome">
-        <div>
-          <h1>Hey {userName}, welcome to WAgen AI</h1>
-          <p>{connected ? "Your workspace is connected and ready to operate." : "Connect a channel to start receiving conversations."}</p>
-        </div>
+        <h1>Hey {userName}, Welcome to WAgen AI!</h1>
         <div className="dashboard-home-actions" aria-label="Quick actions">
           <a href={DEMO_SCHEDULE_URL} target="_blank" rel="noreferrer">Schedule Live Demo</a>
           <button type="button" onClick={() => navigate("/dashboard/settings/api")}>Setup Guide</button>
@@ -147,117 +170,116 @@ export function DashboardHomePage() {
         </div>
       </section>
 
+      <section className="dashboard-offer-banner" aria-label="Offer access banner">
+        <div className="dashboard-offer-left">
+          <span className="dashboard-offer-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" focusable="false">
+              <rect x="4" y="8" width="12" height="8" rx="1.5" />
+              <path d="M3.5 8h13M10 8v8M7.2 5.3C6.4 4.5 5 5 5.1 6.2 5.2 7.6 7.2 8 10 8c-1.1-1.5-1.9-2.3-2.8-2.7ZM12.8 5.3c.8-.8 2.2-.3 2.1.9-.1 1.4-2.1 1.8-4.9 1.8 1.1-1.5 1.9-2.3 2.8-2.7Z" />
+            </svg>
+          </span>
+          <div className="dashboard-offer-copy">
+            <strong>Got any offer access code?</strong>
+            <span>Activate your special discounted offer now!</span>
+          </div>
+        </div>
+        <form className="dashboard-offer-controls" onSubmit={handleOfferSubmit}>
+          <input
+            value={offerCode}
+            onChange={(event) => setOfferCode(event.target.value)}
+            placeholder="Enter access code"
+            aria-label="Offer access code"
+            disabled={offerLoading}
+          />
+          <button type="submit" disabled={offerLoading}>
+            {offerLoading ? "Checking..." : "Activate ->"}
+          </button>
+        </form>
+        {offerMessage ? (
+          <p className={offerStatus === "success" ? "dashboard-offer-status success" : "dashboard-offer-status error"}>
+            {offerMessage}
+            {offerPreview ? ` Discount preview: ${fmtInr(offerPreview.discountAmountPaise)}.` : null}
+          </p>
+        ) : null}
+      </section>
+
       {error ? <p className="error-text">{error}</p> : null}
 
       <div className="dashboard-home-grid">
-        <div className="dashboard-home-main">
+        <main className="dashboard-home-main">
           <section className="dashboard-setup-card">
             <div className="dashboard-setup-head">
-              <div>
-                <span className={connected ? "dashboard-home-pill connected" : "dashboard-home-pill"}>{connected ? "Connected" : "Setup"}</span>
-                <h2>{connected ? "Workspace connection overview" : "Connect WAgen to your first channel"}</h2>
-              </div>
+              <h2>Setup FREE WhatsApp Business Account</h2>
               <span>{stepsLeft} steps left</span>
             </div>
 
-            <div className="dashboard-setup-body">
-              <div className="dashboard-checklist">
-                {checklist.map((item, index) => (
-                  <article key={item.id} className={item.complete ? "dashboard-check-row done" : "dashboard-check-row"}>
-                    <div className="dashboard-check-index">{item.complete ? "OK" : index + 1}</div>
-                    <div>
-                      <h3>{item.label}</h3>
-                      <div className="dashboard-check-actions">
-                        <Link to={item.primaryCta.to}>{item.primaryCta.label}</Link>
-                        {item.secondaryCtas.map((cta) => (
-                          <Link key={cta.to} to={cta.to}>{cta.label}</Link>
-                        ))}
-                      </div>
-                    </div>
-                  </article>
-                ))}
+            <div className="dashboard-setup-panel">
+              <span className="dashboard-setup-step-label">START</span>
+              <div className="dashboard-setup-content">
+                <div className="dashboard-setup-copy">
+                  <div className="dashboard-check-index">{connected ? "OK" : "1"}</div>
+                  <div>
+                    <h3>Apply for WhatsApp Business API</h3>
+                    <p>Click on Continue With Facebook to apply for WhatsApp Business API</p>
+                    <span>Requirements to apply for WhatsApp Business API</span>
+                    <small>A Registered Business & Working Website.</small>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="dashboard-demo-video">
+                    <iframe
+                      title="WAgen dashboard demo"
+                      src={demoSrc}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                    />
+                  </div>
+                  <div className="dashboard-demo-actions">
+                    <a href={DEMO_SCHEDULE_URL} target="_blank" rel="noreferrer">Schedule Meetings</a>
+                    <Link to="/dashboard/settings/api" className="primary">Continue With Facebook</Link>
+                  </div>
+                </div>
               </div>
-
-              <div className="dashboard-demo-video">
-                <iframe
-                  title="WAgen dashboard demo"
-                  src={demoSrc}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                />
-              </div>
             </div>
-          </section>
 
-          <section className="dashboard-connected-card">
-            <div>
-              <h2>{connected ? "Active channel feed" : "No active channel yet"}</h2>
-              <p>
-                {connected
-                  ? "Connected channels feed conversations into Contacts, AI workflows, Broadcast, Sequence, and Analytics."
-                  : "Official API is recommended, with QR and Web available as alternatives."}
-              </p>
-            </div>
-            <div className="dashboard-channel-cards">
-              {channelCards.map((channel) => (
-                <Link key={channel.label} to={channel.to} className={channel.connected ? "dashboard-channel-card active" : "dashboard-channel-card"}>
-                  <strong>{channel.label}</strong>
-                  <span>{statusLabel(channel.connected)} · {channel.status}</span>
-                  <small>{channel.detail}</small>
-                </Link>
-              ))}
-            </div>
+            <Link className="dashboard-all-steps" to="/dashboard/settings/api">All Steps</Link>
           </section>
-
-          <section className="dashboard-feature-grid" aria-label="Feature entry points">
-            {FEATURES.map((feature) => (
-              <Link key={feature.to} to={feature.to} className="dashboard-feature-tile">
-                <span className="dashboard-feature-icon"><DashboardIcon name={feature.icon} /></span>
-                <strong>{feature.label}</strong>
-                <small>{feature.detail}</small>
-              </Link>
-            ))}
-          </section>
-
-          <section className="dashboard-chain">
-            {CONNECTION_CHAIN.map((node, index) => (
-              <Link key={node.to} to={node.to}>
-                <span>{node.label}</span>
-                {index < CONNECTION_CHAIN.length - 1 ? <b>-&gt;</b> : null}
-              </Link>
-            ))}
-          </section>
-        </div>
+        </main>
 
         <aside className="dashboard-home-side">
           <section className="dashboard-side-card">
-            <h2>Channel status</h2>
-            {channelCards.map((channel) => (
+            <h2>Workspace Channels</h2>
+            <div className={connected ? "dashboard-channel-summary connected" : "dashboard-channel-summary"}>
+              <strong>{connected ? "Connected" : "Setup required"}</strong>
+              <span>{activeChannel ? `${activeChannel.label} is feeding the dashboard` : "Connect Website, QR, or Official API"}</span>
+            </div>
+            {channelRows.map((channel) => (
               <button key={channel.label} type="button" onClick={() => navigate(channel.to)} className="dashboard-side-row">
                 <span>{channel.label}</span>
                 <strong className={channel.connected ? "ok" : ""}>{statusLabel(channel.connected)}</strong>
               </button>
             ))}
+            <div className="dashboard-key-features">
+              <span>Live Chat</span>
+              <span>Broadcast</span>
+              <span>Sequences</span>
+              <span>Analytics</span>
+            </div>
           </section>
 
           <section className="dashboard-side-card">
-            <h2>AI credits</h2>
+            <h2>AI Credits</h2>
             <p className="dashboard-side-stat">{fmtNumber(creditsRemaining)}</p>
             <span>{fmtNumber(creditsTotal)} monthly credits</span>
             <button type="button" onClick={() => navigate("/dashboard/account/ai-wallet")}>Open Wallet</button>
           </section>
 
           <section className="dashboard-side-card">
-            <h2>Current plan</h2>
+            <h2>Current Plan</h2>
             <p className="dashboard-side-stat capitalize">{planCode}</p>
-            <button type="button" onClick={() => navigate("/dashboard/account/subscription")}>Manage Plan</button>
-          </section>
-
-          <section className="dashboard-side-card">
-            <h2>Quick launch</h2>
-            <button type="button" onClick={() => navigate("/dashboard/inbox-v2")}>Open Chats</button>
-            <button type="button" onClick={() => navigate("/dashboard/broadcast")}>Create Broadcast</button>
-            <button type="button" onClick={() => navigate("/dashboard/analytics")}>View Analytics</button>
+            <span>{connected ? "Workspace is ready" : "No active channel yet"}</span>
+            <button type="button" onClick={() => navigate("/purchase")}>Get a Plan</button>
           </section>
         </aside>
       </div>

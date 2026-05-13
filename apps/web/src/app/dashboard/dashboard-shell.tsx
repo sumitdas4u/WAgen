@@ -495,6 +495,7 @@ function DashboardShellLayout() {
               <NavLink
                 key={item.id}
                 to={item.to}
+                end={item.id === "home"}
                 title={item.title}
                 className={({ isActive }) =>
                   isActive || currentPrimaryNavId === item.id
