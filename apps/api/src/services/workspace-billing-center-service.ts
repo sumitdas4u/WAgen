@@ -1519,6 +1519,10 @@ export async function markRechargeOrderPaidFromWebhook(input: {
       ]
     );
 
+    if (alreadyPaid) {
+      return { applied: false, workspaceId: order.workspace_id, invoiceId: null };
+    }
+
     await applyRechargeCreditsInTransaction({
       client,
       workspaceId: order.workspace_id,

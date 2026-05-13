@@ -9,7 +9,7 @@ import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { isDashboardModuleAccessible } from "./dashboard-module-guard";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
+type PrimaryNavId = "home" | "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -40,6 +40,13 @@ type AnalyticsNavItem = {
 };
 
 const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
+  {
+    id: "home",
+    label: "Home",
+    icon: "home",
+    title: "Dashboard",
+    defaultModuleIds: ["home"]
+  },
   {
     id: "conversations",
     label: "Chats",
@@ -146,6 +153,7 @@ const ANALYTICS_MENU_ITEMS: AnalyticsNavItem[] = [
 ];
 
 const SECTION_META: Record<string, { label: string; subtitle: string }> = {
+  home: { label: "Dashboard", subtitle: "Workspace overview and setup" },
   "inbox-v2": { label: "Chats", subtitle: "Live Inbox" },
   inbox: { label: "Chats", subtitle: "Live Inbox" },
   leads: { label: "Contacts", subtitle: "Customer Directory" },
@@ -240,6 +248,9 @@ function DashboardShellLayout() {
 
   const featureFlags = bootstrap?.featureFlags ?? {};
   const isModuleEnabled = (moduleId: string) => {
+    if (moduleId === "home") {
+      return true;
+    }
     const definition = dashboardModules.find((item) => item.id === moduleId);
     if (!definition) {
       return false;
@@ -267,6 +278,8 @@ function DashboardShellLayout() {
       to:
         item.id === "conversations"
           ? "/dashboard/inbox-v2"
+          : item.id === "home"
+            ? "/dashboard"
           : item.id === "leads"
             ? "/dashboard/leads"
             : item.id === "broadcast"
@@ -283,7 +296,9 @@ function DashboardShellLayout() {
     }));
 
   const currentPrimaryNavId: PrimaryNavId =
-    currentModuleId === "inbox-v2" || currentModuleId === "inbox"
+    currentModuleId === "home"
+      ? "home"
+      : currentModuleId === "inbox-v2" || currentModuleId === "inbox"
       ? "conversations"
       : currentModuleId === "leads"
         ? "leads"
@@ -468,7 +483,7 @@ function DashboardShellLayout() {
           }
           id="dashboard-mobile-sidebar"
         >
-          <button className="clone-rail-logo dashboard-flat-brand" type="button" onClick={() => navigate("/dashboard/inbox-v2")}>
+          <button className="clone-rail-logo dashboard-flat-brand" type="button" onClick={() => navigate("/dashboard")}>
             <span className="clone-rail-icon">
               <DashboardIcon name="brand" />
             </span>

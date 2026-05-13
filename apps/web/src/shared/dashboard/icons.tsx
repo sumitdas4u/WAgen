@@ -9,6 +9,13 @@ export function DashboardIcon({ name }: { name: DashboardIconName }) {
           <path d="M7 13v-2m3 2V7m3 6V9" />
         </svg>
       );
+    case "home":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">
+          <path d="M3.5 9.5 10 4l6.5 5.5" />
+          <path d="M5.5 8.7v6.8h3v-4h3v4h3V8.7" />
+        </svg>
+      );
     case "chats":
       return (
         <svg viewBox="0 0 20 20" aria-hidden="true" className="nav-icon-svg">

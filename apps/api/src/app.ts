@@ -21,6 +21,7 @@ import { conversationRoutes } from "./routes/conversations.js";
 import { flowRoutes } from "./routes/flows.js";
 import { channelDefaultReplyRoutes } from "./routes/channel-default-reply.js";
 import { billingRoutes } from "./routes/billing.js";
+import { couponRoutes } from "./routes/coupons.js";
 import { agentRoutes } from "./routes/agents.js";
 import { metaRoutes } from "./routes/meta.js";
 import { googleCalendarRoutes } from "./routes/google-calendar.js";
@@ -239,6 +240,7 @@ export async function buildApp() {
   await whatsappRoutes(app);
   await dashboardRoutes(app);
   await billingRoutes(app);
+  await couponRoutes(app);
   await workspaceRoutes(app);
   await workspaceBillingRoutes(app);
   await metaRoutes(app);

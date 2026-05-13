@@ -446,7 +446,7 @@ export function Component() {
               }}
               disabled={rechargeMutation.isPending}
             >
-              {rechargeMutation.isPending ? "Opening…" : `Pay ${fmtInr(breakdown.totalPaise)} via Razorpay`}
+              {rechargeMutation.isPending ? "Opening..." : `Pay ${fmtInr(breakdown.totalPaise)} via Razorpay`}
             </button>
           </div>
         </div>

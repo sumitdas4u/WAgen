@@ -69,6 +69,17 @@ import {
   updatePlan
 } from "../services/workspace-billing-service.js";
 import {
+  COUPON_DISCOUNT_TYPES,
+  COUPON_REDEMPTION_STATUSES,
+  COUPON_SCOPES,
+  COUPON_STATUSES,
+  createAdminCoupon,
+  isCouponValidationError,
+  listAdminCoupons,
+  listCouponRedemptions,
+  updateAdminCoupon
+} from "../services/coupon-service.js";
+import {
   getDefaultChatModel,
   getEffectiveChatModel,
   getChatModelOverride,
@@ -143,6 +154,40 @@ const UpdatePlanSchema = z.object({
 
 const PlanParamsSchema = z.object({
   planId: z.string().uuid()
+});
+
+const AdminCouponsQuerySchema = z.object({
+  status: z.enum(COUPON_STATUSES).optional(),
+  scope: z.enum(COUPON_SCOPES).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional()
+});
+
+const CouponParamsSchema = z.object({
+  couponId: z.string().uuid()
+});
+
+const CouponBodySchema = z.object({
+  code: z.string().trim().min(1).max(80),
+  title: z.string().trim().min(2).max(160),
+  scope: z.enum(COUPON_SCOPES),
+  discountType: z.enum(COUPON_DISCOUNT_TYPES),
+  discountValue: z.coerce.number().positive().max(1_000_000),
+  allowedPlans: z.array(z.enum(["starter", "pro", "business"])).optional(),
+  maxRedemptions: z.coerce.number().int().min(1).max(1_000_000).optional().nullable(),
+  maxPerUser: z.coerce.number().int().min(1).max(10_000).optional().nullable(),
+  firstPurchaseOnly: z.boolean().optional(),
+  startsAt: z.string().datetime().optional().nullable(),
+  expiresAt: z.string().datetime().optional().nullable(),
+  status: z.enum(COUPON_STATUSES).optional(),
+  razorpayOfferId: z.string().trim().max(160).optional().nullable(),
+  metadata: z.record(z.unknown()).optional()
+});
+
+const CouponPatchSchema = CouponBodySchema.partial();
+
+const CouponRedemptionsQuerySchema = z.object({
+  status: z.enum(COUPON_REDEMPTION_STATUSES).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional()
 });
 
 const WorkspaceQuerySchema = z.object({
@@ -289,6 +334,84 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
 
       const plan = await updatePlan(paramsParsed.data.planId, bodyParsed.data);
       return { plan };
+    }
+  );
+
+  fastify.get("/api/admin/coupons", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = AdminCouponsQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid coupons query" });
+    }
+
+    const coupons = await listAdminCoupons({
+      status: parsed.data.status,
+      scope: parsed.data.scope,
+      limit: parsed.data.limit
+    });
+    return { coupons };
+  });
+
+  fastify.post("/api/admin/coupons", { preHandler: [fastify.requireSuperAdmin] }, async (request, reply) => {
+    const parsed = CouponBodySchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid coupon payload" });
+    }
+
+    try {
+      const coupon = await createAdminCoupon(parsed.data);
+      return reply.status(201).send({ coupon });
+    } catch (error) {
+      if (isCouponValidationError(error)) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  fastify.patch(
+    "/api/admin/coupons/:couponId",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const paramsParsed = CouponParamsSchema.safeParse(request.params ?? {});
+      if (!paramsParsed.success) {
+        return reply.status(400).send({ error: "Invalid coupon params" });
+      }
+      const bodyParsed = CouponPatchSchema.safeParse(request.body ?? {});
+      if (!bodyParsed.success) {
+        return reply.status(400).send({ error: "Invalid coupon update payload" });
+      }
+
+      try {
+        const coupon = await updateAdminCoupon(paramsParsed.data.couponId, bodyParsed.data);
+        return { coupon };
+      } catch (error) {
+        if (isCouponValidationError(error)) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.get(
+    "/api/admin/coupons/:couponId/redemptions",
+    { preHandler: [fastify.requireSuperAdmin] },
+    async (request, reply) => {
+      const paramsParsed = CouponParamsSchema.safeParse(request.params ?? {});
+      if (!paramsParsed.success) {
+        return reply.status(400).send({ error: "Invalid coupon params" });
+      }
+      const queryParsed = CouponRedemptionsQuerySchema.safeParse(request.query ?? {});
+      if (!queryParsed.success) {
+        return reply.status(400).send({ error: "Invalid redemptions query" });
+      }
+
+      const redemptions = await listCouponRedemptions({
+        couponId: paramsParsed.data.couponId,
+        status: queryParsed.data.status,
+        limit: queryParsed.data.limit
+      });
+      return { redemptions };
     }
   );
 

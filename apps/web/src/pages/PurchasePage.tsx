@@ -7,8 +7,10 @@ import {
   fetchBillingPlans,
   fetchMyPlanEntitlements,
   fetchMySubscription,
+  previewCoupon,
   type BillingPlan,
   type BillingSubscriptionSummary,
+  type CouponPreview,
   type PlanEntitlements
 } from "../lib/api";
 import "./landing-orchids/orchids-landing.css";
@@ -79,6 +81,20 @@ function getQueryPlan(search: string): BillingPlan["code"] | null {
   return null;
 }
 
+function getQueryCoupon(search: string): string | null {
+  const value = new URLSearchParams(search).get("coupon");
+  const code = value?.trim();
+  return code || null;
+}
+
+function fmtInr(paise: number): string {
+  return (paise / 100).toLocaleString("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2
+  });
+}
+
 async function loadRazorpayScript(): Promise<boolean> {
   if (window.Razorpay) {
     return true;
@@ -118,6 +134,11 @@ export function PurchasePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [couponCodeInput, setCouponCodeInput] = useState("");
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
+  const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
 
   const orderedPlans = useMemo(() => {
     const available = new Map(plans.map((plan) => [plan.code, plan]));
@@ -152,6 +173,10 @@ export function PurchasePage() {
     if (planFromQuery) {
       setSelectedPlan(planFromQuery);
     }
+    const couponFromQuery = getQueryCoupon(location.search);
+    if (couponFromQuery) {
+      setCouponCodeInput(couponFromQuery);
+    }
 
     setLoading(true);
     setError(null);
@@ -161,6 +186,52 @@ export function PurchasePage() {
       })
       .finally(() => setLoading(false));
   }, [location.search, navigate, token]);
+
+  const handleApplyCoupon = async (code = couponCodeInput, options?: { quiet?: boolean }) => {
+    if (!token) {
+      return;
+    }
+    const normalized = code.trim();
+    if (!normalized) {
+      setCouponMessage("Enter an offer code first.");
+      setCouponPreview(null);
+      setAppliedCouponCode(null);
+      return;
+    }
+
+    setCouponLoading(true);
+    if (!options?.quiet) {
+      setCouponMessage(null);
+    }
+    try {
+      const response = await previewCoupon(token, {
+        code: normalized,
+        purchaseType: "subscription",
+        planCode: selectedPlan
+      });
+      setCouponPreview(response.preview);
+      setAppliedCouponCode(response.preview.code);
+      setCouponCodeInput(response.preview.code);
+      setCouponMessage(`Offer ${response.preview.code} applied.`);
+    } catch (couponError) {
+      setCouponPreview(null);
+      setAppliedCouponCode(null);
+      setCouponMessage((couponError as Error).message);
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const couponFromQuery = getQueryCoupon(location.search);
+    if (!token || !couponFromQuery || orderedPlans.length === 0) {
+      return;
+    }
+    if (appliedCouponCode?.toUpperCase() === couponFromQuery.toUpperCase() && couponPreview) {
+      return;
+    }
+    void handleApplyCoupon(couponFromQuery, { quiet: true });
+  }, [token, location.search, orderedPlans.length, selectedPlan, appliedCouponCode, couponPreview]);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -179,7 +250,10 @@ export function PurchasePage() {
     setInfo(null);
 
     try {
-      const response = await createBillingSubscription(token, { planCode: selectedPlan });
+      const response = await createBillingSubscription(token, {
+        planCode: selectedPlan,
+        couponCode: appliedCouponCode ?? undefined
+      });
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded || !window.Razorpay) {
         throw new Error("Unable to load Razorpay checkout");
@@ -380,7 +454,14 @@ export function PurchasePage() {
                   <li key={feature}>{feature}</li>
                 ))}
               </ul>
-              <button className="orch-btn outline" onClick={() => setSelectedPlan(plan.code)}>
+              <button
+                className="orch-btn outline"
+                onClick={() => {
+                  setSelectedPlan(plan.code);
+                  setAppliedCouponCode(null);
+                  setCouponPreview(null);
+                }}
+              >
                 Select {plan.label}
               </button>
             </article>
@@ -392,6 +473,41 @@ export function PurchasePage() {
           <p>
             Selected plan: <strong>{PLAN_DISPLAY_LABELS[selectedPlan] ?? selectedPlan.toUpperCase()}</strong>. Approve UPI AutoPay mandate during checkout.
           </p>
+          <div className="purchase-coupon-panel">
+            <label htmlFor="purchase-coupon">Offer code</label>
+            <div className="purchase-coupon-row">
+              <input
+                id="purchase-coupon"
+                value={couponCodeInput}
+                onChange={(event) => {
+                  setCouponCodeInput(event.target.value);
+                  setCouponMessage(null);
+                  if (appliedCouponCode && event.target.value.trim().toUpperCase() !== appliedCouponCode.toUpperCase()) {
+                    setAppliedCouponCode(null);
+                    setCouponPreview(null);
+                  }
+                }}
+                placeholder="Enter coupon code"
+              />
+              <button
+                type="button"
+                className="orch-btn outline"
+                onClick={() => void handleApplyCoupon()}
+                disabled={couponLoading}
+              >
+                {couponLoading ? "Checking..." : "Apply"}
+              </button>
+            </div>
+            {couponPreview ? (
+              <div className="purchase-coupon-preview">
+                <span>Original: <strong>{fmtInr(couponPreview.originalAmountPaise)}</strong></span>
+                <span>Discount preview: <strong>{fmtInr(couponPreview.discountAmountPaise)}</strong></span>
+                <span>Estimated after offer: <strong>{fmtInr(couponPreview.finalAmountPaise)}</strong></span>
+                <small>{couponPreview.gatewayNote}</small>
+              </div>
+            ) : null}
+            {couponMessage ? <p className={couponPreview ? "info-text" : "error-text"}>{couponMessage}</p> : null}
+          </div>
           <div className="orch-hero-actions">
             <button
               className="orch-btn light"

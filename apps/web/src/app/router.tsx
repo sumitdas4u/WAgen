@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useParams } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { DashboardModuleGuard } from "./dashboard/dashboard-module-guard";
+import { DashboardIndexRoute } from "./dashboard/dashboard-index-route";
 import { DashboardShell } from "./dashboard/dashboard-shell";
 import { LegacyDashboardRedirect } from "./dashboard/legacy-dashboard-redirect";
 import { ProtectedRoute } from "./protected-route";
@@ -75,7 +76,10 @@ function LegacyInboxRedirect() {
 const dashboardChildren: RouteObject[] = [
   {
     index: true,
-    element: <LegacyDashboardRedirect />
+    element: <DashboardIndexRoute />,
+    handle: {
+      moduleId: "home"
+    }
   },
   {
     path: "inbox/:conversationId?",
@@ -178,6 +182,7 @@ export const appRoutes: RouteObject[] = [
               { path: "fraud", lazy: lazyComponent(() => import("../pages/super-admin/FraudPage"), "FraudPage") },
               { path: "billing", lazy: lazyComponent(() => import("../pages/super-admin/BillingPage"), "BillingPage") },
               { path: "plans", lazy: lazyComponent(() => import("../pages/super-admin/PlansPage"), "PlansPage") },
+              { path: "coupons", lazy: lazyComponent(() => import("../pages/super-admin/CouponsPage"), "CouponsPage") },
               { path: "ai-logs", lazy: lazyComponent(() => import("../pages/super-admin/AiLogsPage"), "AiLogsPage") },
               { path: "ai-spend-limits", lazy: lazyComponent(() => import("../pages/super-admin/AiSpendLimitsPage"), "AiSpendLimitsPage") },
               { path: "abuse-flags", lazy: lazyComponent(() => import("../pages/super-admin/AbuseFlagsPage"), "AbuseFlagsPage") },

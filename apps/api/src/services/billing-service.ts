@@ -11,6 +11,12 @@ import {
   markRechargeOrderFailedFromWebhook,
   markRechargeOrderPaidFromWebhook
 } from "./workspace-billing-center-service.js";
+import {
+  attachRazorpaySubscriptionToCouponRedemption,
+  createPendingSubscriptionCouponRedemption,
+  markCouponRedemptionFailed,
+  markSubscriptionCouponRedemptionPaid
+} from "./coupon-service.js";
 
 export const BILLING_PLAN_CODES = ["starter", "pro", "business"] as const;
 export type BillingPlanCode = (typeof BILLING_PLAN_CODES)[number];
@@ -210,6 +216,9 @@ interface RawSubscriptionRow {
   razorpay_plan_id: string | null;
   plan_code: string;
   status: string;
+  coupon_id: string | null;
+  coupon_redemption_id: string | null;
+  discount_amount_paise: number | null;
   current_start_at: string | null;
   current_end_at: string | null;
   next_charge_at: string | null;
@@ -273,6 +282,7 @@ export interface CreateUserSubscriptionInput {
   planCode: BillingPlanCode;
   totalCount?: number;
   trialDays?: number;
+  couponCode?: string;
 }
 
 export interface CreateUserSubscriptionResult {
@@ -740,6 +750,9 @@ async function fetchSubscriptionRowByUserId(userId: string): Promise<RawSubscrip
        s.razorpay_plan_id,
        s.plan_code,
        s.status,
+       s.coupon_id,
+       s.coupon_redemption_id,
+       s.discount_amount_paise,
        s.current_start_at,
        s.current_end_at,
        s.next_charge_at,
@@ -791,6 +804,9 @@ async function fetchSubscriptionRowByRazorpayId(
        s.razorpay_plan_id,
        s.plan_code,
        s.status,
+       s.coupon_id,
+       s.coupon_redemption_id,
+       s.discount_amount_paise,
        s.current_start_at,
        s.current_end_at,
        s.next_charge_at,
@@ -935,7 +951,8 @@ export async function createUserSubscription(
       const existingTrialDays = parseTrialDaysFromMetadata(existing.metadata_json);
       const shouldReuseExisting =
         existingPlanCode === input.planCode &&
-        (existingTrialDays === null || existingTrialDays === trialDays);
+        (existingTrialDays === null || existingTrialDays === trialDays) &&
+        !input.couponCode?.trim();
       if (shouldReuseExisting) {
         const existingPlanConfig = getPlanConfig(existingPlanCode);
         return {
@@ -998,24 +1015,67 @@ export async function createUserSubscription(
   const startAt =
     trialDays > 0 ? Math.floor(Date.now() / 1000) + Math.floor(trialDays * 24 * 60 * 60) : undefined;
 
-  const created = (await client.subscriptions.create({
-    plan_id: planId,
-    total_count: totalCount,
-    customer_notify: 1,
-    ...(startAt ? { start_at: startAt } : {}),
-    notes: {
-      userId: input.userId,
-      planCode: input.planCode,
-      workspaceId
+  const pendingCoupon = input.couponCode?.trim()
+    ? await createPendingSubscriptionCouponRedemption({
+        userId: input.userId,
+        workspaceId,
+        code: input.couponCode,
+        planCode: input.planCode,
+        originalAmountPaise: Math.round(planConfig.amountInr * 100),
+        metadata: {
+          source: "create_subscription",
+          totalCount,
+          trialDays
+        }
+      })
+    : null;
+
+  let created: RazorpaySubscriptionEntity;
+  try {
+    created = (await client.subscriptions.create({
+      plan_id: planId,
+      total_count: totalCount,
+      customer_notify: 1,
+      ...(startAt ? { start_at: startAt } : {}),
+      ...(pendingCoupon?.coupon.razorpayOfferId ? { offer_id: pendingCoupon.coupon.razorpayOfferId } : {}),
+      notes: {
+        userId: input.userId,
+        planCode: input.planCode,
+        workspaceId,
+        ...(pendingCoupon
+          ? {
+              couponCode: pendingCoupon.coupon.code,
+              couponRedemptionId: pendingCoupon.redemption.id
+            }
+          : {})
+      }
+    })) as RazorpaySubscriptionEntity;
+  } catch (error) {
+    if (pendingCoupon) {
+      await markCouponRedemptionFailed({
+        redemptionId: pendingCoupon.redemption.id,
+        reason: toRazorpayErrorMessage(error) ?? (error as Error).message
+      });
     }
-  })) as RazorpaySubscriptionEntity;
+    throw error;
+  }
+
+  if (pendingCoupon) {
+    await attachRazorpaySubscriptionToCouponRedemption({
+      redemptionId: pendingCoupon.redemption.id,
+      razorpaySubscriptionId: created.id
+    });
+  }
 
   const metadata = {
     source: "create_subscription",
     shortUrl: created.short_url ?? null,
     totalCount: created.total_count ?? totalCount,
     paidCount: created.paid_count ?? 0,
-    trialDays
+    trialDays,
+    couponCode: pendingCoupon?.coupon.code ?? null,
+    couponRedemptionId: pendingCoupon?.redemption.id ?? null,
+    razorpayOfferId: pendingCoupon?.coupon.razorpayOfferId ?? null
   };
 
   const upsertResult = await pool.query<RawSubscriptionRow>(
@@ -1025,6 +1085,9 @@ export async function createUserSubscription(
        razorpay_plan_id,
        plan_code,
        status,
+       coupon_id,
+       coupon_redemption_id,
+       discount_amount_paise,
        current_start_at,
        current_end_at,
        next_charge_at,
@@ -1032,12 +1095,15 @@ export async function createUserSubscription(
        expiry_date,
        metadata_json
      )
-     VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8::timestamptz, $9::timestamptz, $10::timestamptz, $11::jsonb)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10::timestamptz, $11::timestamptz, $12::timestamptz, $13::timestamptz, $14::jsonb)
      ON CONFLICT (user_id) DO UPDATE SET
        razorpay_subscription_id = EXCLUDED.razorpay_subscription_id,
        razorpay_plan_id = EXCLUDED.razorpay_plan_id,
        plan_code = EXCLUDED.plan_code,
        status = EXCLUDED.status,
+       coupon_id = EXCLUDED.coupon_id,
+       coupon_redemption_id = EXCLUDED.coupon_redemption_id,
+       discount_amount_paise = EXCLUDED.discount_amount_paise,
        current_start_at = EXCLUDED.current_start_at,
        current_end_at = EXCLUDED.current_end_at,
        next_charge_at = EXCLUDED.next_charge_at,
@@ -1054,6 +1120,9 @@ export async function createUserSubscription(
        razorpay_plan_id,
        plan_code,
        status,
+       coupon_id,
+       coupon_redemption_id,
+       discount_amount_paise,
        current_start_at,
        current_end_at,
        next_charge_at,
@@ -1076,6 +1145,9 @@ export async function createUserSubscription(
       created.plan_id ?? planId,
       input.planCode,
       created.status ?? "created",
+      pendingCoupon?.coupon.id ?? null,
+      pendingCoupon?.redemption.id ?? null,
+      pendingCoupon?.preview.discountAmountPaise ?? 0,
       toIsoTimestampFromUnix(created.current_start),
       toIsoTimestampFromUnix(created.current_end),
       toIsoTimestampFromUnix(created.charge_at),
@@ -1243,6 +1315,9 @@ export async function listAdminSubscriptionSummaries(options?: {
        s.razorpay_plan_id,
        s.plan_code,
        s.status,
+       s.coupon_id,
+       s.coupon_redemption_id,
+       s.discount_amount_paise,
        s.current_start_at,
        s.current_end_at,
        s.next_charge_at,
@@ -1413,10 +1488,19 @@ async function upsertPaymentFromWebhook(
   const subscriptionId = payment.subscription_id ?? fallbackSubscription?.id ?? null;
   let subscriptionRowId: string | null = null;
   let userId: string | null = null;
+  let couponId: string | null = null;
+  let couponRedemptionId: string | null = null;
+  let couponDiscountAmountPaise = 0;
 
   if (subscriptionId) {
-    const subResult = await pool.query<{ id: string; user_id: string }>(
-      `SELECT id, user_id
+    const subResult = await pool.query<{
+      id: string;
+      user_id: string;
+      coupon_id: string | null;
+      coupon_redemption_id: string | null;
+      discount_amount_paise: number | null;
+    }>(
+      `SELECT id, user_id, coupon_id, coupon_redemption_id, discount_amount_paise
        FROM user_subscriptions
        WHERE razorpay_subscription_id = $1
        LIMIT 1`,
@@ -1425,6 +1509,9 @@ async function upsertPaymentFromWebhook(
     if (subResult.rows[0]) {
       subscriptionRowId = subResult.rows[0].id;
       userId = subResult.rows[0].user_id;
+      couponId = subResult.rows[0].coupon_id;
+      couponRedemptionId = subResult.rows[0].coupon_redemption_id;
+      couponDiscountAmountPaise = Number(subResult.rows[0].discount_amount_paise ?? 0);
     }
   }
 
@@ -1446,6 +1533,9 @@ async function upsertPaymentFromWebhook(
        subscription_row_id,
        razorpay_payment_id,
        razorpay_subscription_id,
+       coupon_id,
+       coupon_redemption_id,
+       discount_amount_paise,
        status,
        amount_paise,
        currency,
@@ -1455,10 +1545,13 @@ async function upsertPaymentFromWebhook(
        failure_reason,
        raw_payload
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11, $12::jsonb)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::timestamptz, $14, $15::jsonb)
      ON CONFLICT (razorpay_payment_id) DO UPDATE SET
        subscription_row_id = EXCLUDED.subscription_row_id,
        razorpay_subscription_id = EXCLUDED.razorpay_subscription_id,
+       coupon_id = COALESCE(EXCLUDED.coupon_id, subscription_payments.coupon_id),
+       coupon_redemption_id = COALESCE(EXCLUDED.coupon_redemption_id, subscription_payments.coupon_redemption_id),
+       discount_amount_paise = GREATEST(subscription_payments.discount_amount_paise, EXCLUDED.discount_amount_paise),
        status = EXCLUDED.status,
        amount_paise = EXCLUDED.amount_paise,
        currency = EXCLUDED.currency,
@@ -1472,6 +1565,9 @@ async function upsertPaymentFromWebhook(
       subscriptionRowId,
       payment.id,
       subscriptionId,
+      couponId,
+      couponRedemptionId,
+      couponDiscountAmountPaise,
       status,
       Number(payment.amount ?? 0),
       payment.currency ?? "INR",
@@ -1484,6 +1580,13 @@ async function upsertPaymentFromWebhook(
   );
 
   if (status === "failed" && subscriptionId) {
+    await markCouponRedemptionFailed({
+      razorpaySubscriptionId: subscriptionId,
+      reason: payment.error_description ?? event,
+      metadata: {
+        razorpayPaymentId: payment.id
+      }
+    });
     const existingBeforeFailure = await fetchSubscriptionRowByRazorpayId(subscriptionId);
     await pool.query(
       `UPDATE user_subscriptions
@@ -1568,6 +1671,16 @@ async function upsertPaymentFromWebhook(
         source: "webhook_payment_captured"
       });
     }
+
+    await markSubscriptionCouponRedemptionPaid({
+      razorpaySubscriptionId: subscriptionId,
+      razorpayPaymentId: payment.id,
+      finalAmountPaise: Number(payment.amount ?? 0),
+      paidAt: toIsoTimestampFromUnix(payment.created_at),
+      metadata: {
+        webhookEvent: event
+      }
+    });
 
     await issueSubscriptionInvoiceFromPayment({
       userId,

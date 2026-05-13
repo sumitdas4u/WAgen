@@ -38,6 +38,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Billing & Subscriptions", to: "/super-admin/billing" },
       { label: "Plans", to: "/super-admin/plans" },
+      { label: "Coupons", to: "/super-admin/coupons" },
     ],
   },
   {

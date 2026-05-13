@@ -483,6 +483,77 @@ export interface WorkspacePlanSummary {
   status: "active" | "inactive";
 }
 
+export type CouponScope = "subscription";
+export type CouponDiscountType = "percent" | "fixed";
+export type CouponStatus = "active" | "paused" | "expired";
+export type CouponPurchaseType = "subscription";
+export type CouponRedemptionStatus = "pending" | "paid" | "failed" | "cancelled" | "expired";
+
+export interface CouponPreview {
+  code: string;
+  title: string;
+  scope: CouponScope;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  purchaseType: CouponPurchaseType;
+  originalAmountPaise: number;
+  discountAmountPaise: number;
+  finalAmountPaise: number;
+  currency: string;
+  razorpayOfferId?: string | null;
+  gatewayNote: string;
+}
+
+export interface AdminCoupon {
+  id: string;
+  code: string;
+  title: string;
+  scope: CouponScope;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  allowedPlans: string[];
+  maxRedemptions: number | null;
+  maxPerUser: number | null;
+  firstPurchaseOnly: boolean;
+  startsAt: string | null;
+  expiresAt: string | null;
+  status: CouponStatus;
+  razorpayOfferId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  redemptionCount?: number;
+  paidRedemptionCount?: number;
+}
+
+export interface AdminCouponRedemption {
+  id: string;
+  couponId: string;
+  couponCode?: string;
+  couponTitle?: string;
+  userId: string;
+  userEmail?: string | null;
+  userName?: string | null;
+  workspaceId: string | null;
+  workspaceName?: string | null;
+  purchaseType: CouponPurchaseType;
+  planCode: string | null;
+  credits: number | null;
+  status: CouponRedemptionStatus;
+  originalAmountPaise: number;
+  discountAmountPaise: number;
+  finalAmountPaise: number;
+  gstAmountPaise: number;
+  gstRatePercent: number | null;
+  currency: string;
+  razorpaySubscriptionId: string | null;
+  razorpayOrderId: string | null;
+  razorpayPaymentId: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WorkspaceCreditsResponse {
   total_credits: number;
   used_credits: number;
@@ -602,6 +673,97 @@ export function updateAdminPlan(
     token,
     body: JSON.stringify(payload)
   });
+}
+
+export function fetchAdminCoupons(
+  token: string,
+  options?: { status?: CouponStatus; scope?: CouponScope; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  if (options?.scope) {
+    params.set("scope", options.scope);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query ? `/api/admin/coupons?${query}` : "/api/admin/coupons";
+  return apiRequest<{ coupons: AdminCoupon[] }>(path, { token });
+}
+
+export function createAdminCoupon(
+  token: string,
+  payload: {
+    code: string;
+    title: string;
+    scope: CouponScope;
+    discountType: CouponDiscountType;
+    discountValue: number;
+    allowedPlans?: Array<"starter" | "pro" | "business">;
+    maxRedemptions?: number | null;
+    maxPerUser?: number | null;
+    firstPurchaseOnly?: boolean;
+    startsAt?: string | null;
+    expiresAt?: string | null;
+    status?: CouponStatus;
+    razorpayOfferId?: string | null;
+    metadata?: Record<string, unknown>;
+  }
+) {
+  return apiRequest<{ coupon: AdminCoupon }>("/api/admin/coupons", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateAdminCoupon(
+  token: string,
+  couponId: string,
+  payload: Partial<{
+    code: string;
+    title: string;
+    scope: CouponScope;
+    discountType: CouponDiscountType;
+    discountValue: number;
+    allowedPlans: Array<"starter" | "pro" | "business">;
+    maxRedemptions: number | null;
+    maxPerUser: number | null;
+    firstPurchaseOnly: boolean;
+    startsAt: string | null;
+    expiresAt: string | null;
+    status: CouponStatus;
+    razorpayOfferId: string | null;
+    metadata: Record<string, unknown>;
+  }>
+) {
+  return apiRequest<{ coupon: AdminCoupon }>(`/api/admin/coupons/${couponId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchAdminCouponRedemptions(
+  token: string,
+  couponId: string,
+  options?: { status?: CouponRedemptionStatus; limit?: number }
+) {
+  const params = new URLSearchParams();
+  if (options?.status) {
+    params.set("status", options.status);
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  const path = query
+    ? `/api/admin/coupons/${couponId}/redemptions?${query}`
+    : `/api/admin/coupons/${couponId}/redemptions`;
+  return apiRequest<{ redemptions: AdminCouponRedemption[] }>(path, { token });
 }
 
 export function fetchAdminWorkspaces(
@@ -1399,12 +1561,24 @@ export function fetchMyPlanEntitlements(token: string) {
   );
 }
 
+export function previewCoupon(
+  token: string,
+  payload: { code: string; purchaseType: "subscription"; planCode: BillingPlan["code"] }
+) {
+  return apiRequest<{ preview: CouponPreview }>("/api/coupons/preview", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
 export function createBillingSubscription(
   token: string,
   payload: {
     planCode: BillingPlan["code"];
     trialDays?: number;
     totalCount?: number;
+    couponCode?: string;
   }
 ) {
   return apiRequest<{
@@ -2288,6 +2462,10 @@ export interface DashboardOverviewResponse {
     hotLeads: number;
     warmLeads: number;
     closedDeals: number;
+    openConversations?: number;
+    totalContacts?: number;
+    activeBroadcasts?: number;
+    activeSequences?: number;
   };
   knowledge: {
     chunks: number;
@@ -2303,6 +2481,42 @@ export interface DashboardOverviewResponse {
   agent: {
     active: boolean;
     personality: string;
+  };
+  automation?: {
+    configuredAgents: number;
+    activeAgents: number;
+    knowledgeChunks: number;
+    activeFlows: number;
+  };
+  channels?: {
+    website: {
+      label: string;
+      connected: boolean;
+      status: string;
+    };
+    qr: {
+      label: string;
+      connected: boolean;
+      status: string;
+      phoneNumber: string | null;
+    };
+    api: {
+      label: string;
+      connected: boolean;
+      status: string;
+      phoneNumber: string | null;
+    };
+  };
+  setup?: {
+    connected: boolean;
+    stepsLeft: number;
+    checklist: Array<{
+      id: string;
+      label: string;
+      complete: boolean;
+      primaryCta: { label: string; to: string };
+      secondaryCtas: Array<{ label: string; to: string }>;
+    }>;
   };
 }
 

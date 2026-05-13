@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../config/env.js";
+import { pool } from "../db/pool.js";
 import { getUserPlanEntitlements } from "../services/billing-service.js";
 import { getDashboardOverview, getUsageAnalytics } from "../services/conversation-service.js";
 import { getKnowledgeStats } from "../services/rag-service.js";
@@ -21,6 +22,38 @@ const UsageQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(120).optional(),
   limit: z.coerce.number().int().min(20).max(500).optional()
 });
+
+async function getDashboardHomeMetrics(userId: string): Promise<{
+  openConversations: number;
+  totalContacts: number;
+  activeBroadcasts: number;
+  activeSequences: number;
+  activeFlows: number;
+}> {
+  const result = await pool.query<{
+    open_conversations: string;
+    total_contacts: string;
+    active_broadcasts: string;
+    active_sequences: string;
+    active_flows: string;
+  }>(
+    `SELECT
+       (SELECT COUNT(*) FROM conversations WHERE user_id = $1 AND COALESCE(status, 'open') NOT IN ('resolved', 'closed'))::text AS open_conversations,
+       (SELECT COUNT(*) FROM contacts WHERE user_id = $1)::text AS total_contacts,
+       (SELECT COUNT(*) FROM campaigns WHERE user_id = $1 AND status IN ('draft', 'scheduled', 'running', 'paused'))::text AS active_broadcasts,
+       (SELECT COUNT(*) FROM sequences WHERE user_id = $1 AND status IN ('draft', 'published', 'paused'))::text AS active_sequences,
+       (SELECT COUNT(*) FROM flows WHERE user_id = $1 AND published = TRUE)::text AS active_flows`,
+    [userId]
+  );
+  const row = result.rows[0];
+  return {
+    openConversations: Number(row?.open_conversations ?? 0),
+    totalContacts: Number(row?.total_contacts ?? 0),
+    activeBroadcasts: Number(row?.active_broadcasts ?? 0),
+    activeSequences: Number(row?.active_sequences ?? 0),
+    activeFlows: Number(row?.active_flows ?? 0)
+  };
+}
 
 function buildDashboardFeatureFlags(): Record<string, boolean> {
   const envFeatureFlags = (env as { DASHBOARD_FEATURE_FLAGS?: Record<string, boolean> }).DASHBOARD_FEATURE_FLAGS ?? {};
@@ -119,21 +152,100 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: "User not found" });
       }
 
-      const [overview, knowledge, whatsapp, metaApi] = await Promise.all([
+      const [overview, knowledge, whatsapp, metaApi, agentSummary, homeMetrics] = await Promise.all([
         getDashboardOverview(request.authUser.userId),
         getKnowledgeStats(request.authUser.userId),
         whatsappSessionManager.getStatus(request.authUser.userId),
-        getMetaBusinessStatus(request.authUser.userId)
+        getMetaBusinessStatus(request.authUser.userId),
+        getAgentProfileSummary(request.authUser.userId),
+        getDashboardHomeMetrics(request.authUser.userId)
       ]);
 
+      const websiteConnected = Boolean(user.ai_active);
+      const qrConnected = whatsapp.status === "connected";
+      const apiConnected = Boolean(metaApi.connected);
+      const connected = websiteConnected || qrConnected || apiConnected;
+      const agentConfigured = agentSummary.configuredProfiles > 0;
+      const knowledgeConfigured = knowledge.chunks > 0;
+      const flowConfigured = homeMetrics.activeFlows > 0;
+      const operating = homeMetrics.openConversations > 0 || homeMetrics.totalContacts > 0;
+      const checklist = [
+        {
+          id: "connect-channel",
+          label: "Connect a channel",
+          complete: connected,
+          primaryCta: { label: "Connect API", to: "/dashboard/settings/api" },
+          secondaryCtas: [
+            { label: "QR", to: "/dashboard/settings/qr" },
+            { label: "Web", to: "/dashboard/settings/web" }
+          ]
+        },
+        {
+          id: "configure-ai",
+          label: "Configure AI agent and knowledge",
+          complete: agentConfigured && (knowledgeConfigured || flowConfigured),
+          primaryCta: { label: "AI Agents", to: "/dashboard/agents" },
+          secondaryCtas: [
+            { label: "Knowledge", to: "/dashboard/studio/knowledge" },
+            { label: "Flows", to: "/dashboard/studio/flows" }
+          ]
+        },
+        {
+          id: "start-operating",
+          label: "Start operating",
+          complete: operating,
+          primaryCta: { label: "Open Chats", to: "/dashboard/inbox-v2" },
+          secondaryCtas: [
+            { label: "Broadcast", to: "/dashboard/broadcast" },
+            { label: "Analytics", to: "/dashboard/analytics" }
+          ]
+        }
+      ];
+
       return {
-        overview,
+        overview: {
+          ...overview,
+          openConversations: homeMetrics.openConversations,
+          totalContacts: homeMetrics.totalContacts,
+          activeBroadcasts: homeMetrics.activeBroadcasts,
+          activeSequences: homeMetrics.activeSequences
+        },
         knowledge,
         whatsapp,
         metaApi,
         agent: {
           active: user.ai_active,
           personality: user.personality
+        },
+        automation: {
+          configuredAgents: agentSummary.configuredProfiles,
+          activeAgents: agentSummary.activeProfiles,
+          knowledgeChunks: knowledge.chunks,
+          activeFlows: homeMetrics.activeFlows
+        },
+        channels: {
+          website: {
+            label: "Website Widget",
+            connected: websiteConnected,
+            status: websiteConnected ? "active" : "not_connected"
+          },
+          qr: {
+            label: "WhatsApp QR",
+            connected: qrConnected,
+            status: whatsapp.status,
+            phoneNumber: whatsapp.phoneNumber
+          },
+          api: {
+            label: "Official WhatsApp API",
+            connected: apiConnected,
+            status: apiConnected ? "connected" : "not_connected",
+            phoneNumber: metaApi.connection?.displayPhoneNumber ?? null
+          }
+        },
+        setup: {
+          connected,
+          stepsLeft: checklist.filter((item) => !item.complete).length,
+          checklist
         }
       };
     }

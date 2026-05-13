@@ -12,12 +12,14 @@ import {
   verifyRazorpayWebhookSignature,
   type BillingPlanCode
 } from "../services/billing-service.js";
+import { isCouponValidationError } from "../services/coupon-service.js";
 import { getUserById } from "../services/user-service.js";
 
 const CreateSubscriptionSchema = z.object({
   planCode: z.enum(BILLING_PLAN_CODES),
   totalCount: z.coerce.number().int().min(1).max(60).optional(),
-  trialDays: z.coerce.number().int().min(0).max(30).optional()
+  trialDays: z.coerce.number().int().min(0).max(30).optional(),
+  couponCode: z.string().trim().min(1).max(80).optional()
 });
 
 const CancelSubscriptionSchema = z.object({
@@ -88,13 +90,17 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
         userEmail: user.email,
         planCode: parsed.data.planCode as BillingPlanCode,
         totalCount: parsed.data.totalCount,
-        trialDays: parsed.data.trialDays
+        trialDays: parsed.data.trialDays,
+        couponCode: parsed.data.couponCode
       });
       return reply.send(subscription);
     } catch (error) {
       const message = (error as Error).message;
       if (message.toLowerCase().includes("active subscription")) {
         return reply.status(409).send({ error: message });
+      }
+      if (isCouponValidationError(error)) {
+        return reply.status(error.statusCode).send({ error: message });
       }
       throw error;
     }

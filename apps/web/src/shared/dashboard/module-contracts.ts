@@ -9,6 +9,7 @@ export type DashboardRequiredPlan = PlanEntitlements["planCode"];
 
 export type DashboardIconName =
   | "brand"
+  | "home"
   | "chats"
   | "leads"
   | "analytics"
