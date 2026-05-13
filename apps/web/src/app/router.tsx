@@ -4,7 +4,6 @@ import type { RouteObject } from "react-router-dom";
 import { DashboardModuleGuard } from "./dashboard/dashboard-module-guard";
 import { DashboardIndexRoute } from "./dashboard/dashboard-index-route";
 import { DashboardShell } from "./dashboard/dashboard-shell";
-import { LegacyDashboardRedirect } from "./dashboard/legacy-dashboard-redirect";
 import { ProtectedRoute } from "./protected-route";
 import { dashboardModules } from "../registry/dashboardModules";
 
