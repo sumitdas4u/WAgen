@@ -10,7 +10,11 @@ vi.mock("../db/pool.js", () => ({
   }
 }));
 
-import { listMetaBusinessConnections, summarizeMetaWebhookMessage } from "./meta-whatsapp-service.js";
+import {
+  buildMetaBusinessProfileUpdatePayload,
+  listMetaBusinessConnections,
+  summarizeMetaWebhookMessage
+} from "./meta-whatsapp-service.js";
 
 function makeMetaConnectionRow(overrides: Record<string, unknown>) {
   return {
@@ -131,6 +135,90 @@ describe("listMetaBusinessConnections", () => {
     expect(connections.map((connection) => connection.id)).toEqual([
       "newer-deleted",
       "different-number"
+    ]);
+  });
+});
+
+describe("buildMetaBusinessProfileUpdatePayload", () => {
+  it("maps editable profile fields to Meta payload names", () => {
+    const payload = buildMetaBusinessProfileUpdatePayload({
+      about: "  Usually replies in minutes  ",
+      address: "  12 Market Street  ",
+      businessDescription: "  Customer support and updates  ",
+      email: " support@example.com ",
+      vertical: "RETAIL",
+      websites: ["https://example.com", "https://instagram.com/example"],
+      profilePictureHandle: " h:profile-picture "
+    });
+
+    expect(payload).toEqual({
+      messaging_product: "whatsapp",
+      about: "Usually replies in minutes",
+      address: "12 Market Street",
+      description: "Customer support and updates",
+      email: "support@example.com",
+      vertical: "RETAIL",
+      websites: ["https://example.com", "https://instagram.com/example"],
+      profile_picture_handle: "h:profile-picture"
+    });
+  });
+
+  it("allows the documented empty vertical value", () => {
+    expect(buildMetaBusinessProfileUpdatePayload({ vertical: "" })).toEqual({
+      messaging_product: "whatsapp",
+      vertical: ""
+    });
+  });
+
+  it("rejects invalid vertical values", () => {
+    expect(() => buildMetaBusinessProfileUpdatePayload({ vertical: "CHARITY" })).toThrow(/Vertical/);
+  });
+
+  it("rejects empty about when provided", () => {
+    expect(() => buildMetaBusinessProfileUpdatePayload({ about: "   " })).toThrow(/About cannot be empty/);
+  });
+
+  it("enforces documented field limits", () => {
+    expect(() => buildMetaBusinessProfileUpdatePayload({ about: "a".repeat(140) })).toThrow(/About/);
+    expect(() => buildMetaBusinessProfileUpdatePayload({ address: "a".repeat(257) })).toThrow(/Address/);
+    expect(() => buildMetaBusinessProfileUpdatePayload({ businessDescription: "a".repeat(513) })).toThrow(/Description/);
+    expect(() =>
+      buildMetaBusinessProfileUpdatePayload({
+        email: `${"a".repeat(117)}@example.com`
+      })
+    ).toThrow(/Email/);
+  });
+
+  it("accepts at most two websites", () => {
+    expect(
+      buildMetaBusinessProfileUpdatePayload({
+        websites: ["https://one.example", "https://two.example"]
+      }).websites
+    ).toEqual(["https://one.example", "https://two.example"]);
+
+    expect(() =>
+      buildMetaBusinessProfileUpdatePayload({
+        websites: ["https://one.example", "https://two.example", "https://three.example"]
+      })
+    ).toThrow(/at most 2 websites/);
+  });
+
+  it("rejects websites without http or https protocol", () => {
+    expect(() => buildMetaBusinessProfileUpdatePayload({ websites: ["example.com"] })).toThrow(/http/);
+  });
+
+  it("uses websites over legacy websiteUrl when both are provided", () => {
+    expect(
+      buildMetaBusinessProfileUpdatePayload({
+        websiteUrl: "https://legacy.example",
+        websites: ["https://primary.example"]
+      }).websites
+    ).toEqual(["https://primary.example"]);
+  });
+
+  it("keeps legacy websiteUrl fallback when websites are missing", () => {
+    expect(buildMetaBusinessProfileUpdatePayload({ websiteUrl: "https://legacy.example" }).websites).toEqual([
+      "https://legacy.example"
     ]);
   });
 });

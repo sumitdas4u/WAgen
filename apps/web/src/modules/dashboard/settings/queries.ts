@@ -1,6 +1,11 @@
 import { queryOptions, useQuery, type QueryClient } from "@tanstack/react-query";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
-import { fetchSettingsMetaConfig, fetchSettingsMetaConnections, fetchSettingsMetaStatus } from "./api";
+import {
+  fetchSettingsMetaConfig,
+  fetchSettingsMetaConnections,
+  fetchSettingsMetaProfile,
+  fetchSettingsMetaStatus
+} from "./api";
 
 export function buildSettingsMetaConfigQueryOptions(token: string) {
   return queryOptions({
@@ -33,6 +38,20 @@ export function buildSettingsMetaConnectionsQueryOptions(token: string) {
 
 export function useSettingsMetaConnectionsQuery(token: string) {
   return useQuery(buildSettingsMetaConnectionsQueryOptions(token));
+}
+
+export function buildSettingsMetaProfileQueryOptions(token: string, connectionId: string) {
+  return queryOptions({
+    queryKey: dashboardQueryKeys.settingsMetaProfile(connectionId),
+    queryFn: () => fetchSettingsMetaProfile(token, connectionId).then((response) => response.profile)
+  });
+}
+
+export function useSettingsMetaProfileQuery(token: string, connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    ...buildSettingsMetaProfileQueryOptions(token, connectionId ?? "__none__"),
+    enabled: enabled && Boolean(connectionId)
+  });
 }
 
 export async function prefetchSettingsModuleData(queryClient: QueryClient, token: string) {

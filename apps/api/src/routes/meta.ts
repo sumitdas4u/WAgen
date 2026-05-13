@@ -61,14 +61,49 @@ const BusinessProfileQuerySchema = z.object({
   connectionId: z.string().uuid().optional()
 });
 
+const MetaBusinessVerticalSchema = z.enum([
+  "ALCOHOL",
+  "APPAREL",
+  "AUTO",
+  "BEAUTY",
+  "EDU",
+  "ENTERTAIN",
+  "EVENT_PLAN",
+  "FINANCE",
+  "GOVT",
+  "GROCERY",
+  "HEALTH",
+  "HOTEL",
+  "NONPROFIT",
+  "ONLINE_GAMBLING",
+  "OTC_DRUGS",
+  "OTHER",
+  "PHYSICAL_GAMBLING",
+  "PROF_SERVICES",
+  "RESTAURANT",
+  "RETAIL",
+  "TRAVEL"
+]);
+
+const WebsiteUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(256)
+  .url()
+  .refine((value) => /^https?:\/\//i.test(value), {
+    message: "Website must start with http:// or https://"
+  });
+
 const BusinessProfileUpdateSchema = z.object({
   connectionId: z.string().uuid().optional(),
   address: z.string().trim().max(256).optional().nullable(),
-  businessDescription: z.string().trim().max(256).optional().nullable(),
+  businessDescription: z.string().trim().max(512).optional().nullable(),
   email: z.string().trim().email().max(128).optional().nullable().or(z.literal("")),
-  vertical: z.string().trim().max(64).optional().nullable(),
-  websiteUrl: z.string().trim().url().max(256).optional().nullable().or(z.literal("")),
-  about: z.string().trim().max(139).optional().nullable(),
+  vertical: z.union([MetaBusinessVerticalSchema, z.literal("")]).optional().nullable(),
+  websiteUrl: z.union([WebsiteUrlSchema, z.literal("")]).optional().nullable(),
+  websites: z.array(WebsiteUrlSchema).max(2).optional().nullable(),
+  about: z.string().trim().min(1).max(139).optional().nullable(),
   profilePictureHandle: z.string().trim().max(512).optional().nullable()
 });
 
@@ -232,13 +267,14 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
       const profile = await updateMetaBusinessProfile({
         userId: request.authUser.userId,
         connectionId: parsed.data.connectionId,
-        address: parsed.data.address ?? null,
-        businessDescription: parsed.data.businessDescription ?? null,
-        email: parsed.data.email || null,
-        vertical: parsed.data.vertical ?? null,
-        websiteUrl: parsed.data.websiteUrl || null,
-        about: parsed.data.about ?? null,
-        profilePictureHandle: parsed.data.profilePictureHandle ?? null
+        address: parsed.data.address,
+        businessDescription: parsed.data.businessDescription,
+        email: parsed.data.email,
+        vertical: parsed.data.vertical,
+        websiteUrl: parsed.data.websiteUrl,
+        websites: parsed.data.websites,
+        about: parsed.data.about,
+        profilePictureHandle: parsed.data.profilePictureHandle
       });
       return { ok: true, profile };
     }

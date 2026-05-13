@@ -1989,6 +1989,7 @@ export function updateMetaBusinessProfile(
     email?: string | null;
     vertical?: string | null;
     websiteUrl?: string | null;
+    websites?: string[] | null;
     about?: string | null;
     profilePictureHandle?: string | null;
   }

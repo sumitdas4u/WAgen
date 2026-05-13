@@ -8,6 +8,7 @@ import {
   type MetaBusinessStatus,
   type PublishedFlowSummary
 } from "../../../../lib/api";
+import { DashboardIcon } from "../../../../shared/dashboard/icons";
 import { dashboardQueryKeys } from "../../../../shared/dashboard/query-keys";
 import { getConnectionActiveLabel, isMetaConnectionActive } from "../../../../shared/dashboard/meta-connection-selector";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
@@ -20,6 +21,7 @@ import {
   setApiChannelEnabled,
 } from "../api";
 import { useSettingsMetaConfigQuery, useSettingsMetaConnectionsQuery, useSettingsMetaStatusQuery } from "../queries";
+import { MetaBusinessProfileModal } from "./MetaBusinessProfileModal";
 
 const FACEBOOK_SDK_URL = "https://connect.facebook.net/en_US/sdk.js";
 
@@ -134,6 +136,7 @@ export function ApiChannelPage() {
   const [error, setError] = useState<string | null>(null);
   const [showInactiveChannels, setShowInactiveChannels] = useState(false);
   const [showMetaPrerequisites, setShowMetaPrerequisites] = useState(false);
+  const [profileModalConnectionId, setProfileModalConnectionId] = useState<string | null>(null);
   const [defaultReplyConfig, setDefaultReplyConfig] = useState<ChannelDefaultReplyConfig | null>(null);
   const [defaultReplyFlows, setDefaultReplyFlows] = useState<PublishedFlowSummary[]>([]);
   const [defaultReplySaving, setDefaultReplySaving] = useState(false);
@@ -155,6 +158,9 @@ export function ApiChannelPage() {
   const selectedConnection: MetaBusinessConnection | null =
     connections.find((connection) => connection.id === selectedConnectionId) ??
     metaStatus.connection ??
+    null;
+  const profileModalConnection =
+    connections.find((connection) => connection.id === profileModalConnectionId) ??
     null;
   const activeConnections = connections.filter((connection) => isMetaConnectionActive(connection));
   const inactiveConnections = connections.filter((connection) => !isMetaConnectionActive(connection));
@@ -523,11 +529,10 @@ export function ApiChannelPage() {
             {visibleConnections.length > 0 ? visibleConnections.map((connection) => {
               const active = isMetaConnectionActive(connection);
               const selected = selectedConnection?.id === connection.id;
+              const connectionPhoneLabel = formatPhone(connection.linkedNumber ?? connection.displayPhoneNumber ?? "Unknown");
               return (
-                <button
+                <div
                   key={connection.id}
-                  type="button"
-                  onClick={() => setSelectedConnectionId(connection.id)}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1.2fr 1fr 0.8fr 0.8fr auto",
@@ -547,7 +552,7 @@ export function ApiChannelPage() {
                 >
                   <div>
                     <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Phone number</div>
-                    <div style={{ fontWeight: 700, color: "#0f172a" }}>{formatPhone(connection.linkedNumber ?? connection.displayPhoneNumber ?? "Unknown")}</div>
+                    <div style={{ fontWeight: 700, color: "#0f172a" }}>{connectionPhoneLabel}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Business Manager ID</div>
@@ -561,10 +566,28 @@ export function ApiChannelPage() {
                     <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Limit</div>
                     <div style={{ fontWeight: 600, color: "#0f172a" }}>{formatMetaStatusLabel(readMetaString(getNestedRecord(connection.metadata?.metaHealth), "messagingLimitTier"), "Unknown")}</div>
                   </div>
-                  <div style={{ justifySelf: "end", fontSize: "0.78rem", color: active ? "#15803d" : "#92400e" }}>
-                    {selected ? "Selected" : "Select"}
+                  <div className="api-connection-actions">
+                    <button
+                      type="button"
+                      className="api-connection-select-btn"
+                      onClick={() => setSelectedConnectionId(connection.id)}
+                    >
+                      {selected ? "Selected" : "Select"}
+                    </button>
+                    <button
+                      type="button"
+                      className="api-connection-settings-btn"
+                      onClick={() => {
+                        setSelectedConnectionId(connection.id);
+                        setProfileModalConnectionId(connection.id);
+                      }}
+                      aria-label={`Edit phone profile for ${connectionPhoneLabel}`}
+                      title="Edit phone profile"
+                    >
+                      <DashboardIcon name="settings" />
+                    </button>
                   </div>
-                </button>
+                </div>
               );
             }) : (
               <div
@@ -707,6 +730,11 @@ export function ApiChannelPage() {
             : "This channel is currently disconnected. Connect now to start the Meta onboarding flow again."}
         </p>
       </article>
+      <MetaBusinessProfileModal
+        token={token}
+        connection={profileModalConnection}
+        onClose={() => setProfileModalConnectionId(null)}
+      />
     </section>
   );
 }

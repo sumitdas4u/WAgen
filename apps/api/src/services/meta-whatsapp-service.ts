@@ -131,6 +131,43 @@ interface GraphWhatsAppBusinessProfile {
   vertical?: string;
 }
 
+export const META_BUSINESS_VERTICAL_VALUES = [
+  "ALCOHOL",
+  "APPAREL",
+  "AUTO",
+  "BEAUTY",
+  "EDU",
+  "ENTERTAIN",
+  "EVENT_PLAN",
+  "FINANCE",
+  "GOVT",
+  "GROCERY",
+  "HEALTH",
+  "HOTEL",
+  "NONPROFIT",
+  "ONLINE_GAMBLING",
+  "OTC_DRUGS",
+  "OTHER",
+  "PHYSICAL_GAMBLING",
+  "PROF_SERVICES",
+  "RESTAURANT",
+  "RETAIL",
+  "TRAVEL"
+] as const;
+
+export type MetaBusinessVertical = (typeof META_BUSINESS_VERTICAL_VALUES)[number];
+
+export type MetaBusinessProfileUpdatePayload = {
+  messaging_product: "whatsapp";
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  vertical?: MetaBusinessVertical | "";
+  websites?: string[];
+  profile_picture_handle?: string;
+};
+
 type MetaStatusSnapshot = {
   businessVerificationStatus: string | null;
   wabaReviewStatus: string | null;
@@ -360,6 +397,131 @@ function parseStringArray(value: unknown): string[] {
     }
   }
   return [];
+}
+
+function hasValidWebsiteProtocol(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function assertMaxLength(value: string, max: number, field: string): void {
+  if (value.length > max) {
+    throw new Error(`${field} must be ${max} characters or fewer.`);
+  }
+}
+
+function assignOptionalText(
+  payload: MetaBusinessProfileUpdatePayload,
+  key: "address" | "description" | "email",
+  value: string | null | undefined,
+  max: number,
+  fieldLabel: string
+): void {
+  const next = trimToNull(value);
+  if (!next) {
+    return;
+  }
+  assertMaxLength(next, max, fieldLabel);
+  payload[key] = next;
+}
+
+function normalizeMetaBusinessWebsites(input: {
+  websites?: string[] | null;
+  websiteUrl?: string | null;
+}): string[] | undefined {
+  const rawWebsites = Array.isArray(input.websites)
+    ? input.websites
+    : trimToNull(input.websiteUrl)
+      ? [trimToNull(input.websiteUrl)!]
+      : undefined;
+
+  if (!rawWebsites) {
+    return undefined;
+  }
+
+  const websites = rawWebsites.map((website) => website.trim()).filter((website) => website.length > 0);
+  if (websites.length === 0) {
+    return undefined;
+  }
+  if (websites.length > 2) {
+    throw new Error("A WhatsApp business profile can include at most 2 websites.");
+  }
+
+  for (const website of websites) {
+    assertMaxLength(website, 256, "Website URL");
+    if (!hasValidWebsiteProtocol(website)) {
+      throw new Error("Website URL must start with http:// or https://.");
+    }
+    try {
+      new URL(website);
+    } catch {
+      throw new Error("Website URL must be valid.");
+    }
+  }
+
+  return websites;
+}
+
+export function buildMetaBusinessProfileUpdatePayload(input: {
+  address?: string | null;
+  businessDescription?: string | null;
+  email?: string | null;
+  vertical?: string | null;
+  websiteUrl?: string | null;
+  websites?: string[] | null;
+  about?: string | null;
+  profilePictureHandle?: string | null;
+}): MetaBusinessProfileUpdatePayload {
+  const payload: MetaBusinessProfileUpdatePayload = {
+    messaging_product: "whatsapp"
+  };
+
+  if (input.about !== undefined && input.about !== null) {
+    const about = input.about.trim();
+    if (!about) {
+      throw new Error("About cannot be empty when provided.");
+    }
+    assertMaxLength(about, 139, "About");
+    payload.about = about;
+  }
+
+  assignOptionalText(payload, "address", input.address, 256, "Address");
+  assignOptionalText(payload, "description", input.businessDescription, 512, "Description");
+
+  const email = trimToNull(input.email);
+  if (email) {
+    assertMaxLength(email, 128, "Email");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error("Email must be a valid email address.");
+    }
+    payload.email = email;
+  }
+
+  if (input.vertical !== undefined && input.vertical !== null) {
+    const vertical = input.vertical.trim();
+    if (vertical === "") {
+      payload.vertical = "";
+    } else if ((META_BUSINESS_VERTICAL_VALUES as readonly string[]).includes(vertical)) {
+      payload.vertical = vertical as MetaBusinessVertical;
+    } else {
+      throw new Error("Vertical must be empty or a documented Meta business category.");
+    }
+  }
+
+  const websites = normalizeMetaBusinessWebsites({
+    websites: input.websites,
+    websiteUrl: input.websiteUrl
+  });
+  if (websites) {
+    payload.websites = websites;
+  }
+
+  const profilePictureHandle = trimToNull(input.profilePictureHandle);
+  if (profilePictureHandle) {
+    assertMaxLength(profilePictureHandle, 512, "Profile picture handle");
+    payload.profile_picture_handle = profilePictureHandle;
+  }
+
+  return payload;
 }
 
 function getTokenCipherKey(): Buffer {
@@ -2178,6 +2340,7 @@ export async function updateMetaBusinessProfile(input: {
   email?: string | null;
   vertical?: string | null;
   websiteUrl?: string | null;
+  websites?: string[] | null;
   about?: string | null;
   profilePictureHandle?: string | null;
 }): Promise<MetaBusinessProfile> {
@@ -2187,20 +2350,21 @@ export async function updateMetaBusinessProfile(input: {
   }
 
   const accessToken = decryptToken(row.access_token_encrypted);
-  const websites = trimToNull(input.websiteUrl) ? [trimToNull(input.websiteUrl)!] : [];
-  await graphPostForm<{ success?: boolean }>(
+  const payload = buildMetaBusinessProfileUpdatePayload({
+    address: input.address,
+    businessDescription: input.businessDescription,
+    email: input.email,
+    vertical: input.vertical,
+    websiteUrl: input.websiteUrl,
+    websites: input.websites,
+    about: input.about,
+    profilePictureHandle: input.profilePictureHandle
+  });
+
+  await graphPost<{ success?: boolean }>(
     `/${row.phone_number_id}/whatsapp_business_profile`,
     accessToken,
-    {
-      messaging_product: "whatsapp",
-      address: trimToNull(input.address) ?? undefined,
-      description: trimToNull(input.businessDescription) ?? undefined,
-      email: trimToNull(input.email) ?? undefined,
-      vertical: trimToNull(input.vertical) ?? undefined,
-      websites: websites.length > 0 ? JSON.stringify(websites) : undefined,
-      about: trimToNull(input.about) ?? undefined,
-      profile_picture_handle: trimToNull(input.profilePictureHandle) ?? undefined
-    }
+    payload
   );
 
   return getMetaBusinessProfile(input.userId, row.id);
