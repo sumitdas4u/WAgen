@@ -735,20 +735,37 @@ export async function graphStartUploadSession(
   return parseGraphResponse<{ id: string }>(response);
 }
 
+export function normalizeMetaBusinessProfileImageMimeType(mimeType: string): "image/jpeg" | "image/png" {
+  const normalized = mimeType.trim().toLowerCase();
+  if (normalized === "image/jpg") {
+    return "image/jpeg";
+  }
+  if (normalized === "image/jpeg" || normalized === "image/png") {
+    return normalized;
+  }
+  throw new Error("Profile picture must be a JPG or PNG image.");
+}
+
 export async function graphUploadFileHandle(
   uploadSessionId: string,
   accessToken: string,
   fileBuffer: Buffer,
   mimeType: string
 ): Promise<{ h: string }> {
+  const body = fileBuffer.buffer.slice(
+    fileBuffer.byteOffset,
+    fileBuffer.byteOffset + fileBuffer.byteLength
+  ) as ArrayBuffer;
   const response = await fetch(buildGraphUrl(`/${uploadSessionId}`), {
     method: "POST",
     headers: {
       Authorization: `OAuth ${accessToken}`,
+      Accept: "*/*",
       file_offset: "0",
-      "Content-Type": mimeType
+      "Content-Type": mimeType,
+      "Content-Length": String(fileBuffer.byteLength)
     },
-    body: new Blob([new Uint8Array(fileBuffer)], { type: mimeType })
+    body
   });
   return parseGraphResponse<{ h: string }>(response);
 }
@@ -2387,12 +2404,13 @@ export async function uploadMetaBusinessProfileLogo(input: {
   }
 
   const accessToken = decryptToken(row.access_token_encrypted);
+  const mimeType = normalizeMetaBusinessProfileImageMimeType(input.mimeType);
   const uploadSession = await graphStartUploadSession(env.META_APP_ID.trim(), accessToken, {
-    fileName: trimToNull(input.fileName) ?? `profile-logo.${input.mimeType.split("/")[1] ?? "png"}`,
+    fileName: trimToNull(input.fileName) ?? `profile-logo.${mimeType === "image/jpeg" ? "jpg" : "png"}`,
     fileLength: input.fileBuffer.byteLength,
-    fileType: input.mimeType
+    fileType: mimeType
   });
-  const result = await graphUploadFileHandle(uploadSession.id, accessToken, input.fileBuffer, input.mimeType);
+  const result = await graphUploadFileHandle(uploadSession.id, accessToken, input.fileBuffer, mimeType);
 
   return {
     connectionId: row.id,

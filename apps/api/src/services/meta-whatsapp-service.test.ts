@@ -12,7 +12,9 @@ vi.mock("../db/pool.js", () => ({
 
 import {
   buildMetaBusinessProfileUpdatePayload,
+  graphUploadFileHandle,
   listMetaBusinessConnections,
+  normalizeMetaBusinessProfileImageMimeType,
   summarizeMetaWebhookMessage
 } from "./meta-whatsapp-service.js";
 
@@ -47,6 +49,7 @@ function makeMetaConnectionRow(overrides: Record<string, unknown>) {
 
 beforeEach(() => {
   dbMocks.query.mockReset();
+  vi.unstubAllGlobals();
 });
 
 describe("summarizeMetaWebhookMessage", () => {
@@ -220,5 +223,45 @@ describe("buildMetaBusinessProfileUpdatePayload", () => {
     expect(buildMetaBusinessProfileUpdatePayload({ websiteUrl: "https://legacy.example" }).websites).toEqual([
       "https://legacy.example"
     ]);
+  });
+});
+
+describe("Meta profile picture upload helpers", () => {
+  it("normalizes accepted WhatsApp profile image MIME types", () => {
+    expect(normalizeMetaBusinessProfileImageMimeType("image/jpg")).toBe("image/jpeg");
+    expect(normalizeMetaBusinessProfileImageMimeType(" image/jpeg ")).toBe("image/jpeg");
+    expect(normalizeMetaBusinessProfileImageMimeType("image/png")).toBe("image/png");
+    expect(() => normalizeMetaBusinessProfileImageMimeType("image/webp")).toThrow(/JPG or PNG/);
+  });
+
+  it("uploads resumable file data as raw bytes with Meta-required headers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ h: "h:profile-handle" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const buffer = Buffer.from("profile-image");
+    await expect(graphUploadFileHandle("upload-session-1", "token-1", buffer, "image/jpeg")).resolves.toEqual({
+      h: "h:profile-handle"
+    });
+
+    const uploadBody = fetchMock.mock.calls[0]?.[1]?.body as ArrayBuffer;
+    expect(Buffer.from(uploadBody)).toEqual(buffer);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/upload-session-1"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "OAuth token-1",
+          Accept: "*/*",
+          file_offset: "0",
+          "Content-Type": "image/jpeg",
+          "Content-Length": String(buffer.byteLength)
+        })
+      })
+    );
   });
 });

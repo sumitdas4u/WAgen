@@ -14,6 +14,7 @@ import {
   sendMetaMessage,
   setMetaBusinessChannelEnabled,
   sendMetaTextMessage,
+  normalizeMetaBusinessProfileImageMimeType,
   updateMetaBusinessProfile,
   uploadMetaBusinessProfileLogo,
   verifyMetaWebhookSignature
@@ -296,9 +297,11 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
         }
 
         const file = files[0]!;
-        const mimeType = (file.mimetype ?? "").toLowerCase();
-        if (!["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(mimeType)) {
-          return reply.status(400).send({ error: "Logo must be a PNG, JPG, or WEBP image." });
+        let mimeType: "image/jpeg" | "image/png";
+        try {
+          mimeType = normalizeMetaBusinessProfileImageMimeType(file.mimetype ?? "");
+        } catch (err) {
+          return reply.status(400).send({ error: (err as Error).message });
         }
 
         const buffer = await readFile(file.filepath);

@@ -167,8 +167,8 @@ function validateDraft(draft: ProfileDraft, imageFile: File | null): ValidationE
     }
   });
 
-  if (imageFile && !["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(imageFile.type.toLowerCase())) {
-    errors.image = "Profile picture must be a PNG, JPG, or WEBP image.";
+  if (imageFile && !["image/png", "image/jpeg", "image/jpg"].includes(imageFile.type.toLowerCase())) {
+    errors.image = "Profile picture must be a PNG or JPG image.";
   } else if (imageFile && imageFile.size > 5 * 1024 * 1024) {
     errors.image = "Profile picture must be 5MB or smaller.";
   }
@@ -437,13 +437,13 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
                     <input
                       aria-label="Profile picture"
                       type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      accept="image/png,image/jpeg,image/jpg"
                       onChange={handleImageChange}
                     />
                     {validationErrors.image ? (
                       <small className="meta-profile-field-error">{validationErrors.image}</small>
                     ) : (
-                      <small>PNG, JPG, or WEBP. Maximum 5MB.</small>
+                      <small>PNG or JPG. Maximum 5MB.</small>
                     )}
                   </label>
                 </div>
