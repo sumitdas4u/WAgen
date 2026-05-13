@@ -362,8 +362,8 @@ function DashboardShellLayout() {
             ? "QR connecting"
             : "disconnected";
   const workspaceCreditsLabel = bootstrap
-    ? `${bootstrap.creditsSummary.remaining_credits} / ${bootstrap.creditsSummary.total_credits}`
-    : "-- / --";
+    ? `${bootstrap.creditsSummary.remaining_credits}`
+    : "--";
   const workspaceLowCreditMessage = bootstrap?.creditsSummary.low_credit_message ?? null;
   const hasConfiguredAgentProfile = Boolean(bootstrap?.agentSummary?.hasConfiguredProfile);
   const showAgentOffBanner = Boolean(bootstrap && !bootstrap.userSummary.aiActive && hasConfiguredAgentProfile);
@@ -566,9 +566,9 @@ function DashboardShellLayout() {
                   type="button"
                   className={bootstrap?.creditsSummary.low_credit ? "credits-chip credits-chip-low" : "credits-chip"}
                   onClick={() => navigate("/dashboard/account/ai-wallet")}
-                  title="Open Credits"
+                  title="AI Token Balance"
                 >
-                  Credits: {workspaceCreditsLabel}
+                  AI Balance: {workspaceCreditsLabel}
                 </button>
               ) : null}
               <span className={`status-badge status-${connectionBadgeStatus}`}>{connectionBadgeLabel}</span>

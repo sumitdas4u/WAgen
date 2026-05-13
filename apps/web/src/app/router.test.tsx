@@ -232,6 +232,14 @@ describe("dashboard router", () => {
     });
   });
 
+  it("shows the AI token balance without the monthly total in the dashboard header", async () => {
+    renderRoute("/dashboard/leads");
+
+    const balanceButton = await screen.findByRole("button", { name: "AI Balance: 900" });
+    expect(balanceButton).toHaveAttribute("title", "AI Token Balance");
+    expect(screen.queryByText("AI Balance: 900 / 1000")).not.toBeInTheDocument();
+  });
+
   it("redirects /dashboard/contacts to /dashboard/leads", async () => {
     const { router } = renderRoute("/dashboard/contacts");
 
