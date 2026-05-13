@@ -746,6 +746,96 @@ export function normalizeMetaBusinessProfileImageMimeType(mimeType: string): "im
   throw new Error("Profile picture must be a JPG or PNG image.");
 }
 
+function readPngDimensions(fileBuffer: Buffer): { width: number; height: number } | null {
+  const pngSignature = "89504e470d0a1a0a";
+  if (fileBuffer.length < 24 || fileBuffer.subarray(0, 8).toString("hex") !== pngSignature) {
+    return null;
+  }
+  return {
+    width: fileBuffer.readUInt32BE(16),
+    height: fileBuffer.readUInt32BE(20)
+  };
+}
+
+function readJpegDimensions(fileBuffer: Buffer): { width: number; height: number } | null {
+  if (fileBuffer.length < 4 || fileBuffer[0] !== 0xff || fileBuffer[1] !== 0xd8) {
+    return null;
+  }
+
+  let offset = 2;
+  while (offset < fileBuffer.length) {
+    while (offset < fileBuffer.length && fileBuffer[offset] === 0xff) {
+      offset += 1;
+    }
+    if (offset >= fileBuffer.length) {
+      return null;
+    }
+
+    const marker = fileBuffer[offset]!;
+    offset += 1;
+    if (marker === 0xd9 || marker === 0xda) {
+      return null;
+    }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      continue;
+    }
+    if (offset + 2 > fileBuffer.length) {
+      return null;
+    }
+
+    const segmentLength = fileBuffer.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > fileBuffer.length) {
+      return null;
+    }
+
+    const isStartOfFrame =
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf);
+    if (isStartOfFrame) {
+      if (segmentLength < 7) {
+        return null;
+      }
+      return {
+        height: fileBuffer.readUInt16BE(offset + 3),
+        width: fileBuffer.readUInt16BE(offset + 5)
+      };
+    }
+
+    offset += segmentLength;
+  }
+
+  return null;
+}
+
+export function validateMetaBusinessProfileImage(input: {
+  fileBuffer: Buffer;
+  mimeType: string;
+}): { mimeType: "image/jpeg" | "image/png"; width: number; height: number } {
+  const mimeType = normalizeMetaBusinessProfileImageMimeType(input.mimeType);
+  const dimensions =
+    mimeType === "image/png"
+      ? readPngDimensions(input.fileBuffer)
+      : readJpegDimensions(input.fileBuffer);
+
+  if (!dimensions) {
+    throw new Error("Profile picture dimensions could not be read. Upload a valid square JPG or PNG image.");
+  }
+  if (dimensions.width !== dimensions.height) {
+    throw new Error("Profile picture must be square. Use a square JPG or PNG, ideally 640x640.");
+  }
+  if (dimensions.width < 192 || dimensions.height < 192) {
+    throw new Error("Profile picture must be at least 192x192. Use a square JPG or PNG, ideally 640x640.");
+  }
+
+  return {
+    mimeType,
+    width: dimensions.width,
+    height: dimensions.height
+  };
+}
+
 export async function graphUploadFileHandle(
   uploadSessionId: string,
   accessToken: string,

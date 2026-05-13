@@ -14,7 +14,7 @@ import {
   sendMetaMessage,
   setMetaBusinessChannelEnabled,
   sendMetaTextMessage,
-  normalizeMetaBusinessProfileImageMimeType,
+  validateMetaBusinessProfileImage,
   updateMetaBusinessProfile,
   uploadMetaBusinessProfileLogo,
   verifyMetaWebhookSignature
@@ -297,23 +297,23 @@ export async function metaRoutes(fastify: FastifyInstance): Promise<void> {
         }
 
         const file = files[0]!;
-        let mimeType: "image/jpeg" | "image/png";
-        try {
-          mimeType = normalizeMetaBusinessProfileImageMimeType(file.mimetype ?? "");
-        } catch (err) {
-          return reply.status(400).send({ error: (err as Error).message });
-        }
-
         const buffer = await readFile(file.filepath);
         if (buffer.byteLength > 5 * 1024 * 1024) {
           return reply.status(400).send({ error: "Logo file exceeds 5MB limit." });
+        }
+
+        let image;
+        try {
+          image = validateMetaBusinessProfileImage({ fileBuffer: buffer, mimeType: file.mimetype ?? "" });
+        } catch (err) {
+          return reply.status(400).send({ error: (err as Error).message });
         }
 
         const result = await uploadMetaBusinessProfileLogo({
           userId: request.authUser.userId,
           connectionId: parsed.data.connectionId,
           fileBuffer: buffer,
-          mimeType,
+          mimeType: image.mimeType,
           fileName: file.filename ?? null
         });
 

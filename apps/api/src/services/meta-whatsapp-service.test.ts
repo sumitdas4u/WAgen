@@ -15,7 +15,8 @@ import {
   graphUploadFileHandle,
   listMetaBusinessConnections,
   normalizeMetaBusinessProfileImageMimeType,
-  summarizeMetaWebhookMessage
+  summarizeMetaWebhookMessage,
+  validateMetaBusinessProfileImage
 } from "./meta-whatsapp-service.js";
 
 function makeMetaConnectionRow(overrides: Record<string, unknown>) {
@@ -227,11 +228,53 @@ describe("buildMetaBusinessProfileUpdatePayload", () => {
 });
 
 describe("Meta profile picture upload helpers", () => {
+  function makePng(width: number, height: number): Buffer {
+    const buffer = Buffer.alloc(24);
+    Buffer.from("89504e470d0a1a0a", "hex").copy(buffer, 0);
+    buffer.writeUInt32BE(13, 8);
+    buffer.write("IHDR", 12, "ascii");
+    buffer.writeUInt32BE(width, 16);
+    buffer.writeUInt32BE(height, 20);
+    return buffer;
+  }
+
+  function makeJpeg(width: number, height: number): Buffer {
+    const buffer = Buffer.alloc(32);
+    buffer[0] = 0xff;
+    buffer[1] = 0xd8;
+    buffer[2] = 0xff;
+    buffer[3] = 0xc0;
+    buffer.writeUInt16BE(17, 4);
+    buffer[6] = 8;
+    buffer.writeUInt16BE(height, 7);
+    buffer.writeUInt16BE(width, 9);
+    return buffer;
+  }
+
   it("normalizes accepted WhatsApp profile image MIME types", () => {
     expect(normalizeMetaBusinessProfileImageMimeType("image/jpg")).toBe("image/jpeg");
     expect(normalizeMetaBusinessProfileImageMimeType(" image/jpeg ")).toBe("image/jpeg");
     expect(normalizeMetaBusinessProfileImageMimeType("image/png")).toBe("image/png");
     expect(() => normalizeMetaBusinessProfileImageMimeType("image/webp")).toThrow(/JPG or PNG/);
+  });
+
+  it("validates square profile image dimensions", () => {
+    expect(validateMetaBusinessProfileImage({ fileBuffer: makePng(640, 640), mimeType: "image/png" })).toEqual({
+      mimeType: "image/png",
+      width: 640,
+      height: 640
+    });
+    expect(validateMetaBusinessProfileImage({ fileBuffer: makeJpeg(512, 512), mimeType: "image/jpeg" })).toEqual({
+      mimeType: "image/jpeg",
+      width: 512,
+      height: 512
+    });
+    expect(() => validateMetaBusinessProfileImage({ fileBuffer: makePng(640, 320), mimeType: "image/png" })).toThrow(
+      /must be square/
+    );
+    expect(() => validateMetaBusinessProfileImage({ fileBuffer: makeJpeg(128, 128), mimeType: "image/jpeg" })).toThrow(
+      /at least 192x192/
+    );
   });
 
   it("uploads resumable file data as raw bytes with Meta-required headers", async () => {

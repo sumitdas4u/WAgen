@@ -9,6 +9,8 @@ const apiMocks = vi.hoisted(() => ({
   uploadSettingsMetaProfileLogo: vi.fn()
 }));
 
+let mockedImageDimensions = { width: 640, height: 640 };
+
 vi.mock("../api", () => ({
   fetchSettingsMetaProfile: (...args: unknown[]) => apiMocks.fetchSettingsMetaProfile(...args),
   saveSettingsMetaProfile: (...args: unknown[]) => apiMocks.saveSettingsMetaProfile(...args),
@@ -77,8 +79,28 @@ function renderModal(connection: MetaBusinessConnection | null = baseConnection)
 describe("MetaBusinessProfileModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedImageDimensions = { width: 640, height: 640 };
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:profile-preview") });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+    vi.stubGlobal(
+      "Image",
+      class {
+        onload: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        width = mockedImageDimensions.width;
+        height = mockedImageDimensions.height;
+        naturalWidth = mockedImageDimensions.width;
+        naturalHeight = mockedImageDimensions.height;
+
+        set src(_value: string) {
+          this.width = mockedImageDimensions.width;
+          this.height = mockedImageDimensions.height;
+          this.naturalWidth = mockedImageDimensions.width;
+          this.naturalHeight = mockedImageDimensions.height;
+          setTimeout(() => this.onload?.(), 0);
+        }
+      }
+    );
     apiMocks.fetchSettingsMetaProfile.mockResolvedValue({ profile: makeProfile() });
     apiMocks.saveSettingsMetaProfile.mockResolvedValue({ ok: true, profile: makeProfile() });
     apiMocks.uploadSettingsMetaProfileLogo.mockResolvedValue({
@@ -148,6 +170,7 @@ describe("MetaBusinessProfileModal", () => {
 
     const file = new File(["avatar"], "avatar.jpg", { type: "image/jpeg" });
     fireEvent.change(screen.getByLabelText("Profile picture"), { target: { files: [file] } });
+    expect(await screen.findByText("640x640. 640x640 recommended.")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Website 1"), { target: { value: "https://example.com" } });
     fireEvent.change(screen.getByLabelText("Website 2"), { target: { value: "https://instagram.com/keyline" } });
     fireEvent.click(screen.getByRole("button", { name: /save profile/i }));
@@ -165,5 +188,18 @@ describe("MetaBusinessProfileModal", () => {
         websites: ["https://example.com", "https://instagram.com/keyline"]
       })
     );
+  });
+
+  it("blocks non-square profile images before upload", async () => {
+    mockedImageDimensions = { width: 640, height: 320 };
+    renderModal();
+    await screen.findByDisplayValue("Usually replies in minutes");
+
+    const file = new File(["avatar"], "wide.jpg", { type: "image/jpeg" });
+    fireEvent.change(screen.getByLabelText("Profile picture"), { target: { files: [file] } });
+
+    expect(await screen.findByText("Profile picture must be square. Use a square JPG or PNG, ideally 640x640.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save profile/i })).toBeDisabled();
+    expect(apiMocks.uploadSettingsMetaProfileLogo).not.toHaveBeenCalled();
   });
 });

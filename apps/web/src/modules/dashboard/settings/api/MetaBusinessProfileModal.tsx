@@ -44,6 +44,11 @@ type ProfileDraft = {
 
 type ValidationErrors = Partial<Record<keyof ProfileDraft | "website0" | "website1" | "image", string>>;
 
+type ImageDimensions = {
+  width: number;
+  height: number;
+};
+
 const EMPTY_DRAFT: ProfileDraft = {
   about: "",
   address: "",
@@ -131,7 +136,36 @@ function validateUrl(value: string): boolean {
   }
 }
 
-function validateDraft(draft: ProfileDraft, imageFile: File | null): ValidationErrors {
+function validateProfileImageDimensions(dimensions: ImageDimensions): string | null {
+  if (dimensions.width !== dimensions.height) {
+    return "Profile picture must be square. Use a square JPG or PNG, ideally 640x640.";
+  }
+  if (dimensions.width < 192 || dimensions.height < 192) {
+    return "Profile picture must be at least 192x192. Use a square JPG or PNG, ideally 640x640.";
+  }
+  return null;
+}
+
+function loadImageDimensions(url: string): Promise<ImageDimensions> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth || image.width,
+        height: image.naturalHeight || image.height
+      });
+    };
+    image.onerror = () => reject(new Error("Profile picture dimensions could not be read. Upload a valid square JPG or PNG image."));
+    image.src = url;
+  });
+}
+
+function validateDraft(
+  draft: ProfileDraft,
+  imageFile: File | null,
+  imageDimensionError: string | null,
+  imageDimensionLoading: boolean
+): ValidationErrors {
   const errors: ValidationErrors = {};
   const about = draft.about.trim();
   if (draft.about.length > 0 && about.length === 0) {
@@ -171,6 +205,10 @@ function validateDraft(draft: ProfileDraft, imageFile: File | null): ValidationE
     errors.image = "Profile picture must be a PNG or JPG image.";
   } else if (imageFile && imageFile.size > 5 * 1024 * 1024) {
     errors.image = "Profile picture must be 5MB or smaller.";
+  } else if (imageFile && imageDimensionLoading) {
+    errors.image = "Checking profile picture dimensions...";
+  } else if (imageFile && imageDimensionError) {
+    errors.image = imageDimensionError;
   }
 
   return errors;
@@ -236,6 +274,9 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
   const [draft, setDraft] = useState<ProfileDraft>(EMPTY_DRAFT);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<ImageDimensions | null>(null);
+  const [imageDimensionError, setImageDimensionError] = useState<string | null>(null);
+  const [imageDimensionLoading, setImageDimensionLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveInfo, setSaveInfo] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -244,6 +285,9 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
     setDraft(EMPTY_DRAFT);
     setImageFile(null);
     setImagePreviewUrl(null);
+    setImageDimensions(null);
+    setImageDimensionError(null);
+    setImageDimensionLoading(false);
     setSaveError(null);
     setSaveInfo(null);
   }, [connectionId, isOpen]);
@@ -255,6 +299,9 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
     setDraft(profileToDraft(profileQuery.data));
     setImageFile(null);
     setImagePreviewUrl(null);
+    setImageDimensions(null);
+    setImageDimensionError(null);
+    setImageDimensionLoading(false);
   }, [isOpen, profileQuery.data]);
 
   useEffect(() => {
@@ -294,7 +341,10 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
     : "Not confirmed";
   const profile = profileQuery.data ?? null;
   const profilePhotoUrl = imagePreviewUrl ?? profile?.displayPictureUrl ?? null;
-  const validationErrors = useMemo(() => validateDraft(draft, imageFile), [draft, imageFile]);
+  const validationErrors = useMemo(
+    () => validateDraft(draft, imageFile, imageDimensionError, imageDimensionLoading),
+    [draft, imageFile, imageDimensionError, imageDimensionLoading]
+  );
   const hasValidationErrors = Object.keys(validationErrors).length > 0;
 
   if (!connection) {
@@ -314,16 +364,41 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
     if (imagePreviewUrl?.startsWith("blob:")) {
       URL.revokeObjectURL(imagePreviewUrl);
     }
+    const nextPreviewUrl = file ? URL.createObjectURL(file) : null;
     setImageFile(file);
-    setImagePreviewUrl(file ? URL.createObjectURL(file) : null);
+    setImagePreviewUrl(nextPreviewUrl);
+    setImageDimensions(null);
+    setImageDimensionError(null);
+    setImageDimensionLoading(false);
     setSaveInfo(null);
     setSaveError(null);
+
+    if (!file || !nextPreviewUrl) {
+      return;
+    }
+
+    const type = file.type.toLowerCase();
+    if (!["image/png", "image/jpeg", "image/jpg"].includes(type) || file.size > 5 * 1024 * 1024) {
+      return;
+    }
+
+    setImageDimensionLoading(true);
+    loadImageDimensions(nextPreviewUrl)
+      .then((dimensions) => {
+        setImageDimensions(dimensions);
+        setImageDimensionError(validateProfileImageDimensions(dimensions));
+      })
+      .catch((err) => setImageDimensionError((err as Error).message))
+      .finally(() => setImageDimensionLoading(false));
   };
 
   const resetToLastFetched = () => {
     setDraft(profileToDraft(profile));
     setImageFile(null);
     setImagePreviewUrl(null);
+    setImageDimensions(null);
+    setImageDimensionError(null);
+    setImageDimensionLoading(false);
     setSaveError(null);
     setSaveInfo(null);
   };
@@ -336,12 +411,15 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
       setDraft(profileToDraft(result.data));
       setImageFile(null);
       setImagePreviewUrl(null);
+      setImageDimensions(null);
+      setImageDimensionError(null);
+      setImageDimensionLoading(false);
       setSaveInfo("Profile refreshed from Meta.");
     }
   };
 
   const saveProfile = async () => {
-    const errors = validateDraft(draft, imageFile);
+    const errors = validateDraft(draft, imageFile, imageDimensionError, imageDimensionLoading);
     setSaveError(null);
     setSaveInfo(null);
     if (Object.keys(errors).length > 0 || !connectionId) {
@@ -364,6 +442,9 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
       setDraft(profileToDraft(response.profile));
       setImageFile(null);
       setImagePreviewUrl(null);
+      setImageDimensions(null);
+      setImageDimensionError(null);
+      setImageDimensionLoading(false);
       setSaveInfo("WhatsApp business profile saved.");
     } catch (err) {
       setSaveError((err as Error).message);
@@ -442,8 +523,12 @@ export function MetaBusinessProfileModal({ token, connection, onClose }: MetaBus
                     />
                     {validationErrors.image ? (
                       <small className="meta-profile-field-error">{validationErrors.image}</small>
+                    ) : imageDimensions ? (
+                      <small>
+                        {imageDimensions.width}x{imageDimensions.height}. 640x640 recommended.
+                      </small>
                     ) : (
-                      <small>PNG or JPG. Maximum 5MB.</small>
+                      <small>Square PNG or JPG. 640x640 recommended. Maximum 5MB.</small>
                     )}
                   </label>
                 </div>
