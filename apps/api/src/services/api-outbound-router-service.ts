@@ -86,6 +86,50 @@ async function resolveTemplateIdFromPayload(input: {
   return firstRow(result)?.id ?? null;
 }
 
+function readTextParameterValue(parameter: unknown): string | null {
+  if (!parameter || typeof parameter !== "object") {
+    return null;
+  }
+  const record = parameter as Record<string, unknown>;
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  if (typeof record.coupon_code === "string") {
+    return record.coupon_code;
+  }
+  return null;
+}
+
+function extractTemplateVariableValues(
+  payload: Extract<FlowMessagePayload, { type: "template" }>
+): Record<string, string> {
+  const values: Record<string, string> = { ...(payload.variableValues ?? {}) };
+  let positionalIndex = 1;
+
+  for (const component of payload.components ?? []) {
+    const parameters = Array.isArray(component.parameters) ? component.parameters : [];
+    for (const parameter of parameters) {
+      const value = readTextParameterValue(parameter);
+      if (value === null) {
+        continue;
+      }
+
+      const record = parameter as Record<string, unknown>;
+      const explicitKey =
+        typeof record.parameter_name === "string" && record.parameter_name.trim()
+          ? record.parameter_name.trim()
+          : typeof record.name === "string" && record.name.trim()
+            ? record.name.trim()
+            : String(positionalIndex);
+
+      values[explicitKey] = value;
+      positionalIndex += 1;
+    }
+  }
+
+  return values;
+}
+
 export async function queueApiConversationSend(input: {
   userId: string;
   conversationId: string;
@@ -150,11 +194,12 @@ export async function queueApiConversationSend(input: {
       if (!policy.allowed) {
         throw new Error(summarizeOutboundPolicyReasons(policy.reasonCodes).join(" "));
       }
+      const variableValues = extractTemplateVariableValues(canonicalPayload);
       const queuedTemplate = await queueConversationTemplateMessage({
         userId: input.userId,
         conversationId: conversation.id,
         templateId: explicitTemplateId,
-        variableValues: {},
+        variableValues,
         genericWebhookLogId: input.genericWebhookLogId ?? null,
         senderName: input.senderName ?? null,
         scheduledAt: undefined

@@ -47,6 +47,7 @@ export interface PlanEntitlements {
     googleSheets: boolean;
     googleCalendar: boolean;
     apiAccess: boolean;
+    reminders: boolean;
   };
 }
 
@@ -118,7 +119,8 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
       apiChannel: true,
       googleSheets: false,
       googleCalendar: false,
-      apiAccess: false
+      apiAccess: false,
+      reminders: false
     }
   },
   starter: {
@@ -144,7 +146,8 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
       apiChannel: true,
       googleSheets: false,
       googleCalendar: false,
-      apiAccess: false
+      apiAccess: false,
+      reminders: false
     }
   },
   pro: {
@@ -170,7 +173,8 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
       apiChannel: true,
       googleSheets: true,
       googleCalendar: true,
-      apiAccess: false
+      apiAccess: false,
+      reminders: true
     }
   },
   business: {
@@ -196,7 +200,8 @@ const PLAN_ENTITLEMENT_CONFIG: Record<SubscriptionPlanCode, Omit<PlanEntitlement
       apiChannel: true,
       googleSheets: true,
       googleCalendar: true,
-      apiAccess: true
+      apiAccess: true,
+      reminders: true
     }
   }
 };

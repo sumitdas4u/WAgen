@@ -412,6 +412,7 @@ export interface PlanEntitlements {
     googleSheets: boolean;
     googleCalendar: boolean;
     apiAccess: boolean;
+    reminders: boolean;
   };
 }
 
@@ -4718,4 +4719,116 @@ export function removeWorkspaceFeatureFlagOverride(token: string, workspaceId: s
     `/api/admin/workspaces/${workspaceId}/feature-flags/${flagKey}`,
     { method: "DELETE", token }
   );
+}
+
+// ─── Reminder Module ──────────────────────────────────────────────────────────
+
+export interface TemplateVarBinding {
+  source: "contact" | "static";
+  field?: string;
+  value?: string;
+}
+
+export interface ReminderCondition {
+  field: string;
+  operator: "eq" | "neq" | "gt" | "lt" | "contains";
+  value: string;
+}
+
+export interface ReminderCampaignStep {
+  id: string;
+  config_id: string;
+  step_order: number;
+  days_before: number;
+  template_name: string;
+  template_lang: string;
+  template_vars: Record<string, TemplateVarBinding>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReminderConfig {
+  id: string;
+  user_id: string;
+  config_key: string;
+  reminder_type: "birthday" | "anniversary" | "custom";
+  custom_label: string | null;
+  enabled: boolean;
+  capture_enabled: boolean;
+  capture_template_name: string | null;
+  capture_template_lang: string;
+  capture_template_vars: Record<string, TemplateVarBinding>;
+  capture_flow_id: string | null;
+  capture_trigger_type: "create" | "update" | "both";
+  capture_conditions_json: ReminderCondition[];
+  retry_interval_days: number;
+  retry_max_count: number;
+  cooldown_days: number;
+  campaign_enabled: boolean;
+  campaign_conditions_json: ReminderCondition[];
+  campaign_send_time: string;
+  campaign_timezone: string;
+  dispatch_mode: "annual" | "exact_date";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReminderConfigWriteInput {
+  reminderType: ReminderConfig["reminder_type"];
+  customLabel?: string | null;
+  enabled?: boolean;
+  captureEnabled?: boolean;
+  captureTemplateName?: string | null;
+  captureTemplateLang?: string;
+  captureTemplateVars?: Record<string, TemplateVarBinding>;
+  captureFlowId?: string | null;
+  captureTriggerType?: "create" | "update" | "both";
+  captureConditionsJson?: ReminderCondition[];
+  retryIntervalDays?: number;
+  retryMaxCount?: number;
+  cooldownDays?: number;
+  campaignEnabled?: boolean;
+  campaignConditionsJson?: ReminderCondition[];
+  campaignSendTime?: string;
+  campaignTimezone?: string;
+  dispatchMode?: "annual" | "exact_date";
+  steps?: Array<{
+    stepOrder: number;
+    daysBefore: number;
+    templateName: string;
+    templateLang?: string;
+    templateVars?: Record<string, TemplateVarBinding>;
+  }>;
+}
+
+export function fetchReminderConfigs(token: string) {
+  return apiRequest<{ configs: ReminderConfig[] }>("/api/reminder/configs", { token });
+}
+
+export function upsertReminderConfig(token: string, configKey: string, input: ReminderConfigWriteInput) {
+  return apiRequest<{ config: ReminderConfig; steps: ReminderCampaignStep[] }>(
+    `/api/reminder/configs/${configKey}`,
+    { token, method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function fetchReminderCampaignSteps(token: string, configKey: string) {
+  return apiRequest<{ steps: ReminderCampaignStep[] }>(
+    `/api/reminder/configs/${configKey}/steps`,
+    { token }
+  );
+}
+
+export function deleteReminderConfig(token: string, configKey: string) {
+  return apiRequest<{ ok: boolean }>(`/api/reminder/configs/${configKey}`, {
+    token,
+    method: "DELETE"
+  });
+}
+
+export function runReminderDispatch(token: string) {
+  return apiRequest<{ ok: boolean; jobId: string }>("/api/reminder/dispatch/run", {
+    token,
+    method: "POST"
+  });
 }

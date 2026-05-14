@@ -14,15 +14,18 @@ import {
 
 describe("AI credit billing helpers", () => {
   it("keeps standard recharge packs and prices fixed", () => {
-    expect(AI_RECHARGE_PACK_CREDITS).toEqual([120, 260, 600]);
-    expect(computeRechargePriceForCredits(120).totalPaise).toBe(49_900);
-    expect(computeRechargePriceForCredits(260).totalPaise).toBe(99_900);
-    expect(computeRechargePriceForCredits(600).totalPaise).toBe(199_900);
+    expect(AI_RECHARGE_PACK_CREDITS).toEqual([1200, 2600, 6000]);
+    expect(computeRechargePriceForCredits(1200).taxablePaise).toBe(49_900);
+    expect(computeRechargePriceForCredits(1200).totalPaise).toBe(58_882);
+    expect(computeRechargePriceForCredits(2600).taxablePaise).toBe(99_900);
+    expect(computeRechargePriceForCredits(2600).totalPaise).toBe(117_882);
+    expect(computeRechargePriceForCredits(6000).taxablePaise).toBe(199_900);
+    expect(computeRechargePriceForCredits(6000).totalPaise).toBe(235_882);
   });
 
   it("rejects arbitrary recharge amounts", () => {
-    expect(isStandardAIRechargePack(121)).toBe(false);
-    expect(() => computeRechargePriceForCredits(121)).toThrow(/Invalid AI recharge pack/);
+    expect(isStandardAIRechargePack(1201)).toBe(false);
+    expect(() => computeRechargePriceForCredits(1201)).toThrow(/Invalid AI recharge pack/);
   });
 
   it("uses weighted action credits as the floor", () => {

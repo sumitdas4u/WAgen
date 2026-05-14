@@ -70,6 +70,10 @@ vi.mock("./sequence-event-service.js", () => ({
   processSequenceEvent: vi.fn()
 }));
 
+vi.mock("./reminder-capture-trigger-service.js", () => ({
+  processReminderCaptureEvent: vi.fn()
+}));
+
 import { upsertWebhookContact } from "./contacts-service.js";
 
 describe("upsertWebhookContact", () => {

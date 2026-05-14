@@ -39,6 +39,7 @@ import { broadcastRoutes } from "./routes/broadcasts.js";
 import { deliveryRoutes } from "./routes/delivery.js";
 import { genericWebhookRoutes } from "./routes/generic-webhooks.js";
 import { sequenceRoutes } from "./routes/sequences.js";
+import { reminderRoutes } from "./routes/reminder.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { reportsRoutes } from "./routes/reports.js";
 import { cannedResponsesRoutes } from "./routes/canned-responses.js";
@@ -261,6 +262,7 @@ export async function buildApp() {
   await deliveryRoutes(app);
   await genericWebhookRoutes(app);
   await sequenceRoutes(app);
+  await reminderRoutes(app);
   await notificationsRoutes(app);
   await reportsRoutes(app);
   await cannedResponsesRoutes(app);

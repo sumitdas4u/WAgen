@@ -90,5 +90,9 @@ export const dashboardQueryKeys = {
   reportsRoot: dashboardReportsRoot,
   todayReport: [...dashboardReportsRoot, "today"] as const,
   dailyReports: [...dashboardReportsRoot, "history"] as const,
-  notificationSettings: [...dashboardReportsRoot, "notification-settings"] as const
+  notificationSettings: [...dashboardReportsRoot, "notification-settings"] as const,
+  reminderRoot: ["dashboard", "reminder"] as const,
+  reminderConfigs: ["dashboard", "reminder", "configs"] as const,
+  reminderConfig: (configKey: string) => ["dashboard", "reminder", "config", configKey] as const,
+  reminderSteps: (configKey: string) => ["dashboard", "reminder", "steps", configKey] as const
 };

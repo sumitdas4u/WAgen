@@ -50,7 +50,8 @@ function createBootstrap(overrides: Partial<DashboardBootstrapResponse> = {}): D
         apiChannel: true,
         googleSheets: false,
         googleCalendar: false,
-        apiAccess: false
+        apiAccess: false,
+        reminders: false
       }
     },
     featureFlags: {},

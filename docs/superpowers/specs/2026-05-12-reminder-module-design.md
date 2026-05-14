@@ -68,6 +68,8 @@ CREATE TABLE reminder_configs (
   campaign_send_time       TIME NOT NULL DEFAULT '09:00',
   campaign_days_before     INTEGER NOT NULL DEFAULT 0,
   campaign_timezone        VARCHAR(60) NOT NULL DEFAULT 'Asia/Kolkata',
+  dispatch_mode            VARCHAR(15) NOT NULL DEFAULT 'annual'
+                             CHECK (dispatch_mode IN ('annual','exact_date')),
 
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -236,21 +238,36 @@ New dedicated queue. Does not share workers with sequence queue.
 ### Daily Scheduler (`reminder-dispatch-queue-service.ts`)
 Enqueues a single `scan_and_dispatch` job at the configured `campaign_send_time` for each user. Uses `node-cron` or existing scheduler infrastructure to enqueue daily.
 
+### `dispatch_mode` — Two Dispatch Behaviours
+
+| Mode | Use case | Date match | Dedup key |
+|---|---|---|---|
+| `annual` | Birthday, Anniversary | MONTH + DAY only (year ignored, recurs yearly) | `(user_id, contact_id, config_key, campaign_year)` |
+| `exact_date` | Registering event, deadline, one-time alert | Full date match (`value::date = target`) | `(user_id, contact_id, config_key, value::date)` |
+
+`annual` is the default. `exact_date` is used when the field stores a specific future date that should fire once.
+
 ### Worker (`reminder-dispatch-worker-service.ts`)
 
 ```
 For each enabled reminder_config (campaign_enabled = true):
   1. Compute target date:
        target = CURRENT_DATE + campaign_days_before days
-  2. Query contact_field_values:
+  2. Query contact_field_values by dispatch_mode:
+       -- annual:
        WHERE EXTRACT(MONTH FROM value::date) = EXTRACT(MONTH FROM target)
          AND EXTRACT(DAY   FROM value::date) = EXTRACT(DAY   FROM target)
          AND field_id = <field mapped to config_key>
+       -- exact_date:
+       WHERE value::date = target
+         AND field_id = <field mapped to config_key>
   3. Filter by campaign_conditions_json (evaluateSequenceConditions)
-  4. Exclude contacts in reminder_dispatch_log for this year
+  4. Exclude already-dispatched contacts:
+       -- annual:  reminder_dispatch_log WHERE campaign_year = current_year
+       -- exact_date: reminder_dispatch_log WHERE dispatched_date = target
   5. For each remaining contact:
        - Build template payload with campaign_template_vars
-       - Send via Meta WhatsApp API
+       - Send via sendConversationFlowMessage (template payload)
        - Insert reminder_dispatch_log row
   6. Cleanup: expire stale capture sessions
        UPDATE reminder_capture_sessions
@@ -339,6 +356,7 @@ apps/web/src/modules/dashboard/
 | 1 | campaign_template_name | template selector |
 | 1 | campaign_template_lang | text |
 | 1 | campaign_template_vars | variable mapping (contact field or static) |
+| 2 | dispatch_mode | Annual recurring / One-time event toggle |
 | 2 | campaign_days_before | 0/1/2/3 pills |
 | 2 | campaign_send_time | time picker |
 | 2 | campaign_timezone | timezone selector |
@@ -350,9 +368,10 @@ apps/web/src/modules/dashboard/
 ## 12. Key Constraints & Rules
 
 - **WhatsApp compliance**: only templates are sent — no free-form messages outside 24h window
-- **Date matching**: `EXTRACT(MONTH)` + `EXTRACT(DAY)` — year is ignored (recurring annually)
-- **Dedup**: `UNIQUE(user_id, contact_id, config_key, campaign_year)` in dispatch_log
-- **Anti-spam**: `reminder_prompt_log` tracks cooldown per contact per config_key
+- **Date matching**: two modes — `annual` uses `EXTRACT(MONTH+DAY)` (year ignored, recurs); `exact_date` matches full date including year (fires once)
+- **Dedup annual**: `UNIQUE(user_id, contact_id, config_key, campaign_year)` in dispatch_log
+- **Dedup exact_date**: `UNIQUE(user_id, contact_id, config_key, dispatched_date)` in dispatch_log
+- **Anti-spam**: cooldown + retry derived from `reminder_capture_sessions` — no separate prompt_log table needed
 - **Session isolation**: partial unique index on `conversation_id WHERE status = 'active'` — one active session per chat
 - **Retry**: expired sessions (no response) re-trigger template after `retry_interval_days`, up to `retry_max_count` times
 - **Cooldown**: declined sessions ("Not now") block re-prompting for `cooldown_days`

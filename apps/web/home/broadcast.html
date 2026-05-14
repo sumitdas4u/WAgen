@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WhatsApp Broadcast Campaigns — WAgen | Reach 10,000 Customers in One Click</title>
+<meta name="description" content="Send WhatsApp broadcast campaigns to segmented audiences, schedule delivery, personalise with contact variables, and retarget non-openers. Built for Indian businesses."/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--green:#1DB954;--green-dark:#17a349;--green-deep:#0d6b31;--black:#0F0F0F;--text:#1A1A1A;--muted:#6B7280;--muted-lt:#9CA3AF;--bg:#fff;--bg2:#F8FAF8;--bg3:#F0F7F0;--border:#E5E7EB;--border-green:rgba(29,185,84,.2);--wa-bubble:#DCF8C6;--wa-bg:#ECE5DD;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;line-height:1.6;}
+nav{position:fixed;top:0;left:0;right:0;z-index:300;display:flex;align-items:center;justify-content:space-between;padding:0 5%;height:64px;background:rgba(255,255,255,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);}
+.logo{font-weight:800;font-size:1.3rem;color:var(--black);text-decoration:none;letter-spacing:-.02em;}
+.logo span{color:var(--green);}
+.nav-links{display:flex;gap:0;list-style:none;align-items:center;}
+.nav-item{position:relative;}
+.nav-item>a{display:block;padding:0 14px;height:64px;line-height:64px;color:var(--muted);text-decoration:none;font-size:.88rem;font-weight:500;transition:color .2s;white-space:nowrap;}
+.nav-item>a:hover{color:var(--black);}
+.nav-item:hover .drop{display:flex;}
+.drop{display:none;position:absolute;top:60px;left:0;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;flex-direction:column;min-width:230px;box-shadow:0 12px 32px rgba(0,0,0,.1);z-index:400;}
+.drop a{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;color:var(--text);font-size:.84rem;font-weight:500;text-decoration:none;transition:background .15s;}
+.drop a:hover{background:var(--bg3);color:var(--green);}
+.drop a.active{background:var(--bg3);color:var(--green);font-weight:700;}
+.nav-right{display:flex;gap:10px;}
+.btn-ghost{background:transparent;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-ghost:hover{border-color:var(--green);color:var(--green);}
+.btn-cta{background:var(--green);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(29,185,84,.3);transition:all .2s;}
+.btn-cta:hover{background:var(--green-dark);transform:translateY(-1px);}
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 28px;}
+.ft-top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:32px;max-width:1160px;margin:0 auto;}
+.ft-brand p{color:var(--muted);font-size:.83rem;margin-top:8px;max-width:240px;line-height:1.7;}
+.ft-links{display:flex;gap:44px;flex-wrap:wrap;}
+.ft-col h5{font-weight:700;font-size:.84rem;margin-bottom:12px;}
+.ft-col a{display:block;color:var(--muted);text-decoration:none;font-size:.82rem;margin-bottom:7px;transition:color .2s;}
+.ft-col a:hover{color:var(--green);}
+.ft-bot{max-width:1160px;margin:32px auto 0;padding-top:18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.ft-bot p,.ft-bot span{color:var(--muted-lt);font-size:.76rem;}
+.seo-links{display:flex;flex-wrap:wrap;gap:5px 14px;max-width:1160px;margin:10px auto 0;}
+.seo-links a{color:var(--muted-lt);font-size:.72rem;text-decoration:none;}
+.seo-links a:hover{color:var(--green);}
+.hero{padding:104px 5% 80px;position:relative;overflow:hidden;}
+.hero-bg{position:absolute;inset:0;background-image:radial-gradient(circle,#d1d5db 1px,transparent 1px);background-size:28px 28px;opacity:.25;mask-image:radial-gradient(ellipse 60% 80% at 20% 50%,black,transparent);}
+.hero-glow{position:absolute;top:-5%;right:-5%;width:560px;height:560px;background:radial-gradient(ellipse,rgba(29,185,84,.08),transparent 65%);pointer-events:none;}
+.hero-wrap{display:grid;grid-template-columns:1fr 460px;gap:64px;align-items:center;max-width:1160px;margin:0 auto;position:relative;z-index:1;}
+.prod-badge{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border-green);border-radius:100px;padding:5px 14px;font-size:.76rem;font-weight:700;color:var(--green-deep);margin-bottom:16px;}
+h1{font-size:clamp(2rem,4vw,3.2rem);font-weight:800;line-height:1.1;letter-spacing:-.03em;margin-bottom:16px;}
+.g{color:var(--green);}
+.hero-sub{font-size:1rem;color:var(--muted);max-width:500px;line-height:1.75;margin-bottom:26px;}
+.hero-btns{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;}
+.btn-primary{background:var(--green);color:#fff;border:none;border-radius:9px;padding:13px 26px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 4px 16px rgba(29,185,84,.3);}
+.btn-primary:hover{background:var(--green-dark);transform:translateY(-2px);}
+.btn-outline{background:#fff;color:var(--text);border:2px solid var(--border);border-radius:9px;padding:13px 24px;font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-outline:hover{border-color:var(--green);color:var(--green);}
+.hero-checks{list-style:none;display:flex;flex-direction:column;gap:9px;}
+.hero-checks li{display:flex;align-items:center;gap:9px;font-size:.9rem;font-weight:500;}
+.hero-checks li::before{content:"✓";width:20px;height:20px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;}
+.dash-mockup{background:#fff;border:1.5px solid var(--border);border-radius:16px;padding:0;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.1);}
+.dash-header{background:var(--black);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;}
+.dash-header span{color:#fff;font-size:.82rem;font-weight:700;}
+.dash-status{font-size:.7rem;font-weight:700;padding:3px 8px;border-radius:5px;background:rgba(29,185,84,.2);color:var(--green);}
+.dash-body{padding:16px;}
+.dash-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);margin-bottom:8px;background:var(--bg2);}
+.dash-icon{font-size:1.2rem;flex-shrink:0;}
+.dash-info{flex:1;}
+.dash-name{font-size:.82rem;font-weight:700;}
+.dash-meta{font-size:.72rem;color:var(--muted);}
+.dash-pill{font-size:.66rem;font-weight:800;padding:3px 8px;border-radius:100px;}
+.pill-sent{background:#dcfce7;color:#166534;}
+.pill-sched{background:#dbeafe;color:#1d4ed8;}
+.pill-draft{background:#ede9fe;color:#7c3aed;}
+.dash-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;}
+.ds-cell{background:var(--bg2);border-radius:8px;padding:10px;text-align:center;}
+.ds-val{font-size:1.1rem;font-weight:800;color:var(--green);}
+.ds-lbl{font-size:.64rem;color:var(--muted);font-weight:600;}
+.fbadge{position:absolute;background:#fff;border:1.5px solid var(--border-green);border-radius:10px;padding:8px 13px;font-size:.74rem;font-weight:700;color:var(--green-deep);box-shadow:0 5px 18px rgba(0,0,0,.1);white-space:nowrap;}
+.fbadge.t{top:-14px;right:-22px;animation:flt 3s ease-in-out infinite;}
+.fbadge.b{bottom:-10px;left:-22px;animation:flt 3.5s 1s ease-in-out infinite;}
+@keyframes flt{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.phone-wrap{position:relative;max-width:320px;margin:0 auto;}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:60px;}
+.sc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:24px 18px;text-align:center;transition:border-color .2s;}
+.sec.alt .sc{background:var(--bg);}
+.sc:hover{border-color:var(--border-green);}
+.sc-v{font-size:2.3rem;font-weight:800;color:var(--green);letter-spacing:-.02em;}
+.sc-l{font-size:.8rem;color:var(--muted);margin-top:5px;line-height:1.4;}
+.sec{padding:80px 5%;}
+.sec.alt{background:var(--bg2);}
+.sw{max-width:1160px;margin:0 auto;}
+.sec-lbl{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:10px;}
+h2{font-size:clamp(1.7rem,3vw,2.5rem);font-weight:800;line-height:1.2;letter-spacing:-.02em;margin-bottom:14px;}
+.sec-ctr{text-align:center;margin-bottom:52px;}
+.sec-sub{color:var(--muted);font-size:.96rem;max-width:560px;margin:12px auto 0;line-height:1.75;}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);position:relative;margin-top:48px;}
+.steps::before{content:'';position:absolute;top:34px;left:12%;right:12%;height:2px;background:repeating-linear-gradient(90deg,var(--green) 0,var(--green) 8px,transparent 8px,transparent 18px);}
+.step{text-align:center;padding:0 16px;}
+.s-circ{width:68px;height:68px;border-radius:50%;background:#fff;border:2px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:1.1rem;font-weight:800;color:var(--green);box-shadow:0 0 0 8px rgba(29,185,84,.07);}
+.sec.alt .s-circ{background:var(--bg);}
+.step h4{font-weight:700;font-size:.95rem;margin-bottom:8px;}
+.step p{color:var(--muted);font-size:.84rem;line-height:1.6;}
+.fg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+.fc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:26px;transition:all .22s;}
+.fc:hover{border-color:var(--border-green);transform:translateY(-4px);box-shadow:0 8px 24px rgba(29,185,84,.09);}
+.sec.alt .fc{background:var(--bg);}
+.fc-icon{font-size:1.8rem;margin-bottom:12px;}
+.fc h4{font-weight:700;font-size:.95rem;margin-bottom:7px;}
+.fc p{color:var(--muted);font-size:.84rem;line-height:1.6;}
+.fc-tag{display:inline-block;margin-top:10px;font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:5px;background:rgba(29,185,84,.1);color:var(--green-deep);}
+.fa-row{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-bottom:72px;}
+.fa-row.rv{direction:rtl;}
+.fa-row.rv>*{direction:ltr;}
+.fa-num{font-size:3rem;font-weight:800;color:rgba(29,185,84,.12);line-height:1;margin-bottom:6px;}
+.fa-txt h3{font-size:1.35rem;font-weight:800;margin-bottom:12px;}
+.fa-txt p{color:var(--muted);font-size:.92rem;line-height:1.75;margin-bottom:18px;}
+.fa-txt ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-bottom:20px;}
+.fa-txt ul li{display:flex;align-items:flex-start;gap:9px;font-size:.88rem;line-height:1.5;}
+.fa-txt ul li::before{content:"✓";width:18px;height:18px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.7rem;flex-shrink:0;margin-top:1px;}
+.mockup{background:var(--bg2);border:1.5px solid var(--border);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px;}
+.sec.alt .mockup{background:#fff;}
+.ind-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.ind-card{border:1.5px solid var(--border);border-radius:14px;padding:24px;background:#fff;transition:all .22s;}
+.ind-card:hover{border-color:var(--border-green);transform:translateY(-3px);box-shadow:0 8px 24px rgba(29,185,84,.08);}
+.sec.alt .ind-card{background:var(--bg);}
+.ind-icon{font-size:1.6rem;margin-bottom:10px;}
+.ind-card h4{font-weight:700;font-size:.92rem;margin-bottom:8px;}
+.ind-card p{font-size:.83rem;color:var(--muted);line-height:1.55;margin-bottom:12px;}
+.ind-msg{background:var(--wa-bubble);border-radius:10px;padding:10px 12px;font-size:.78rem;line-height:1.5;font-style:italic;}
+.ind-msg b{font-style:normal;color:var(--green-deep);}
+.cond-mock{background:var(--bg2);border:1.5px solid var(--border);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:10px;}
+.sec.alt .cond-mock{background:#fff;}
+.cond-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.cond-select{height:32px;padding:0 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:.78rem;font-weight:600;color:var(--text);background:#fff;cursor:pointer;}
+.cond-value{height:32px;padding:0 10px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:.78rem;color:var(--text);background:#fff;width:110px;}
+.cond-and{font-size:.68rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:3px 8px;border-radius:5px;background:rgba(0,0,0,.04);}
+.faq-wrap{max-width:780px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px;}
+details{background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s;}
+.sec.alt details{background:var(--bg);}
+details:hover,details[open]{border-color:var(--border-green);}
+summary{display:flex;justify-content:space-between;align-items:center;padding:17px 22px;cursor:pointer;list-style:none;font-weight:700;font-size:.91rem;gap:12px;}
+summary::-webkit-details-marker{display:none;}
+.fi{color:var(--green);font-size:1.3rem;flex-shrink:0;transition:transform .25s;}
+details[open] .fi{transform:rotate(45deg);}
+.fa-body{padding:0 22px 18px;color:var(--muted);font-size:.87rem;line-height:1.75;}
+.fa-body b{color:var(--text);}
+.cta-sec{background:var(--black);padding:90px 5%;text-align:center;position:relative;overflow:hidden;}
+.cta-sec::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(29,185,84,.18),transparent 60%);}
+.cta-inner{position:relative;z-index:1;}
+.cta-sec h2{color:#fff;}
+.cta-sec h2 .g{color:var(--green);}
+.cta-sec p{color:rgba(255,255,255,.6);max-width:480px;margin:14px auto 0;font-size:.96rem;}
+.cta-btns{display:flex;gap:12px;justify-content:center;margin-top:30px;flex-wrap:wrap;}
+.btn-wa{display:flex;align-items:center;gap:8px;background:#25D366;color:#fff;border:none;border-radius:9px;padding:13px 22px;font-family:inherit;font-size:.93rem;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-wa:hover{background:#1ebe5c;transform:translateY(-2px);}
+@media(max-width:900px){.hero-wrap,.fa-row{grid-template-columns:1fr;}.phone-wrap{display:none;}.stats-row{grid-template-columns:repeat(2,1fr);}.fg,.ind-grid{grid-template-columns:repeat(2,1fr);}.steps{grid-template-columns:repeat(2,1fr);}.steps::before{display:none;}}
+@media(max-width:600px){.fg,.ind-grid,.stats-row{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="logo">Wagen<span>AI</span></a>
+  <ul class="nav-links">
+    <li class="nav-item"><a href="#">Product ▾</a>
+      <div class="drop">
+        <a href="/whatsapp-bot">📱 WhatsApp Bot</a>
+        <a href="/website-widget">💬 Website Widget</a>
+        <a href="/whatsapp-api">⚡ WhatsApp API</a>
+        <a href="/lead-capture">🎯 Lead Capture</a>
+        <a href="/reminder-campaigns">🔔 Reminder Campaigns</a>
+        <a href="/sequences">📋 Sequences</a>
+        <a href="/flows">🔄 Flows</a>
+        <a href="/broadcast" class="active">📢 Broadcast</a>
+      </div>
+    </li>
+    <li class="nav-item"><a href="/pricing">Pricing</a></li>
+    <li class="nav-item"><a href="#">Industries ▾</a>
+      <div class="drop">
+        <a href="/ecommerce-chatbot">🛍️ E-commerce</a>
+        <a href="/real-estate-chatbot">🏠 Real Estate</a>
+        <a href="/education-chatbot">🎓 Education</a>
+        <a href="/healthcare-chatbot">🏥 Healthcare</a>
+        <a href="/restaurant-chatbot">🍽️ Restaurants</a>
+      </div>
+    </li>
+  </ul>
+  <div class="nav-right">
+    <button class="btn-ghost">Log In</button>
+    <button class="btn-cta">Start Free</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-wrap">
+    <div>
+      <div class="prod-badge">📢 Broadcast Campaigns</div>
+      <h1>Reach <span class="g">10,000 customers</span><br>in one click.</h1>
+      <p class="hero-sub">Send personalised WhatsApp messages to your entire contact list — or a filtered segment — in seconds. Schedule in advance, track delivery, and retarget non-openers.</p>
+      <div class="hero-btns">
+        <button class="btn-primary">Start Broadcasting →</button>
+        <button class="btn-outline">See how it works</button>
+      </div>
+      <ul class="hero-checks">
+        <li>Filter audience by tags, contact type, or custom fields</li>
+        <li>Personalise every message with contact name, city, order details</li>
+        <li>Schedule for Diwali, Sunday mornings, or any date + time</li>
+        <li>Retarget contacts who didn't read or respond — automatically</li>
+      </ul>
+    </div>
+    <div class="phone-wrap">
+      <div class="fbadge t">📊 94.2% delivered</div>
+      <div class="dash-mockup">
+        <div class="dash-header">
+          <span>📢 Broadcast Dashboard</span>
+          <span class="dash-status">Live</span>
+        </div>
+        <div class="dash-body">
+          <div class="dash-row">
+            <div class="dash-icon">🎉</div>
+            <div class="dash-info">
+              <div class="dash-name">Diwali Special Offer</div>
+              <div class="dash-meta">8,240 recipients · Sent 2h ago</div>
+            </div>
+            <span class="dash-pill pill-sent">Sent</span>
+          </div>
+          <div class="dash-row">
+            <div class="dash-icon">🛍️</div>
+            <div class="dash-info">
+              <div class="dash-name">New Menu Launch</div>
+              <div class="dash-meta">3,120 recipients · Tomorrow 9 AM</div>
+            </div>
+            <span class="dash-pill pill-sched">Scheduled</span>
+          </div>
+          <div class="dash-row">
+            <div class="dash-icon">💌</div>
+            <div class="dash-info">
+              <div class="dash-name">Win-Back: Inactive 30d</div>
+              <div class="dash-meta">1,890 recipients · Draft</div>
+            </div>
+            <span class="dash-pill pill-draft">Draft</span>
+          </div>
+          <div class="dash-stats">
+            <div class="ds-cell"><div class="ds-val">94%</div><div class="ds-lbl">Delivered</div></div>
+            <div class="ds-cell"><div class="ds-val">71%</div><div class="ds-lbl">Read</div></div>
+            <div class="ds-cell"><div class="ds-val">₹2.4L</div><div class="ds-lbl">Revenue</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="fbadge b">🎯 2,180 retargeted</div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="stats-row">
+      <div class="sc"><div class="sc-v">94%</div><div class="sc-l">Average WhatsApp delivery rate vs 62% email</div></div>
+      <div class="sc"><div class="sc-v">5×</div><div class="sc-l">Higher open rate than email newsletters</div></div>
+      <div class="sc"><div class="sc-v">60s</div><div class="sc-l">Average time to create and launch a campaign</div></div>
+      <div class="sc"><div class="sc-v">₹0</div><div class="sc-l">Extra cost per contact in your existing plan quota</div></div>
+    </div>
+    <div class="sec-ctr">
+      <div class="sec-lbl">How It Works</div>
+      <h2>Four steps. Campaign sent.</h2>
+      <p class="sec-sub">No agencies. No complex tools. Build, personalise, schedule, and track — all inside WAgen.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="s-circ">①</div><h4>Pick your audience</h4><p>Filter contacts by type, tags, city, or any custom field. See the exact count before you send.</p></div>
+      <div class="step"><div class="s-circ">②</div><h4>Choose a template</h4><p>Select an approved WhatsApp template. Map variables — contact name, order ID, offer amount — from contact fields.</p></div>
+      <div class="step"><div class="s-circ">③</div><h4>Schedule or send</h4><p>Send immediately or pick a future date and time. WAgen queues delivery across the day to maximise read rates.</p></div>
+      <div class="step"><div class="s-circ">④</div><h4>Retarget non-openers</h4><p>After 24 hours, see who didn't read the message and retarget them with a follow-up template automatically.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- USE CASES -->
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">What You Can Send</div>
+      <h2>Every campaign type.<br>One broadcast tool.</h2>
+      <p class="sec-sub">From festival sales to policy reminders — if you need to reach all your contacts at once, Broadcast handles it.</p>
+    </div>
+    <div class="fg">
+      <div class="fc"><div class="fc-icon">🎉</div><h4>Festival & Seasonal Offers</h4><p>Diwali, Eid, Christmas, New Year — reach your entire list hours before the competition with personalised discount codes.</p><span class="fc-tag">High ROI</span></div>
+      <div class="fc"><div class="fc-icon">🚀</div><h4>Product & Menu Launches</h4><p>Announce new products, new menu items, or new services to everyone who's interacted with your business — the moment you go live.</p><span class="fc-tag">Brand building</span></div>
+      <div class="fc"><div class="fc-icon">🔔</div><h4>Deadline & Alert Reminders</h4><p>Policy renewals, admission deadlines, appointment slots filling up — send time-sensitive alerts before it's too late.</p><span class="fc-tag">Conversion</span></div>
+      <div class="fc"><div class="fc-icon">💤</div><h4>Win-Back Inactive Customers</h4><p>Filter contacts who haven't visited or purchased in 30, 60, or 90 days. Send a targeted re-engagement offer to bring them back.</p><span class="fc-tag">Retention</span></div>
+      <div class="fc"><div class="fc-icon">🎟️</div><h4>Event Invitations</h4><p>Workshop, open day, product demo, store anniversary — invite your entire customer base with a WhatsApp message that actually gets read.</p><span class="fc-tag">Engagement</span></div>
+      <div class="fc"><div class="fc-icon">⭐</div><h4>Review & Feedback Requests</h4><p>After a visit or purchase, broadcast a quick feedback request. More Google reviews, better ratings, faster trust building.</p><span class="fc-tag">Reputation</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- INDUSTRY DEEP DIVE -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">By Industry</div>
+      <h2>Real campaigns. Real industries.</h2>
+      <p class="sec-sub">See exactly what broadcast looks like for your business type — with the actual WhatsApp message your customers would receive.</p>
+    </div>
+    <div class="ind-grid">
+      <div class="ind-card"><div class="ind-icon">🍽️</div><h4>Restaurant</h4><p>Send weekend specials, new menu launches, and "table for tonight?" prompts to regulars filtered by their last visit date.</p><div class="ind-msg">"Hey <b>Rahul</b>! This Sunday we're launching our new Coastal Thali 🦞. First 50 tables get a complimentary starter. Book now: [link]"</div></div>
+      <div class="ind-card"><div class="ind-icon">🛍️</div><h4>E-commerce</h4><p>Flash sales, new arrivals, and cart-abandonment follow-ups segmented by purchase history and product interest tags.</p><div class="ind-msg">"<b>Priya</b>, the saree you viewed is back in stock! 🎉 Extra 15% off till midnight. Use code BACK15 → [link]"</div></div>
+      <div class="ind-card"><div class="ind-icon">🏥</div><h4>Clinic / Diagnostics</h4><p>Health camp announcements, vaccination drives, and annual health check reminders — targeted to relevant age groups via custom fields.</p><div class="ind-msg">"Free diabetes screening this Saturday at <b>HealthFirst Clinic</b>. Limited slots 📅 Book your free appointment → [link]"</div></div>
+      <div class="ind-card"><div class="ind-icon">🏠</div><h4>Real Estate</h4><p>New project launches, price drops on existing inventory, and open house invitations — sent only to leads matching budget and location criteria.</p><div class="ind-msg">"New 2BHK in <b>Whitefield</b> launching this weekend — ₹65L all-in. Site visit slots filling fast. Interested? Reply YES"</div></div>
+      <div class="ind-card"><div class="ind-icon">🎓</div><h4>Education / Coaching</h4><p>Admission deadline alerts, new batch announcements, and scholarship notifications — targeted by course interest or year of study.</p><div class="ind-msg">"<b>Last 3 days!</b> NEET 2025 crash course batch starting 15 June. Only 12 seats left. Enrol now → [link]"</div></div>
+      <div class="ind-card"><div class="ind-icon">💈</div><h4>Salon / Beauty</h4><p>Monthly offer broadcasts, new service announcements, and slow-day fill-up campaigns targeting customers with no booking in the last 30 days.</p><div class="ind-msg">"<b>Ananya</b>, it's been a while! 💇 Book this week and get a free hair spa with any colour service. Slots available → [link]"</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURE DEEP DIVE -->
+<section class="sec">
+  <div class="sw">
+    <div class="fa-row">
+      <div class="fa-txt">
+        <div class="fa-num">01</div>
+        <h3>Audience filters.<br>Send to exactly the right people.</h3>
+        <p>Every broadcast starts with a filter. Combine any number of conditions — contact type, tags, custom fields, last activity date — to build a precise audience. The preview count updates live so you know your reach before you send.</p>
+        <ul>
+          <li>Filter by contact type: customer, lead, VIP, wholesale</li>
+          <li>Filter by tags: "visited-last-month", "premium", "diwali-buyer"</li>
+          <li>Filter by custom field values — city, product interest, tier</li>
+          <li>Exclude contacts already messaged in the last N days</li>
+        </ul>
+      </div>
+      <div>
+        <div class="cond-mock">
+          <div style="font-size:.76rem;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em;">Audience Filters — Diwali Campaign</div>
+          <div class="cond-row"><select class="cond-select"><option>contact_type</option></select><select class="cond-select"><option>is</option></select><input class="cond-value" value="customer" readonly/></div>
+          <div class="cond-and">AND</div>
+          <div class="cond-row"><select class="cond-select"><option>tags</option></select><select class="cond-select"><option>contains</option></select><input class="cond-value" value="diwali-buyer" readonly/></div>
+          <div class="cond-and">AND</div>
+          <div class="cond-row"><select class="cond-select"><option>last_activity</option></select><select class="cond-select"><option>within</option></select><input class="cond-value" value="90 days" readonly/></div>
+          <div style="background:rgba(29,185,84,.08);border:1px solid var(--border-green);border-radius:8px;padding:10px 14px;margin-top:4px;display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:.82rem;font-weight:700;color:var(--text);">Estimated audience</span>
+            <span style="font-size:1.2rem;font-weight:800;color:var(--green);">3,840 contacts</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="fa-row rv">
+      <div class="fa-txt">
+        <div class="fa-num">02</div>
+        <h3>Template variables.<br>Every message feels personal.</h3>
+        <p>Map any placeholder in your WhatsApp template to a contact field — name, city, last order amount, loyalty points. Every customer gets the same campaign but reads a message that feels written just for them.</p>
+        <ul>
+          <li>Map {{name}}, {{city}}, {{discount}}, {{order_id}} to contact fields</li>
+          <li>Static fallback if field is empty — no blank messages ever sent</li>
+          <li>Preview how the message looks for any sample contact before sending</li>
+          <li>Media headers supported — image or document per campaign</li>
+        </ul>
+      </div>
+      <div class="mockup">
+        <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Variable Mapping</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:8px;padding:8px 12px;">
+            <code style="font-size:.76rem;background:#fff;border:1px solid var(--border);border-radius:5px;padding:2px 7px;color:#7c3aed;">{{name}}</code>
+            <span style="font-size:.76rem;color:var(--muted);">→</span>
+            <span style="font-size:.76rem;font-weight:700;color:var(--text);">Contact: display_name</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:8px;padding:8px 12px;">
+            <code style="font-size:.76rem;background:#fff;border:1px solid var(--border);border-radius:5px;padding:2px 7px;color:#7c3aed;">{{discount}}</code>
+            <span style="font-size:.76rem;color:var(--muted);">→</span>
+            <span style="font-size:.76rem;font-weight:700;color:var(--text);">Static: "20%"</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:8px;padding:8px 12px;">
+            <code style="font-size:.76rem;background:#fff;border:1px solid var(--border);border-radius:5px;padding:2px 7px;color:#7c3aed;">{{city}}</code>
+            <span style="font-size:.76rem;color:var(--muted);">→</span>
+            <span style="font-size:.76rem;font-weight:700;color:var(--text);">Contact: custom:city</span>
+          </div>
+        </div>
+        <div style="background:#dcf8c6;border-radius:0 10px 10px 10px;padding:10px 12px;font-size:.8rem;line-height:1.5;margin-top:8px;">
+          "Hey <b style="color:#0d6b31">Priya</b>! Our Diwali sale is live — get <b style="color:#0d6b31">20%</b> off on all deliveries to <b style="color:#0d6b31">Pune</b> this week! 🎉"
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr"><div class="sec-lbl">FAQ</div><h2>Common questions</h2></div>
+    <div class="faq-wrap">
+      <details><summary>Can I send broadcast messages to any phone number? <span class="fi">+</span></summary><div class="fa-body">You can only message contacts who have <b>opted in</b> via your WhatsApp Business number — either through a QR code, website widget, or manual import. Meta requires opt-in consent for all template messages.</div></details>
+      <details><summary>What is a WhatsApp template and do I need approval? <span class="fi">+</span></summary><div class="fa-body">Yes. All broadcast messages must use <b>pre-approved WhatsApp templates</b> created in Meta Business Manager. WAgen syncs your approved templates automatically. Approval typically takes a few hours.</div></details>
+      <details><summary>Is there a limit on how many contacts I can broadcast to? <span class="fi">+</span></summary><div class="fa-body">No hard limit per campaign, but your Meta account has a <b>daily messaging tier</b> (1K, 10K, 100K contacts/day) based on your Business Manager quality rating. WAgen distributes sending across the day to stay within limits.</div></details>
+      <details><summary>How does retargeting work? <span class="fi">+</span></summary><div class="fa-body">After a campaign is sent, WAgen tracks <b>delivery and read status</b> per contact. You can then create a retarget campaign that automatically sends a different template to contacts who didn't read the original — with one click.</div></details>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-sec">
+  <div class="cta-inner">
+    <h2>Start your first <span class="g">broadcast today</span></h2>
+    <p>Connect your WhatsApp Business number and send your first campaign in under 5 minutes.</p>
+    <div class="cta-btns">
+      <button class="btn-wa"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>Try for free</button>
+      <button class="btn-outline" style="color:#fff;border-color:rgba(255,255,255,.25);">View pricing</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ft-top">
+    <div class="ft-brand"><a href="/" class="logo">Wagen<span>AI</span></a><p>India's most accessible WhatsApp AI chatbot — built for SMEs who want to grow without growing their team.</p></div>
+    <div class="ft-links">
+      <div class="ft-col"><h5>Product</h5><a href="/whatsapp-bot">WhatsApp Bot</a><a href="/website-widget">Website Widget</a><a href="/whatsapp-api">WhatsApp API</a><a href="/lead-capture">Lead Capture</a><a href="/reminder-campaigns">Reminder Campaigns</a><a href="/sequences">Sequences</a><a href="/flows">Flows</a><a href="/broadcast">Broadcast</a><a href="/pricing">Pricing</a></div>
+      <div class="ft-col"><h5>Industries</h5><a href="/ecommerce-chatbot">E-commerce</a><a href="/real-estate-chatbot">Real Estate</a><a href="/education-chatbot">Education</a><a href="/healthcare-chatbot">Healthcare</a><a href="/restaurant-chatbot">Restaurants</a></div>
+      <div class="ft-col"><h5>Company</h5><a href="#">About</a><a href="#">Blog</a><a href="#">Contact</a><a href="#">Privacy</a></div>
+    </div>
+  </div>
+  <div class="ft-bot"><p>© 2025 WagenAI. All rights reserved. 🇮🇳 Proudly Made in India</p><span>WhatsApp™ is a trademark of Meta Platforms, Inc.</span></div>
+  <div class="seo-links"><a href="/broadcast">WhatsApp Broadcast India</a><a href="/broadcast">Bulk WhatsApp Message</a><a href="/sequences">WhatsApp Drip Campaign</a></div>
+</footer>
+</body>
+</html>

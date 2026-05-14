@@ -7,6 +7,7 @@ import { startOutboundWorker, stopOutboundWorker } from "./services/outbound-mes
 import { closeQueueInfrastructure } from "./services/queue-service.js";
 import { startSequenceWorker, stopSequenceWorker } from "./services/sequence-worker-service.js";
 import { startDailyReportWorker, stopDailyReportWorker } from "./services/daily-report-worker-service.js";
+import { startReminderDispatchWorker, stopReminderDispatchWorker } from "./services/reminder-dispatch-worker-service.js";
 import { recalculateBroadcastReputation } from "./services/broadcast-reputation-service.js";
 import { recalculateWorkspaceHealth } from "./services/workspace-health-service.js";
 import { pool } from "./db/pool.js";
@@ -20,8 +21,9 @@ startDeliveryWebhookWorker();
 startOutboundWorker();
 startSequenceWorker();
 startDailyReportWorker();
+startReminderDispatchWorker();
 
-const WORKERS = ["campaign", "delivery-webhook", "outbound", "sequence", "daily-report"];
+const WORKERS = ["campaign", "delivery-webhook", "outbound", "sequence", "daily-report", "reminder-dispatch"];
 
 async function pingWorkerHeartbeats() {
   await Promise.allSettled(
@@ -56,6 +58,7 @@ const shutdown = async () => {
   await stopOutboundWorker();
   await stopSequenceWorker();
   await stopDailyReportWorker();
+  await stopReminderDispatchWorker();
   await closeQueueInfrastructure();
   process.exit(0);
 };

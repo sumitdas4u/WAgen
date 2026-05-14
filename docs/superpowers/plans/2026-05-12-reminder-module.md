@@ -2,9 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Reminder Module — automatic date-capture via WhatsApp flow + annual campaign dispatch — with a settings UI for Birthday, Anniversary, and Custom reminder types.
+**Goal:** Build the Reminder Module — automatic date-capture via WhatsApp flow + campaign dispatch — with a settings UI for Birthday, Anniversary, and Custom reminder types (including one-time event reminders).
 
-**Architecture:** Contact create/update events trigger a capture flow (permission template → user-linked flow captures date); a daily BullMQ worker scans `contact_field_values` for date matches and sends campaign templates. All data lives in four new tables; captured dates reuse existing `contact_field_values` with `field_type = 'DATE'`.
+**Architecture:** Contact create/update events trigger a capture flow (permission template → user-linked flow captures date); a daily BullMQ worker scans `contact_field_values` for date matches and sends campaign templates. Supports two dispatch modes: `annual` (birthday/anniversary, year ignored) and `exact_date` (one-time event, full date match). Five new DB tables — `reminder_prompt_log` eliminated, cooldown/retry derived from `reminder_capture_sessions`.
+
+**Campaign Steps (Option B):** Each `reminder_config` has one or more `reminder_campaign_steps` — each step has its own `days_before`, `template_name`, and `template_vars`. Worker iterates all steps for a config daily (e.g. send teaser 15 days before, nudge 3 days before, day-of message). Dedup key includes `step_id` so each step fires independently.
+
+**Shared with Sequence Module:** `evaluateSequenceConditions()`, `SequenceContactSnapshot` type, `CampaignTemplateVariableBinding` type all imported directly. `loadContactSnapshot()` extracted to `contact-snapshot-service.ts` (Task 0) so both modules share it.
+
+**Phases:**
+- Phase 1 (Foundation): Task 0–3 — shared util + DB + config CRUD + queue registration
+- Phase 2 (Capture Engine): Task 4–7 — trigger, session state machine, contact hook, message router intercept
+- Phase 3 (Campaign Dispatch): Task 8–10 — worker, API routes, worker lifecycle
+- Phase 4 (Frontend): Task 11–18 — API types, queries, pages, forms
 
 **Tech Stack:** PostgreSQL (pg pool), BullMQ + ioredis, Fastify routes, Zod validation, React + TanStack Query, react-router-dom nested routes, Vitest for tests.
 
@@ -13,7 +23,8 @@
 ## File Map
 
 **New files — API:**
-- `infra/migrations/0075_reminder_module.sql` — 4 new tables
+- `apps/api/src/services/contact-snapshot-service.ts` — shared `loadContactSnapshot()` (extracted from sequence-event-service)
+- `infra/migrations/0075_reminder_module.sql` — 5 new tables (reminder_configs, reminder_campaign_steps, reminder_capture_sessions, reminder_dispatch_log)
 - `apps/api/src/services/reminder-config-service.ts` — CRUD for reminder_configs
 - `apps/api/src/services/reminder-capture-trigger-service.ts` — evaluate conditions, start sessions, send permission template
 - `apps/api/src/services/reminder-capture-session-service.ts` — session state machine (YES/NO/EXPIRED)
@@ -21,6 +32,8 @@
 - `apps/api/src/routes/reminder.ts` — Fastify route handlers
 
 **Modified files — API:**
+- `apps/api/src/services/billing-service.ts` — add `reminders` module flag to `PlanEntitlements` type + entitlement config (false for trial/starter, true for pro/business)
+- `apps/api/src/services/sequence-event-service.ts` — import `loadContactSnapshot` from contact-snapshot-service instead of local function
 - `apps/api/src/services/queue-service.ts` — add `"reminder-dispatch"` to managed queues
 - `apps/api/src/services/contacts-service.ts` — call `emitReminderCaptureEvent` at every `emitSequenceContactEvent` callsite (6 places)
 - `apps/api/src/services/message-router-service.ts` — check for active capture session before flow engine runs
@@ -42,6 +55,121 @@
 **Modified files — Frontend:**
 - `apps/web/src/shared/dashboard/query-keys.ts` — add reminder keys
 - `apps/web/src/registry/dashboardModules.ts` — register reminder module
+
+---
+
+## Phase 1 — Foundation
+
+### Task 0: Extract `loadContactSnapshot` to shared service
+
+**Files:**
+- Create: `apps/api/src/services/contact-snapshot-service.ts`
+- Modify: `apps/api/src/services/sequence-event-service.ts`
+
+- [ ] **Step 1: Create `contact-snapshot-service.ts`**
+
+```typescript
+// apps/api/src/services/contact-snapshot-service.ts
+import { pool } from "../db/pool.js";
+import type { SequenceContactSnapshot } from "./sequence-condition-service.js";
+
+export async function loadContactSnapshot(contactId: string): Promise<SequenceContactSnapshot | null> {
+  const [contactResult, customFieldsResult] = await Promise.all([
+    pool.query<{
+      id: string;
+      display_name: string | null;
+      phone_number: string;
+      email: string | null;
+      contact_type: string;
+      tags: string[];
+      source_type: string;
+      source_id: string | null;
+      source_url: string | null;
+      created_at: string;
+      updated_at: string;
+    }>(`SELECT * FROM contacts WHERE id = $1 LIMIT 1`, [contactId]),
+    pool.query<{ field_name: string; value: string | null }>(
+      `SELECT cf.name AS field_name, cfv.value
+       FROM contact_field_values cfv
+       JOIN contact_fields cf ON cf.id = cfv.field_id
+       WHERE cfv.contact_id = $1`,
+      [contactId]
+    )
+  ]);
+
+  const contact = contactResult.rows[0];
+  if (!contact) return null;
+
+  return {
+    ...contact,
+    custom_fields: Object.fromEntries(customFieldsResult.rows.map((row) => [row.field_name, row.value]))
+  };
+}
+```
+
+- [ ] **Step 2: Update `sequence-event-service.ts` to import from shared service**
+
+Remove the local `loadContactSnapshot` function body and replace with import:
+
+```typescript
+// Add at top of imports:
+import { loadContactSnapshot } from "./contact-snapshot-service.js";
+
+// Remove lines defining:
+// async function loadContactSnapshot(contactId: string): Promise<SequenceContactSnapshot | null> { ... }
+```
+
+- [ ] **Step 3: Verify sequence tests still pass**
+
+```bash
+npx vitest run apps/api/src/services/sequence-event-service.test.ts
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps/api/src/services/contact-snapshot-service.ts apps/api/src/services/sequence-event-service.ts
+git commit -m "refactor: extract loadContactSnapshot to shared contact-snapshot-service"
+```
+
+---
+
+---
+
+### Task 0b: Add `reminders` module entitlement to billing-service
+
+**Files:**
+- Modify: `apps/api/src/services/billing-service.ts`
+
+- [ ] **Step 1: Add `reminders` to the `modules` type**
+
+```typescript
+// In PlanEntitlements interface, modules block — add:
+reminders: boolean;
+```
+
+- [ ] **Step 2: Set entitlement values per plan**
+
+In `PLAN_ENTITLEMENT_CONFIG`:
+```typescript
+trial:   { modules: { ..., reminders: false } }
+starter: { modules: { ..., reminders: false } }
+pro:     { modules: { ..., reminders: true  } }
+business:{ modules: { ..., reminders: true  } }
+```
+
+- [ ] **Step 3: Verify TypeScript compiles with no errors**
+
+```bash
+npx tsc --noEmit -p apps/api/tsconfig.json
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps/api/src/services/billing-service.ts
+git commit -m "feat: add reminders module entitlement (pro+ only)"
+```
 
 ---
 
@@ -76,13 +204,11 @@ CREATE TABLE reminder_configs (
   cooldown_days           INTEGER NOT NULL DEFAULT 30,
 
   campaign_enabled         BOOLEAN NOT NULL DEFAULT true,
-  campaign_template_name   VARCHAR(100),
-  campaign_template_lang   VARCHAR(10) NOT NULL DEFAULT 'en',
-  campaign_template_vars   JSONB NOT NULL DEFAULT '{}',
   campaign_conditions_json JSONB NOT NULL DEFAULT '[]',
   campaign_send_time       TIME NOT NULL DEFAULT '09:00',
-  campaign_days_before     INTEGER NOT NULL DEFAULT 0,
   campaign_timezone        VARCHAR(60) NOT NULL DEFAULT 'Asia/Kolkata',
+  dispatch_mode            VARCHAR(15) NOT NULL DEFAULT 'annual'
+                             CHECK (dispatch_mode IN ('annual','exact_date')),
 
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -91,6 +217,23 @@ CREATE TABLE reminder_configs (
 );
 
 CREATE INDEX reminder_configs_user_idx ON reminder_configs(user_id);
+
+-- reminder_campaign_steps: one or more timed steps per config (Option B)
+-- Each step has its own template + days_before (e.g. 15-day teaser, 3-day nudge, day-of message)
+CREATE TABLE reminder_campaign_steps (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  config_id    UUID NOT NULL REFERENCES reminder_configs(id) ON DELETE CASCADE,
+  step_order   INTEGER NOT NULL DEFAULT 0,
+  days_before  INTEGER NOT NULL DEFAULT 0,
+  template_name VARCHAR(100) NOT NULL,
+  template_lang VARCHAR(10) NOT NULL DEFAULT 'en',
+  template_vars JSONB NOT NULL DEFAULT '{}',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(config_id, step_order)
+);
+
+CREATE INDEX reminder_steps_config_idx ON reminder_campaign_steps(config_id);
 
 -- reminder_capture_sessions: one active session per conversation
 CREATE TABLE reminder_capture_sessions (
@@ -116,30 +259,32 @@ CREATE UNIQUE INDEX uniq_active_reminder_session
 
 CREATE INDEX reminder_sessions_contact_idx ON reminder_capture_sessions(user_id, contact_id);
 
--- reminder_prompt_log: cooldown/retry tracking per contact per config
-CREATE TABLE reminder_prompt_log (
-  user_id          UUID NOT NULL,
-  contact_id       UUID NOT NULL,
-  config_key       VARCHAR(100) NOT NULL,
-  last_prompted_at TIMESTAMPTZ NOT NULL,
-  retry_count      INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY(user_id, contact_id, config_key)
-);
-
--- reminder_dispatch_log: one row per contact per year per config (dedup guard)
+-- reminder_dispatch_log: dedup guard per step per contact
+-- annual:     campaign_year populated, dispatched_date NULL
+-- exact_date: dispatched_date populated, campaign_year NULL
+-- step_id scoped dedup: 15-day step and day-of step both allowed in same year
 CREATE TABLE reminder_dispatch_log (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID NOT NULL,
-  contact_id    UUID NOT NULL,
-  config_key    VARCHAR(100) NOT NULL,
-  campaign_year INTEGER NOT NULL,
-  template_name VARCHAR(100),
-  status        VARCHAR(20) NOT NULL DEFAULT 'sent',
-  sent_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL,
+  contact_id      UUID NOT NULL,
+  config_key      VARCHAR(100) NOT NULL,
+  step_id         UUID NOT NULL REFERENCES reminder_campaign_steps(id) ON DELETE CASCADE,
+  campaign_year   INTEGER,
+  dispatched_date DATE,
+  template_name   VARCHAR(100),
+  status          VARCHAR(20) NOT NULL DEFAULT 'sent',
+  sent_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Dedup annual: one send per contact per step per year
 CREATE UNIQUE INDEX uniq_reminder_dispatch_year
-  ON reminder_dispatch_log(user_id, contact_id, config_key, campaign_year);
+  ON reminder_dispatch_log(user_id, contact_id, step_id, campaign_year)
+  WHERE campaign_year IS NOT NULL;
+
+-- Dedup exact_date: one send per contact per step per date
+CREATE UNIQUE INDEX uniq_reminder_dispatch_date
+  ON reminder_dispatch_log(user_id, contact_id, step_id, dispatched_date)
+  WHERE dispatched_date IS NOT NULL;
 ```
 
 - [ ] **Step 2: Verify the migration runs**
@@ -155,7 +300,7 @@ Expected: no errors, all 4 tables created.
 
 ```bash
 git add infra/migrations/0075_reminder_module.sql
-git commit -m "feat: add reminder module database migration (4 tables)"
+git commit -m "feat: add reminder module database migration (5 tables)"
 ```
 
 ---
@@ -310,6 +455,7 @@ export interface ReminderConfigInput {
   campaignSendTime?: string;
   campaignDaysBefore?: number;
   campaignTimezone?: string;
+  dispatchMode?: "annual" | "exact_date";
 }
 
 const DEFAULT_CONFIGS: Array<{ config_key: string; reminder_type: ReminderConfig["reminder_type"] }> = [
@@ -508,6 +654,8 @@ git commit -m "feat: add reminder-dispatch BullMQ queue"
 ```
 
 ---
+
+## Phase 2 — Capture Engine
 
 ## Task 4: reminder-capture-trigger-service.ts
 
@@ -1238,6 +1386,8 @@ git commit -m "feat: intercept reminder capture session replies in message route
 
 ---
 
+## Phase 3 — Campaign Dispatch
+
 ## Task 8: reminder-dispatch-worker-service.ts
 
 **Files:**
@@ -1264,12 +1414,20 @@ interface ReminderConfigRow {
   user_id: string;
   config_key: string;
   campaign_enabled: boolean;
-  campaign_template_name: string | null;
-  campaign_template_lang: string;
-  campaign_template_vars: Record<string, { source: "contact" | "static"; field?: string; value?: string }>;
   campaign_conditions_json: unknown[];
-  campaign_days_before: number;
+  campaign_send_time: string;
   campaign_timezone: string;
+  dispatch_mode: "annual" | "exact_date";
+}
+
+interface ReminderStepRow {
+  id: string;
+  config_id: string;
+  step_order: number;
+  days_before: number;
+  template_name: string;
+  template_lang: string;
+  template_vars: Record<string, { source: "contact" | "static"; field?: string; value?: string }>;
 }
 
 interface ContactDateMatch {
@@ -1309,52 +1467,83 @@ async function processUserReminders(userId: string): Promise<void> {
   const currentYear = new Date().getFullYear();
 
   for (const config of configResult.rows) {
-    if (!config.campaign_template_name) continue;
+    // Load all steps for this config
+    const stepsResult = await pool.query<ReminderStepRow>(
+      `SELECT * FROM reminder_campaign_steps WHERE config_id = $1 ORDER BY step_order ASC`,
+      [config.id]
+    );
+    if (stepsResult.rows.length === 0) continue;
 
-    try {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + config.campaign_days_before);
-      const targetMonth = targetDate.getMonth() + 1;
-      const targetDay = targetDate.getDate();
+    // Find contact field id for this config_key
+    const fieldResult = await pool.query<{ id: string }>(
+      `SELECT id FROM contact_fields WHERE user_id = $1 AND name = $2 LIMIT 1`,
+      [userId, config.config_key]
+    );
+    const fieldId = fieldResult.rows[0]?.id;
+    if (!fieldId) continue;
 
-      // Find contact field id for this config_key
-      const fieldResult = await pool.query<{ id: string }>(
-        `SELECT id FROM contact_fields WHERE user_id = $1 AND name = $2 LIMIT 1`,
-        [userId, config.config_key]
-      );
-      const fieldId = fieldResult.rows[0]?.id;
-      if (!fieldId) continue;
+    const isAnnual = config.dispatch_mode === "annual";
 
-      // Find matching contacts (date month+day match, not already sent this year)
-      const contactsResult = await pool.query<ContactDateMatch>(
-        `SELECT
-           c.id AS contact_id,
-           c.phone_number,
-           c.display_name,
-           (
-             SELECT jsonb_object_agg(cf2.name, cfv2.value)
-             FROM contact_field_values cfv2
-             JOIN contact_fields cf2 ON cf2.id = cfv2.field_id
-             WHERE cfv2.contact_id = c.id
-           ) AS custom_fields
-         FROM contacts c
-         JOIN contact_field_values cfv ON cfv.contact_id = c.id
-         WHERE c.user_id = $1
-           AND cfv.field_id = $2
-           AND EXTRACT(MONTH FROM cfv.value::date) = $3
-           AND EXTRACT(DAY   FROM cfv.value::date) = $4
-           AND c.id NOT IN (
-             SELECT contact_id FROM reminder_dispatch_log
-             WHERE user_id = $1 AND config_key = $5 AND campaign_year = $6
-           )`,
-        [userId, fieldId, targetMonth, targetDay, config.config_key, currentYear]
-      );
+    for (const step of stepsResult.rows) {
+      try {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + step.days_before);
+        const targetMonth = targetDate.getMonth() + 1;
+        const targetDay = targetDate.getDate();
+
+        // Find matching contacts not already sent for this step this year/date
+        const contactsResult = isAnnual
+          ? await pool.query<ContactDateMatch>(
+              `SELECT
+                 c.id AS contact_id,
+                 c.phone_number,
+                 c.display_name,
+                 (
+                   SELECT jsonb_object_agg(cf2.name, cfv2.value)
+                   FROM contact_field_values cfv2
+                   JOIN contact_fields cf2 ON cf2.id = cfv2.field_id
+                   WHERE cfv2.contact_id = c.id
+                 ) AS custom_fields
+               FROM contacts c
+               JOIN contact_field_values cfv ON cfv.contact_id = c.id
+               WHERE c.user_id = $1
+                 AND cfv.field_id = $2
+                 AND EXTRACT(MONTH FROM cfv.value::date) = $3
+                 AND EXTRACT(DAY   FROM cfv.value::date) = $4
+                 AND c.id NOT IN (
+                   SELECT contact_id FROM reminder_dispatch_log
+                   WHERE user_id = $1 AND step_id = $5 AND campaign_year = $6
+                 )`,
+              [userId, fieldId, targetMonth, targetDay, step.id, currentYear]
+            )
+          : await pool.query<ContactDateMatch>(
+              `SELECT
+                 c.id AS contact_id,
+                 c.phone_number,
+                 c.display_name,
+                 (
+                   SELECT jsonb_object_agg(cf2.name, cfv2.value)
+                   FROM contact_field_values cfv2
+                   JOIN contact_fields cf2 ON cf2.id = cfv2.field_id
+                   WHERE cfv2.contact_id = c.id
+                 ) AS custom_fields
+               FROM contacts c
+               JOIN contact_field_values cfv ON cfv.contact_id = c.id
+               WHERE c.user_id = $1
+                 AND cfv.field_id = $2
+                 AND cfv.value::date = $3
+                 AND c.id NOT IN (
+                   SELECT contact_id FROM reminder_dispatch_log
+                   WHERE user_id = $1 AND step_id = $4 AND dispatched_date = $3
+                 )`,
+              [userId, fieldId, targetDate.toISOString().slice(0, 10), step.id]
+            );
 
       for (const contact of contactsResult.rows) {
         try {
           const resolvedVars = await resolveTemplateVars(
             { ...contact, custom_fields: (contact.custom_fields as Record<string, string | null>) ?? {} },
-            config.campaign_template_vars
+            step.template_vars
           );
 
           const conversation = await getOrCreateConversation(userId, contact.phone_number, {
@@ -1365,8 +1554,8 @@ async function processUserReminders(userId: string): Promise<void> {
             conversationId: conversation.id,
             payload: {
               type: "template",
-              templateName: config.campaign_template_name!,
-              language: config.campaign_template_lang,
+              templateName: step.template_name,
+              language: step.template_lang,
               components: Object.entries(resolvedVars).map(([key, value]) => ({
                 type: "body",
                 parameters: [{ type: "text", parameter_name: key, text: value }]
@@ -1374,21 +1563,32 @@ async function processUserReminders(userId: string): Promise<void> {
             }
           });
 
-          await pool.query(
-            `INSERT INTO reminder_dispatch_log
-               (user_id, contact_id, config_key, campaign_year, template_name, status)
-             VALUES ($1, $2, $3, $4, $5, 'sent')
-             ON CONFLICT DO NOTHING`,
-            [userId, contact.contact_id, config.config_key, currentYear, config.campaign_template_name]
-          );
+          if (isAnnual) {
+            await pool.query(
+              `INSERT INTO reminder_dispatch_log
+                 (user_id, contact_id, config_key, step_id, campaign_year, template_name, status)
+               VALUES ($1, $2, $3, $4, $5, $6, 'sent')
+               ON CONFLICT DO NOTHING`,
+              [userId, contact.contact_id, config.config_key, step.id, currentYear, step.template_name]
+            );
+          } else {
+            await pool.query(
+              `INSERT INTO reminder_dispatch_log
+                 (user_id, contact_id, config_key, step_id, dispatched_date, template_name, status)
+               VALUES ($1, $2, $3, $4, $5, $6, 'sent')
+               ON CONFLICT DO NOTHING`,
+              [userId, contact.contact_id, config.config_key, step.id, targetDate.toISOString().slice(0, 10), step.template_name]
+            );
+          }
 
-          console.log(`[ReminderDispatch] Sent ${config.config_key} to ${contact.phone_number}`);
+          console.log(`[ReminderDispatch] Sent step ${step.step_order} of ${config.config_key} to ${contact.phone_number}`);
         } catch (err) {
-          console.error(`[ReminderDispatch] Failed to send to contact ${contact.contact_id}`, err);
+          console.error(`[ReminderDispatch] Step ${step.id} failed for contact ${contact.contact_id}`, err);
         }
       }
-    } catch (err) {
-      console.error(`[ReminderDispatch] Config ${config.config_key} failed for user ${userId}`, err);
+      } catch (err) {
+        console.error(`[ReminderDispatch] Step ${step.step_order} of config ${config.config_key} failed`, err);
+      }
     }
   }
 
@@ -1514,13 +1714,14 @@ git commit -m "feat: add reminder-dispatch BullMQ worker with daily cron"
 
 ```typescript
 // apps/api/src/routes/reminder.ts
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import {
   listReminderConfigs,
   upsertReminderConfig,
   deleteReminderConfig
 } from "../services/reminder-config-service.js";
+import { getUserPlanEntitlements } from "../services/billing-service.js";
 
 const TemplateVarBindingSchema = z.object({
   source: z.enum(["contact", "static"]),
@@ -1547,28 +1748,39 @@ const ReminderConfigWriteSchema = z.object({
   retryMaxCount: z.number().int().min(0).max(5).optional(),
   cooldownDays: z.number().int().min(1).max(365).optional(),
   campaignEnabled: z.boolean().optional(),
-  campaignTemplateName: z.string().trim().max(100).optional().nullable(),
-  campaignTemplateLang: z.string().trim().max(10).optional(),
-  campaignTemplateVars: z.record(z.string(), TemplateVarBindingSchema).optional(),
   campaignConditionsJson: z.array(z.object({
     field: z.string(),
     operator: z.enum(["eq", "neq", "gt", "lt", "contains"]),
     value: z.string()
   })).optional(),
   campaignSendTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  campaignDaysBefore: z.number().int().min(0).max(30).optional(),
-  campaignTimezone: z.string().trim().max(60).optional()
+  campaignTimezone: z.string().trim().max(60).optional(),
+  dispatchMode: z.enum(["annual", "exact_date"]).optional(),
+  steps: z.array(z.object({
+    stepOrder: z.number().int().min(0),
+    daysBefore: z.number().int().min(0).max(365),
+    templateName: z.string().trim().min(1).max(100),
+    templateLang: z.string().trim().max(10).default("en"),
+    templateVars: z.record(z.string(), TemplateVarBindingSchema).optional().default({})
+  })).optional()
 });
 
+async function requireRemindersEntitlement(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const entitlements = await getUserPlanEntitlements(request.authUser.userId);
+  if (!entitlements.modules.reminders) {
+    await reply.status(403).send({ error: "Reminders module requires Pro plan or higher" });
+  }
+}
+
 export async function reminderRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.get("/api/reminder/configs", { preHandler: [fastify.requireAuth] }, async (request) => {
+  fastify.get("/api/reminder/configs", { preHandler: [fastify.requireAuth, requireRemindersEntitlement] }, async (request) => {
     const configs = await listReminderConfigs(request.authUser.userId);
     return { configs };
   });
 
   fastify.put(
     "/api/reminder/configs/:configKey",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireRemindersEntitlement] },
     async (request, reply) => {
       const { configKey } = request.params as { configKey: string };
       const parsed = ReminderConfigWriteSchema.safeParse(request.body ?? {});
@@ -1589,7 +1801,7 @@ export async function reminderRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.delete(
     "/api/reminder/configs/:configKey",
-    { preHandler: [fastify.requireAuth] },
+    { preHandler: [fastify.requireAuth, requireRemindersEntitlement] },
     async (request, reply) => {
       const { configKey } = request.params as { configKey: string };
       const deleted = await deleteReminderConfig(request.authUser.userId, configKey);
@@ -1712,6 +1924,8 @@ git commit -m "feat: register reminder-dispatch worker in worker process"
 ```
 
 ---
+
+## Phase 4 — Frontend
 
 ## Task 11: Frontend — API Types and Functions
 
@@ -1934,6 +2148,7 @@ Add the reminder module entry directly after it:
     section: "main",
     lazyRoute: () => import("../modules/dashboard/reminder/route"),
     featureFlag: "dashboard.reminder",
+    requiredEntitlements: { module: "reminders" },
     prefetchStrategy: "code+data",
     requiresAuth: true
   },
@@ -2461,6 +2676,9 @@ export function CampaignSettingsForm({ config, onSave, isSaving }: Props) {
   const [sendTime, setSendTime] = useState(config.campaign_send_time);
   const [timezone, setTimezone] = useState(config.campaign_timezone);
   const [campaignEnabled, setCampaignEnabled] = useState(config.campaign_enabled);
+  const [dispatchMode, setDispatchMode] = useState<"annual" | "exact_date">(
+    (config as any).dispatch_mode ?? "annual"
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2471,7 +2689,8 @@ export function CampaignSettingsForm({ config, onSave, isSaving }: Props) {
       campaignTemplateLang: templateLang,
       campaignDaysBefore: daysBefore,
       campaignSendTime: sendTime,
-      campaignTimezone: timezone
+      campaignTimezone: timezone,
+      dispatchMode
     });
   };
 
@@ -2528,6 +2747,28 @@ export function CampaignSettingsForm({ config, onSave, isSaving }: Props) {
       <div style={sectionStyle}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: "#122033" }}>
           Step 2 — Timing
+        </div>
+        <label style={labelStyle}>Dispatch mode</label>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {([
+            { value: "annual", label: "Annual (recurring)", desc: "Fires every year on same day — birthday, anniversary" },
+            { value: "exact_date", label: "One-time event", desc: "Fires once on the exact stored date — event, deadline" }
+          ] as const).map((opt) => (
+            <button
+              key={opt.value} type="button"
+              style={{
+                flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, cursor: "pointer",
+                textAlign: "left",
+                border: dispatchMode === opt.value ? "2px solid #6c47ff" : "1px solid #e2e8f0",
+                background: dispatchMode === opt.value ? "#f3f0ff" : "#fff",
+                color: dispatchMode === opt.value ? "#6c47ff" : "#445068"
+              }}
+              onClick={() => setDispatchMode(opt.value)}
+            >
+              <div style={{ fontWeight: 700 }}>{opt.label}</div>
+              <div style={{ fontSize: 11, marginTop: 2, opacity: 0.8 }}>{opt.desc}</div>
+            </button>
+          ))}
         </div>
         <label style={labelStyle}>Send N days before</label>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>

@@ -10,7 +10,8 @@ export const managedQueueNames = [
   "delivery-webhook-process",
   "outbound-execution",
   "outbound-qr-execution",
-  "daily-report"
+  "daily-report",
+  "reminder-dispatch"
 ] as const;
 
 export type ManagedQueueName = (typeof managedQueueNames)[number];
@@ -107,6 +108,10 @@ export function getOutboundQrExecutionQueue(): Queue | null {
 
 export function getDailyReportQueue(): Queue | null {
   return getManagedQueue("daily-report");
+}
+
+export function getReminderDispatchQueue(): Queue | null {
+  return getManagedQueue("reminder-dispatch");
 }
 
 export async function closeQueueInfrastructure(): Promise<void> {

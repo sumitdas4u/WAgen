@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WhatsApp Chatbot Flow Builder — WAgen | Visual No-Code Automation</title>
+<meta name="description" content="Build WhatsApp chatbot flows visually with drag-and-drop. Design conversation trees, set triggers, add conditions, collect leads — zero coding required. Deploy in minutes."/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--green:#1DB954;--green-dark:#17a349;--green-deep:#0d6b31;--black:#0F0F0F;--text:#1A1A1A;--muted:#6B7280;--muted-lt:#9CA3AF;--bg:#fff;--bg2:#F8FAF8;--bg3:#F0F7F0;--border:#E5E7EB;--border-green:rgba(29,185,84,.2);--wa-bg:#ECE5DD;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;line-height:1.6;}
+nav{position:fixed;top:0;left:0;right:0;z-index:300;display:flex;align-items:center;justify-content:space-between;padding:0 5%;height:64px;background:rgba(255,255,255,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);}
+.logo{font-weight:800;font-size:1.3rem;color:var(--black);text-decoration:none;letter-spacing:-.02em;}
+.logo span{color:var(--green);}
+.nav-links{display:flex;gap:0;list-style:none;align-items:center;}
+.nav-item{position:relative;}
+.nav-item>a{display:block;padding:0 14px;height:64px;line-height:64px;color:var(--muted);text-decoration:none;font-size:.88rem;font-weight:500;transition:color .2s;white-space:nowrap;}
+.nav-item>a:hover{color:var(--black);}
+.nav-item:hover .drop{display:flex;}
+.drop{display:none;position:absolute;top:60px;left:0;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;flex-direction:column;min-width:230px;box-shadow:0 12px 32px rgba(0,0,0,.1);z-index:400;}
+.drop a{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;color:var(--text);font-size:.84rem;font-weight:500;text-decoration:none;transition:background .15s;}
+.drop a:hover{background:var(--bg3);color:var(--green);}
+.drop a.active{background:var(--bg3);color:var(--green);font-weight:700;}
+.nav-right{display:flex;gap:10px;}
+.btn-ghost{background:transparent;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-ghost:hover{border-color:var(--green);color:var(--green);}
+.btn-cta{background:var(--green);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(29,185,84,.3);transition:all .2s;}
+.btn-cta:hover{background:var(--green-dark);transform:translateY(-1px);}
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 28px;}
+.ft-top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:32px;max-width:1160px;margin:0 auto;}
+.ft-brand p{color:var(--muted);font-size:.83rem;margin-top:8px;max-width:240px;line-height:1.7;}
+.ft-links{display:flex;gap:44px;flex-wrap:wrap;}
+.ft-col h5{font-weight:700;font-size:.84rem;margin-bottom:12px;}
+.ft-col a{display:block;color:var(--muted);text-decoration:none;font-size:.82rem;margin-bottom:7px;transition:color .2s;}
+.ft-col a:hover{color:var(--green);}
+.ft-bot{max-width:1160px;margin:32px auto 0;padding-top:18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.ft-bot p,.ft-bot span{color:var(--muted-lt);font-size:.76rem;}
+.seo-links{display:flex;flex-wrap:wrap;gap:5px 14px;max-width:1160px;margin:10px auto 0;}
+.seo-links a{color:var(--muted-lt);font-size:.72rem;text-decoration:none;}
+.seo-links a:hover{color:var(--green);}
+/* HERO */
+.hero{padding:108px 5% 80px;position:relative;overflow:hidden;}
+.hero-bg{position:absolute;inset:0;background-image:radial-gradient(circle,#d1d5db 1px,transparent 1px);background-size:28px 28px;opacity:.22;mask-image:radial-gradient(ellipse 70% 70% at 15% 50%,black,transparent);}
+.hero-glow{position:absolute;top:-8%;right:-8%;width:600px;height:600px;background:radial-gradient(ellipse,rgba(29,185,84,.09),transparent 65%);pointer-events:none;}
+.hero-wrap{display:grid;grid-template-columns:1fr 520px;gap:52px;align-items:center;max-width:1160px;margin:0 auto;position:relative;z-index:1;}
+.hero-badge-row{display:flex;align-items:center;gap:10px;margin-bottom:18px;}
+.prod-badge{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border-green);border-radius:100px;padding:5px 14px;font-size:.76rem;font-weight:700;color:var(--green-deep);}
+.free-badge{display:inline-flex;align-items:center;gap:5px;background:#fffbeb;border:1px solid #fde68a;border-radius:100px;padding:5px 12px;font-size:.72rem;font-weight:800;color:#92400e;letter-spacing:.03em;text-transform:uppercase;}
+h1{font-size:clamp(2rem,4vw,3.3rem);font-weight:800;line-height:1.1;letter-spacing:-.03em;margin-bottom:16px;}
+.g{color:var(--green);}
+.hero-sub{font-size:1rem;color:var(--muted);max-width:500px;line-height:1.75;margin-bottom:28px;}
+.hero-btns{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;}
+.btn-primary{background:var(--green);color:#fff;border:none;border-radius:9px;padding:13px 26px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 4px 16px rgba(29,185,84,.3);}
+.btn-primary:hover{background:var(--green-dark);transform:translateY(-2px);}
+.btn-outline{background:#fff;color:var(--text);border:2px solid var(--border);border-radius:9px;padding:13px 24px;font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-outline:hover{border-color:var(--green);color:var(--green);}
+.hero-checks{list-style:none;display:flex;flex-direction:column;gap:9px;}
+.hero-checks li{display:flex;align-items:center;gap:9px;font-size:.9rem;font-weight:500;}
+.hero-checks li::before{content:"✓";width:20px;height:20px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;}
+/* FLOW BUILDER MOCKUP */
+.phone-wrap{position:relative;max-width:520px;margin:0 auto;}
+.fbadge{position:absolute;background:#fff;border:1.5px solid var(--border-green);border-radius:10px;padding:8px 13px;font-size:.74rem;font-weight:700;color:var(--green-deep);box-shadow:0 5px 18px rgba(0,0,0,.1);white-space:nowrap;z-index:10;}
+.fbadge.t{top:-14px;right:-10px;animation:flt 3s ease-in-out infinite;}
+.fbadge.b{bottom:-12px;left:-10px;animation:flt 3.5s 1s ease-in-out infinite;}
+@keyframes flt{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.builder-mock{background:#fff;border:1.5px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.12);}
+.bm-toolbar{background:#1a1a2e;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;}
+.bm-title{color:#fff;font-size:.8rem;font-weight:700;}
+.bm-actions{display:flex;gap:7px;}
+.bm-btn{padding:4px 10px;border-radius:5px;font-size:.7rem;font-weight:700;border:none;cursor:pointer;font-family:inherit;}
+.bm-btn.save{background:var(--green);color:#fff;}
+.bm-btn.test{background:rgba(255,255,255,.12);color:#fff;}
+/* Flow diagram canvas */
+.bm-canvas{background:#f0f2f7;padding:20px 16px;display:flex;flex-direction:column;align-items:center;gap:0;background-image:radial-gradient(circle,#c8cdd8 1px,transparent 1px);background-size:18px 18px;}
+/* Flow nodes */
+.fn{background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:.75rem;width:260px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.fn.trigger{border-color:var(--green);background:rgba(29,185,84,.04);}
+.fn.message{border-color:#bfdbfe;background:#f0f9ff;}
+.fn.action{border-color:#ddd6fe;background:#faf5ff;}
+.fn.condition{border-color:#fde68a;background:#fffbeb;border-style:dashed;}
+.fn-type{font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;}
+.fn.trigger .fn-type{color:var(--green-deep);}
+.fn.message .fn-type{color:#1d4ed8;}
+.fn.action .fn-type{color:#7c3aed;}
+.fn.condition .fn-type{color:#92400e;}
+.fn-title{font-weight:700;color:var(--text);margin-bottom:2px;line-height:1.3;font-size:.78rem;}
+.fn-sub{color:var(--muted);font-size:.67rem;line-height:1.4;}
+.fn-btn-row{display:flex;gap:4px;margin-top:7px;flex-wrap:wrap;}
+.fn-btn{padding:3px 7px;border-radius:4px;font-size:.63rem;font-weight:700;background:rgba(29,185,84,.1);color:var(--green-deep);border:1px solid var(--border-green);}
+/* Connectors */
+.flow-connector{width:2px;height:20px;background:#c8cdd8;margin:0 auto;flex-shrink:0;}
+.flow-arrow-down{font-size:.7rem;color:#94a3b8;line-height:1;margin:0 auto;display:block;text-align:center;}
+/* Branch */
+.flow-branch{display:flex;width:260px;position:relative;align-items:flex-start;}
+.flow-branch::before{content:'';position:absolute;top:0;left:25%;right:25%;height:2px;background:#c8cdd8;}
+.branch-col{flex:1;display:flex;flex-direction:column;align-items:center;padding:0 5px;}
+.branch-vtop{width:2px;height:18px;background:#c8cdd8;flex-shrink:0;}
+.branch-label{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;margin-bottom:7px;}
+.branch-label.yes{background:rgba(29,185,84,.14);color:var(--green-deep);}
+.branch-label.no{background:rgba(234,179,8,.15);color:#854d0e;}
+.branch-col .fn{width:100%;}
+/* Merge: two vtops pointing down meeting at center, then single arrow */
+.flow-merge{width:260px;display:flex;position:relative;height:22px;margin:0;}
+.flow-merge::before{content:'';position:absolute;bottom:0;left:25%;right:25%;height:2px;background:#c8cdd8;}
+.flow-merge::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:2px;height:100%;background:#c8cdd8;}
+.branch-vbot-l{position:absolute;top:0;left:25%;transform:translateX(-50%);width:2px;height:50%;background:#c8cdd8;}
+.branch-vbot-r{position:absolute;top:0;right:25%;transform:translateX(50%);width:2px;height:50%;background:#c8cdd8;}
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:60px;}
+.sc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:24px 18px;text-align:center;transition:border-color .2s;}
+.sec.alt .sc{background:var(--bg);}
+.sc:hover{border-color:var(--border-green);}
+.sc-v{font-size:2.3rem;font-weight:800;color:var(--green);letter-spacing:-.02em;}
+.sc-l{font-size:.8rem;color:var(--muted);margin-top:5px;line-height:1.4;}
+/* SECTIONS */
+.sec{padding:80px 5%;}
+.sec.alt{background:var(--bg2);}
+.sw{max-width:1160px;margin:0 auto;}
+.sec-lbl{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:10px;}
+h2{font-size:clamp(1.7rem,3vw,2.5rem);font-weight:800;line-height:1.2;letter-spacing:-.02em;margin-bottom:14px;}
+.sec-ctr{text-align:center;margin-bottom:52px;}
+.sec-sub{color:var(--muted);font-size:.96rem;max-width:560px;margin:12px auto 0;line-height:1.75;}
+/* HOW IT WORKS */
+.steps5{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:48px;position:relative;}
+.steps5::before{content:'';position:absolute;top:26px;left:10%;right:10%;height:2px;background:repeating-linear-gradient(90deg,var(--green) 0,var(--green) 8px,transparent 8px,transparent 18px);}
+.step{text-align:center;padding:0 8px;}
+.s-circ{width:54px;height:54px;border-radius:50%;background:#fff;border:2px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:.9rem;font-weight:800;color:var(--green);box-shadow:0 0 0 6px rgba(29,185,84,.07);}
+.sec.alt .s-circ{background:var(--bg);}
+.step h4{font-weight:700;font-size:.88rem;margin-bottom:6px;}
+.step p{color:var(--muted);font-size:.78rem;line-height:1.55;}
+/* USE CASES */
+.fg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+.fc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:26px;transition:all .22s;}
+.fc:hover{border-color:var(--border-green);transform:translateY(-4px);box-shadow:0 8px 24px rgba(29,185,84,.09);}
+.sec.alt .fc{background:var(--bg);}
+.fc-icon{font-size:1.8rem;margin-bottom:12px;}
+.fc h4{font-weight:700;font-size:.95rem;margin-bottom:7px;}
+.fc p{color:var(--muted);font-size:.84rem;line-height:1.6;}
+.fc-tag{display:inline-block;margin-top:10px;font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:5px;background:rgba(29,185,84,.1);color:var(--green-deep);}
+/* FEATURE DEEP DIVES */
+.fa-row{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-bottom:72px;}
+.fa-row.rv{direction:rtl;}
+.fa-row.rv>*{direction:ltr;}
+.fa-num{font-size:3rem;font-weight:800;color:rgba(29,185,84,.12);line-height:1;margin-bottom:6px;}
+.fa-txt h3{font-size:1.35rem;font-weight:800;margin-bottom:12px;}
+.fa-txt p{color:var(--muted);font-size:.92rem;line-height:1.75;margin-bottom:18px;}
+.fa-txt ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-bottom:20px;}
+.fa-txt ul li{display:flex;align-items:flex-start;gap:9px;font-size:.88rem;line-height:1.5;}
+.fa-txt ul li::before{content:"✓";width:18px;height:18px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.7rem;flex-shrink:0;margin-top:1px;}
+.mockup{background:var(--bg2);border:1.5px solid var(--border);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px;}
+.sec.alt .mockup{background:#fff;}
+/* INDUSTRY FLOWS */
+.ind-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.ind-card{border:1.5px solid var(--border);border-radius:14px;padding:22px;background:#fff;transition:all .22s;}
+.ind-card:hover{border-color:var(--border-green);transform:translateY(-3px);box-shadow:0 8px 24px rgba(29,185,84,.08);}
+.sec.alt .ind-card{background:var(--bg);}
+.ind-icon{font-size:1.5rem;margin-bottom:8px;}
+.ind-card h4{font-weight:700;font-size:.9rem;margin-bottom:4px;}
+.ind-desc{font-size:.76rem;color:var(--muted);margin-bottom:10px;}
+/* Chat conversation preview inside industry cards */
+.ind-chat{display:flex;flex-direction:column;gap:5px;}
+.ic-msg{font-size:.73rem;padding:6px 9px;border-radius:7px;line-height:1.4;max-width:88%;}
+.ic-bot{background:var(--bg3);border:1px solid var(--border-green);align-self:flex-start;}
+.ic-bot b{color:var(--green-deep);}
+.ic-user{background:var(--wa-bg) !important;border:1px solid #d1fae5;align-self:flex-end;background:#dcf8c6;}
+.ic-btns{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;}
+.ic-btn{font-size:.66rem;font-weight:700;padding:3px 8px;border-radius:4px;background:#fff;border:1.5px solid var(--green);color:var(--green-deep);}
+/* INTEGRATIONS */
+.int-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:40px;}
+.int-card{border:1.5px solid var(--border);border-radius:12px;padding:18px 16px;background:#fff;text-align:center;transition:all .2s;}
+.int-card:hover{border-color:var(--border-green);transform:translateY(-2px);}
+.int-icon{font-size:1.8rem;margin-bottom:8px;}
+.int-name{font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:3px;}
+.int-desc{font-size:.72rem;color:var(--muted);}
+/* FAQ */
+.faq-wrap{max-width:780px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px;}
+details{background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s;}
+.sec.alt details{background:var(--bg);}
+details:hover,details[open]{border-color:var(--border-green);}
+summary{display:flex;justify-content:space-between;align-items:center;padding:17px 22px;cursor:pointer;list-style:none;font-weight:700;font-size:.91rem;gap:12px;}
+summary::-webkit-details-marker{display:none;}
+.fi{color:var(--green);font-size:1.3rem;flex-shrink:0;transition:transform .25s;}
+details[open] .fi{transform:rotate(45deg);}
+.fa-body{padding:0 22px 18px;color:var(--muted);font-size:.87rem;line-height:1.75;}
+.fa-body b{color:var(--text);}
+/* CTA */
+.cta-sec{background:var(--black);padding:90px 5%;text-align:center;position:relative;overflow:hidden;}
+.cta-sec::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(29,185,84,.18),transparent 60%);}
+.cta-inner{position:relative;z-index:1;}
+.cta-sec h2{color:#fff;}
+.cta-sec h2 .g{color:var(--green);}
+.cta-sec p{color:rgba(255,255,255,.6);max-width:480px;margin:14px auto 0;font-size:.96rem;}
+.cta-btns{display:flex;gap:12px;justify-content:center;margin-top:30px;flex-wrap:wrap;}
+.btn-wa{display:flex;align-items:center;gap:8px;background:#25D366;color:#fff;border:none;border-radius:9px;padding:13px 22px;font-family:inherit;font-size:.93rem;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-wa:hover{background:#1ebe5c;transform:translateY(-2px);}
+/* SOCIAL PROOF STRIP */
+.proof-strip{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:20px 5%;text-align:center;}
+.proof-strip p{font-size:.82rem;color:var(--muted);font-weight:500;}
+.proof-strip strong{color:var(--text);}
+/* RESPONSIVE */
+@media(max-width:1000px){.hero-wrap{grid-template-columns:1fr;}.phone-wrap{display:none;}}
+@media(max-width:900px){.fa-row{grid-template-columns:1fr;}.stats-row{grid-template-columns:repeat(2,1fr);}.fg,.ind-grid{grid-template-columns:repeat(2,1fr);}.steps5{grid-template-columns:repeat(2,1fr);gap:24px;}.steps5::before{display:none;}.int-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:600px){.fg,.ind-grid,.stats-row,.int-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="logo">Wagen<span>AI</span></a>
+  <ul class="nav-links">
+    <li class="nav-item"><a href="#">Product ▾</a>
+      <div class="drop">
+        <a href="/whatsapp-bot">📱 WhatsApp Bot</a>
+        <a href="/website-widget">💬 Website Widget</a>
+        <a href="/whatsapp-api">⚡ WhatsApp API</a>
+        <a href="/lead-capture">🎯 Lead Capture</a>
+        <a href="/reminder-campaigns">🔔 Reminder Campaigns</a>
+        <a href="/sequences">📋 Sequences</a>
+        <a href="/flows" class="active">🔄 Flows</a>
+        <a href="/broadcast">📢 Broadcast</a>
+      </div>
+    </li>
+    <li class="nav-item"><a href="/pricing">Pricing</a></li>
+    <li class="nav-item"><a href="#">Industries ▾</a>
+      <div class="drop">
+        <a href="/ecommerce-chatbot">🛍️ E-commerce</a>
+        <a href="/real-estate-chatbot">🏠 Real Estate</a>
+        <a href="/education-chatbot">🎓 Education</a>
+        <a href="/healthcare-chatbot">🏥 Healthcare</a>
+        <a href="/restaurant-chatbot">🍽️ Restaurants</a>
+      </div>
+    </li>
+  </ul>
+  <div class="nav-right">
+    <button class="btn-ghost">Log In</button>
+    <button class="btn-cta">Start Free</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-wrap">
+    <div>
+      <div class="hero-badge-row">
+        <div class="prod-badge">🔄 Flow Builder</div>
+        <div class="free-badge">✦ All Plans</div>
+      </div>
+      <h1>Build WhatsApp chatbots<br><span class="g">without writing code.</span></h1>
+      <p class="hero-sub">Design automated conversation flows visually — drag, connect, publish. Your chatbot handles FAQs, captures leads, books appointments, and collects orders while you sleep.</p>
+      <div class="hero-btns">
+        <button class="btn-primary">Build your first Flow →</button>
+        <button class="btn-outline">Watch 2-min demo</button>
+      </div>
+      <ul class="hero-checks">
+        <li>Drag-and-drop visual canvas — no code, no developers</li>
+        <li>Keyword and button triggers to start any conversation</li>
+        <li>Conditional branching — different paths based on replies</li>
+        <li>Capture leads, collect data, sync to Google Sheets</li>
+      </ul>
+    </div>
+    <div class="phone-wrap">
+      <div class="fbadge t">🤖 12,400 messages automated today</div>
+      <div class="builder-mock">
+        <div class="bm-toolbar">
+          <span class="bm-title">🔄 E-commerce Order Flow</span>
+          <div class="bm-actions">
+            <button class="bm-btn test">Preview</button>
+            <button class="bm-btn save">Publish</button>
+          </div>
+        </div>
+        <div class="bm-canvas">
+
+          <!-- Node 1: Trigger -->
+          <div class="fn trigger">
+            <div class="fn-type">⚡ Trigger</div>
+            <div class="fn-title">Customer types "ORDER"</div>
+            <div class="fn-sub">matches: order, menu, buy, hi</div>
+          </div>
+
+          <!-- ↓ -->
+          <div class="flow-connector"></div>
+          <div class="flow-arrow-down">▼</div>
+          <div class="flow-connector"></div>
+
+          <!-- Node 2: Message -->
+          <div class="fn message">
+            <div class="fn-type">💬 Send Message</div>
+            <div class="fn-title">Welcome + Show Menu</div>
+            <div class="fn-btn-row">
+              <span class="fn-btn">🍕 Pizza</span>
+              <span class="fn-btn">🥗 Salads</span>
+              <span class="fn-btn">🥤 Drinks</span>
+            </div>
+          </div>
+
+          <!-- ↓ -->
+          <div class="flow-connector"></div>
+          <div class="flow-arrow-down">▼</div>
+          <div class="flow-connector"></div>
+
+          <!-- Node 3: Condition -->
+          <div class="fn condition">
+            <div class="fn-type">↔ Condition</div>
+            <div class="fn-title">Returning customer?</div>
+            <div class="fn-sub">Check contact tag "customer"</div>
+          </div>
+
+          <!-- ↓ into branch -->
+          <div class="flow-connector"></div>
+          <!-- Branch split line -->
+          <div class="flow-branch">
+            <div class="branch-col">
+              <div class="branch-vtop"></div>
+              <div class="branch-label yes">YES</div>
+              <div class="fn message">
+                <div class="fn-type">💬 Message</div>
+                <div class="fn-title">Reorder last item</div>
+                <div class="fn-sub">Personalised reply</div>
+              </div>
+            </div>
+            <div class="branch-col">
+              <div class="branch-vtop"></div>
+              <div class="branch-label no">NO</div>
+              <div class="fn message">
+                <div class="fn-type">💬 Message</div>
+                <div class="fn-title">Show full catalog</div>
+                <div class="fn-sub">Categories + today's special</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Merge back -->
+          <div class="flow-merge">
+            <div class="branch-vbot-l"></div>
+            <div class="branch-vbot-r"></div>
+          </div>
+          <div class="flow-connector"></div>
+          <div class="flow-arrow-down">▼</div>
+          <div class="flow-connector"></div>
+
+          <!-- Node 4: Action -->
+          <div class="fn action">
+            <div class="fn-type">⚙️ Action</div>
+            <div class="fn-title">Save order + Notify team</div>
+            <div class="fn-sub">→ Google Sheets + agent alert</div>
+          </div>
+
+        </div>
+        <div style="background:var(--bg2);border-top:1px solid var(--border);padding:8px 16px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:.7rem;color:var(--muted);">8 nodes · 3 branches · Last saved 2 min ago</span>
+          <span style="font-size:.7rem;font-weight:700;color:var(--green);">● Published</span>
+        </div>
+      </div>
+      <div class="fbadge b">💾 342 leads captured today</div>
+    </div>
+  </div>
+</section>
+
+<!-- SOCIAL PROOF -->
+<div class="proof-strip">
+  <p>Trusted by <strong>2,000+ Indian businesses</strong> — restaurants, clinics, real estate agencies, coaching institutes, and e-commerce stores automating WhatsApp conversations every day</p>
+</div>
+
+<!-- STATS -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="stats-row">
+      <div class="sc"><div class="sc-v">80%</div><div class="sc-l">Of common customer queries handled without any human intervention</div></div>
+      <div class="sc"><div class="sc-v">3×</div><div class="sc-l">More leads qualified per day compared to manual replies</div></div>
+      <div class="sc"><div class="sc-v">24/7</div><div class="sc-l">Always-on chatbot — answers queries even at 2 AM</div></div>
+      <div class="sc"><div class="sc-v">5 min</div><div class="sc-l">To build and publish your first working chatbot flow</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">How it works</div>
+      <h2>From idea to live chatbot in minutes</h2>
+      <p class="sec-sub">No developer, no agency, no complicated setup. Just draw your conversation flow and hit publish.</p>
+    </div>
+    <div class="steps5">
+      <div class="step">
+        <div class="s-circ">1</div>
+        <h4>Open Flow Builder</h4>
+        <p>Go to Flows in your WAgen dashboard and create a new flow.</p>
+      </div>
+      <div class="step">
+        <div class="s-circ">2</div>
+        <h4>Add a trigger</h4>
+        <p>Set what starts the flow — a keyword, a button tap, or a new lead created.</p>
+      </div>
+      <div class="step">
+        <div class="s-circ">3</div>
+        <h4>Design the conversation</h4>
+        <p>Drag nodes onto the canvas: messages, questions, buttons, conditions, actions.</p>
+      </div>
+      <div class="step">
+        <div class="s-circ">4</div>
+        <h4>Preview &amp; test</h4>
+        <p>Send yourself a test message. Walk through every branch before going live.</p>
+      </div>
+      <div class="step">
+        <div class="s-circ">5</div>
+        <h4>Publish &amp; watch</h4>
+        <p>Hit publish. Your chatbot handles real customers instantly — track responses live.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- USE CASES -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">Use cases</div>
+      <h2>What can your chatbot do?</h2>
+      <p class="sec-sub">One flow builder — endless automation. Here's what businesses are building with WAgen Flows today.</p>
+    </div>
+    <div class="fg">
+      <div class="fc">
+        <div class="fc-icon">🎯</div>
+        <h4>Lead Qualification</h4>
+        <p>Ask the right questions — budget, location, requirement, timeline — and automatically segment leads as hot, warm, or cold. Route hot leads to sales instantly.</p>
+        <span class="fc-tag">Real Estate · Finance · SaaS</span>
+      </div>
+      <div class="fc">
+        <div class="fc-icon">📅</div>
+        <h4>Appointment Booking</h4>
+        <p>Let customers pick a date and time, capture their details, and get a confirmation — all without a human in the loop. Sync to your calendar automatically.</p>
+        <span class="fc-tag">Clinics · Salons · Coaches</span>
+      </div>
+      <div class="fc">
+        <div class="fc-icon">🛒</div>
+        <h4>Product Discovery &amp; Orders</h4>
+        <p>Guide customers through your catalog with buttons. Let them select items, specify quantities, and place orders — your team sees the order notification instantly.</p>
+        <span class="fc-tag">Restaurants · Retail · D2C</span>
+      </div>
+      <div class="fc">
+        <div class="fc-icon">🙋</div>
+        <h4>Customer Support FAQ</h4>
+        <p>Answer the same 20 questions automatically. Opening hours, delivery status, refund policy, pricing — your chatbot knows it all and responds in seconds.</p>
+        <span class="fc-tag">Any business</span>
+      </div>
+      <div class="fc">
+        <div class="fc-icon">🎓</div>
+        <h4>Course &amp; Admission Inquiry</h4>
+        <p>Collect student name, interest, location, and batch preference. Score and rank leads automatically, then handoff to counsellors for the hottest prospects.</p>
+        <span class="fc-tag">Coaching · EdTech · Schools</span>
+      </div>
+      <div class="fc">
+        <div class="fc-icon">⭐</div>
+        <h4>Feedback &amp; Reviews</h4>
+        <p>Trigger a feedback flow after purchase or visit. Collect star ratings and comments inside WhatsApp. Poor ratings auto-alert your team for recovery.</p>
+        <span class="fc-tag">Retail · Clinics · Hotels</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INDUSTRY CONVERSATION EXAMPLES -->
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">Industry examples</div>
+      <h2>See your chatbot in action</h2>
+      <p class="sec-sub">Real conversation flows businesses run on WAgen today — fully automated, no human needed for the first reply.</p>
+    </div>
+    <div class="ind-grid">
+      <div class="ind-card">
+        <div class="ind-icon">🍽️</div>
+        <h4>Restaurant</h4>
+        <div class="ind-desc">Automated order taking &amp; table booking</div>
+        <div class="ind-chat">
+          <div class="ic-msg ic-bot"><b>Spice Garden:</b> Hi! How can I help?<br><span style="color:var(--muted);font-size:.67rem;">Tap a button below</span></div>
+          <div class="ic-btns"><span class="ic-btn">🛒 Order Food</span><span class="ic-btn">🪑 Book Table</span><span class="ic-btn">📋 Menu</span></div>
+          <div class="ic-msg ic-user">Order Food</div>
+          <div class="ic-msg ic-bot"><b>What would you like?</b><br><span style="color:var(--muted);font-size:.67rem;">Browse today's specials</span></div>
+          <div class="ic-btns"><span class="ic-btn">🍕 Pizzas</span><span class="ic-btn">🥗 Salads</span><span class="ic-btn">🍛 Curries</span></div>
+        </div>
+      </div>
+      <div class="ind-card">
+        <div class="ind-icon">🏥</div>
+        <h4>Healthcare Clinic</h4>
+        <div class="ind-desc">Appointment booking &amp; FAQ auto-reply</div>
+        <div class="ind-chat">
+          <div class="ic-msg ic-bot"><b>Apollo Clinic:</b> Hello! Choose an option:</div>
+          <div class="ic-btns"><span class="ic-btn">📅 Book Appt</span><span class="ic-btn">💊 Reports</span><span class="ic-btn">⏰ Timings</span></div>
+          <div class="ic-msg ic-user">Book Appt</div>
+          <div class="ic-msg ic-bot"><b>Which specialty?</b></div>
+          <div class="ic-btns"><span class="ic-btn">General</span><span class="ic-btn">Dental</span><span class="ic-btn">Skin</span></div>
+          <div class="ic-msg ic-user">General</div>
+          <div class="ic-msg ic-bot">✅ <b>Confirmed!</b> Dr Mehra — Thu 11 AM</div>
+        </div>
+      </div>
+      <div class="ind-card">
+        <div class="ind-icon">🏠</div>
+        <h4>Real Estate</h4>
+        <div class="ind-desc">Lead qualification before agent handoff</div>
+        <div class="ind-chat">
+          <div class="ic-msg ic-bot"><b>Prestige Homes:</b> Hi! Looking to buy or rent?</div>
+          <div class="ic-btns"><span class="ic-btn">🏢 Buy</span><span class="ic-btn">🔑 Rent</span></div>
+          <div class="ic-msg ic-user">Buy</div>
+          <div class="ic-msg ic-bot"><b>Budget range?</b></div>
+          <div class="ic-btns"><span class="ic-btn">Under ₹50L</span><span class="ic-btn">₹50–80L</span><span class="ic-btn">₹80L+</span></div>
+          <div class="ic-msg ic-user">₹50–80L</div>
+          <div class="ic-msg ic-bot">Connecting you to Ravi (Sales) 📞</div>
+        </div>
+      </div>
+      <div class="ind-card">
+        <div class="ind-icon">🎓</div>
+        <h4>Coaching Institute</h4>
+        <div class="ind-desc">Admission inquiry → counsellor handoff</div>
+        <div class="ind-chat">
+          <div class="ic-msg ic-bot"><b>EduStar:</b> Hi! Which course?</div>
+          <div class="ic-btns"><span class="ic-btn">📚 CA</span><span class="ic-btn">💻 Coding</span><span class="ic-btn">📐 NEET</span></div>
+          <div class="ic-msg ic-user">CA</div>
+          <div class="ic-msg ic-bot">Foundation or Inter?</div>
+          <div class="ic-btns"><span class="ic-btn">Foundation</span><span class="ic-btn">Inter</span><span class="ic-btn">Final</span></div>
+          <div class="ic-msg ic-user">Foundation</div>
+          <div class="ic-msg ic-bot">📋 Brochure sent! Counsellor will call in 10 min ✅</div>
+        </div>
+      </div>
+      <div class="ind-card">
+        <div class="ind-icon">🛍️</div>
+        <h4>D2C E-commerce</h4>
+        <div class="ind-desc">Product discovery, FAQs, order status</div>
+        <div class="ind-chat">
+          <div class="ic-msg ic-bot"><b>BrewBox:</b> Hello! What can I help with?</div>
+          <div class="ic-btns"><span class="ic-btn">🛒 Shop</span><span class="ic-btn">📦 My Order</span><span class="ic-btn">🔄 Return</span></div>
+          <div class="ic-msg ic-user">My Order</div>
+          <div class="ic-msg ic-bot">Share your order ID:</div>
+          <div class="ic-msg ic-user">BB-2847</div>
+          <div class="ic-msg ic-bot">📦 <b>BB-2847</b> — Out for delivery, ETA 4 PM today 🚚</div>
+        </div>
+      </div>
+      <div class="ind-card">
+        <div class="ind-icon">💈</div>
+        <h4>Salon &amp; Spa</h4>
+        <div class="ind-desc">Service booking &amp; stylist preference</div>
+        <div class="ind-chat">
+          <div class="ic-msg ic-bot"><b>Glam Studio:</b> Book a service?</div>
+          <div class="ic-btns"><span class="ic-btn">💇 Haircut</span><span class="ic-btn">💅 Nails</span><span class="ic-btn">🧖 Facial</span></div>
+          <div class="ic-msg ic-user">Haircut</div>
+          <div class="ic-msg ic-bot">Stylist preference?</div>
+          <div class="ic-btns"><span class="ic-btn">Any</span><span class="ic-btn">Priya</span><span class="ic-btn">Sneha</span></div>
+          <div class="ic-msg ic-user">Priya</div>
+          <div class="ic-msg ic-bot">✅ Booked! <b>Priya</b> — Sat 3 PM. See you!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURE DEEP DIVES -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr" style="margin-bottom:56px;">
+      <div class="sec-lbl">Features</div>
+      <h2>Everything your chatbot needs</h2>
+    </div>
+
+    <div class="fa-row">
+      <div class="fa-txt">
+        <div class="fa-num">01</div>
+        <h3>Visual canvas.<br>Drag, connect, publish.</h3>
+        <p>The WAgen Flow Builder gives you a canvas where every conversation step is a visible node. Add messages, ask questions, show buttons, set conditions, trigger actions — all by dragging and connecting blocks. See the entire conversation tree at once, spot gaps, and fix them before going live.</p>
+        <ul>
+          <li>Message nodes: text, image, video, document, catalog</li>
+          <li>Input nodes: open question, button choice, list picker</li>
+          <li>Condition nodes: if/else branching on any field value</li>
+          <li>Action nodes: tag contact, assign agent, send to webhook</li>
+          <li>Delay node: pause X minutes/hours before next step</li>
+          <li>Fallback node: handle unexpected replies gracefully</li>
+        </ul>
+      </div>
+      <div class="mockup">
+        <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">Node types</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;background:rgba(29,185,84,.05);border:1.5px solid var(--green);">
+            <span style="font-size:.9rem;">⚡</span>
+            <div><div style="font-size:.76rem;font-weight:700;">Trigger</div><div style="font-size:.68rem;color:var(--muted);">Keyword · Button · Event · API</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;background:#f0f9ff;border:1.5px solid #bfdbfe;">
+            <span style="font-size:.9rem;">💬</span>
+            <div><div style="font-size:.76rem;font-weight:700;">Send Message</div><div style="font-size:.68rem;color:var(--muted);">Text · Image · Video · Buttons · List</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;background:#fffbeb;border:1.5px solid #fde68a;">
+            <span style="font-size:.9rem;">↔️</span>
+            <div><div style="font-size:.76rem;font-weight:700;">Condition</div><div style="font-size:.68rem;color:var(--muted);">If/Else on contact field, tag, or reply</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;background:#faf5ff;border:1.5px solid #ddd6fe;">
+            <span style="font-size:.9rem;">⚙️</span>
+            <div><div style="font-size:.76rem;font-weight:700;">Action</div><div style="font-size:.68rem;color:var(--muted);">Tag · Assign agent · Webhook · Sheets</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;background:#f8fafc;border:1.5px solid var(--border);">
+            <span style="font-size:.9rem;">⏱️</span>
+            <div><div style="font-size:.76rem;font-weight:700;">Delay</div><div style="font-size:.68rem;color:var(--muted);">Wait X minutes or hours before next step</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;background:#fff0f3;border:1.5px solid #fecdd3;">
+            <span style="font-size:.9rem;">🔄</span>
+            <div><div style="font-size:.76rem;font-weight:700;">Fallback</div><div style="font-size:.68rem;color:var(--muted);">Handle unknown replies, reassign, or retry</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fa-row rv">
+      <div class="fa-txt">
+        <div class="fa-num">02</div>
+        <h3>Smart handoff to human agents.</h3>
+        <p>Your chatbot handles the routine. When a customer is frustrated, has a complex issue, or is a high-value lead, WAgen routes the conversation to the right human agent — with full context, no need to repeat anything.</p>
+        <ul>
+          <li>Auto-assign based on keyword, condition, or lead score</li>
+          <li>Agent sees full conversation history before taking over</li>
+          <li>Contact fields collected by the bot shown instantly</li>
+          <li>Escalate to specific team members or round-robin pool</li>
+          <li>Customer notified: "Connecting you to our team..."</li>
+          <li>Bot resumes when agent marks conversation resolved</li>
+        </ul>
+      </div>
+      <div class="mockup">
+        <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Handoff — Live Inbox</div>
+        <div style="background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+          <div style="background:#128C7E;padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <div style="width:28px;height:28px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;">R</div>
+            <div style="flex:1;"><div style="font-size:.76rem;font-weight:700;color:#fff;">Ramesh Kumar</div><div style="font-size:.64rem;color:rgba(255,255,255,.7);">+91 99887 65432</div></div>
+            <span style="font-size:.64rem;font-weight:800;background:#ff9800;color:#fff;padding:2px 7px;border-radius:100px;">LIVE</span>
+          </div>
+          <div style="padding:10px 12px;display:flex;flex-direction:column;gap:5px;">
+            <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">🤖 Bot collected</div>
+            <div style="display:flex;justify-content:space-between;font-size:.74rem;"><span style="color:var(--muted);">Budget</span><span style="font-weight:700;">₹50–80L</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:.74rem;"><span style="color:var(--muted);">Property type</span><span style="font-weight:700;">2BHK flat</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:.74rem;"><span style="color:var(--muted);">Location pref</span><span style="font-weight:700;">Whitefield</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:.74rem;"><span style="color:var(--muted);">Timeline</span><span style="font-weight:700;">3 months</span></div>
+            <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;">
+              <div style="font-size:.68rem;font-weight:800;color:#1d4ed8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">→ Assigned to</div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#dbeafe,#bfdbfe);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:#1d4ed8;">A</div>
+                <div style="font-size:.76rem;font-weight:700;">Anil Sharma</div>
+                <span style="font-size:.64rem;color:var(--green);font-weight:700;">● Online</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INTEGRATIONS -->
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">Integrations</div>
+      <h2>Your chatbot connects to your tools</h2>
+      <p class="sec-sub">Data collected in flows flows automatically into the tools your team already uses — no manual transfer, no CSV downloads.</p>
+    </div>
+    <div class="int-grid">
+      <div class="int-card">
+        <div class="int-icon">📊</div>
+        <div class="int-name">Google Sheets</div>
+        <div class="int-desc">Every lead and order synced to a spreadsheet in real time</div>
+      </div>
+      <div class="int-card">
+        <div class="int-icon">💳</div>
+        <div class="int-name">Razorpay</div>
+        <div class="int-desc">Send payment links and collect payments inside the flow</div>
+      </div>
+      <div class="int-card">
+        <div class="int-icon">🛒</div>
+        <div class="int-name">Shopify</div>
+        <div class="int-desc">Order status, delivery tracking, and abandoned cart recovery</div>
+      </div>
+      <div class="int-card">
+        <div class="int-icon">🔗</div>
+        <div class="int-name">Webhooks</div>
+        <div class="int-desc">POST any contact data to your own system or CRM via webhook</div>
+      </div>
+      <div class="int-card">
+        <div class="int-icon">📅</div>
+        <div class="int-name">Google Calendar</div>
+        <div class="int-desc">Check availability and block slots when an appointment is booked</div>
+      </div>
+      <div class="int-card">
+        <div class="int-icon">📧</div>
+        <div class="int-name">Email Alerts</div>
+        <div class="int-desc">Team gets email when high-value lead is captured or form submitted</div>
+      </div>
+      <div class="int-card">
+        <div class="int-icon">📋</div>
+        <div class="int-name">Sequences</div>
+        <div class="int-desc">Enrol contact into a drip sequence when a flow step is completed</div>
+      </div>
+      <div class="int-card">
+        <div class="int-icon">🔔</div>
+        <div class="int-name">Reminders</div>
+        <div class="int-desc">Capture date fields in a flow → trigger birthday or renewal reminders</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr"><div class="sec-lbl">FAQ</div><h2>Common questions</h2></div>
+    <div class="faq-wrap">
+      <details><summary>Do I need coding skills to build a flow? <span class="fi">+</span></summary><div class="fa-body">No. The WAgen Flow Builder is 100% visual. You drag blocks onto a canvas and connect them with arrows. If you can draw a flowchart on paper, you can build a WAgen flow. There is no HTML, JavaScript, or API knowledge needed.</div></details>
+      <details><summary>Can my chatbot handle free-text replies, not just button taps? <span class="fi">+</span></summary><div class="fa-body">Yes. WAgen flows support both structured replies (buttons, list pickers) and open text input. For open text, you can use keyword matching (contains "refund", starts with "ORDER") or capture the raw input as a contact field for your team to review.</div></details>
+      <details><summary>What happens if a customer asks something my flow doesn't cover? <span class="fi">+</span></summary><div class="fa-body">You configure a <b>Fallback node</b>: a friendly "I didn't catch that" reply with an option to restart, pick from the main menu, or escalate to a human agent. You also see all unmatched queries in the analytics dashboard — these are your top candidates for new flow branches.</div></details>
+      <details><summary>Can one conversation trigger multiple flows? <span class="fi">+</span></summary><div class="fa-body">Each active keyword/trigger can only point to one flow at a time. But a flow can call another flow as a sub-flow, or change the active context so the next message triggers a different flow. Complex multi-path experiences are fully supported.</div></details>
+      <details><summary>Can I run a flow for existing contacts via broadcast? <span class="fi">+</span></summary><div class="fa-body">Yes. When you send a broadcast message with a button, tapping that button can trigger a specific flow. This is how retargeting and re-engagement campaigns work — send a broadcast to 500 past customers, and those who tap "Yes, interested" enter a qualification flow automatically.</div></details>
+      <details><summary>Does the Flow Builder work with WhatsApp Business API (not the app)? <span class="fi">+</span></summary><div class="fa-body">Yes, WAgen Flows work exclusively over the official WhatsApp Business API (Meta WABA). This is different from the regular WhatsApp app or WhatsApp Business App. All automated messages are template-based or within the 24-hour service window, fully compliant with Meta's policies.</div></details>
+    </div>
+  </div>
+</section>
+
+<section class="cta-sec">
+  <div class="cta-inner">
+    <h2>Your chatbot is waiting.<br>Build it <span class="g">in 5 minutes.</span></h2>
+    <p>No code. No agency. No waiting. Open the Flow Builder and have your first automated conversation live today.</p>
+    <div class="cta-btns">
+      <button class="btn-wa"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>Start building free</button>
+      <button class="btn-outline" style="color:#fff;border-color:rgba(255,255,255,.25);">Book a demo</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ft-top">
+    <div class="ft-brand"><a href="/" class="logo">Wagen<span>AI</span></a><p>India's most accessible WhatsApp AI chatbot — built for SMEs who want to grow without growing their team.</p></div>
+    <div class="ft-links">
+      <div class="ft-col"><h5>Product</h5><a href="/whatsapp-bot">WhatsApp Bot</a><a href="/website-widget">Website Widget</a><a href="/whatsapp-api">WhatsApp API</a><a href="/lead-capture">Lead Capture</a><a href="/reminder-campaigns">Reminder Campaigns</a><a href="/sequences">Sequences</a><a href="/flows">Flows</a><a href="/broadcast">Broadcast</a><a href="/pricing">Pricing</a></div>
+      <div class="ft-col"><h5>Industries</h5><a href="/ecommerce-chatbot">E-commerce</a><a href="/real-estate-chatbot">Real Estate</a><a href="/education-chatbot">Education</a><a href="/healthcare-chatbot">Healthcare</a><a href="/restaurant-chatbot">Restaurants</a></div>
+      <div class="ft-col"><h5>Company</h5><a href="#">About</a><a href="#">Blog</a><a href="#">Contact</a><a href="#">Privacy</a></div>
+    </div>
+  </div>
+  <div class="ft-bot"><p>© 2025 WagenAI. All rights reserved. 🇮🇳 Proudly Made in India</p><span>WhatsApp™ is a trademark of Meta Platforms, Inc.</span></div>
+  <div class="seo-links"><a href="/flows">WhatsApp Chatbot Flow Builder India</a><a href="/flows">No-code WhatsApp Automation</a><a href="/flows">WhatsApp Bot Builder India</a><a href="/whatsapp-bot">WhatsApp AI Chatbot</a></div>
+</footer>
+</body>
+</html>

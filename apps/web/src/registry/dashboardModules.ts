@@ -70,6 +70,20 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     requiresAuth: true
   },
   {
+    id: "reminder",
+    path: "reminder/*",
+    navTo: "/dashboard/reminder",
+    navLabel: "Reminders",
+    subtitle: "Birthday & anniversary campaigns",
+    icon: "sequence",
+    section: "main",
+    lazyRoute: () => import("../modules/dashboard/reminder/route"),
+    featureFlag: "dashboard.reminder",
+    requiredEntitlements: { module: "reminders" },
+    prefetchStrategy: "code+data",
+    requiresAuth: true
+  },
+  {
     id: "analytics",
     path: "analytics/*",
     navTo: "/dashboard/analytics",

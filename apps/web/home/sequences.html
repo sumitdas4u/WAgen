@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WhatsApp Sequences — WAgen | Automated Follow-Up Drip Campaigns</title>
+<meta name="description" content="Build automated WhatsApp message sequences triggered by contact events. Welcome series, onboarding, lead nurturing, post-purchase follow-ups — set once, run forever. Pro feature."/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--green:#1DB954;--green-dark:#17a349;--green-deep:#0d6b31;--black:#0F0F0F;--text:#1A1A1A;--muted:#6B7280;--muted-lt:#9CA3AF;--bg:#fff;--bg2:#F8FAF8;--bg3:#F0F7F0;--border:#E5E7EB;--border-green:rgba(29,185,84,.2);--wa-bubble:#DCF8C6;--wa-bg:#ECE5DD;--pro:#7c3aed;--pro-bg:rgba(124,58,237,.07);--pro-border:rgba(124,58,237,.2);}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;line-height:1.6;}
+nav{position:fixed;top:0;left:0;right:0;z-index:300;display:flex;align-items:center;justify-content:space-between;padding:0 5%;height:64px;background:rgba(255,255,255,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);}
+.logo{font-weight:800;font-size:1.3rem;color:var(--black);text-decoration:none;letter-spacing:-.02em;}
+.logo span{color:var(--green);}
+.nav-links{display:flex;gap:0;list-style:none;align-items:center;}
+.nav-item{position:relative;}
+.nav-item>a{display:block;padding:0 14px;height:64px;line-height:64px;color:var(--muted);text-decoration:none;font-size:.88rem;font-weight:500;transition:color .2s;white-space:nowrap;}
+.nav-item>a:hover{color:var(--black);}
+.nav-item:hover .drop{display:flex;}
+.drop{display:none;position:absolute;top:60px;left:0;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;flex-direction:column;min-width:230px;box-shadow:0 12px 32px rgba(0,0,0,.1);z-index:400;}
+.drop a{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:8px;color:var(--text);font-size:.84rem;font-weight:500;text-decoration:none;transition:background .15s;}
+.drop a:hover{background:var(--bg3);color:var(--green);}
+.drop a.active{background:var(--bg3);color:var(--green);font-weight:700;}
+.nav-right{display:flex;gap:10px;}
+.btn-ghost{background:transparent;color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-ghost:hover{border-color:var(--green);color:var(--green);}
+.btn-cta{background:var(--green);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(29,185,84,.3);transition:all .2s;}
+.btn-cta:hover{background:var(--green-dark);transform:translateY(-1px);}
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:52px 5% 28px;}
+.ft-top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:32px;max-width:1160px;margin:0 auto;}
+.ft-brand p{color:var(--muted);font-size:.83rem;margin-top:8px;max-width:240px;line-height:1.7;}
+.ft-links{display:flex;gap:44px;flex-wrap:wrap;}
+.ft-col h5{font-weight:700;font-size:.84rem;margin-bottom:12px;}
+.ft-col a{display:block;color:var(--muted);text-decoration:none;font-size:.82rem;margin-bottom:7px;transition:color .2s;}
+.ft-col a:hover{color:var(--green);}
+.ft-bot{max-width:1160px;margin:32px auto 0;padding-top:18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.ft-bot p,.ft-bot span{color:var(--muted-lt);font-size:.76rem;}
+.seo-links{display:flex;flex-wrap:wrap;gap:5px 14px;max-width:1160px;margin:10px auto 0;}
+.seo-links a{color:var(--muted-lt);font-size:.72rem;text-decoration:none;}
+.seo-links a:hover{color:var(--green);}
+.pro-badge{display:inline-flex;align-items:center;gap:6px;background:var(--pro-bg);border:1px solid var(--pro-border);border-radius:100px;padding:4px 13px;font-size:.72rem;font-weight:800;color:var(--pro);letter-spacing:.04em;text-transform:uppercase;}
+.hero{padding:104px 5% 80px;position:relative;overflow:hidden;}
+.hero-bg{position:absolute;inset:0;background-image:radial-gradient(circle,#d1d5db 1px,transparent 1px);background-size:28px 28px;opacity:.25;mask-image:radial-gradient(ellipse 60% 80% at 20% 50%,black,transparent);}
+.hero-glow{position:absolute;top:-5%;right:-5%;width:560px;height:560px;background:radial-gradient(ellipse,rgba(29,185,84,.08),transparent 65%);pointer-events:none;}
+.hero-wrap{display:grid;grid-template-columns:1fr 460px;gap:64px;align-items:center;max-width:1160px;margin:0 auto;position:relative;z-index:1;}
+.hero-badge-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+.prod-badge{display:inline-flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border-green);border-radius:100px;padding:5px 14px;font-size:.76rem;font-weight:700;color:var(--green-deep);}
+h1{font-size:clamp(2rem,4vw,3.2rem);font-weight:800;line-height:1.1;letter-spacing:-.03em;margin-bottom:16px;}
+.g{color:var(--green);}
+.hero-sub{font-size:1rem;color:var(--muted);max-width:500px;line-height:1.75;margin-bottom:26px;}
+.hero-btns{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;}
+.btn-primary{background:var(--green);color:#fff;border:none;border-radius:9px;padding:13px 26px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 4px 16px rgba(29,185,84,.3);}
+.btn-primary:hover{background:var(--green-dark);transform:translateY(-2px);}
+.btn-outline{background:#fff;color:var(--text);border:2px solid var(--border);border-radius:9px;padding:13px 24px;font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-outline:hover{border-color:var(--green);color:var(--green);}
+.hero-checks{list-style:none;display:flex;flex-direction:column;gap:9px;}
+.hero-checks li{display:flex;align-items:center;gap:9px;font-size:.9rem;font-weight:500;}
+.hero-checks li::before{content:"✓";width:20px;height:20px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;}
+.phone-wrap{position:relative;max-width:320px;margin:0 auto;}
+.fbadge{position:absolute;background:#fff;border:1.5px solid var(--border-green);border-radius:10px;padding:8px 13px;font-size:.74rem;font-weight:700;color:var(--green-deep);box-shadow:0 5px 18px rgba(0,0,0,.1);white-space:nowrap;}
+.fbadge.t{top:-14px;right:-22px;animation:flt 3s ease-in-out infinite;}
+.fbadge.b{bottom:-10px;left:-22px;animation:flt 3.5s 1s ease-in-out infinite;}
+@keyframes flt{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.seq-preview{background:#fff;border:1.5px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.1);}
+.sp-head{background:var(--black);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
+.sp-head span{color:#fff;font-size:.8rem;font-weight:700;}
+.sp-step{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);}
+.sp-step:last-child{border-bottom:none;}
+.sp-num{width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;font-size:.72rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.sp-num.done{background:#dcfce7;color:#166534;}
+.sp-info{flex:1;}
+.sp-title{font-size:.8rem;font-weight:700;}
+.sp-delay{font-size:.72rem;color:var(--muted);}
+.sp-badge{font-size:.64rem;font-weight:800;padding:2px 7px;border-radius:100px;}
+.sp-sent{background:#dcfce7;color:#166534;}
+.sp-wait{background:#dbeafe;color:#1d4ed8;}
+.sp-pending{background:#f1f5f9;color:#5f6f86;}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:60px;}
+.sc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:24px 18px;text-align:center;transition:border-color .2s;}
+.sec.alt .sc{background:var(--bg);}
+.sc:hover{border-color:var(--border-green);}
+.sc-v{font-size:2.3rem;font-weight:800;color:var(--green);letter-spacing:-.02em;}
+.sc-l{font-size:.8rem;color:var(--muted);margin-top:5px;line-height:1.4;}
+.sec{padding:80px 5%;}
+.sec.alt{background:var(--bg2);}
+.sw{max-width:1160px;margin:0 auto;}
+.sec-lbl{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:10px;}
+h2{font-size:clamp(1.7rem,3vw,2.5rem);font-weight:800;line-height:1.2;letter-spacing:-.02em;margin-bottom:14px;}
+.sec-ctr{text-align:center;margin-bottom:52px;}
+.sec-sub{color:var(--muted);font-size:.96rem;max-width:560px;margin:12px auto 0;line-height:1.75;}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);position:relative;margin-top:48px;}
+.steps::before{content:'';position:absolute;top:34px;left:16%;right:16%;height:2px;background:repeating-linear-gradient(90deg,var(--green) 0,var(--green) 8px,transparent 8px,transparent 18px);}
+.step{text-align:center;padding:0 20px;}
+.s-circ{width:68px;height:68px;border-radius:50%;background:#fff;border:2px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:1.1rem;font-weight:800;color:var(--green);box-shadow:0 0 0 8px rgba(29,185,84,.07);}
+.sec.alt .s-circ{background:var(--bg);}
+.step h4{font-weight:700;font-size:.98rem;margin-bottom:8px;}
+.step p{color:var(--muted);font-size:.86rem;line-height:1.6;}
+.fg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+.fc{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:26px;transition:all .22s;}
+.fc:hover{border-color:var(--border-green);transform:translateY(-4px);box-shadow:0 8px 24px rgba(29,185,84,.09);}
+.sec.alt .fc{background:var(--bg);}
+.fc-icon{font-size:1.8rem;margin-bottom:12px;}
+.fc h4{font-weight:700;font-size:.95rem;margin-bottom:7px;}
+.fc p{color:var(--muted);font-size:.84rem;line-height:1.6;}
+.fc-tag{display:inline-block;margin-top:10px;font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:5px;background:rgba(29,185,84,.1);color:var(--green-deep);}
+.fa-row{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-bottom:72px;}
+.fa-row.rv{direction:rtl;}
+.fa-row.rv>*{direction:ltr;}
+.fa-num{font-size:3rem;font-weight:800;color:rgba(29,185,84,.12);line-height:1;margin-bottom:6px;}
+.fa-txt h3{font-size:1.35rem;font-weight:800;margin-bottom:12px;}
+.fa-txt p{color:var(--muted);font-size:.92rem;line-height:1.75;margin-bottom:18px;}
+.fa-txt ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-bottom:20px;}
+.fa-txt ul li{display:flex;align-items:flex-start;gap:9px;font-size:.88rem;line-height:1.5;}
+.fa-txt ul li::before{content:"✓";width:18px;height:18px;border-radius:50%;background:rgba(29,185,84,.1);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:.7rem;flex-shrink:0;margin-top:1px;}
+.mockup{background:var(--bg2);border:1.5px solid var(--border);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px;}
+.sec.alt .mockup{background:#fff;}
+.ind-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.ind-card{border:1.5px solid var(--border);border-radius:14px;padding:24px;background:#fff;transition:all .22s;}
+.ind-card:hover{border-color:var(--border-green);transform:translateY(-3px);box-shadow:0 8px 24px rgba(29,185,84,.08);}
+.sec.alt .ind-card{background:var(--bg);}
+.ind-icon{font-size:1.6rem;margin-bottom:10px;}
+.ind-card h4{font-weight:700;font-size:.92rem;margin-bottom:6px;}
+.ind-steps{display:flex;flex-direction:column;gap:5px;margin-top:8px;}
+.ind-step-row{display:flex;align-items:center;gap:8px;}
+.ind-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;}
+.ind-step-txt{font-size:.78rem;color:var(--muted);}
+.ind-delay{font-size:.68rem;font-weight:700;color:var(--green-deep);background:rgba(29,185,84,.1);border-radius:4px;padding:1px 6px;margin-left:auto;white-space:nowrap;}
+.pro-callout{background:linear-gradient(135deg,#1a0a3d,#3b0f7a);border-radius:20px;padding:48px;text-align:center;position:relative;overflow:hidden;margin-top:32px;}
+.pro-callout::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% -20%,rgba(124,58,237,.35),transparent 60%);}
+.pro-inner{position:relative;z-index:1;}
+.pro-callout h2{color:#fff;font-size:clamp(1.5rem,2.5vw,2.2rem);}
+.pro-callout h2 span{color:#a78bfa;}
+.pro-callout p{color:rgba(255,255,255,.65);max-width:520px;margin:14px auto 0;font-size:.96rem;}
+.pro-btns{display:flex;gap:12px;justify-content:center;margin-top:28px;flex-wrap:wrap;}
+.btn-pro{background:#7c3aed;color:#fff;border:none;border-radius:9px;padding:13px 26px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(124,58,237,.4);transition:all .2s;}
+.btn-pro:hover{background:#6d28d9;transform:translateY(-2px);}
+.btn-demo{background:transparent;color:rgba(255,255,255,.8);border:1.5px solid rgba(255,255,255,.2);border-radius:9px;padding:13px 24px;font-family:inherit;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-demo:hover{border-color:rgba(255,255,255,.5);color:#fff;}
+.faq-wrap{max-width:780px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px;}
+details{background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s;}
+.sec.alt details{background:var(--bg);}
+details:hover,details[open]{border-color:var(--border-green);}
+summary{display:flex;justify-content:space-between;align-items:center;padding:17px 22px;cursor:pointer;list-style:none;font-weight:700;font-size:.91rem;gap:12px;}
+summary::-webkit-details-marker{display:none;}
+.fi{color:var(--green);font-size:1.3rem;flex-shrink:0;transition:transform .25s;}
+details[open] .fi{transform:rotate(45deg);}
+.fa-body{padding:0 22px 18px;color:var(--muted);font-size:.87rem;line-height:1.75;}
+.fa-body b{color:var(--text);}
+.cta-sec{background:var(--black);padding:90px 5%;text-align:center;position:relative;overflow:hidden;}
+.cta-sec::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(29,185,84,.18),transparent 60%);}
+.cta-inner{position:relative;z-index:1;}
+.cta-sec h2{color:#fff;}
+.cta-sec h2 .g{color:var(--green);}
+.cta-sec p{color:rgba(255,255,255,.6);max-width:480px;margin:14px auto 0;font-size:.96rem;}
+.cta-btns{display:flex;gap:12px;justify-content:center;margin-top:30px;flex-wrap:wrap;}
+.btn-wa{display:flex;align-items:center;gap:8px;background:#25D366;color:#fff;border:none;border-radius:9px;padding:13px 22px;font-family:inherit;font-size:.93rem;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-wa:hover{background:#1ebe5c;transform:translateY(-2px);}
+@media(max-width:900px){.hero-wrap,.fa-row{grid-template-columns:1fr;}.phone-wrap{display:none;}.stats-row{grid-template-columns:repeat(2,1fr);}.fg,.ind-grid{grid-template-columns:repeat(2,1fr);}.steps{grid-template-columns:1fr;gap:28px;}.steps::before{display:none;}}
+@media(max-width:600px){.fg,.ind-grid,.stats-row{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="logo">Wagen<span>AI</span></a>
+  <ul class="nav-links">
+    <li class="nav-item"><a href="#">Product ▾</a>
+      <div class="drop">
+        <a href="/whatsapp-bot">📱 WhatsApp Bot</a>
+        <a href="/website-widget">💬 Website Widget</a>
+        <a href="/whatsapp-api">⚡ WhatsApp API</a>
+        <a href="/lead-capture">🎯 Lead Capture</a>
+        <a href="/reminder-campaigns">🔔 Reminder Campaigns</a>
+        <a href="/sequences" class="active">📋 Sequences</a>
+        <a href="/flows">🔄 Flows</a>
+        <a href="/broadcast">📢 Broadcast</a>
+      </div>
+    </li>
+    <li class="nav-item"><a href="/pricing">Pricing</a></li>
+    <li class="nav-item"><a href="#">Industries ▾</a>
+      <div class="drop">
+        <a href="/ecommerce-chatbot">🛍️ E-commerce</a>
+        <a href="/real-estate-chatbot">🏠 Real Estate</a>
+        <a href="/education-chatbot">🎓 Education</a>
+        <a href="/healthcare-chatbot">🏥 Healthcare</a>
+        <a href="/restaurant-chatbot">🍽️ Restaurants</a>
+      </div>
+    </li>
+  </ul>
+  <div class="nav-right">
+    <button class="btn-ghost">Log In</button>
+    <button class="btn-cta">Start Free</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-wrap">
+    <div>
+      <div class="hero-badge-row">
+        <div class="prod-badge">📋 Sequences</div>
+        <div class="pro-badge">⭐ Pro Feature</div>
+      </div>
+      <h1>Set up once.<br><span class="g">Follow up forever.</span></h1>
+      <p class="hero-sub">Build automated WhatsApp message sequences that trigger when a contact is created or updated. Welcome them, nurture them, convert them — without any manual work.</p>
+      <div class="hero-btns">
+        <button class="btn-primary">Build a Sequence →</button>
+        <button class="btn-outline">See examples</button>
+      </div>
+      <ul class="hero-checks">
+        <li>Trigger on contact created, updated, or both</li>
+        <li>Multi-step with delays: minutes, hours, or days between messages</li>
+        <li>Start and stop conditions — enrol the right contacts, stop at the right time</li>
+        <li>Template-based — fully WhatsApp compliant, no blocks</li>
+      </ul>
+    </div>
+    <div class="phone-wrap">
+      <div class="fbadge t">✅ 1,240 enrolled this week</div>
+      <div class="seq-preview">
+        <div class="sp-head"><span>📋 New Customer Welcome</span><span style="color:rgba(255,255,255,.5);font-size:.72rem;">Pro · Published</span></div>
+        <div class="sp-step"><div class="sp-num done">1</div><div class="sp-info"><div class="sp-title">Welcome message</div><div class="sp-delay">Immediately on contact created</div></div><span class="sp-badge sp-sent">Sent</span></div>
+        <div class="sp-step"><div class="sp-num done">2</div><div class="sp-info"><div class="sp-title">Menu / product intro</div><div class="sp-delay">After 2 hours</div></div><span class="sp-badge sp-sent">Sent</span></div>
+        <div class="sp-step"><div class="sp-num" style="background:#dbeafe;color:#1d4ed8;">3</div><div class="sp-info"><div class="sp-title">First visit nudge</div><div class="sp-delay">After 3 days</div></div><span class="sp-badge sp-wait">Waiting</span></div>
+        <div class="sp-step"><div class="sp-num" style="background:#f1f5f9;color:#5f6f86;">4</div><div class="sp-info"><div class="sp-title">Loyalty offer</div><div class="sp-delay">After 7 days</div></div><span class="sp-badge sp-pending">Pending</span></div>
+        <div style="padding:10px 16px;display:flex;justify-content:space-between;background:var(--bg2);border-top:1px solid var(--border);">
+          <span style="font-size:.74rem;color:var(--muted);">1,240 enrolled</span>
+          <span style="font-size:.74rem;font-weight:700;color:var(--green);">68% completion rate</span>
+        </div>
+      </div>
+      <div class="fbadge b">📨 340 sent today</div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="stats-row">
+      <div class="sc"><div class="sc-v">0</div><div class="sc-l">Manual messages sent after a sequence is published</div></div>
+      <div class="sc"><div class="sc-v">68%</div><div class="sc-l">Average sequence completion rate across all industries</div></div>
+      <div class="sc"><div class="sc-v">4×</div><div class="sc-l">Higher conversion vs a single welcome message</div></div>
+      <div class="sc"><div class="sc-v">5 min</div><div class="sc-l">Average time to build and publish your first sequence</div></div>
+    </div>
+    <div class="sec-ctr">
+      <div class="sec-lbl">How It Works</div>
+      <h2>Trigger. Wait. Send. Repeat.</h2>
+      <p class="sec-sub">Sequences run entirely on autopilot — from the moment a contact enters to the final message in the series.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="s-circ">①</div><h4>Trigger on contact event</h4><p>A new contact is created (from WhatsApp, QR, widget, or API) or an existing contact's profile is updated. WAgen evaluates your start conditions.</p></div>
+      <div class="step"><div class="s-circ">②</div><h4>Enrol matching contacts</h4><p>If the contact matches your audience filter — type, tags, custom fields — they're enrolled in the sequence. Existing contacts enrolled at step 1.</p></div>
+      <div class="step"><div class="s-circ">③</div><h4>Messages sent on schedule</h4><p>Each step fires at its configured delay. Step 1 immediately, step 2 after 2 hours, step 3 after 3 days. Delivery windows keep messages within business hours.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- USE CASES -->
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">Use Cases</div>
+      <h2>Every touchpoint. Automated.</h2>
+      <p class="sec-sub">From the first "hello" to post-purchase follow-ups — sequences handle every stage of the customer relationship.</p>
+    </div>
+    <div class="fg">
+      <div class="fc"><div class="fc-icon">👋</div><h4>New Customer Welcome</h4><p>The moment someone connects on WhatsApp — greet them, share your menu or catalogue, and nudge them towards their first purchase within 48 hours.</p><span class="fc-tag">Onboarding</span></div>
+      <div class="fc"><div class="fc-icon">🔥</div><h4>Lead Nurturing</h4><p>A new lead comes in from your website widget or ad campaign. Send product info on day 1, a testimonial on day 3, and a discount offer on day 7 — automatically.</p><span class="fc-tag">Conversion</span></div>
+      <div class="fc"><div class="fc-icon">🛒</div><h4>Post-Purchase Follow-Up</h4><p>After a purchase, thank the customer, share care instructions, ask for a review on day 3, and offer a loyalty reward on day 7. Build repeat buyers automatically.</p><span class="fc-tag">Retention</span></div>
+      <div class="fc"><div class="fc-icon">🎓</div><h4>Course / Batch Onboarding</h4><p>When a student enrols, send the welcome kit, class schedule, preparation checklist, and pre-class motivation — all timed to the right intervals before class starts.</p><span class="fc-tag">Education</span></div>
+      <div class="fc"><div class="fc-icon">🏠</div><h4>Property Inquiry Follow-Up</h4><p>A lead inquires about a property. Send details immediately, a site-visit nudge on day 2, a payment plan on day 4, and a closing offer on day 7 — without lifting a finger.</p><span class="fc-tag">Real Estate</span></div>
+      <div class="fc"><div class="fc-icon">💊</div><h4>Post-Consultation Care</h4><p>After a clinic visit, send medication reminders, follow-up care instructions, and a next-appointment prompt — automatically building a long-term patient relationship.</p><span class="fc-tag">Healthcare</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- INDUSTRY SEQUENCES -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="sec-ctr">
+      <div class="sec-lbl">By Industry</div>
+      <h2>Ready-to-use sequence templates</h2>
+      <p class="sec-sub">Copy these sequence structures for your business. Each step is a WhatsApp-approved template — just customise the content and publish.</p>
+    </div>
+    <div class="ind-grid">
+      <div class="ind-card"><div class="ind-icon">🍽️</div><h4>Restaurant — New Customer</h4><div class="ind-steps"><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Welcome + menu link</span><span class="ind-delay">Immediate</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Chef's special highlight</span><span class="ind-delay">2 hours</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">"Book your table" nudge</span><span class="ind-delay">Day 3</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Loyalty card offer</span><span class="ind-delay">Day 7</span></div></div></div>
+      <div class="ind-card"><div class="ind-icon">🛍️</div><h4>E-commerce — New Lead</h4><div class="ind-steps"><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Welcome + top categories</span><span class="ind-delay">Immediate</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Best sellers showcase</span><span class="ind-delay">Day 1</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Social proof + reviews</span><span class="ind-delay">Day 3</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">First purchase 10% off</span><span class="ind-delay">Day 7</span></div></div></div>
+      <div class="ind-card"><div class="ind-icon">🏠</div><h4>Real Estate — Inquiry</h4><div class="ind-steps"><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Property brochure + photos</span><span class="ind-delay">Immediate</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Site visit invitation</span><span class="ind-delay">Day 2</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">EMI / payment plan</span><span class="ind-delay">Day 4</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Limited-time offer close</span><span class="ind-delay">Day 7</span></div></div></div>
+      <div class="ind-card"><div class="ind-icon">🎓</div><h4>Education — Admission Lead</h4><div class="ind-steps"><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Course overview + syllabus</span><span class="ind-delay">Immediate</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Student success stories</span><span class="ind-delay">Day 2</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Fee structure + scholarships</span><span class="ind-delay">Day 4</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Deadline reminder</span><span class="ind-delay">Day 6</span></div></div></div>
+      <div class="ind-card"><div class="ind-icon">🏥</div><h4>Clinic — Post-Visit</h4><div class="ind-steps"><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Prescription summary</span><span class="ind-delay">Immediate</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Medication reminder tips</span><span class="ind-delay">Day 1</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Recovery check-in</span><span class="ind-delay">Day 3</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Follow-up appointment</span><span class="ind-delay">Day 14</span></div></div></div>
+      <div class="ind-card"><div class="ind-icon">💪</div><h4>Fitness — Trial Signup</h4><div class="ind-steps"><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Welcome + gym tour video</span><span class="ind-delay">Immediate</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Day 3 motivation check-in</span><span class="ind-delay">Day 3</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Personal trainer offer</span><span class="ind-delay">Day 5</span></div><div class="ind-step-row"><div class="ind-dot"></div><span class="ind-step-txt">Membership closing offer</span><span class="ind-delay">Day 7</span></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="sec">
+  <div class="sw">
+    <div class="fa-row">
+      <div class="fa-txt">
+        <div class="fa-num">01</div>
+        <h3>Start and stop conditions.<br>Smart enrolment, zero spam.</h3>
+        <p>Not every contact should enter every sequence. Define <b>start conditions</b> to filter who gets enrolled and <b>stop conditions</b> to exit contacts when they've converted — so you never send an offer to someone who already bought.</p>
+        <ul>
+          <li>Start conditions: contact type, tags, custom field values</li>
+          <li>Stop conditions: "tag added = purchased", "field set = booked"</li>
+          <li>Allow-once mode: each contact enrolled maximum once per sequence</li>
+          <li>Require previous delivery: only advance if last message was delivered</li>
+        </ul>
+      </div>
+      <div class="mockup">
+        <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Enrolment Rules</div>
+        <div style="background:#dcfce7;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-bottom:8px;">
+          <div style="font-size:.7rem;font-weight:800;color:#166534;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">▶ START when</div>
+          <div style="font-size:.8rem;color:var(--text);">contact_type <b>is</b> "lead"</div>
+          <div style="font-size:.72rem;color:var(--muted);">AND tags <b>contains</b> "website-inquiry"</div>
+        </div>
+        <div style="background:#ffe4e6;border:1px solid #fecdd3;border-radius:8px;padding:12px;">
+          <div style="font-size:.7rem;font-weight:800;color:#be123c;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">⏹ STOP when</div>
+          <div style="font-size:.8rem;color:var(--text);">contact_type <b>becomes</b> "customer"</div>
+          <div style="font-size:.72rem;color:var(--muted);">OR tags <b>added</b> "purchased"</div>
+        </div>
+      </div>
+    </div>
+    <div class="fa-row rv">
+      <div class="fa-txt">
+        <div class="fa-num">02</div>
+        <h3>Delivery windows.<br>Messages only when it matters.</h3>
+        <p>Nobody wants a 2 AM WhatsApp message. Set allowed days (weekdays only, or include weekends) and a delivery window (e.g. 9 AM – 7 PM). If a step is scheduled outside the window, WAgen holds it until the next allowed slot.</p>
+        <ul>
+          <li>Set allowed days: Mon–Fri, Mon–Sat, or every day</li>
+          <li>Set time window: e.g. 9:00 AM to 7:00 PM in your timezone</li>
+          <li>Messages held until next allowed slot — never dropped</li>
+          <li>Per-sequence settings — B2B sequences can use stricter windows</li>
+        </ul>
+      </div>
+      <div class="mockup">
+        <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Delivery Window</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+          <span style="padding:5px 10px;border-radius:6px;font-size:.76rem;font-weight:700;background:rgba(29,185,84,.1);color:var(--green-deep);">Mon</span>
+          <span style="padding:5px 10px;border-radius:6px;font-size:.76rem;font-weight:700;background:rgba(29,185,84,.1);color:var(--green-deep);">Tue</span>
+          <span style="padding:5px 10px;border-radius:6px;font-size:.76rem;font-weight:700;background:rgba(29,185,84,.1);color:var(--green-deep);">Wed</span>
+          <span style="padding:5px 10px;border-radius:6px;font-size:.76rem;font-weight:700;background:rgba(29,185,84,.1);color:var(--green-deep);">Thu</span>
+          <span style="padding:5px 10px;border-radius:6px;font-size:.76rem;font-weight:700;background:rgba(29,185,84,.1);color:var(--green-deep);">Fri</span>
+          <span style="padding:5px 10px;border-radius:6px;font-size:.76rem;font-weight:700;background:rgba(29,185,84,.1);color:var(--green-deep);">Sat</span>
+          <span style="padding:5px 10px;border-radius:6px;font-size:.76rem;font-weight:700;background:#f1f5f9;color:var(--muted);">Sun</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="flex:1;background:var(--bg3);border-radius:7px;padding:8px 12px;text-align:center;font-size:.8rem;font-weight:700;color:var(--green-deep);">9:00 AM</div>
+          <span style="color:var(--muted);font-size:.8rem;">to</span>
+          <div style="flex:1;background:var(--bg3);border-radius:7px;padding:8px 12px;text-align:center;font-size:.8rem;font-weight:700;color:var(--green-deep);">7:00 PM</div>
+        </div>
+        <div style="font-size:.76rem;color:var(--muted);text-align:center;margin-top:8px;">Messages outside this window are held until Mon 9 AM</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRO CALLOUT -->
+<section class="sec alt">
+  <div class="sw">
+    <div class="pro-callout">
+      <div class="pro-inner">
+        <div class="pro-badge" style="margin:0 auto 16px;width:fit-content;">⭐ Pro Feature</div>
+        <h2>Sequences are available on <span>Pro & Business</span> plans</h2>
+        <p>Upgrade to Pro to unlock Sequences, Reminders, Webhooks, and Google Sheets sync — everything you need to run a fully automated WhatsApp business.</p>
+        <div class="pro-btns">
+          <button class="btn-pro">Upgrade to Pro — ₹1,499/mo →</button>
+          <button class="btn-demo">Book a demo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="sec">
+  <div class="sw">
+    <div class="sec-ctr"><div class="sec-lbl">FAQ</div><h2>Common questions</h2></div>
+    <div class="faq-wrap">
+      <details><summary>Can a contact be in multiple sequences at once? <span class="fi">+</span></summary><div class="fa-body">Yes. A contact can be enrolled in multiple sequences simultaneously — for example, a "welcome" sequence and a "product launch" sequence. Each sequence runs independently on its own schedule.</div></details>
+      <details><summary>What happens if a message fails to deliver? <span class="fi">+</span></summary><div class="fa-body">If you enable <b>Require previous delivery</b>, WAgen will retry the step for up to the configured retry window. If delivery still fails, the contact is marked as failed for that sequence. With retry disabled, the sequence continues to the next step regardless.</div></details>
+      <details><summary>Can I stop a contact from a sequence if they reply "STOP"? <span class="fi">+</span></summary><div class="fa-body">Yes. You can set a <b>stop condition</b> that monitors for specific inbound messages (e.g. message contains "STOP") and immediately removes the contact from the sequence. This is also how opt-out compliance works.</div></details>
+      <details><summary>Does sequence sending count towards my daily message limit? <span class="fi">+</span></summary><div class="fa-body">Yes. All WhatsApp template messages — whether from sequences, broadcasts, or reminders — count towards your Meta account's daily message tier. WAgen distributes sequence sends across the day to stay within limits.</div></details>
+    </div>
+  </div>
+</section>
+
+<section class="cta-sec">
+  <div class="cta-inner">
+    <h2>Build your first <span class="g">automated sequence</span></h2>
+    <p>Set it up in 5 minutes. Your contacts get the right message at the right time — forever.</p>
+    <div class="cta-btns">
+      <button class="btn-wa"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>Start for free</button>
+      <button class="btn-outline" style="color:#fff;border-color:rgba(255,255,255,.25);">View Pro pricing</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ft-top">
+    <div class="ft-brand"><a href="/" class="logo">Wagen<span>AI</span></a><p>India's most accessible WhatsApp AI chatbot — built for SMEs who want to grow without growing their team.</p></div>
+    <div class="ft-links">
+      <div class="ft-col"><h5>Product</h5><a href="/whatsapp-bot">WhatsApp Bot</a><a href="/website-widget">Website Widget</a><a href="/whatsapp-api">WhatsApp API</a><a href="/lead-capture">Lead Capture</a><a href="/reminder-campaigns">Reminder Campaigns</a><a href="/sequences">Sequences</a><a href="/flows">Flows</a><a href="/broadcast">Broadcast</a><a href="/pricing">Pricing</a></div>
+      <div class="ft-col"><h5>Industries</h5><a href="/ecommerce-chatbot">E-commerce</a><a href="/real-estate-chatbot">Real Estate</a><a href="/education-chatbot">Education</a><a href="/healthcare-chatbot">Healthcare</a><a href="/restaurant-chatbot">Restaurants</a></div>
+      <div class="ft-col"><h5>Company</h5><a href="#">About</a><a href="#">Blog</a><a href="#">Contact</a><a href="#">Privacy</a></div>
+    </div>
+  </div>
+  <div class="ft-bot"><p>© 2025 WagenAI. All rights reserved. 🇮🇳 Proudly Made in India</p><span>WhatsApp™ is a trademark of Meta Platforms, Inc.</span></div>
+  <div class="seo-links"><a href="/sequences">WhatsApp Drip Campaign India</a><a href="/sequences">WhatsApp Follow-up Automation</a><a href="/broadcast">WhatsApp Broadcast India</a></div>
+</footer>
+</body>
+</html>

@@ -182,6 +182,22 @@ async function emitSequenceContactEvent(result: ContactUpsertResult): Promise<vo
   }
 }
 
+async function emitReminderCaptureEvent(result: ContactUpsertResult): Promise<void> {
+  if (result.action === "skipped") {
+    return;
+  }
+  try {
+    const { processReminderCaptureEvent } = await import("./reminder-capture-trigger-service.js");
+    await processReminderCaptureEvent({
+      userId: result.contact.user_id,
+      event: result.action === "created" ? "contact_created" : "contact_updated",
+      contactId: result.contact.id
+    });
+  } catch (error) {
+    console.warn("[ReminderCapture] contact event processing failed", error);
+  }
+}
+
 interface ContactImportWorkbookOptions {
   extraTags?: string[];
   phoneNumberFormat?: "with_country_code" | "without_country_code";
@@ -1103,6 +1119,7 @@ export async function createManualContact(userId: string, input: CreateManualCon
     contact: { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] }
   };
   await emitSequenceContactEvent(hydratedResult);
+  await emitReminderCaptureEvent(hydratedResult);
   return hydratedResult;
 }
 
@@ -1213,6 +1230,7 @@ export async function updateManualContact(
   const fieldValuesMap = await loadFieldValues(pool, [updated.id]);
   const hydrated = { ...updated, custom_field_values: fieldValuesMap.get(updated.id) ?? [] };
   await emitSequenceContactEvent({ contact: hydrated, action: "updated" });
+  await emitReminderCaptureEvent({ contact: hydrated, action: "updated" });
   return hydrated;
 }
 
@@ -1265,6 +1283,7 @@ export async function upsertWebhookContact(input: {
   const fieldValuesMap = await loadFieldValues(pool, [result.contact.id]);
   const contact = { ...result.contact, custom_field_values: fieldValuesMap.get(result.contact.id) ?? [] };
   await emitSequenceContactEvent({ action: result.action, contact });
+  await emitReminderCaptureEvent({ action: result.action, contact });
   if (result.action !== "skipped") {
     void fanoutEvent(
       input.userId,
@@ -1303,6 +1322,7 @@ export async function syncConversationContact(input: {
   );
 
   await emitSequenceContactEvent(result);
+  await emitReminderCaptureEvent(result);
   return result.contact;
 }
 
@@ -1558,6 +1578,7 @@ export async function updateContactFieldValueFromFlow(input: {
 
   if (result) {
     await emitSequenceContactEvent({ action: "updated", contact: result });
+    await emitReminderCaptureEvent({ action: "updated", contact: result });
     void fanoutEvent(input.userId, "contacts.update", {
       id: result.id,
       phoneNumber: result.phone_number,
@@ -1826,6 +1847,10 @@ export async function importContactsWorkbook(
     }
 
     await emitSequenceContactEvent({
+      action: result.action,
+      contact: result.contact
+    });
+    await emitReminderCaptureEvent({
       action: result.action,
       contact: result.contact
     });

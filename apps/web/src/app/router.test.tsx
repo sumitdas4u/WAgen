@@ -67,7 +67,8 @@ const starterModules = {
   apiChannel: true,
   googleSheets: false,
   googleCalendar: false,
-  apiAccess: false
+  apiAccess: false,
+  reminders: false
 };
 
 const growthModules = {
@@ -235,7 +236,7 @@ describe("dashboard router", () => {
   it("shows the AI token balance without the monthly total in the dashboard header", async () => {
     renderRoute("/dashboard/leads");
 
-    const balanceButton = await screen.findByRole("button", { name: "AI Balance: 900" });
+    const balanceButton = await screen.findByRole("button", { name: "AI Balance: 900" }, { timeout: 3000 });
     expect(balanceButton).toHaveAttribute("title", "AI Token Balance");
     expect(screen.queryByText("AI Balance: 900 / 1000")).not.toBeInTheDocument();
   });

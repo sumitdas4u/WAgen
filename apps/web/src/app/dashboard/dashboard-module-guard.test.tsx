@@ -38,7 +38,8 @@ function createBootstrap(): DashboardBootstrapResponse {
         apiChannel: true,
         googleSheets: false,
         googleCalendar: false,
-        apiAccess: false
+        apiAccess: false,
+        reminders: false
       }
     },
     featureFlags: {},
@@ -132,7 +133,7 @@ describe("DashboardModuleGuard", () => {
     renderGuard(makeDefinition({ requiredPlan: "pro" }));
     // starter < pro → blocked
     expect(screen.getByText("Upgrade your plan")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open billing" })).toHaveAttribute("href", "/dashboard/billing");
+    expect(screen.getByRole("link", { name: "View plans & upgrade" })).toHaveAttribute("href", "/dashboard/account/subscription");
     expect(screen.queryByText("Module content")).not.toBeInTheDocument();
   });
 

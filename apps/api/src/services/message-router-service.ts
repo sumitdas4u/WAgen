@@ -39,6 +39,7 @@ import { getUserById } from "./user-service.js";
 import { fanoutEvent } from "./event-fanout-service.js";
 import { createBotAlertNotification } from "./agent-notification-service.js";
 import { AiTokenLimitExceededError, AiTokensDepletedError, estimateTextTokens, requireAiCredit } from "./ai-token-service.js";
+import { getActiveCaptureSession, handleCaptureSessionReply } from "./reminder-capture-session-service.js";
 
 type UnifiedChannelType = "web" | "qr" | "api";
 
@@ -339,6 +340,19 @@ export async function processIncomingMessage(
       `[Router] negative-feedback queue failed user=${input.userId} conversation=${conversation.id}`,
       error
     );
+  }
+
+  // ── Reminder capture session intercept ───────────────────────────────────────
+  const activeCaptureSession = await getActiveCaptureSession(conversation.id);
+  if (activeCaptureSession) {
+    await handleCaptureSessionReply(activeCaptureSession, normalizedMessage);
+    return {
+      conversationId: conversation.id,
+      stage: conversation.stage,
+      score: conversation.score,
+      autoReplySent: false,
+      reason: "sent"
+    };
   }
 
   // ── Flow engine runs regardless of manual_takeover/ai_paused ─────────────────

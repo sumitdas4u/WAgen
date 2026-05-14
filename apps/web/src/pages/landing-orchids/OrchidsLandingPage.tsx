@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import broadcastHtml from "../../../home/broadcast.html?raw";
 import educationChatbotHtml from "../../../home/education-chatbot.html?raw";
 import ecommerceChatbotHtml from "../../../home/ecommerce-chatbot.html?raw";
+import flowsHtml from "../../../home/flows.html?raw";
 import healthcareChatbotHtml from "../../../home/healthcare-chatbot.html?raw";
 import homeHtml from "../../../home/index.html?raw";
 import leadCaptureHtml from "../../../home/lead-capture.html?raw";
 import pricingHtml from "../../../home/pricing.html?raw";
 import realEstateChatbotHtml from "../../../home/real-estate-chatbot.html?raw";
+import reminderModuleHtml from "../../../home/reminder-module.html?raw";
 import restaurantChatbotHtml from "../../../home/restaurant-chatbot.html?raw";
+import sequencesHtml from "../../../home/sequences.html?raw";
 import websiteWidgetHtml from "../../../home/website-widget.html?raw";
 import whatsappApiHtml from "../../../home/whatsapp-api.html?raw";
 import whatsappBotHtml from "../../../home/whatsapp-bot.html?raw";
@@ -27,6 +31,10 @@ const LANDING_PAGE_PATHS = [
   "/website-widget",
   "/whatsapp-api",
   "/lead-capture",
+  "/reminder-campaigns",
+  "/broadcast",
+  "/sequences",
+  "/flows",
   "/ecommerce-chatbot",
   "/real-estate-chatbot",
   "/education-chatbot",
@@ -50,6 +58,9 @@ const LANDING_PAGE_ALIASES: Readonly<Record<string, (typeof LANDING_PAGE_PATHS)[
   "/whatsapp-green-tick": "/whatsapp-api",
   "/whatsapp-lead-capture": "/lead-capture",
   "/lead-generation-chatbot": "/lead-capture",
+  "/whatsapp-birthday-reminder": "/reminder-campaigns",
+  "/whatsapp-anniversary-campaign": "/reminder-campaigns",
+  "/whatsapp-reminder-campaigns": "/reminder-campaigns",
   "/cart-abandonment-chatbot": "/ecommerce-chatbot",
   "/d2c-whatsapp-bot": "/ecommerce-chatbot",
   "/whatsapp-chatbot-online-store": "/ecommerce-chatbot",
@@ -79,6 +90,10 @@ const LANDING_PAGE_HTML: Readonly<Record<(typeof LANDING_PAGE_PATHS)[number], st
   "/website-widget": websiteWidgetHtml,
   "/whatsapp-api": whatsappApiHtml,
   "/lead-capture": leadCaptureHtml,
+  "/reminder-campaigns": reminderModuleHtml,
+  "/broadcast": broadcastHtml,
+  "/sequences": sequencesHtml,
+  "/flows": flowsHtml,
   "/ecommerce-chatbot": ecommerceChatbotHtml,
   "/real-estate-chatbot": realEstateChatbotHtml,
   "/education-chatbot": educationChatbotHtml,
@@ -93,6 +108,10 @@ const FOOTER_LINK_GROUPS: Readonly<Record<string, ReadonlyArray<readonly [string
     ["Website Widget", "/website-widget"],
     ["WhatsApp API", "/whatsapp-api"],
     ["Lead Capture", "/lead-capture"],
+    ["Reminder Campaigns", "/reminder-campaigns"],
+    ["Broadcast", "/broadcast"],
+    ["Sequences", "/sequences"],
+    ["Flows", "/flows"],
     ["Pricing", "/pricing"]
   ],
   industries: [
@@ -114,6 +133,11 @@ const PLACEHOLDER_TEXT_LINKS: Readonly<Record<string, string>> = {
   "website widget": "/website-widget",
   "whatsapp api": "/whatsapp-api",
   "lead capture": "/lead-capture",
+  "reminder campaigns": "/reminder-campaigns",
+  broadcast: "/broadcast",
+  broadcasts: "/broadcast",
+  sequences: "/sequences",
+  flows: "/flows",
   pricing: "/pricing",
   "real estate": "/real-estate-chatbot",
   education: "/education-chatbot",
@@ -258,6 +282,10 @@ const SHARED_HEADER_HTML = `
         <a href="/website-widget"><span class="shared-ico">&#128172;</span>Website Widget</a>
         <a href="/whatsapp-api"><span class="shared-ico">&#9889;</span>WhatsApp API</a>
         <a href="/lead-capture"><span class="shared-ico">&#127919;</span>Lead Capture</a>
+        <a href="/reminder-campaigns"><span class="shared-ico">&#128276;</span>Reminder Campaigns</a>
+        <a href="/broadcast"><span class="shared-ico">&#128226;</span>Broadcast</a>
+        <a href="/sequences"><span class="shared-ico">&#128203;</span>Sequences</a>
+        <a href="/flows"><span class="shared-ico">&#128260;</span>Flows</a>
       </div>
     </li>
     <li><a href="/pricing">Pricing</a></li>
@@ -282,6 +310,10 @@ const SHARED_FOOTER_HTML = `
         <a href="/website-widget">Website Widget</a>
         <a href="/whatsapp-api">WhatsApp API</a>
         <a href="/lead-capture">Lead Capture</a>
+        <a href="/reminder-campaigns">Reminder Campaigns</a>
+        <a href="/broadcast">Broadcast</a>
+        <a href="/sequences">Sequences</a>
+        <a href="/flows">Flows</a>
         <a href="/pricing">Pricing</a>
       </div>
       <div class="shared-footer-col">

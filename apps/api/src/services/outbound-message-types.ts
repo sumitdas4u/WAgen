@@ -57,6 +57,7 @@ export type FlowMessagePayload =
       headerMediaType?: "image" | "video" | "document";
       headerMediaUrl?: string;
       buttons?: FlowButtonOption[];
+      variableValues?: Record<string, string>;
       components?: Array<Record<string, unknown>>;
     }
   | { type: "product"; catalogId: string; productId: string; bodyText?: string }
