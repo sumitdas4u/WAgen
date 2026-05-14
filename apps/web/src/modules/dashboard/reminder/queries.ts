@@ -3,6 +3,7 @@ import {
   deleteReminderConfig,
   fetchReminderConfigs,
   fetchReminderCampaignSteps,
+  fetchReminderDispatchLog,
   upsertReminderConfig,
   type ReminderConfig,
   type ReminderConfigWriteInput
@@ -43,6 +44,14 @@ export function useUpsertReminderConfigMutation(token: string) {
       );
       queryClient.setQueryData(dashboardQueryKeys.reminderSteps(configKey), steps);
     }
+  });
+}
+
+export function useReminderDispatchLogQuery(token: string, options?: { days?: number; configKey?: string }) {
+  return useQuery({
+    queryKey: [...dashboardQueryKeys.reminderConfigs, "dispatch-log", options?.days ?? 7, options?.configKey ?? ""],
+    queryFn: () => fetchReminderDispatchLog(token, options).then((r) => r.logs),
+    staleTime: 60_000
   });
 }
 

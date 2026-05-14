@@ -4832,3 +4832,25 @@ export function runReminderDispatch(token: string) {
     method: "POST"
   });
 }
+
+export interface ReminderDispatchLogEntry {
+  id: string;
+  config_key: string;
+  template_name: string | null;
+  status: string;
+  sent_at: string;
+  campaign_year: number | null;
+  contact_name: string | null;
+  contact_phone: string;
+}
+
+export function fetchReminderDispatchLog(token: string, options?: { days?: number; configKey?: string }) {
+  const params = new URLSearchParams();
+  if (options?.days) params.set("days", String(options.days));
+  if (options?.configKey) params.set("configKey", options.configKey);
+  const qs = params.toString();
+  return apiRequest<{ logs: ReminderDispatchLogEntry[] }>(
+    `/api/reminder/dispatch-log${qs ? `?${qs}` : ""}`,
+    { token }
+  );
+}

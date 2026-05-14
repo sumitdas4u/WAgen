@@ -4,13 +4,8 @@ import { fetchReminderConfigs } from "../../../lib/api";
 import { useAuth } from "../../../lib/auth-context";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
-import { useReminderConfigsQuery, useUpsertReminderConfigMutation } from "./queries";
+import { useReminderConfigsQuery, useUpsertReminderConfigMutation, useReminderDispatchLogQuery } from "./queries";
 import "./reminder.css";
-
-const REMINDER_META: Record<string, { icon: string; label: string }> = {
-  birthday:    { icon: "🎂", label: "Birthday" },
-  anniversary: { icon: "💍", label: "Anniversary" }
-};
 
 function slugify(label: string): string {
   return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -86,6 +81,111 @@ function NewReminderModal({ onClose, onCreated }: { onClose: () => void; onCreat
   );
 }
 
+const REMINDER_META_LABELS: Record<string, { icon: string; label: string }> = {
+  birthday:    { icon: "🎂", label: "Birthday" },
+  anniversary: { icon: "💍", label: "Anniversary" }
+};
+
+const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
+  sent:      { color: "#166534", bg: "#dcfce7", border: "#bbf7d0" },
+  failed:    { color: "#be123c", bg: "#ffe4e6", border: "#fecdd3" },
+  pending:   { color: "#92400e", bg: "#fef3c7", border: "#fde68a" },
+  delivered: { color: "#1d4ed8", bg: "#dbeafe", border: "#bfdbfe" }
+};
+
+function DispatchLogSection() {
+  const { token } = useAuth();
+  const [days, setDays] = useState(7);
+  const { data: logs, isLoading } = useReminderDispatchLogQuery(token ?? "", { days });
+
+  return (
+    <div className="rm-table-card">
+      <div className="rm-toolbar">
+        <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: "0.95rem", fontWeight: 700, color: "#122033" }}>
+          Recent Dispatch Log
+        </div>
+        <div style={{ display: "flex", gap: "0.4rem" }}>
+          {[7, 14, 30].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDays(d)}
+              style={{
+                appearance: "none", height: "1.9rem", padding: "0 0.65rem",
+                border: "1px solid #e2eaf4", borderRadius: 8,
+                background: days === d ? "#f0f4ff" : "#fff",
+                borderColor: days === d ? "#c7d6f7" : "#e2eaf4",
+                color: days === d ? "#2563eb" : "#5f6f86",
+                fontSize: "0.75rem", fontWeight: 600, cursor: "pointer"
+              }}
+            >
+              Last {d} days
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="rm-table-wrap">
+        <table className="rm-table">
+          <thead>
+            <tr>
+              <th>Contact</th>
+              <th>Type</th>
+              <th>Date</th>
+              <th>Template</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr><td colSpan={5} className="rm-table-empty">Loading…</td></tr>
+            )}
+            {!isLoading && (!logs || logs.length === 0) && (
+              <tr><td colSpan={5} className="rm-table-empty">No dispatches in the last {days} days.</td></tr>
+            )}
+            {logs?.map((log) => {
+              const meta = REMINDER_META_LABELS[log.config_key] ?? { icon: "📅", label: log.config_key };
+              const st = STATUS_STYLE[log.status] ?? STATUS_STYLE["pending"];
+              const d = new Date(log.sent_at);
+              const dateStr = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+              return (
+                <tr key={log.id} style={{ cursor: "default" }}>
+                  <td>
+                    <div style={{ fontWeight: 700, color: "#122033", fontSize: "0.85rem" }}>{log.contact_name ?? "—"}</div>
+                    <div style={{ fontSize: "0.75rem", color: "#5f6f86" }}>{log.contact_phone}</div>
+                  </td>
+                  <td>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                      padding: "2px 8px", borderRadius: 999,
+                      background: "#f0f4ff", border: "1px solid #c7d6f7",
+                      fontSize: "0.75rem", fontWeight: 700, color: "#1d4ed8"
+                    }}>
+                      {meta.icon} {meta.label}
+                    </span>
+                  </td>
+                  <td style={{ color: "#2563eb", fontWeight: 600, fontSize: "0.83rem" }}>{dateStr}</td>
+                  <td style={{ fontSize: "0.8rem", color: "#475569" }}>{log.template_name ?? "—"}</td>
+                  <td>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center",
+                      padding: "2px 8px", borderRadius: 999,
+                      background: st.bg, border: `1px solid ${st.border}`,
+                      fontSize: "0.7rem", fontWeight: 800, letterSpacing: "0.04em",
+                      textTransform: "uppercase", color: st.color
+                    }}>
+                      {log.status}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ReminderOverviewPage() {
   const { token } = useAuth();
   const navigate = useNavigate();
@@ -146,7 +246,7 @@ function ReminderOverviewPage() {
                 </tr>
               )}
               {configs?.map((config) => {
-                const meta = REMINDER_META[config.config_key] ?? { icon: "📅", label: config.custom_label ?? config.config_key };
+                const meta = REMINDER_META_LABELS[config.config_key] ?? { icon: "📅", label: config.custom_label ?? config.config_key };
                 return (
                   <tr key={config.config_key} onClick={() => navigate(`/dashboard/reminder/${config.config_key}/capture`)}>
                     <td>
@@ -196,6 +296,8 @@ function ReminderOverviewPage() {
           </table>
         </div>
       </div>
+
+      <DispatchLogSection />
     </div>
   );
 }

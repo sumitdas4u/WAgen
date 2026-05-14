@@ -127,6 +127,47 @@ export async function reminderRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  fastify.get(
+    "/api/reminder/dispatch-log",
+    { preHandler: [fastify.requireAuth, requireRemindersEntitlement] },
+    async (request) => {
+      const query = request.query as { days?: string; configKey?: string };
+      const days = Math.min(parseInt(query.days ?? "7", 10) || 7, 90);
+      const { pool } = await import("../db/pool.js");
+
+      const conditions: string[] = [
+        `dl.user_id = $1`,
+        `dl.sent_at >= now() - ($2 || ' days')::interval`
+      ];
+      const params: unknown[] = [request.authUser.userId, days];
+
+      if (query.configKey) {
+        conditions.push(`dl.config_key = $${params.length + 1}`);
+        params.push(query.configKey);
+      }
+
+      const { rows } = await pool.query(
+        `SELECT
+           dl.id,
+           dl.config_key,
+           dl.template_name,
+           dl.status,
+           dl.sent_at,
+           dl.campaign_year,
+           c.display_name  AS contact_name,
+           c.phone_number  AS contact_phone
+         FROM reminder_dispatch_log dl
+         LEFT JOIN contacts c ON c.id = dl.contact_id
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY dl.sent_at DESC
+         LIMIT 200`,
+        params
+      );
+
+      return { logs: rows };
+    }
+  );
+
   fastify.post(
     "/api/reminder/dispatch/run",
     { preHandler: [fastify.requireAuth, requireRemindersEntitlement] },
