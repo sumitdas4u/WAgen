@@ -43,8 +43,23 @@ export function ReminderCard({ config, icon, label }: Props) {
       <div style={{ fontWeight: 700, fontSize: 15, color: "#122033" }}>
         {config.custom_label ?? label}
       </div>
-      <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, textTransform: "capitalize" }}>
-        {config.reminder_type}
+      <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+        <span style={{
+          fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
+          background: config.capture_enabled ? "#eff6ff" : "#f1f5f9",
+          color: config.capture_enabled ? "#1d4ed8" : "#94a3b8",
+          border: `1px solid ${config.capture_enabled ? "#bfdbfe" : "#e2eaf4"}`
+        }}>
+          Capture {config.capture_enabled ? "on" : "off"}
+        </span>
+        <span style={{
+          fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
+          background: config.campaign_enabled ? "#f0fdf4" : "#f1f5f9",
+          color: config.campaign_enabled ? "#166534" : "#94a3b8",
+          border: `1px solid ${config.campaign_enabled ? "#bbf7d0" : "#e2eaf4"}`
+        }}>
+          Campaign {config.campaign_enabled ? "on" : "off"}
+        </span>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         <button

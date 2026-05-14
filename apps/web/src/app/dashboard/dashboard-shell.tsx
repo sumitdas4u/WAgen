@@ -9,7 +9,7 @@ import { useDashboardShell } from "../../shared/dashboard/shell-context";
 import { isDashboardModuleAccessible } from "./dashboard-module-guard";
 import { DashboardShellDataProvider } from "./dashboard-shell-context";
 
-type PrimaryNavId = "home" | "conversations" | "leads" | "broadcast" | "sequence" | "analytics" | "knowledge" | "settings" | "account";
+type PrimaryNavId = "home" | "conversations" | "leads" | "broadcast" | "sequence" | "reminders" | "analytics" | "knowledge" | "settings" | "account";
 
 type PrimaryNavItem = {
   id: PrimaryNavId;
@@ -74,6 +74,13 @@ const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     icon: "sequence",
     title: "Sequence",
     defaultModuleIds: ["sequence"]
+  },
+  {
+    id: "reminders",
+    label: "Reminders",
+    icon: "sequence",
+    title: "Reminders",
+    defaultModuleIds: ["reminder"]
   },
   {
     id: "analytics",
@@ -159,6 +166,7 @@ const SECTION_META: Record<string, { label: string; subtitle: string }> = {
   leads: { label: "Contacts", subtitle: "Customer Directory" },
   broadcast: { label: "Broadcast", subtitle: "Broadcast campaigns, audiences, and retargeting" },
   sequence: { label: "Sequence", subtitle: "Behavior-based follow ups and remarketing" },
+  reminder: { label: "Reminders", subtitle: "Birthday, anniversary, and date-based campaigns" },
   analytics: { label: "Analytics", subtitle: "Message delivery and reporting" },
   "studio-knowledge": { label: "Knowledge Base", subtitle: "Manage all ingested sources" },
   "studio-flows": { label: "Flows", subtitle: "Build chatbot workflows visually" },
@@ -286,6 +294,8 @@ function DashboardShellLayout() {
               ? "/dashboard/broadcast"
             : item.id === "sequence"
               ? "/dashboard/sequence"
+            : item.id === "reminders"
+              ? "/dashboard/reminder"
             : item.id === "analytics"
               ? "/dashboard/analytics"
               : item.id === "knowledge"
@@ -306,6 +316,8 @@ function DashboardShellLayout() {
           ? "broadcast"
           : currentModuleId === "sequence"
             ? "sequence"
+          : currentModuleId === "reminder"
+            ? "reminders"
           : currentModuleId === "analytics"
             ? "analytics"
             : currentModuleId.startsWith("account-")
