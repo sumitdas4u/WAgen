@@ -493,8 +493,22 @@ async function enqueueOutboundJob(payload: OutboundJobPayload, jobKey: string, s
     throw new Error("Outbound execution queue is unavailable because REDIS_URL is not configured.");
   }
 
+  const normalizedJobId = toBullMqSafeJobId(jobKey);
+
+  // If an existing job has finished (completed or failed), BullMQ will not
+  // re-add it under the same jobId. Remove it first so the retry can proceed.
+  const existing = await queue.getJob(normalizedJobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === "completed" || state === "failed" || state === "unknown") {
+      await existing.remove().catch(() => undefined);
+    } else if (state === "waiting" || state === "active" || state === "delayed" || state === "waiting-children") {
+      return; // already in-flight — nothing to do
+    }
+  }
+
   await queue.add("execute-outbound", payload, {
-    jobId: toBullMqSafeJobId(jobKey),
+    jobId: normalizedJobId,
     ...jobOptions(payload, scheduledAt)
   });
 }
