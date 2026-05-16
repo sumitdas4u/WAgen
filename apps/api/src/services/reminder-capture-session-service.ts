@@ -156,47 +156,14 @@ export async function handleCaptureSessionReply(session: CaptureSession, message
       return;
     }
 
-    const MAX_DATE_RETRIES = 3;
-
     const parsedDate = parseDate(message);
     if (!parsedDate) {
-      const newRetryCount = session.retry_count + 1;
-
-      if (newRetryCount >= MAX_DATE_RETRIES) {
-        // Give up — cancel session, let normal conversation resume
-        await pool.query(
-          `UPDATE reminder_capture_sessions
-           SET state = 'CANCELLED', status = 'cancelled', updated_at = now()
-           WHERE id = $1`,
-          [session.id]
-        );
-        await pool.query(
-          `INSERT INTO reminder_dispatch_log
-             (user_id, contact_id, config_key, log_type, template_name, status)
-           VALUES ($1, $2, $3, 'capture_declined', null, 'failed')`,
-          [session.user_id, session.contact_id, session.config_key]
-        );
-        await sendConversationFlowMessage({
-          userId: session.user_id,
-          conversationId: session.conversation_id,
-          payload: {
-            type: "text",
-            text: `No problem, we'll skip this for now. You can always update your date later.`
-          }
-        });
-        return;
-      }
-
-      await pool.query(
-        `UPDATE reminder_capture_sessions SET retry_count = $2, updated_at = now() WHERE id = $1`,
-        [session.id, newRetryCount]
-      );
       await sendConversationFlowMessage({
         userId: session.user_id,
         conversationId: session.conversation_id,
         payload: {
           type: "text",
-          text: `Please reply with a valid date in YYYY-MM-DD format (e.g. 1990-06-15). Reply *cancel* to skip. (${MAX_DATE_RETRIES - newRetryCount} attempt${MAX_DATE_RETRIES - newRetryCount !== 1 ? "s" : ""} remaining)`
+          text: `Please reply with a valid date in YYYY-MM-DD format (e.g. 1990-06-15). Reply *cancel* to skip.`
         }
       });
       return;
