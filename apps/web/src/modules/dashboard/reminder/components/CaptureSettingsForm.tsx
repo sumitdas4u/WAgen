@@ -314,12 +314,22 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
         )}
         <div className="rm-card-body">
           <div className="rm-field">
-            <label className="rm-label">
-              Select Flow
-              <span style={{ fontSize: "0.75rem", fontWeight: 400, color: "#5f6f86", marginLeft: "0.4rem" }}>
-                — must save date to a contact field
-              </span>
-            </label>
+            <label className="rm-label">Select Flow</label>
+            <div style={{
+              display: "flex", alignItems: "center", gap: "0.5rem",
+              background: "#fef3c7", border: "1px solid #fde68a",
+              borderRadius: 7, padding: "0.5rem 0.75rem", marginBottom: "0.5rem"
+            }}>
+              <span style={{ fontSize: "1rem", flexShrink: 0 }}>📅</span>
+              <div style={{ fontSize: "0.78rem", color: "#92400e", lineHeight: 1.5 }}>
+                <strong>Date format:</strong> the flow must save the date as{" "}
+                <code style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 4, padding: "1px 5px", fontWeight: 800, fontSize: "0.76rem" }}>
+                  YYYY-MM-DD
+                </code>
+                {" "}(e.g. <code style={{ fontSize: "0.74rem" }}>1990-05-15</code>) to the contact field.
+                Other formats will not be recognised by the campaign dispatcher.
+              </div>
+            </div>
             {flowsQuery.isLoading ? (
               <div style={{ fontSize: "0.82rem", color: "#5f6f86" }}>Loading flows…</div>
             ) : (

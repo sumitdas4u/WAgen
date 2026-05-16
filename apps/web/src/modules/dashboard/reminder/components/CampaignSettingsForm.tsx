@@ -337,8 +337,20 @@ export function CampaignSettingsForm({ config, steps, onSave, isSaving }: Props)
                   <option key={f.id} value={f.name}>{f.label} ({f.name})</option>
                 ))}
             </select>
-            <div style={{ fontSize: "0.77rem", color: "#5f6f86", marginTop: "0.3rem", lineHeight: 1.5 }}>
-              The capture flow should save the date to this field. Campaign dispatches relative to this date.
+            <div style={{
+              display: "flex", alignItems: "flex-start", gap: "0.5rem",
+              background: "#fef3c7", border: "1px solid #fde68a",
+              borderRadius: 7, padding: "0.5rem 0.75rem", marginTop: "0.4rem"
+            }}>
+              <span style={{ fontSize: "0.9rem", flexShrink: 0 }}>📅</span>
+              <div style={{ fontSize: "0.77rem", color: "#92400e", lineHeight: 1.55 }}>
+                <strong>Required format:</strong>{" "}
+                <code style={{ background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 4, padding: "1px 5px", fontWeight: 800, fontSize: "0.74rem" }}>
+                  YYYY-MM-DD
+                </code>
+                {" "}— e.g. <code style={{ fontSize: "0.73rem" }}>1990-05-15</code>.
+                {" "}Your capture flow must save the date in this exact format. Other formats are ignored.
+              </div>
             </div>
           </div>
         </div>

@@ -224,7 +224,20 @@ function ContactFieldRow({
 
   return (
     <tr>
-      <td>{field.label}</td>
+      <td>
+        <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          {field.label}
+          {field.is_system && (
+            <span style={{
+              fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.06em",
+              textTransform: "uppercase", padding: "1px 6px", borderRadius: 999,
+              background: "#ede9fe", color: "#7c3aed", border: "1px solid #ddd6fe"
+            }}>
+              System
+            </span>
+          )}
+        </span>
+      </td>
       <td style={{ color: "#666", fontFamily: "monospace", fontSize: "0.85em" }}>{field.name}</td>
       <td>
         <span className="contact-field-type-badge">{typeLabel}</span>
@@ -235,6 +248,7 @@ function ContactFieldRow({
           className={field.is_active ? "go-live-switch on" : "go-live-switch"}
           onClick={() => onToggleActive(!field.is_active)}
           title={field.is_active ? "Deactivate" : "Activate"}
+          disabled={field.is_system}
         >
           <span />
         </button>
@@ -245,19 +259,24 @@ function ContactFieldRow({
           className={field.is_mandatory ? "go-live-switch on" : "go-live-switch"}
           onClick={() => onToggleMandatory(!field.is_mandatory)}
           title={field.is_mandatory ? "Mark optional" : "Mark mandatory"}
+          disabled={field.is_system}
         >
           <span />
         </button>
       </td>
       <td>
-        <button
-          type="button"
-          className="link-btn"
-          onClick={onDelete}
-          style={{ color: "#e53e3e" }}
-        >
-          Delete
-        </button>
+        {field.is_system ? (
+          <span style={{ fontSize: "0.78rem", color: "#94a3b8" }} title="System fields cannot be deleted">🔒</span>
+        ) : (
+          <button
+            type="button"
+            className="link-btn"
+            onClick={onDelete}
+            style={{ color: "#e53e3e" }}
+          >
+            Delete
+          </button>
+        )}
       </td>
     </tr>
   );

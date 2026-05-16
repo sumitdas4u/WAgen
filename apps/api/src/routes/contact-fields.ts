@@ -76,8 +76,9 @@ export async function contactFieldRoutes(fastify: FastifyInstance): Promise<void
     async (request, reply) => {
       const userId = (request as { user: { userId: string } }).user.userId;
       const { fieldId } = request.params as { fieldId: string };
-      const deleted = await deleteContactField(userId, fieldId);
-      if (!deleted) return reply.status(404).send({ error: "Field not found." });
+      const result = await deleteContactField(userId, fieldId);
+      if (result.isSystem) return reply.status(403).send({ error: "System fields cannot be deleted." });
+      if (!result.deleted) return reply.status(404).send({ error: "Field not found." });
       return reply.status(204).send();
     }
   );

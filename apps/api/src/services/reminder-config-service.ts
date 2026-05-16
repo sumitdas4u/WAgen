@@ -1,4 +1,5 @@
 import { pool } from "../db/pool.js";
+import { ensureSystemContactFields } from "./contact-fields-service.js";
 
 export interface ReminderConfig {
   id: string;
@@ -92,6 +93,7 @@ function normalizeReminderConfig(row: ReminderConfig): ReminderConfig {
 }
 
 async function ensureDefaultReminderConfigs(userId: string): Promise<void> {
+  await ensureSystemContactFields(userId);
   for (const def of DEFAULT_CONFIGS) {
     await pool.query(
       `INSERT INTO reminder_configs (user_id, config_key, reminder_type)

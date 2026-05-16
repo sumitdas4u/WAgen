@@ -4171,6 +4171,7 @@ export interface ContactField {
   field_type: ContactFieldType;
   is_active: boolean;
   is_mandatory: boolean;
+  is_system: boolean;
   sort_order: number;
   created_at: string;
 }
