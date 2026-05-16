@@ -715,6 +715,9 @@ function validateChoiceConnections(
   }
 
   for (const handleId of dynamicHandles) {
+    if (handleId === "default" && node.data.kind === "flowStart" && node.data.fallbackUseAi) {
+      continue;
+    }
     const isConnected = edges.some(
       (edge) => edge.source === node.id && edge.sourceHandle === handleId
     );
