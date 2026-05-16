@@ -124,10 +124,14 @@ export function shouldProcessReminderConfig(
   now: Date,
   force = false
 ): boolean {
-  if (force) {
-    return true;
-  }
-  return getZonedTime(now, config.campaign_timezone) === normalizeTime(config.campaign_send_time);
+  if (force) return true;
+  const currentTime = getZonedTime(now, config.campaign_timezone);
+  const sendTime = normalizeTime(config.campaign_send_time);
+  const [ch, cm] = currentTime.split(":").map(Number);
+  const [sh, sm] = sendTime.split(":").map(Number);
+  const diffMinutes = (ch * 60 + cm) - (sh * 60 + sm);
+  // ±5-minute window; unique indexes in dispatch_log prevent double-sends
+  return diffMinutes >= 0 && diffMinutes <= 5;
 }
 
 function normalizeConditions(rawConditions: unknown[]): SequenceCondition[] {
@@ -194,10 +198,23 @@ function resolveTemplateVars(
   return resolved;
 }
 
+async function userHasApiChannel(userId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM agent_profiles WHERE user_id = $1 AND channel_type = 'api' AND is_active = true LIMIT 1`,
+    [userId]
+  );
+  return rows.length > 0;
+}
+
 export async function processUserReminders(
   userId: string,
   options: { now?: Date; force?: boolean } = {}
 ): Promise<void> {
+  if (!(await userHasApiChannel(userId))) {
+    console.log(`[ReminderDispatch] Skip user ${userId} — no active API channel`);
+    return;
+  }
+
   const configResult = await pool.query<ReminderConfigRow>(
     `SELECT * FROM reminder_configs
      WHERE user_id = $1 AND enabled = true AND campaign_enabled = true`,
@@ -348,6 +365,26 @@ export async function processUserReminders(
             console.log(`[ReminderDispatch] Sent step ${step.step_order} of ${config.config_key} to ${contact.phone_number}`);
           } catch (err) {
             console.error(`[ReminderDispatch] Step ${step.id} failed for contact ${contact.contact_id}`, err);
+            // Log failure so it appears in the activity log
+            try {
+              if (isAnnual) {
+                await pool.query(
+                  `INSERT INTO reminder_dispatch_log
+                     (user_id, contact_id, config_key, step_id, campaign_year, template_name, status, log_type)
+                   VALUES ($1, $2, $3, $4, $5, $6, 'failed', 'campaign')
+                   ON CONFLICT DO NOTHING`,
+                  [userId, contact.contact_id, config.config_key, step.id, targetYear, step.template_name]
+                );
+              } else {
+                await pool.query(
+                  `INSERT INTO reminder_dispatch_log
+                     (user_id, contact_id, config_key, step_id, dispatched_date, template_name, status, log_type)
+                   VALUES ($1, $2, $3, $4, $5, $6, 'failed', 'campaign')
+                   ON CONFLICT DO NOTHING`,
+                  [userId, contact.contact_id, config.config_key, step.id, targetDateStr, step.template_name]
+                );
+              }
+            } catch { /* ignore log failure */ }
           }
         }
       } catch (err) {
