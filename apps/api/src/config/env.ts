@@ -26,6 +26,17 @@ const BaseEnvSchema = z.object({
   DELIVERY_PER_CONNECTION_RATE_LIMIT: z.coerce.number().int().positive().default(8),
   QUEUE_STALLED_JOB_TIMEOUT_MS: z.coerce.number().int().positive().default(300000),
   BREVO_API_KEY: z.string().optional(),
+  DIGITAL_SMS_API_BASE_URL: z.string().default("https://sms.digitalsms.net/api/v3"),
+  DIGITAL_SMS_API_TOKEN: z.string().optional(),
+  DIGITAL_SMS_SENDER_ID: z.string().default("KEYLNS"),
+  DIGITAL_SMS_ENTITY_ID: z.string().default("1201159375531154788"),
+  DIGITAL_SMS_DLT_TEMPLATE_ID: z.string().default("1307162333099680070"),
+  DIGITAL_SMS_TYPE: z.enum(["flash", "otp", "promotional", "transactional"]).default("transactional"),
+  DIGITAL_SMS_OTP_TEMPLATE: z
+    .string()
+    .default("Dear {name}, {otp} is you verification OTP for registration at KEYLINE"),
+  DIGITAL_SMS_OTP_TTL_MINUTES: z.coerce.number().int().positive().default(10),
+  DIGITAL_SMS_OTP_RESEND_SECONDS: z.coerce.number().int().positive().default(60),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_CHAT_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),

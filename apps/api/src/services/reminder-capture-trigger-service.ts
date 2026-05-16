@@ -108,11 +108,21 @@ function resolveTemplateVars(
   return resolved;
 }
 
+async function userHasApiChannel(userId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM agent_profiles WHERE user_id = $1 AND channel_type = 'api' AND is_active = true LIMIT 1`,
+    [userId]
+  );
+  return rows.length > 0;
+}
+
 export async function processReminderCaptureEvent(input: {
   userId: string;
   event: SequenceEventType;
   contactId: string;
 }): Promise<void> {
+  if (!(await userHasApiChannel(input.userId))) return;
+
   const snapshot = await loadContactSnapshot(input.contactId);
   if (!snapshot) return;
 

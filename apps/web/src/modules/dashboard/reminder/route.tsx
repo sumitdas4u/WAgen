@@ -4,7 +4,8 @@ import { fetchReminderConfigs } from "../../../lib/api";
 import { useAuth } from "../../../lib/auth-context";
 import type { DashboardModulePrefetchContext } from "../../../shared/dashboard/module-contracts";
 import { dashboardQueryKeys } from "../../../shared/dashboard/query-keys";
-import { useReminderConfigsQuery, useUpsertReminderConfigMutation, useReminderDispatchLogQuery } from "./queries";
+import { useReminderConfigsQuery, useUpsertReminderConfigMutation, useReminderDispatchLogQuery, useReminderStatsQuery } from "./queries";
+import type { ReminderStats } from "../../../lib/api";
 import "./reminder.css";
 
 function slugify(label: string): string {
@@ -104,6 +105,153 @@ const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }
 };
 
 type LogFilter = "all" | ReminderLogType;
+
+function StatBar({ value, total, color }: { value: number; total: number; color: string }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+      <div style={{ flex: 1, height: 5, borderRadius: 99, background: "#f1f5f9", overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 99, transition: "width 300ms ease" }} />
+      </div>
+      <span style={{ fontSize: "0.72rem", fontWeight: 700, color, minWidth: 28, textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+
+function ReminderStatsRow({ stat, configLabel }: { stat: ReminderStats; configLabel: string }) {
+  const captureRate = stat.capture_asked > 0
+    ? Math.round((stat.capture_complete / stat.capture_asked) * 100)
+    : 0;
+  const deliveryRate = stat.campaign_total > 0
+    ? Math.round((stat.campaign_delivered / stat.campaign_total) * 100)
+    : 0;
+
+  return (
+    <tr>
+      <td>
+        <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#122033" }}>{configLabel}</div>
+        <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "0.1rem" }}>
+          <code style={{ fontSize: "0.68rem" }}>{stat.config_key}</code>
+        </div>
+      </td>
+      {/* Capture funnel */}
+      <td style={{ minWidth: 160 }}>
+        <div style={{ display: "grid", gap: "0.2rem" }}>
+          <StatBar value={stat.capture_asked} total={stat.capture_asked} color="#92400e" />
+          <StatBar value={stat.capture_complete} total={stat.capture_asked} color="#166534" />
+          <StatBar value={stat.capture_declined} total={stat.capture_asked} color="#be123c" />
+          <StatBar value={stat.capture_expired} total={stat.capture_asked} color="#475569" />
+        </div>
+      </td>
+      <td style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "1.15rem", fontWeight: 800, color: captureRate >= 50 ? "#166534" : "#92400e" }}>{captureRate}%</div>
+        <div style={{ fontSize: "0.62rem", color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>capture rate</div>
+      </td>
+      {/* Campaign */}
+      <td style={{ minWidth: 140 }}>
+        <div style={{ display: "grid", gap: "0.2rem" }}>
+          <StatBar value={stat.campaign_sent} total={stat.campaign_total} color="#1d4ed8" />
+          <StatBar value={stat.campaign_delivered} total={stat.campaign_total} color="#166534" />
+          <StatBar value={stat.campaign_failed} total={stat.campaign_total} color="#be123c" />
+        </div>
+      </td>
+      <td style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "1.15rem", fontWeight: 800, color: deliveryRate >= 80 ? "#166534" : "#92400e" }}>{deliveryRate}%</div>
+        <div style={{ fontSize: "0.62rem", color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>delivery rate</div>
+      </td>
+      <td style={{ textAlign: "center" }}>
+        {stat.capture_pending > 0 ? (
+          <span style={{
+            display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 999,
+            background: "#fef3c7", border: "1px solid #fde68a",
+            fontSize: "0.72rem", fontWeight: 800, color: "#92400e"
+          }}>
+            ⏳ {stat.capture_pending}
+          </span>
+        ) : (
+          <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>—</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function ReminderStatsSection() {
+  const { token } = useAuth();
+  const { data: stats, isLoading } = useReminderStatsQuery(token ?? "");
+  const { data: configs } = useReminderConfigsQuery(token ?? "");
+
+  if (isLoading || !stats || stats.length === 0) return null;
+
+  const getLabel = (configKey: string) => {
+    const config = configs?.find((c) => c.config_key === configKey);
+    const meta = REMINDER_META_LABELS[configKey];
+    return config?.custom_label ?? meta?.label ?? configKey;
+  };
+
+  return (
+    <div className="rm-table-card">
+      <div className="rm-toolbar">
+        <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: "0.95rem", fontWeight: 700, color: "#122033" }}>
+          Performance Report
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "#5f6f86" }}>All-time stats per reminder</div>
+      </div>
+      <div className="rm-table-wrap">
+        <table className="rm-table">
+          <thead>
+            <tr>
+              <th>Reminder</th>
+              <th>
+                <div style={{ display: "grid", gap: "0.1rem" }}>
+                  <span>Capture Funnel</span>
+                  <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.25rem" }}>
+                    {[
+                      { color: "#92400e", label: "Asked" },
+                      { color: "#166534", label: "Captured" },
+                      { color: "#be123c", label: "Declined" },
+                      { color: "#475569", label: "Expired" }
+                    ].map((l) => (
+                      <span key={l.label} style={{ display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.6rem", fontWeight: 700, textTransform: "none", letterSpacing: 0, color: "#5f6f86" }}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: l.color, flexShrink: 0 }} />
+                        {l.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </th>
+              <th style={{ textAlign: "center" }}>Rate</th>
+              <th>
+                <div style={{ display: "grid", gap: "0.1rem" }}>
+                  <span>Campaign</span>
+                  <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.25rem" }}>
+                    {[
+                      { color: "#1d4ed8", label: "Sent" },
+                      { color: "#166534", label: "Delivered" },
+                      { color: "#be123c", label: "Failed" }
+                    ].map((l) => (
+                      <span key={l.label} style={{ display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.6rem", fontWeight: 700, textTransform: "none", letterSpacing: 0, color: "#5f6f86" }}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: l.color, flexShrink: 0 }} />
+                        {l.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </th>
+              <th style={{ textAlign: "center" }}>Rate</th>
+              <th style={{ textAlign: "center" }}>Pending</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((stat) => (
+              <ReminderStatsRow key={stat.config_key} stat={stat} configLabel={getLabel(stat.config_key)} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function DispatchLogSection() {
   const { token } = useAuth();
@@ -371,6 +519,7 @@ function ReminderOverviewPage() {
         </div>
       </div>
 
+      <ReminderStatsSection />
       <DispatchLogSection />
     </div>
   );

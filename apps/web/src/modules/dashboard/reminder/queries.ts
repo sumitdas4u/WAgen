@@ -4,6 +4,7 @@ import {
   fetchReminderConfigs,
   fetchReminderCampaignSteps,
   fetchReminderDispatchLog,
+  fetchReminderStats,
   upsertReminderConfig,
   type ReminderConfig,
   type ReminderConfigWriteInput
@@ -51,6 +52,14 @@ export function useReminderDispatchLogQuery(token: string, options?: { days?: nu
   return useQuery({
     queryKey: [...dashboardQueryKeys.reminderConfigs, "dispatch-log", options?.days ?? 7, options?.configKey ?? ""],
     queryFn: () => fetchReminderDispatchLog(token, options).then((r) => r.logs),
+    staleTime: 60_000
+  });
+}
+
+export function useReminderStatsQuery(token: string) {
+  return useQuery({
+    queryKey: [...dashboardQueryKeys.reminderConfigs, "stats"],
+    queryFn: () => fetchReminderStats(token).then((r) => r.stats),
     staleTime: 60_000
   });
 }

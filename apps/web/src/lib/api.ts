@@ -4860,3 +4860,20 @@ export function fetchReminderDispatchLog(token: string, options?: { days?: numbe
     { token }
   );
 }
+
+export interface ReminderStats {
+  config_key: string;
+  capture_asked: number;
+  capture_complete: number;
+  capture_declined: number;
+  capture_expired: number;
+  capture_pending: number;
+  campaign_total: number;
+  campaign_sent: number;
+  campaign_delivered: number;
+  campaign_failed: number;
+}
+
+export function fetchReminderStats(token: string) {
+  return apiRequest<{ stats: ReminderStats[] }>("/api/reminder/stats", { token });
+}

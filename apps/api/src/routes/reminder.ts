@@ -178,6 +178,37 @@ export async function reminderRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  fastify.get(
+    "/api/reminder/stats",
+    { preHandler: [fastify.requireAuth, requireRemindersEntitlement] },
+    async (request) => {
+      const { pool } = await import("../db/pool.js");
+
+      const { rows } = await pool.query(
+        `SELECT
+           dl.config_key,
+           COUNT(*) FILTER (WHERE dl.log_type = 'capture_ask')                        AS capture_asked,
+           COUNT(*) FILTER (WHERE dl.log_type = 'capture_complete')                   AS capture_complete,
+           COUNT(*) FILTER (WHERE dl.log_type = 'capture_declined')                   AS capture_declined,
+           COUNT(*) FILTER (WHERE dl.log_type = 'capture_expired')                    AS capture_expired,
+           COUNT(*) FILTER (WHERE dl.log_type = 'campaign')                           AS campaign_total,
+           COUNT(*) FILTER (WHERE dl.log_type = 'campaign' AND dl.status = 'sent')    AS campaign_sent,
+           COUNT(*) FILTER (WHERE dl.log_type = 'campaign' AND dl.status = 'delivered') AS campaign_delivered,
+           COUNT(*) FILTER (WHERE dl.log_type = 'campaign' AND dl.status = 'failed')  AS campaign_failed,
+           (SELECT COUNT(*) FROM reminder_capture_sessions rcs
+            WHERE rcs.user_id = dl.user_id AND rcs.config_key = dl.config_key
+              AND rcs.status = 'active')                                               AS capture_pending
+         FROM reminder_dispatch_log dl
+         WHERE dl.user_id = $1
+         GROUP BY dl.config_key, dl.user_id
+         ORDER BY dl.config_key`,
+        [request.authUser.userId]
+      );
+
+      return { stats: rows };
+    }
+  );
+
   fastify.post(
     "/api/reminder/dispatch/run",
     { preHandler: [fastify.requireAuth, requireRemindersEntitlement] },
