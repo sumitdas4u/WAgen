@@ -762,7 +762,7 @@ export const googleCalendarBookingStudioBlock: StudioFlowBlockDefinition<GoogleC
     name: "Google Calendar Scheduler",
     desc: "Suggest, confirm, and book appointment slots",
     section: "Actions",
-    availableInPalette: true,
+    availableInPalette: false,
     status: "active"
   },
   createDefaultData() {

@@ -528,7 +528,7 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
     useState<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const { project } = useReactFlow();
+  const { project, fitView } = useReactFlow();
   const isInitial = useRef(true);
   const latest = useRef({ nodes, edges, flowName, live });
   latest.current = { nodes, edges, flowName, live };
@@ -540,6 +540,20 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
   );
   const visibleErrors = validation.errors.slice(0, 5);
   const visibleWarnings = validation.warnings.slice(0, 5);
+  const errorNodeIds = useMemo(
+    () => new Set(validation.errors.flatMap((e) => (e.nodeId ? [e.nodeId] : []))),
+    [validation.errors]
+  );
+  const styledNodes = useMemo(
+    () =>
+      (nodes as FlowNode[]).map((node) => ({
+        ...node,
+        className: [node.className, errorNodeIds.has(node.id) ? "fn-node-error" : ""]
+          .filter(Boolean)
+          .join(" ")
+      })),
+    [nodes, errorNodeIds]
+  );
   const selectedNode = useMemo(
     () => (nodes as FlowNode[]).find((node) => node.selected) ?? null,
     [nodes]
@@ -690,6 +704,16 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
     );
   }, [setNodes]);
 
+  const focusNode = useCallback(
+    (nodeId: string) => {
+      setNodes((current) =>
+        current.map((node) => ({ ...node, selected: node.id === nodeId }))
+      );
+      fitView({ nodes: [{ id: nodeId }], duration: 400, padding: 0.35 });
+    },
+    [setNodes, fitView]
+  );
+
   const saveNow = async () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveStatus("saving");
@@ -769,17 +793,53 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
 
       {(validationNotice || validation.errors.length > 0 || validation.warnings.length > 0) && (
         <div className="fn-editor-alerts">
-          {validationNotice ? (
+          {validationNotice && (
             <div className="fn-banner fn-banner-error">{validationNotice}</div>
-          ) : (
-            <div
-              className={`fn-banner ${
-                validation.errors.length > 0 ? "fn-banner-error" : "fn-banner-warning"
-              }`}
-            >
-              {validation.errors.length > 0
-                ? visibleErrors[0]?.message ?? "Fix the remaining flow issues before publishing."
-                : visibleWarnings[0]?.message ?? "Review the remaining warnings."}
+          )}
+          {validation.errors.length > 0 && (
+            <div className="fn-issue-list fn-issue-list-error">
+              <div className="fn-issue-list-header">
+                {validation.errors.length} issue{validation.errors.length !== 1 ? "s" : ""} to fix
+              </div>
+              <ul className="fn-issue-list-items">
+                {visibleErrors.map((issue) => (
+                  <li
+                    key={issue.id}
+                    className={`fn-issue-item${issue.nodeId ? " fn-issue-item-link" : ""}`}
+                    onClick={() => { if (issue.nodeId) focusNode(issue.nodeId); }}
+                  >
+                    <span className="fn-issue-dot" />
+                    <span className="fn-issue-msg">{issue.message}</span>
+                    {issue.nodeId && <span className="fn-issue-goto">Show</span>}
+                  </li>
+                ))}
+                {validation.errors.length > 5 && (
+                  <li className="fn-issue-more">+{validation.errors.length - 5} more issues</li>
+                )}
+              </ul>
+            </div>
+          )}
+          {validation.errors.length === 0 && validation.warnings.length > 0 && (
+            <div className="fn-issue-list fn-issue-list-warning">
+              <div className="fn-issue-list-header">
+                {validation.warnings.length} warning{validation.warnings.length !== 1 ? "s" : ""}
+              </div>
+              <ul className="fn-issue-list-items">
+                {visibleWarnings.map((issue) => (
+                  <li
+                    key={issue.id}
+                    className={`fn-issue-item${issue.nodeId ? " fn-issue-item-link" : ""}`}
+                    onClick={() => { if (issue.nodeId) focusNode(issue.nodeId); }}
+                  >
+                    <span className="fn-issue-dot" />
+                    <span className="fn-issue-msg">{issue.message}</span>
+                    {issue.nodeId && <span className="fn-issue-goto">Show</span>}
+                  </li>
+                ))}
+                {validation.warnings.length > 5 && (
+                  <li className="fn-issue-more">+{validation.warnings.length - 5} more</li>
+                )}
+              </ul>
             </div>
           )}
         </div>
@@ -794,7 +854,7 @@ function FlowEditorInner({ flow, token, initialNotice, onChange, onBack }: FlowE
             </button>
           ) : null}
           <ReactFlow
-            nodes={nodes}
+            nodes={styledNodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}

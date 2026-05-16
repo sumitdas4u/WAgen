@@ -57,7 +57,7 @@ export const requestInterventionStudioBlock: StudioFlowBlockDefinition<RequestIn
       name: "Human Handoff",
       desc: "Transfer to agent",
       section: "Actions",
-      availableInPalette: true,
+      availableInPalette: false,
       status: "active"
     },
     createDefaultData() {

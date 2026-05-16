@@ -29,6 +29,38 @@ const CHANNEL_LABELS: Record<FlowChannel, string> = {
   api: "WhatsApp API"
 };
 
+const BLOCK_NAMES: Record<AnyNodeData["kind"], string> = {
+  aiAgent: "AI Agent",
+  aiReply: "AI Reply",
+  apiRequest: "API Request",
+  askLocation: "Ask Location",
+  askQuestion: "Ask Question",
+  condition: "Condition",
+  flowStart: "Flow Start",
+  googleCalendarBooking: "Google Calendar",
+  googleSheets: "Google Sheets",
+  googleSheetsAddRow: "Google Sheets (Add Row)",
+  googleSheetsFetchRow: "Google Sheets (Fetch Row)",
+  googleSheetsFetchRows: "Google Sheets (Fetch Rows)",
+  googleSheetsUpdateRow: "Google Sheets (Update Row)",
+  list: "List",
+  mediaButtons: "Media + Buttons",
+  multiProduct: "Multi Product",
+  requestIntervention: "Request Intervention",
+  sendContact: "Send Contact",
+  sendImageMenu: "Send Image Menu",
+  sendLocation: "Send Location",
+  sendMedia: "Send Media",
+  sendPoll: "Send Poll",
+  sendText: "Send Text",
+  sendTextMenu: "Send Text Menu",
+  singleProduct: "Single Product",
+  template: "Template",
+  textButtons: "Text + Buttons",
+  updateContactField: "Update Contact Field",
+  whatsappPay: "WhatsApp Pay"
+};
+
 const BLOCK_CHANNELS: Record<AnyNodeData["kind"], FlowChannel[]> = {
   aiAgent: ["web", "qr", "api"],
   aiReply: ["web", "qr", "api"],
@@ -183,7 +215,7 @@ function getHandleLabel(node: FlowNode, handleId: string): string | null {
 }
 
 function describeNode(node: FlowNode): string {
-  return `"${node.data.kind}" node ${node.id}`;
+  return `"${BLOCK_NAMES[node.data.kind] ?? node.data.kind}" block`;
 }
 
 function isValidVariableName(value: string): boolean {
@@ -842,10 +874,12 @@ export function validateFlow(
     }
 
     if (edge.source === edge.target) {
+      const selfNode = nodeMap.get(edge.source);
+      const selfLabel = selfNode ? `"${BLOCK_NAMES[selfNode.data.kind] ?? selfNode.data.kind}" block` : "A block";
       errors.push({
         id: `edge:${edge.id}:self`,
         edgeId: edge.id,
-        message: `Block ${edge.source} cannot connect to itself.`
+        message: `${selfLabel} cannot connect to itself.`
       });
     }
 
@@ -853,7 +887,7 @@ export function validateFlow(
       errors.push({
         id: `edge:${edge.id}:missing-node`,
         edgeId: edge.id,
-        message: `Wire ${edge.id} points to a missing block.`
+        message: "A wire points to a block that no longer exists. Delete and reconnect it."
       });
       continue;
     }
@@ -912,10 +946,12 @@ export function validateFlow(
     if (node && allowsMultipleIncomingWires(node, handleId)) {
       continue;
     }
+    const inNode = nodeMap.get(nodeId);
+    const inLabel = inNode ? `"${BLOCK_NAMES[inNode.data.kind] ?? inNode.data.kind}" block` : "A block";
     errors.push({
       id: `incoming:${handleKey}`,
       nodeId,
-      message: `Block ${nodeId} has multiple incoming wires on the same input.`
+      message: `${inLabel} has multiple incoming wires on the same input.`
     });
   }
 

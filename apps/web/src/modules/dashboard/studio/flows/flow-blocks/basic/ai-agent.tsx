@@ -185,7 +185,7 @@ export const aiAgentStudioBlock: StudioFlowBlockDefinition<AiAgentData> = {
     name: "AI Agent",
     desc: "Process data and save variables",
     section: "Actions",
-    availableInPalette: true,
+    availableInPalette: false,
     status: "active"
   },
   createDefaultData() {

@@ -72,8 +72,80 @@ body.flow-builder-mode .chatbot-studio-content {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  padding: 0.7rem 0.8rem 0;
+  padding: 0.7rem 0.8rem 0.7rem;
   background: var(--bg);
+}
+
+/* ── Issue list panel ──────────────────────────────────── */
+.fn-issue-list {
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.8rem;
+}
+.fn-issue-list-error   { border: 1.5px solid #fca5a5; background: #fff5f5; }
+.fn-issue-list-warning { border: 1.5px solid #fcd34d; background: #fffbeb; }
+
+.fn-issue-list-header {
+  padding: 0.38rem 0.65rem;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+.fn-issue-list-error   .fn-issue-list-header { color: #b91c1c; background: #fee2e2; }
+.fn-issue-list-warning .fn-issue-list-header { color: #92400e; background: #fef3c7; }
+
+.fn-issue-list-items { list-style: none; margin: 0; padding: 0; }
+
+.fn-issue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.28rem 0.65rem;
+  border-top: 1px solid rgba(0,0,0,.06);
+  line-height: 1.45;
+}
+.fn-issue-item-link { cursor: pointer; }
+.fn-issue-list-error   .fn-issue-item-link:hover { background: rgba(239,68,68,.07); }
+.fn-issue-list-warning .fn-issue-item-link:hover { background: rgba(234,179,8,.07); }
+
+.fn-issue-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.fn-issue-list-error   .fn-issue-dot { background: #ef4444; }
+.fn-issue-list-warning .fn-issue-dot { background: #f59e0b; }
+
+.fn-issue-msg { flex: 1; color: #374151; font-size: 0.78rem; }
+
+.fn-issue-goto {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #9ca3af;
+  flex-shrink: 0;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+.fn-issue-item-link:hover .fn-issue-goto { color: #ef4444; border-color: #fca5a5; background: #fff1f2; }
+.fn-issue-list-warning .fn-issue-item-link:hover .fn-issue-goto { color: #92400e; border-color: #fcd34d; background: #fefce8; }
+
+.fn-issue-more {
+  padding: 0.22rem 0.65rem;
+  font-size: 0.72rem;
+  color: #6b7280;
+  border-top: 1px solid rgba(0,0,0,.06);
+  font-style: italic;
+}
+
+/* ── Error highlight on canvas nodes ──────────────────── */
+.fn-canvas .fn-node.fn-node-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px #ef4444, 0 0 0 5px rgba(239,68,68,.15), 0 4px 12px rgba(239,68,68,.1);
+}
+.fn-canvas .fn-node.fn-node-error.selected {
+  box-shadow: 0 0 0 2px #ef4444, 0 0 0 5px rgba(239,68,68,.25), 0 8px 24px rgba(239,68,68,.15);
 }
 
 .fn-validation-card {
