@@ -199,6 +199,14 @@ export async function processReminderCaptureEvent(input: {
           [input.userId, input.contactId, conversation.id, config.config_key, expiresAt]
         );
       }
+
+      // Log the capture ask so it appears in the dispatch log report
+      await pool.query(
+        `INSERT INTO reminder_dispatch_log
+           (user_id, contact_id, config_key, log_type, template_name, status)
+         VALUES ($1, $2, $3, 'capture_ask', $4, 'sent')`,
+        [input.userId, input.contactId, config.config_key, config.capture_template_name]
+      );
     } catch (err) {
       console.warn(`[ReminderCapture] config ${config.config_key} failed for contact ${input.contactId}`, err);
     }

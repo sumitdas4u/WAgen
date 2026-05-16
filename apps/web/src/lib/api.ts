@@ -4836,9 +4836,12 @@ export function runReminderDispatch(token: string) {
   });
 }
 
+export type ReminderLogType = "campaign" | "capture_ask" | "capture_complete" | "capture_declined" | "capture_expired";
+
 export interface ReminderDispatchLogEntry {
   id: string;
   config_key: string;
+  log_type: ReminderLogType;
   template_name: string | null;
   status: string;
   sent_at: string;

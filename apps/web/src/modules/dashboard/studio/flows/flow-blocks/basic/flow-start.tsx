@@ -9,41 +9,62 @@ const ROUTE_COLORS = [
   { border: "#fca5a5", bg: "#fef2f2", labelColor: "#991b1b", labelBorder: "#fecaca" },
 ] as const;
 
+function isConfiguredTrigger(trigger: Trigger): boolean {
+  if (
+    trigger.type === "any_message" ||
+    trigger.type === "qr_start" ||
+    trigger.type === "website_start"
+  ) {
+    return true;
+  }
+  return trigger.value.trim().length > 0;
+}
+
+function hasConfiguredStartTrigger(data: FlowStartData): boolean {
+  const legacyTriggers = Array.isArray(data.triggers) ? data.triggers : [];
+  const routeTriggers = Array.isArray(data.routes)
+    ? data.routes.flatMap((route) => route.triggers ?? [])
+    : [];
+  return [...legacyTriggers, ...routeTriggers].some(isConfiguredTrigger);
+}
+
 function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
   const { patch, del } = useNodePatch<FlowStartData>(id);
+  const routes = Array.isArray(data.routes) ? data.routes : [];
 
   const addRoute = () =>
-    patch({ routes: [...data.routes, { id: uid(), label: "Route", triggers: [] }] });
+    patch({ routes: [...routes, { id: uid(), label: "Route", triggers: [] }] });
 
   const removeRoute = (routeId: string) =>
-    patch({ routes: data.routes.filter((r) => r.id !== routeId) });
+    patch({ routes: routes.filter((r) => r.id !== routeId) });
 
   const patchRoute = (routeId: string, updates: Partial<RouteConfig>) =>
-    patch({ routes: data.routes.map((r) => (r.id === routeId ? { ...r, ...updates } : r)) });
+    patch({ routes: routes.map((r) => (r.id === routeId ? { ...r, ...updates } : r)) });
 
   const addTriggerToRoute = (routeId: string) =>
     patchRoute(routeId, {
       triggers: [
-        ...(data.routes.find((r) => r.id === routeId)?.triggers ?? []),
+        ...(routes.find((r) => r.id === routeId)?.triggers ?? []),
         { id: uid(), type: "keyword", value: "" }
       ]
     });
 
   const removeTriggerFromRoute = (routeId: string, triggerId: string) =>
     patchRoute(routeId, {
-      triggers: (data.routes.find((r) => r.id === routeId)?.triggers ?? []).filter(
+      triggers: (routes.find((r) => r.id === routeId)?.triggers ?? []).filter(
         (t) => t.id !== triggerId
       )
     });
 
   const patchTriggerInRoute = (routeId: string, triggerId: string, updates: Partial<Trigger>) =>
     patchRoute(routeId, {
-      triggers: (data.routes.find((r) => r.id === routeId)?.triggers ?? []).map((t) =>
+      triggers: (routes.find((r) => r.id === routeId)?.triggers ?? []).map((t) =>
         t.id === triggerId ? { ...t, ...updates } : t
       )
     });
 
-  const usesRoutes = data.routes.length > 0;
+  const usesRoutes = routes.length > 0;
+  const hasStartTrigger = hasConfiguredStartTrigger(data);
 
   return (
     <div className={`fn-node fn-node-flowStart${selected ? " selected" : ""}`}>
@@ -74,7 +95,7 @@ function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
         <div className="fn-node-field">
           <label className="fn-node-label">KEYWORD ROUTES</label>
 
-          {data.routes.map((route, index) => {
+          {routes.map((route, index) => {
             const colors = ROUTE_COLORS[index % ROUTE_COLORS.length];
             return (
               <div
@@ -160,6 +181,24 @@ function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
           <button className="fn-add-btn nodrag" onClick={addRoute}>
             + Add Route
           </button>
+
+          {!hasStartTrigger && (
+            <div
+              className="nodrag"
+              style={{
+                marginTop: 6,
+                border: "1px solid #fde68a",
+                background: "#fffbeb",
+                color: "#92400e",
+                borderRadius: 7,
+                padding: "6px 8px",
+                fontSize: 11,
+                lineHeight: 1.35
+              }}
+            >
+              This flow will not auto-start. Add a trigger, use Any Msg, or select it as Default Reply.
+            </div>
+          )}
         </div>
 
         <div
@@ -174,7 +213,7 @@ function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
           }}
         >
           <div className="fn-node-label" style={{ marginBottom: 6 }}>
-            {usesRoutes ? "DEFAULT (no route matched)" : "ANY MESSAGE (default)"}
+            {usesRoutes ? "DEFAULT (no route matched)" : "START PATH"}
           </div>
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11 }}>
             <input
@@ -183,8 +222,13 @@ function FlowStartNode({ id, data, selected }: NodeProps<FlowStartData>) {
               checked={!!data.fallbackUseAi}
               onChange={(e) => patch({ fallbackUseAi: e.target.checked })}
             />
-            {usesRoutes ? "Use AI when no route matches" : "Use AI to handle messages"}
+            {usesRoutes
+              ? "Legacy AI fallback for unmatched routes"
+              : "Legacy AI fallback for unmatched messages"}
           </label>
+          <div style={{ marginTop: 4, color: "#92400e", fontSize: 10.5, lineHeight: 1.3 }}>
+            Can enable channel-level AI replies when no explicit trigger matches.
+          </div>
 
           {usesRoutes ? (
             <Handle

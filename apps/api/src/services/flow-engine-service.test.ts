@@ -8,12 +8,12 @@ const mocks = vi.hoisted(() => {
     activeSession: FlowSessionRow | null;
     lastCompletedSession: FlowSessionRow | null;
     defaultReplyConfig: {
-      channel: "api";
-      mode: "ai";
-      flowId: null;
+      channel: "web" | "qr" | "api";
+      mode: "manual" | "flow" | "ai";
+      flowId: string | null;
       agentProfileId: null;
       invalidReplyLimit: number;
-      source: "explicit";
+      source: "explicit" | "legacy_flow_ai" | "legacy_default_flow" | "default";
     };
     flowLookup: Map<string, FlowRow>;
     inboundCount: number;
@@ -198,14 +198,18 @@ function makeFlow(params: {
 
 function makeSimpleFlow(params: {
   id: string;
+  channel?: "web" | "qr" | "api";
   triggers?: FlowTrigger[];
   replyText: string;
+  isDefaultReply?: boolean;
 }): FlowRow {
   const startId = `${params.id}-start`;
   const sendId = `${params.id}-send`;
   return makeFlow({
     id: params.id,
+    channel: params.channel,
     triggers: params.triggers,
+    isDefaultReply: params.isDefaultReply,
     nodes: [
       { id: startId, type: "flowStart", data: { label: "Start", welcomeMessage: "", triggers: [], routes: [] } },
       { id: sendId, type: "sendText", data: { text: params.replyText } }
@@ -278,6 +282,256 @@ describe("handleFlowMessage — AI fallback takeover", () => {
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString()
     }));
+  });
+
+  it("does not auto-start a non-default flow with no triggers when default reply is manual", async () => {
+    mocks.state.defaultReplyConfig = {
+      channel: "api",
+      mode: "manual",
+      flowId: null,
+      agentProfileId: null,
+      invalidReplyLimit: 2,
+      source: "explicit"
+    };
+    mocks.state.publishedFlows = [
+      makeSimpleFlow({ id: "no-trigger-flow", replyText: "Should not run" })
+    ];
+
+    const sent: string[] = [];
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType: "api",
+      message: "hello there",
+      sendReply: async (payload) => {
+        if (payload.type === "text") sent.push(payload.text);
+      }
+    });
+
+    expect(result).toEqual({ result: "not_matched" });
+    expect(sent).toEqual([]);
+    expect(mocks.createFlowSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("uses default reply AI instead of a non-default no-trigger flow", async () => {
+    mocks.state.publishedFlows = [
+      makeSimpleFlow({ id: "no-trigger-flow", replyText: "Should not run" })
+    ];
+
+    const sent: string[] = [];
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType: "api",
+      message: "hello there",
+      sendReply: async (payload) => {
+        if (payload.type === "text") sent.push(payload.text);
+      }
+    });
+
+    expect(result).toEqual({ result: "use_ai" });
+    expect(sent).toEqual([]);
+    expect(mocks.createFlowSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("runs a no-trigger flow when it is explicitly selected as default reply", async () => {
+    const defaultFlow = makeSimpleFlow({
+      id: "default-flow",
+      replyText: "Default flow reply",
+      isDefaultReply: true
+    });
+    mocks.state.defaultReplyConfig = {
+      channel: "api",
+      mode: "flow",
+      flowId: defaultFlow.id,
+      agentProfileId: null,
+      invalidReplyLimit: 2,
+      source: "explicit"
+    };
+    mocks.state.publishedFlows = [defaultFlow];
+
+    const sent: string[] = [];
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType: "api",
+      message: "unmatched message",
+      sendReply: async (payload) => {
+        if (payload.type === "text") sent.push(payload.text);
+      }
+    });
+
+    expect(result).toEqual({ result: "handled" });
+    expect(mocks.createFlowSessionMock).toHaveBeenCalledWith(
+      defaultFlow.id,
+      "conv-1",
+      expect.not.objectContaining({ __flow_trigger_id: expect.anything() })
+    );
+    expect(sent).toContain("Default flow reply");
+  });
+
+  it("runs an explicit any-message flow before the selected default reply flow", async () => {
+    const anyMessageFlow = makeSimpleFlow({
+      id: "any-flow",
+      triggers: [{ id: "trigger-any", type: "any_message", value: "" }],
+      replyText: "Any message flow"
+    });
+    const defaultFlow = makeSimpleFlow({
+      id: "default-flow",
+      replyText: "Default flow reply",
+      isDefaultReply: true
+    });
+    mocks.state.defaultReplyConfig = {
+      channel: "api",
+      mode: "flow",
+      flowId: defaultFlow.id,
+      agentProfileId: null,
+      invalidReplyLimit: 2,
+      source: "explicit"
+    };
+    mocks.state.publishedFlows = [anyMessageFlow, defaultFlow];
+
+    const sent: string[] = [];
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType: "api",
+      message: "hello there",
+      sendReply: async (payload) => {
+        if (payload.type === "text") sent.push(payload.text);
+      }
+    });
+
+    expect(result).toEqual({ result: "handled" });
+    expect(mocks.createFlowSessionMock).toHaveBeenCalledWith(
+      anyMessageFlow.id,
+      "conv-1",
+      expect.objectContaining({ __flow_trigger_id: "trigger-any" })
+    );
+    expect(sent).toContain("Any message flow");
+    expect(sent).not.toContain("Default flow reply");
+  });
+
+  it("runs a keyword flow before any-message and default reply flows", async () => {
+    const anyMessageFlow = makeSimpleFlow({
+      id: "any-flow",
+      triggers: [{ id: "trigger-any", type: "any_message", value: "" }],
+      replyText: "Any message flow"
+    });
+    const keywordFlow = makeSimpleFlow({
+      id: "keyword-flow",
+      triggers: [{ id: "trigger-order", type: "keyword", value: "order" }],
+      replyText: "Keyword flow"
+    });
+    const defaultFlow = makeSimpleFlow({
+      id: "default-flow",
+      replyText: "Default flow reply",
+      isDefaultReply: true
+    });
+    mocks.state.defaultReplyConfig = {
+      channel: "api",
+      mode: "flow",
+      flowId: defaultFlow.id,
+      agentProfileId: null,
+      invalidReplyLimit: 2,
+      source: "explicit"
+    };
+    mocks.state.publishedFlows = [anyMessageFlow, keywordFlow, defaultFlow];
+
+    const sent: string[] = [];
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType: "api",
+      message: "order status",
+      sendReply: async (payload) => {
+        if (payload.type === "text") sent.push(payload.text);
+      }
+    });
+
+    expect(result).toEqual({ result: "handled" });
+    expect(mocks.createFlowSessionMock).toHaveBeenCalledWith(
+      keywordFlow.id,
+      "conv-1",
+      expect.objectContaining({ __flow_trigger_id: "trigger-order" })
+    );
+    expect(sent).toContain("Keyword flow");
+    expect(sent).not.toContain("Any message flow");
+    expect(sent).not.toContain("Default flow reply");
+  });
+
+  it.each([
+    {
+      label: "template reply",
+      channelType: "api" as const,
+      inboundCount: 2,
+      trigger: { id: "trigger-template", type: "template_reply" as const, value: "yes" },
+      message: "yes"
+    },
+    {
+      label: "QR start",
+      channelType: "qr" as const,
+      inboundCount: 1,
+      trigger: { id: "trigger-qr", type: "qr_start" as const, value: "" },
+      message: "hello from qr"
+    },
+    {
+      label: "widget start",
+      channelType: "web" as const,
+      inboundCount: 1,
+      trigger: { id: "trigger-widget", type: "website_start" as const, value: "" },
+      message: "hello from widget"
+    }
+  ])("runs $label before any-message and default reply flows", async ({ channelType, inboundCount, trigger, message }) => {
+    mocks.state.inboundCount = inboundCount;
+    const anyMessageFlow = makeSimpleFlow({
+      id: `any-${channelType}-flow`,
+      channel: channelType,
+      triggers: [{ id: "trigger-any", type: "any_message", value: "" }],
+      replyText: "Any message flow"
+    });
+    const specificFlow = makeSimpleFlow({
+      id: `specific-${channelType}-flow`,
+      channel: channelType,
+      triggers: [trigger],
+      replyText: "Specific flow"
+    });
+    const defaultFlow = makeSimpleFlow({
+      id: `default-${channelType}-flow`,
+      channel: channelType,
+      replyText: "Default flow reply",
+      isDefaultReply: true
+    });
+    mocks.state.defaultReplyConfig = {
+      channel: channelType,
+      mode: "flow",
+      flowId: defaultFlow.id,
+      agentProfileId: null,
+      invalidReplyLimit: 2,
+      source: "explicit"
+    };
+    mocks.state.publishedFlows = [anyMessageFlow, specificFlow, defaultFlow];
+
+    const sent: string[] = [];
+    const result = await handleFlowMessage({
+      userId: "user-1",
+      conversationId: "conv-1",
+      channelType,
+      message,
+      sendReply: async (payload) => {
+        if (payload.type === "text") sent.push(payload.text);
+      }
+    });
+
+    expect(result).toEqual({ result: "handled" });
+    expect(mocks.createFlowSessionMock).toHaveBeenCalledWith(
+      specificFlow.id,
+      "conv-1",
+      expect.objectContaining({ __flow_trigger_id: trigger.id })
+    );
+    expect(sent).toContain("Specific flow");
+    expect(sent).not.toContain("Any message flow");
+    expect(sent).not.toContain("Default flow reply");
   });
 
   it("re-enters a keyword flow from ai_mode and completes the old AI session", async () => {

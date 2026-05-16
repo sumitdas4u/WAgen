@@ -3,7 +3,8 @@ import type {
   AnyNodeData,
   FlowChannel,
   FlowEdge,
-  FlowNode
+  FlowNode,
+  Trigger
 } from "./flow-blocks/types";
 
 interface NodeHandleSpec {
@@ -230,6 +231,29 @@ function normalizeBodyPreview(value: string): string {
 
 function allowsMultipleIncomingWires(node: FlowNode, targetHandle: string): boolean {
   return targetHandle === "in" && node.data.kind !== "flowStart";
+}
+
+function isConfiguredStartTrigger(trigger: Trigger): boolean {
+  if (
+    trigger.type === "any_message" ||
+    trigger.type === "qr_start" ||
+    trigger.type === "website_start"
+  ) {
+    return true;
+  }
+  return trigger.value.trim().length > 0;
+}
+
+function hasConfiguredStartTrigger(data: AnyNodeData): boolean {
+  if (data.kind !== "flowStart") {
+    return false;
+  }
+
+  const legacyTriggers = Array.isArray(data.triggers) ? data.triggers : [];
+  const routeTriggers = Array.isArray(data.routes)
+    ? data.routes.flatMap((route) => route.triggers ?? [])
+    : [];
+  return [...legacyTriggers, ...routeTriggers].some(isConfiguredStartTrigger);
 }
 
 function pushNodeError(
@@ -856,6 +880,13 @@ export function validateFlow(
         startNodes.length === 0
           ? "Flow needs exactly one Flow Start block."
           : "Flow can only have one Flow Start block."
+    });
+  } else if (!hasConfiguredStartTrigger(startNodes[0].data)) {
+    warnings.push({
+      id: "flow:start-no-trigger",
+      nodeId: startNodes[0].id,
+      message:
+        "Flow Start has no configured trigger. This flow will not auto-start. Add a trigger, use Any Msg, or select it as Default Reply."
     });
   }
 

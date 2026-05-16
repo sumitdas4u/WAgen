@@ -86,6 +86,16 @@ const REMINDER_META_LABELS: Record<string, { icon: string; label: string }> = {
   anniversary: { icon: "💍", label: "Anniversary" }
 };
 
+import type { ReminderLogType } from "../../../lib/api";
+
+const LOG_TYPE_META: Record<ReminderLogType, { icon: string; label: string; bg: string; border: string; color: string }> = {
+  campaign:         { icon: "📅", label: "Campaign",         bg: "#f0f4ff", border: "#c7d6f7", color: "#1d4ed8" },
+  capture_ask:      { icon: "📲", label: "Capture Ask",      bg: "#fef3c7", border: "#fde68a", color: "#92400e" },
+  capture_complete: { icon: "✅", label: "Date Captured",    bg: "#dcfce7", border: "#bbf7d0", color: "#166534" },
+  capture_declined: { icon: "⏸️", label: "Declined",        bg: "#ffe4e6", border: "#fecdd3", color: "#be123c" },
+  capture_expired:  { icon: "⏱️", label: "No Response",     bg: "#f1f5f9", border: "#e2eaf4", color: "#475569" }
+};
+
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   sent:      { color: "#166534", bg: "#dcfce7", border: "#bbf7d0" },
   failed:    { color: "#be123c", bg: "#ffe4e6", border: "#fecdd3" },
@@ -93,16 +103,29 @@ const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }
   delivered: { color: "#1d4ed8", bg: "#dbeafe", border: "#bfdbfe" }
 };
 
+type LogFilter = "all" | ReminderLogType;
+
 function DispatchLogSection() {
   const { token } = useAuth();
   const [days, setDays] = useState(7);
+  const [logFilter, setLogFilter] = useState<LogFilter>("all");
   const { data: logs, isLoading } = useReminderDispatchLogQuery(token ?? "", { days });
+
+  const filtered = logFilter === "all" ? logs : logs?.filter((l) => l.log_type === logFilter);
+
+  const counts = {
+    campaign: logs?.filter((l) => l.log_type === "campaign").length ?? 0,
+    capture_ask: logs?.filter((l) => l.log_type === "capture_ask").length ?? 0,
+    capture_complete: logs?.filter((l) => l.log_type === "capture_complete").length ?? 0,
+    capture_declined: logs?.filter((l) => l.log_type === "capture_declined").length ?? 0,
+    capture_expired: logs?.filter((l) => l.log_type === "capture_expired").length ?? 0,
+  };
 
   return (
     <div className="rm-table-card">
       <div className="rm-toolbar">
         <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: "0.95rem", fontWeight: 700, color: "#122033" }}>
-          Recent Dispatch Log
+          Activity Log
         </div>
         <div style={{ display: "flex", gap: "0.4rem" }}>
           {[7, 14, 30].map((d) => (
@@ -124,53 +147,104 @@ function DispatchLogSection() {
           ))}
         </div>
       </div>
+
+      {/* Summary stats row */}
+      {!isLoading && logs && logs.length > 0 && (
+        <div style={{ display: "flex", borderBottom: "1px solid #edf2f7", overflowX: "auto" }}>
+          {([
+            { key: "all" as LogFilter, label: "All", count: logs.length, color: "#122033", bg: "#f8fafc", border: "#e2eaf4" },
+            { key: "capture_ask" as LogFilter, ...LOG_TYPE_META.capture_ask, count: counts.capture_ask },
+            { key: "capture_complete" as LogFilter, ...LOG_TYPE_META.capture_complete, count: counts.capture_complete },
+            { key: "capture_declined" as LogFilter, ...LOG_TYPE_META.capture_declined, count: counts.capture_declined },
+            { key: "capture_expired" as LogFilter, ...LOG_TYPE_META.capture_expired, count: counts.capture_expired },
+            { key: "campaign" as LogFilter, ...LOG_TYPE_META.campaign, count: counts.campaign }
+          ]).map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setLogFilter(item.key)}
+              style={{
+                appearance: "none", border: 0, background: logFilter === item.key ? "#f0f4ff" : "transparent",
+                padding: "0.55rem 0.85rem", cursor: "pointer", flexShrink: 0,
+                borderBottom: logFilter === item.key ? "2px solid #2563eb" : "2px solid transparent",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: "0.15rem"
+              }}
+            >
+              <span style={{ fontSize: "1rem", lineHeight: 1 }}>{"icon" in item ? item.icon : "📊"}</span>
+              <span style={{ fontSize: "0.62rem", fontWeight: 800, color: logFilter === item.key ? "#2563eb" : "#5f6f86", whiteSpace: "nowrap" }}>
+                {item.label}
+              </span>
+              <span style={{ fontSize: "0.78rem", fontWeight: 800, color: logFilter === item.key ? "#2563eb" : "#122033" }}>
+                {item.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="rm-table-wrap">
         <table className="rm-table">
           <thead>
             <tr>
               <th>Contact</th>
-              <th>Type</th>
-              <th>Date</th>
+              <th>Reminder</th>
+              <th>Event</th>
+              <th>Time</th>
               <th>Template</th>
-              <th>Status</th>
+              <th>Result</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={5} className="rm-table-empty">Loading…</td></tr>
+              <tr><td colSpan={6} className="rm-table-empty">Loading…</td></tr>
             )}
-            {!isLoading && (!logs || logs.length === 0) && (
-              <tr><td colSpan={5} className="rm-table-empty">No dispatches in the last {days} days.</td></tr>
+            {!isLoading && (!filtered || filtered.length === 0) && (
+              <tr><td colSpan={6} className="rm-table-empty">No activity in the last {days} days.</td></tr>
             )}
-            {logs?.map((log) => {
-              const meta = REMINDER_META_LABELS[log.config_key] ?? { icon: "📅", label: log.config_key };
+            {filtered?.map((log) => {
+              const reminderMeta = REMINDER_META_LABELS[log.config_key] ?? { icon: "📅", label: log.config_key };
+              const logMeta = LOG_TYPE_META[log.log_type] ?? LOG_TYPE_META.campaign;
               const st = STATUS_STYLE[log.status] ?? STATUS_STYLE["pending"];
               const d = new Date(log.sent_at);
-              const dateStr = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+              const dateStr = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+              const timeStr = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
               return (
-                <tr key={log.id} style={{ cursor: "default" }}>
+                <tr key={log.id}>
                   <td>
                     <div style={{ fontWeight: 700, color: "#122033", fontSize: "0.85rem" }}>{log.contact_name ?? "—"}</div>
-                    <div style={{ fontSize: "0.75rem", color: "#5f6f86" }}>{log.contact_phone}</div>
+                    <div style={{ fontSize: "0.72rem", color: "#5f6f86" }}>{log.contact_phone}</div>
                   </td>
                   <td>
                     <span style={{
                       display: "inline-flex", alignItems: "center", gap: "0.3rem",
                       padding: "2px 8px", borderRadius: 999,
                       background: "#f0f4ff", border: "1px solid #c7d6f7",
-                      fontSize: "0.75rem", fontWeight: 700, color: "#1d4ed8"
+                      fontSize: "0.72rem", fontWeight: 700, color: "#1d4ed8"
                     }}>
-                      {meta.icon} {meta.label}
+                      {reminderMeta.icon} {reminderMeta.label}
                     </span>
                   </td>
-                  <td style={{ color: "#2563eb", fontWeight: 600, fontSize: "0.83rem" }}>{dateStr}</td>
-                  <td style={{ fontSize: "0.8rem", color: "#475569" }}>{log.template_name ?? "—"}</td>
+                  <td>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: "0.3rem",
+                      padding: "2px 8px", borderRadius: 999,
+                      background: logMeta.bg, border: `1px solid ${logMeta.border}`,
+                      fontSize: "0.72rem", fontWeight: 700, color: logMeta.color, whiteSpace: "nowrap"
+                    }}>
+                      {logMeta.icon} {logMeta.label}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "#334155" }}>{dateStr}</div>
+                    <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{timeStr}</div>
+                  </td>
+                  <td style={{ fontSize: "0.78rem", color: "#475569" }}>{log.template_name ?? "—"}</td>
                   <td>
                     <span style={{
                       display: "inline-flex", alignItems: "center",
                       padding: "2px 8px", borderRadius: 999,
                       background: st.bg, border: `1px solid ${st.border}`,
-                      fontSize: "0.7rem", fontWeight: 800, letterSpacing: "0.04em",
+                      fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.04em",
                       textTransform: "uppercase", color: st.color
                     }}>
                       {log.status}

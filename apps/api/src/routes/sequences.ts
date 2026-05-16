@@ -20,11 +20,18 @@ const EnrollmentQuerySchema = z.object({
   status: z.enum(["active", "completed", "failed", "stopped"]).optional()
 });
 
+const DateOffsetSchema = z.object({
+  direction: z.enum(["add", "subtract"]),
+  value: z.number().int().min(1),
+  unit: z.enum(["days", "weeks", "months", "years"])
+});
+
 const TemplateVariableBindingSchema = z.object({
-  source: z.enum(["contact", "static"]),
+  source: z.enum(["contact", "static", "now"]),
   field: z.string().optional(),
   value: z.string().optional(),
-  fallback: z.string().optional()
+  fallback: z.string().optional(),
+  dateOffset: DateOffsetSchema.optional()
 });
 
 const StepSchema = z.object({

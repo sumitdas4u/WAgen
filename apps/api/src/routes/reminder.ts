@@ -9,10 +9,18 @@ import {
 } from "../services/reminder-config-service.js";
 import { getUserPlanEntitlements } from "../services/billing-service.js";
 
+const DateOffsetSchema = z.object({
+  direction: z.enum(["add", "subtract"]),
+  value: z.number().int().min(1),
+  unit: z.enum(["days", "weeks", "months", "years"])
+});
+
 const TemplateVarBindingSchema = z.object({
-  source: z.enum(["contact", "static"]),
+  source: z.enum(["contact", "static", "now"]),
   field: z.string().optional(),
-  value: z.string().optional()
+  value: z.string().optional(),
+  fallback: z.string().optional(),
+  dateOffset: DateOffsetSchema.optional()
 });
 
 const ReminderStepSchema = z.object({
@@ -151,6 +159,7 @@ export async function reminderRoutes(fastify: FastifyInstance): Promise<void> {
         `SELECT
            dl.id,
            dl.config_key,
+           dl.log_type,
            dl.template_name,
            dl.status,
            dl.sent_at,

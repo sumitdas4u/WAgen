@@ -263,10 +263,10 @@ export function WebChannelPage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
             <p style={{ margin: 0, color: "#64748b", fontSize: "0.82rem" }}>
               {defaultReplyMode === "manual"
-                ? "Manual means the bot stays silent until a human replies."
+                ? "Manual means the bot stays silent when no explicit trigger matches."
                 : defaultReplyMode === "ai"
-                  ? "AI uses your active bot profile for this channel."
-                  : "Flow mode sends the selected published flow as the fallback reply."}
+                  ? "AI replies only when no explicit trigger matches."
+                  : "Flow mode runs the selected published flow only for unmatched messages."}
             </p>
             <button
               type="button"
