@@ -165,7 +165,23 @@ export async function processReminderCaptureEvent(input: {
           type: "template",
           templateName: config.capture_template_name,
           language: config.capture_template_lang,
-          variableValues: resolveTemplateVars(snapshot, config.capture_template_vars)
+          variableValues: resolveTemplateVars(snapshot, config.capture_template_vars),
+          // Set button payloads so WAgen can identify which button was tapped
+          // without relying on button text (which varies by template/locale)
+          components: [
+            {
+              type: "button",
+              sub_type: "quick_reply",
+              index: "0",
+              parameters: [{ type: "payload", payload: `start_flow_${config.config_key}` }]
+            },
+            {
+              type: "button",
+              sub_type: "quick_reply",
+              index: "1",
+              parameters: [{ type: "payload", payload: "not_now" }]
+            }
+          ]
         }
       });
 

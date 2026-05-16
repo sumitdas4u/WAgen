@@ -22,6 +22,7 @@ export interface ReminderConfig {
   campaign_send_time: string;
   campaign_timezone: string;
   dispatch_mode: "annual" | "exact_date";
+  date_field_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -58,6 +59,7 @@ export interface ReminderConfigInput {
   campaignSendTime?: string;
   campaignTimezone?: string;
   dispatchMode?: "annual" | "exact_date";
+  dateFieldName?: string | null;
 }
 
 export interface ReminderCampaignStepInput {
@@ -139,7 +141,10 @@ export async function upsertReminderConfig(userId: string, input: ReminderConfig
     campaignConditionsJson: input.campaignConditionsJson ?? existing?.campaign_conditions_json ?? [],
     campaignSendTime: normalizeTime(input.campaignSendTime ?? existing?.campaign_send_time ?? "09:00"),
     campaignTimezone: input.campaignTimezone ?? existing?.campaign_timezone ?? "Asia/Kolkata",
-    dispatchMode: input.dispatchMode ?? existing?.dispatch_mode ?? "annual"
+    dispatchMode: input.dispatchMode ?? existing?.dispatch_mode ?? "annual",
+    dateFieldName: input.dateFieldName !== undefined
+      ? input.dateFieldName
+      : existing?.date_field_name ?? input.configKey
   };
 
   const result = await pool.query<ReminderConfig>(
@@ -149,14 +154,14 @@ export async function upsertReminderConfig(userId: string, input: ReminderConfig
        capture_flow_id, capture_trigger_type, capture_conditions_json,
        retry_interval_days, retry_max_count, cooldown_days,
        campaign_enabled, campaign_conditions_json, campaign_send_time, campaign_timezone,
-       dispatch_mode, updated_at
+       dispatch_mode, date_field_name, updated_at
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9,
        $10, $11, $12,
        $13, $14, $15,
        $16, $17, $18, $19,
-       $20, now()
+       $20, $21, now()
      )
      ON CONFLICT (user_id, config_key) DO UPDATE SET
        reminder_type           = EXCLUDED.reminder_type,
@@ -177,6 +182,7 @@ export async function upsertReminderConfig(userId: string, input: ReminderConfig
        campaign_send_time      = EXCLUDED.campaign_send_time,
        campaign_timezone       = EXCLUDED.campaign_timezone,
        dispatch_mode           = EXCLUDED.dispatch_mode,
+       date_field_name         = EXCLUDED.date_field_name,
        updated_at              = now()
      RETURNING *`,
     [
@@ -199,7 +205,8 @@ export async function upsertReminderConfig(userId: string, input: ReminderConfig
       JSON.stringify(next.campaignConditionsJson),
       next.campaignSendTime,
       next.campaignTimezone,
-      next.dispatchMode
+      next.dispatchMode,
+      next.dateFieldName
     ]
   );
   return normalizeReminderConfig(result.rows[0]);

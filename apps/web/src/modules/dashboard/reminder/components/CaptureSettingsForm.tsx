@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { ReminderConfig, ReminderConfigWriteInput, MessageTemplate, TemplateVarBinding } from "../../../../lib/api";
+import type { ReminderConfig, ReminderConfigWriteInput, MessageTemplate, TemplateComponent, TemplateVarBinding } from "../../../../lib/api";
 import { fetchTemplates, fetchPublishedFlows, listContactFields } from "../../../../lib/api";
 import { TemplatePreviewPanel } from "../../templates/TemplatePreviewPanel";
 import { useAuth } from "../../../../lib/auth-context";
@@ -37,6 +37,15 @@ function extractPlaceholders(template: MessageTemplate | null): string[] {
   if (!template) return [];
   const matches = JSON.stringify(template.components).matchAll(/\{\{(\d+)\}\}/g);
   return [...new Set([...matches].map((m) => m[1]))].sort((a, b) => Number(a) - Number(b));
+}
+
+function extractQuickReplyButtons(template: MessageTemplate | null): Array<{ text: string; index: number }> {
+  if (!template) return [];
+  const buttonsComp = template.components.find((c: TemplateComponent) => c.type === "BUTTONS");
+  if (!buttonsComp?.buttons) return [];
+  return buttonsComp.buttons
+    .filter((b) => b.type === "QUICK_REPLY")
+    .map((b, i) => ({ text: b.text, index: i }));
 }
 
 function StepCircle({ n, done }: { n: number; done?: boolean }) {
@@ -102,15 +111,12 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
     [templatesQuery.data, templateId]
   );
   const placeholders = useMemo(() => extractPlaceholders(selectedTemplate), [selectedTemplate]);
+  const quickReplyButtons = useMemo(() => extractQuickReplyButtons(selectedTemplate), [selectedTemplate]);
 
   /* ── Handlers ── */
   const handleTemplateChange = (name: string) => {
     setTemplateId(name);
     setTemplateVars({});
-  };
-
-  const setVarField = (pos: string, field: string) => {
-    setTemplateVars((prev) => ({ ...prev, [pos]: { source: "contact", field } }));
   };
 
   const addCondition = () => {
@@ -216,45 +222,84 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
 
               {placeholders.length > 0 && (
                 <div className="rm-field" style={{ marginTop: "0.5rem" }}>
-                  <label className="rm-label">
-                    Template Variable Mapping
-                    <span style={{ fontSize: "0.75rem", fontWeight: 400, color: "#5f6f86", marginLeft: "0.4rem" }}>
-                      — map {`{{variable}}`} to contact fields
-                    </span>
-                  </label>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid #edf2f7" }}>
-                        <th style={{ padding: "0.5rem 0.75rem", textAlign: "left", fontSize: "0.64rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5f6f86", background: "#fafbfd" }}>Template Variable</th>
-                        <th style={{ width: 36, background: "#fafbfd" }}></th>
-                        <th style={{ padding: "0.5rem 0.75rem", textAlign: "left", fontSize: "0.64rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5f6f86", background: "#fafbfd" }}>Contact Field</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {placeholders.map((pos) => (
-                        <tr key={pos} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "0.6rem 0.75rem" }}>
-                            <code style={{ fontSize: "0.78rem", background: "#f1f5f9", padding: "2px 7px", borderRadius: 5, color: "#334155" }}>
-                              {`{{${pos}}}`}
-                            </code>
-                          </td>
-                          <td style={{ textAlign: "center", color: "#d1d5db", fontSize: "0.85rem" }}>→</td>
-                          <td style={{ padding: "0.4rem 0.75rem" }}>
+                  <label className="rm-label">Template Variable Mapping</label>
+                  <div style={{ border: "1px solid #e2eaf4", borderRadius: 8, overflow: "hidden" }}>
+                    {placeholders.map((pos, idx) => {
+                      const binding = templateVars[pos] ?? { source: "contact" as const, field: "" };
+                      const isContact = binding.source === "contact";
+                      return (
+                        <div
+                          key={pos}
+                          style={{
+                            padding: "0.75rem 1rem",
+                            borderBottom: idx < placeholders.length - 1 ? "1px solid #f1f5f9" : undefined,
+                            display: "flex", flexDirection: "column", gap: "0.45rem"
+                          }}
+                        >
+                          {/* Variable badge */}
+                          <code style={{
+                            alignSelf: "flex-start",
+                            fontSize: "0.78rem", fontWeight: 700,
+                            background: "#e0f2fe", color: "#0369a1",
+                            padding: "2px 8px", borderRadius: 6
+                          }}>
+                            {`{{${pos}}}`}
+                          </code>
+
+                          {/* Source */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#5f6f86", width: 52, flexShrink: 0 }}>Source</span>
                             <select
                               className="rm-select rm-input-sm"
-                              value={templateVars[pos]?.field ?? ""}
-                              onChange={(e) => setVarField(pos, e.target.value)}
+                              value={binding.source}
+                              onChange={(e) => {
+                                const src = e.target.value as "contact" | "static";
+                                setTemplateVars((prev) => ({
+                                  ...prev,
+                                  [pos]: src === "contact"
+                                    ? { source: "contact", field: "" }
+                                    : { source: "static", value: "" }
+                                }));
+                              }}
                             >
-                              <option value="">— select field —</option>
-                              {allContactFields.map((f) => (
-                                <option key={f.key} value={f.key}>{f.label}</option>
-                              ))}
+                              <option value="contact">Contact field</option>
+                              <option value="static">Static value</option>
                             </select>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+
+                          {/* Value / Field */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#5f6f86", width: 52, flexShrink: 0 }}>
+                              {isContact ? "Field" : "Value"}
+                            </span>
+                            {isContact ? (
+                              <select
+                                className="rm-select rm-input-sm"
+                                value={binding.field ?? ""}
+                                onChange={(e) => setTemplateVars((prev) => ({
+                                  ...prev, [pos]: { source: "contact", field: e.target.value }
+                                }))}
+                              >
+                                <option value="">— select field —</option>
+                                {allContactFields.map((f) => (
+                                  <option key={f.key} value={f.key}>{f.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                className="rm-input rm-input-sm"
+                                placeholder="Static replacement text"
+                                value={binding.value ?? ""}
+                                onChange={(e) => setTemplateVars((prev) => ({
+                                  ...prev, [pos]: { source: "static", value: e.target.value }
+                                }))}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </>
@@ -264,7 +309,7 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
 
       {/* ── Section 2: Capture Flow ── */}
       <div className="rm-card">
-        {cardHead(2, "Date Capture Flow", "Triggered when customer replies YES to the template",
+        {cardHead(2, "Date Capture Flow", "Started when the contact taps your template's reply button",
           flowId ? <span className="rm-pill rm-pill-on">Linked</span> : undefined
         )}
         <div className="rm-card-body">
@@ -272,7 +317,7 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
             <label className="rm-label">
               Select Flow
               <span style={{ fontSize: "0.75rem", fontWeight: 400, color: "#5f6f86", marginLeft: "0.4rem" }}>
-                — must save date to contact field
+                — must save date to a contact field
               </span>
             </label>
             {flowsQuery.isLoading ? (
@@ -311,6 +356,72 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
                     ))
                   )}
                 </div>
+
+                {/* Button → Flow connection hint */}
+                {flowId && (() => {
+                  const selectedFlow = (flowsQuery.data ?? []).find((f) => f.id === flowId);
+                  const buttons = quickReplyButtons;
+                  if (!selectedFlow) return null;
+                  return (
+                    <div style={{
+                      border: "1.5px solid #c7d6f7", borderRadius: 10, background: "#eff6ff",
+                      padding: "0.85rem 1rem", marginTop: "0.6rem"
+                    }}>
+                      <div style={{ fontSize: "0.64rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#1d4ed8", marginBottom: "0.55rem" }}>
+                        Button → Flow Connection
+                      </div>
+                      {buttons.length > 0 ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", marginBottom: "0.6rem" }}>
+                          {buttons.map((b, i) => (
+                            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                              <span style={{
+                                padding: "0.2rem 0.65rem", borderRadius: 6,
+                                border: "1px solid #bfdbfe", background: "#fff",
+                                fontSize: "0.8rem", fontWeight: 600, color: "#1d4ed8"
+                              }}>
+                                📲 "{b.text}"
+                              </span>
+                              {i === 0 && (
+                                <>
+                                  <span style={{ color: "#94a3b8" }}>→</span>
+                                  <span style={{
+                                    padding: "0.2rem 0.65rem", borderRadius: 6,
+                                    border: "1px solid #bbf7d0", background: "#f0fdf4",
+                                    fontSize: "0.8rem", fontWeight: 700, color: "#166534"
+                                  }}>
+                                    💬 {selectedFlow.name}
+                                  </span>
+                                </>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.6rem" }}>
+                          <span style={{ fontSize: "0.8rem", color: "#5f6f86" }}>
+                            {selectedTemplate
+                              ? "No quick-reply buttons found in template"
+                              : "Select a permission template (Section 1) to see buttons"}
+                          </span>
+                        </div>
+                      )}
+                      <div style={{
+                        padding: "0.5rem 0.75rem", background: "rgba(255,255,255,0.8)",
+                        borderRadius: 7, fontSize: "0.77rem", color: "#475569", lineHeight: 1.55
+                      }}>
+                        WAgen automatically sets button payloads when sending this template:{" "}
+                        <code style={{ fontSize: "0.73rem", background: "#dcfce7", padding: "1px 5px", borderRadius: 4, color: "#166534", fontWeight: 700 }}>
+                          Button 1 → start_flow_{config.config_key}
+                        </code>{" "}
+                        <code style={{ fontSize: "0.73rem", background: "#fee2e2", padding: "1px 5px", borderRadius: 4, color: "#be123c" }}>
+                          Button 2 → not_now
+                        </code>
+                        . Tapping Button 1 starts the selected capture flow for that contact only.
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <button
                   type="button"
                   className="rm-btn rm-btn-ghost rm-btn-sm"
@@ -498,7 +609,7 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
             {[
               { bg: "#fef3c7", emoji: "🔄", text: "No response (ignored)", desc: `session expires → retry after ${retryIntervalDays}d → stop after ${retryMaxCount} retr${retryMaxCount !== 1 ? "ies" : "y"}` },
               { bg: "#fee2e2", emoji: "⏸️", text: 'Tapped "Not now"', desc: `cooldown ${cooldownDays}d → eligible again after cooldown` },
-              { bg: "#eff6ff", emoji: "✅", text: 'Tapped "Yes"', desc: "flow starts → date captured → never prompted again" }
+              { bg: "#eff6ff", emoji: "✅", text: "Tapped the YES button", desc: "capture flow starts → date saved to contact → never prompted again" }
             ].map((p) => (
               <div key={p.emoji} style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, background: p.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", flexShrink: 0 }}>{p.emoji}</div>

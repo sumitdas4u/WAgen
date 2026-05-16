@@ -29,12 +29,14 @@ export async function getActiveCaptureSession(conversationId: string): Promise<C
 }
 
 function isYesPayload(message: string, configKey: string): boolean {
-  return message.trim().toLowerCase() === `start_flow_${configKey}`;
+  const lower = message.trim().toLowerCase();
+  // Button reply arrives as "title id" concatenated; check for the payload anywhere in the string
+  return lower.includes(`start_flow_${configKey}`);
 }
 
 function isDeclineMessage(message: string): boolean {
   const lower = message.trim().toLowerCase();
-  return lower === "not_now" || lower === "no" || lower === "not now";
+  return lower.includes("not_now") || lower.includes("not now") || lower === "no";
 }
 
 export async function handleCaptureSessionReply(session: CaptureSession, message: string): Promise<void> {

@@ -4769,6 +4769,7 @@ export interface ReminderConfig {
   campaign_send_time: string;
   campaign_timezone: string;
   dispatch_mode: "annual" | "exact_date";
+  date_field_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -4792,6 +4793,7 @@ export interface ReminderConfigWriteInput {
   campaignSendTime?: string;
   campaignTimezone?: string;
   dispatchMode?: "annual" | "exact_date";
+  dateFieldName?: string | null;
   steps?: Array<{
     stepOrder: number;
     daysBefore: number;

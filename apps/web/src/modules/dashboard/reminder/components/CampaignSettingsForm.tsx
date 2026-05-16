@@ -1,5 +1,8 @@
-import { useState } from "react";
-import type { ReminderConfig, ReminderCampaignStep, ReminderConfigWriteInput, TemplateVarBinding } from "../../../../lib/api";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { ReminderConfig, ReminderCampaignStep, ReminderConfigWriteInput, TemplateVarBinding, MessageTemplate } from "../../../../lib/api";
+import { listContactFields, fetchTemplates } from "../../../../lib/api";
+import { useAuth } from "../../../../lib/auth-context";
 
 interface StepDraft {
   stepOrder: number;
@@ -38,32 +41,43 @@ function newStep(order: number): StepDraft {
   return { stepOrder: order, daysBefore: 0, templateName: "", templateLang: "en", templateVars: {} };
 }
 
+const CORE_FIELDS = [
+  { key: "display_name", label: "Display Name" },
+  { key: "phone_number", label: "Phone Number" },
+  { key: "email", label: "Email" },
+  { key: "contact_type", label: "Contact Type" },
+  { key: "tags", label: "Tags" }
+];
+
+function extractPlaceholders(template: MessageTemplate | null): string[] {
+  if (!template) return [];
+  const matches = JSON.stringify(template.components).matchAll(/\{\{(\d+)\}\}/g);
+  return [...new Set([...matches].map((m) => m[1]))].sort((a, b) => Number(a) - Number(b));
+}
+
 interface StepEditorProps {
   step: StepDraft;
   index: number;
   onChange: (updated: StepDraft) => void;
   onRemove: () => void;
   isOnly: boolean;
+  templates: MessageTemplate[];
+  contactFieldOptions: Array<{ key: string; label: string }>;
 }
 
-function StepEditor({ step, index, onChange, onRemove, isOnly }: StepEditorProps) {
-  const [varKey, setVarKey] = useState("");
+function StepEditor({ step, index, onChange, onRemove, isOnly, templates, contactFieldOptions }: StepEditorProps) {
+  const selectedTemplate = useMemo(
+    () => templates.find((t) => t.name === step.templateName) ?? null,
+    [templates, step.templateName]
+  );
+  const placeholders = useMemo(() => extractPlaceholders(selectedTemplate), [selectedTemplate]);
 
-  const addVar = () => {
-    const k = varKey.trim();
-    if (!k || k in step.templateVars) return;
-    onChange({ ...step, templateVars: { ...step.templateVars, [k]: { source: "contact", field: "" } } });
-    setVarKey("");
+  const handleTemplateChange = (name: string) => {
+    onChange({ ...step, templateName: name, templateVars: {} });
   };
 
-  const updateVar = (key: string, binding: TemplateVarBinding) => {
-    onChange({ ...step, templateVars: { ...step.templateVars, [key]: binding } });
-  };
-
-  const removeVar = (key: string) => {
-    const next = { ...step.templateVars };
-    delete next[key];
-    onChange({ ...step, templateVars: next });
+  const setVar = (pos: string, binding: TemplateVarBinding) => {
+    onChange({ ...step, templateVars: { ...step.templateVars, [pos]: binding } });
   };
 
   return (
@@ -90,14 +104,17 @@ function StepEditor({ step, index, onChange, onRemove, isOnly }: StepEditorProps
             <span className="rm-label-hint">0 = day of event</span>
           </div>
           <div className="rm-field">
-            <label className="rm-label">Template Name</label>
-            <input
-              type="text"
-              className="rm-input"
-              placeholder="e.g. birthday_reminder"
+            <label className="rm-label">Template</label>
+            <select
+              className="rm-select"
               value={step.templateName}
-              onChange={(e) => onChange({ ...step, templateName: e.target.value })}
-            />
+              onChange={(e) => handleTemplateChange(e.target.value)}
+            >
+              <option value="">— select template —</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.name}>{t.name}</option>
+              ))}
+            </select>
           </div>
           <div className="rm-field">
             <label className="rm-label">Language</label>
@@ -111,69 +128,115 @@ function StepEditor({ step, index, onChange, onRemove, isOnly }: StepEditorProps
           </div>
         </div>
 
-        <div>
-          <div style={{ fontSize: "0.77rem", fontWeight: 700, color: "#5f6f86", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>
-            Template Variables
-          </div>
-          {Object.entries(step.templateVars).map(([key, binding]) => (
-            <div key={key} className="rm-var-row">
-              <div className="rm-var-key">{`{{${key}}}`}</div>
-              <select
-                className="rm-select rm-input-sm"
-                value={binding.source}
-                onChange={(e) => updateVar(key, { ...binding, source: e.target.value as "contact" | "static" })}
-              >
-                <option value="contact">From contact</option>
-                <option value="static">Static value</option>
-              </select>
-              {binding.source === "contact" ? (
-                <input
-                  type="text"
-                  className="rm-input rm-input-sm"
-                  placeholder="field name (e.g. display_name)"
-                  value={binding.field ?? ""}
-                  onChange={(e) => updateVar(key, { source: "contact", field: e.target.value })}
-                />
-              ) : (
-                <input
-                  type="text"
-                  className="rm-input rm-input-sm"
-                  placeholder="static value"
-                  value={binding.value ?? ""}
-                  onChange={(e) => updateVar(key, { source: "static", value: e.target.value })}
-                />
-              )}
-              <button type="button" className="rm-var-rm" onClick={() => removeVar(key)}>×</button>
+        {/* Variable mapping — auto-derived from selected template */}
+        {step.templateName && (
+          <div>
+            <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#5f6f86", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.5rem" }}>
+              Template Variables
             </div>
-          ))}
-          <div className="rm-add-var-row">
-            <input
-              type="text"
-              className="rm-input rm-input-sm"
-              style={{ width: 130 }}
-              placeholder="variable name"
-              value={varKey}
-              onChange={(e) => setVarKey(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addVar())}
-            />
-            <button type="button" className="rm-btn rm-btn-ghost rm-btn-sm" onClick={addVar}>
-              + Add Variable
-            </button>
+            {placeholders.length === 0 ? (
+              <div style={{ fontSize: "0.8rem", color: "#94a3b8", padding: "0.5rem 0" }}>
+                {selectedTemplate ? "No dynamic variables in this template." : "Select a template to map variables."}
+              </div>
+            ) : (
+              <div style={{ border: "1px solid #e2eaf4", borderRadius: 8, overflow: "hidden" }}>
+                {placeholders.map((pos, idx) => {
+                  const binding = step.templateVars[pos] ?? { source: "contact" as const, field: "" };
+                  const isContact = binding.source === "contact";
+                  return (
+                    <div
+                      key={pos}
+                      style={{
+                        padding: "0.65rem 0.85rem",
+                        borderBottom: idx < placeholders.length - 1 ? "1px solid #f1f5f9" : undefined,
+                        display: "flex", flexDirection: "column", gap: "0.4rem"
+                      }}
+                    >
+                      <code style={{
+                        alignSelf: "flex-start", fontSize: "0.75rem", fontWeight: 700,
+                        background: "#e0f2fe", color: "#0369a1", padding: "2px 7px", borderRadius: 5
+                      }}>
+                        {`{{${pos}}}`}
+                      </code>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#5f6f86", width: 48, flexShrink: 0 }}>Source</span>
+                        <select
+                          className="rm-select rm-input-sm"
+                          value={binding.source}
+                          onChange={(e) => {
+                            const src = e.target.value as "contact" | "static";
+                            setVar(pos, src === "contact" ? { source: "contact", field: "" } : { source: "static", value: "" });
+                          }}
+                        >
+                          <option value="contact">Contact field</option>
+                          <option value="static">Static value</option>
+                        </select>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#5f6f86", width: 48, flexShrink: 0 }}>
+                          {isContact ? "Field" : "Value"}
+                        </span>
+                        {isContact ? (
+                          <select
+                            className="rm-select rm-input-sm"
+                            value={binding.field ?? ""}
+                            onChange={(e) => setVar(pos, { source: "contact", field: e.target.value })}
+                          >
+                            <option value="">— select field —</option>
+                            {contactFieldOptions.map((f) => (
+                              <option key={f.key} value={f.key}>{f.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="rm-input rm-input-sm"
+                            placeholder="Static replacement text"
+                            value={binding.value ?? ""}
+                            onChange={(e) => setVar(pos, { source: "static", value: e.target.value })}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
 export function CampaignSettingsForm({ config, steps, onSave, isSaving }: Props) {
+  const { token } = useAuth();
   const [campaignEnabled, setCampaignEnabled] = useState(config.campaign_enabled);
   const [sendTime, setSendTime] = useState(config.campaign_send_time.slice(0, 5));
   const [timezone, setTimezone] = useState(config.campaign_timezone);
   const [dispatchMode, setDispatchMode] = useState<"annual" | "exact_date">(config.dispatch_mode);
+  const [dateFieldName, setDateFieldName] = useState(config.date_field_name ?? config.config_key);
   const [stepDrafts, setStepDrafts] = useState<StepDraft[]>(
     steps.length > 0 ? steps.map(stepFromRow) : [newStep(1)]
   );
+
+  const contactFieldsQuery = useQuery({
+    queryKey: ["contact-fields"],
+    queryFn: () => listContactFields(token ?? "").then((r) => r.fields.filter((f) => f.is_active)),
+    staleTime: 60_000,
+    enabled: !!token
+  });
+
+  const templatesQuery = useQuery({
+    queryKey: ["templates-all"],
+    queryFn: () => fetchTemplates(token ?? "").then((r) => r.templates.filter((t) => t.status === "APPROVED")),
+    staleTime: 60_000,
+    enabled: !!token
+  });
+
+  const contactFieldOptions = useMemo(() => [
+    ...CORE_FIELDS,
+    ...(contactFieldsQuery.data ?? []).map((f) => ({ key: `custom:${f.name}`, label: f.label }))
+  ], [contactFieldsQuery.data]);
 
   const updateStep = (i: number, updated: StepDraft) => {
     setStepDrafts((prev) => prev.map((s, idx) => (idx === i ? updated : s)));
@@ -196,6 +259,7 @@ export function CampaignSettingsForm({ config, steps, onSave, isSaving }: Props)
       campaignSendTime: sendTime,
       campaignTimezone: timezone,
       dispatchMode,
+      dateFieldName,
       steps: stepDrafts.map((s, i) => ({
         stepOrder: i + 1,
         daysBefore: s.daysBefore,
@@ -245,6 +309,37 @@ export function CampaignSettingsForm({ config, steps, onSave, isSaving }: Props)
                 <div className="rm-dispatch-desc">{opt.desc}</div>
               </button>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Date Field ── */}
+      <div className="rm-card">
+        <div className="rm-card-head">
+          <span className="rm-card-title">Date Field</span>
+          <span style={{ fontSize: "0.75rem", color: "#5f6f86" }}>
+            which contact field holds the date?
+          </span>
+        </div>
+        <div className="rm-card-body">
+          <div className="rm-field">
+            <label className="rm-label">Contact Field</label>
+            <select
+              className="rm-select"
+              value={dateFieldName}
+              onChange={(e) => setDateFieldName(e.target.value)}
+            >
+              {/* Built-in suggestion matching config key */}
+              <option value={config.config_key}>{config.config_key} (default)</option>
+              {(contactFieldsQuery.data ?? [])
+                .filter((f) => f.name !== config.config_key)
+                .map((f) => (
+                  <option key={f.id} value={f.name}>{f.label} ({f.name})</option>
+                ))}
+            </select>
+            <div style={{ fontSize: "0.77rem", color: "#5f6f86", marginTop: "0.3rem", lineHeight: 1.5 }}>
+              The capture flow should save the date to this field. Campaign dispatches relative to this date.
+            </div>
           </div>
         </div>
       </div>
@@ -299,6 +394,8 @@ export function CampaignSettingsForm({ config, steps, onSave, isSaving }: Props)
               onChange={(updated) => updateStep(i, updated)}
               onRemove={() => removeStep(i)}
               isOnly={stepDrafts.length === 1}
+              templates={templatesQuery.data ?? []}
+              contactFieldOptions={contactFieldOptions}
             />
           ))}
           <button type="button" className="rm-add-step-btn" onClick={addStep}>

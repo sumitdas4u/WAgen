@@ -22,6 +22,7 @@ interface ReminderConfigRow {
   campaign_send_time: string;
   campaign_timezone: string;
   dispatch_mode: "annual" | "exact_date";
+  date_field_name: string | null;
 }
 
 interface ReminderStepRow {
@@ -216,9 +217,10 @@ export async function processUserReminders(
     );
     if (stepsResult.rows.length === 0) continue;
 
+    const fieldName = config.date_field_name ?? config.config_key;
     const fieldResult = await pool.query<{ id: string }>(
       `SELECT id FROM contact_fields WHERE user_id = $1 AND name = $2 LIMIT 1`,
-      [userId, config.config_key]
+      [userId, fieldName]
     );
     const fieldId = fieldResult.rows[0]?.id;
     if (!fieldId) continue;

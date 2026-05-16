@@ -50,6 +50,7 @@ const ReminderConfigWriteSchema = z.object({
   campaignSendTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/).optional(),
   campaignTimezone: z.string().trim().max(60).optional(),
   dispatchMode: z.enum(["annual", "exact_date"]).optional(),
+  dateFieldName: z.string().trim().max(100).optional().nullable(),
   steps: z.array(ReminderStepSchema).optional()
 });
 
