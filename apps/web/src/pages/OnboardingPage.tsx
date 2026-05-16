@@ -6,18 +6,19 @@ import {
   ingestManual,
   ingestKnowledgeFiles,
   ingestWebsite,
+  requestPhoneOtp,
   requestTestChatbotReply,
   saveBusinessBasics,
   savePersonality,
   setAgentActive,
-  updateMyProfile,
+  verifyPhoneOtp,
   type BusinessBasicsPayload,
   type KnowledgeIngestJob
 } from "../lib/api";
 
 type JourneyStep = 1 | 2 | 3 | 4 | 5;
 type KnowledgeMode = "website" | "file" | "manual";
-type PhoneStep = "idle" | "sent" | "verifying" | "done" | "error";
+type PhoneStep = "idle" | "sending" | "sent" | "verifying" | "done" | "error";
 
 type ChatRow = {
   id: string;
@@ -31,7 +32,6 @@ const KNOWLEDGE_UPLOAD_POLL_INTERVAL_MS = 1500;
 const KNOWLEDGE_UPLOAD_TIMEOUT_MS = 5 * 60_000;
 const SUPPORTED_KNOWLEDGE_FILE_EXTENSIONS = new Set(["pdf", "txt", "doc", "docx", "xls", "xlsx"]);
 const TOTAL_STEPS = 5;
-const MOCK_OTP = "0000";
 
 function isSupportedKnowledgeFile(file: File): boolean {
   const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
@@ -76,37 +76,48 @@ export function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Step 1: Phone verify (mock OTP) ─────────────────────────────────────
+  // ── Step 1: Phone verify ────────────────────────────────────────────────
   const [phone, setPhone] = useState(user?.phone_number ?? "");
   const [otp, setOtp] = useState("");
   const [phoneStep, setPhoneStep] = useState<PhoneStep>(
     user?.phone_verified ? "done" : "idle"
   );
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
 
-  const sendOtp = () => {
+  const sendOtp = async () => {
+    if (!token) return;
     setPhoneError(null);
+    setDevOtp(null);
     const normalized = phone.trim();
     if (!normalized.startsWith("+") || normalized.length < 8) {
       setPhoneError("Enter phone in international format: +91XXXXXXXXXX");
       return;
     }
-    // Mock: just advance to OTP entry — no real SMS sent yet
-    setPhoneStep("sent");
+    setPhoneStep("sending");
+    try {
+      const response = await requestPhoneOtp(token, { phoneNumber: normalized });
+      setPhone(response.phoneNumber);
+      setDevOtp(response.devCode ?? null);
+      setPhoneStep("sent");
+    } catch (e) {
+      setPhoneError((e as Error).message);
+      setPhoneStep("idle");
+    }
   };
 
   const verifyOtp = async () => {
     setPhoneError(null);
-    if (otp.trim() !== MOCK_OTP) {
-      setPhoneError(`Incorrect OTP. (Use ${MOCK_OTP} during testing.)`);
+    if (!token) return;
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setPhoneError("Enter the 6-digit OTP.");
       return;
     }
     setPhoneStep("verifying");
     try {
-      if (token) {
-        await updateMyProfile(token, { phoneNumber: phone.trim(), phoneVerified: true });
-        await refreshUser();
-      }
+      const response = await verifyPhoneOtp(token, { phoneNumber: phone.trim(), otp: otp.trim() });
+      setPhone(response.user.phone_number ?? phone.trim());
+      await refreshUser();
       setPhoneStep("done");
     } catch (e) {
       setPhoneError((e as Error).message);
@@ -385,7 +396,7 @@ export function OnboardingPage() {
               </div>
             ) : (
               <>
-                {(phoneStep === "idle" || phoneStep === "error") && (
+                {(phoneStep === "idle" || phoneStep === "sending" || phoneStep === "error") && (
                   <>
                     <label>
                       Phone number
@@ -402,10 +413,10 @@ export function OnboardingPage() {
                       <button
                         type="button"
                         className="primary-btn"
-                        onClick={sendOtp}
-                        disabled={phone.trim().length < 8}
+                        onClick={() => void sendOtp()}
+                        disabled={phoneStep === "sending" || phone.trim().length < 8}
                       >
-                        Send OTP
+                        {phoneStep === "sending" ? "Sending..." : "Send OTP"}
                       </button>
                       <button type="button" className="ghost-btn" onClick={handleStep1Proceed}>
                         Skip for now
@@ -417,26 +428,27 @@ export function OnboardingPage() {
                 {(phoneStep === "sent" || phoneStep === "verifying") && (
                   <>
                     <p style={{ fontSize: "0.83rem", color: "#334155" }}>
-                      OTP sent to <strong>{phone}</strong>. Enter the 4-digit code below.
+                      OTP sent to <strong>{phone}</strong>. Enter the 6-digit code below.
                     </p>
                     <label>
                       One-time code
                       <input
                         type="text"
                         inputMode="numeric"
-                        maxLength={4}
+                        maxLength={6}
                         value={otp}
                         onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                        placeholder="0000"
+                        placeholder="123456"
                         autoFocus
                       />
                     </label>
+                    {devOtp && <p className="journey-muted">Development OTP: {devOtp}</p>}
                     {phoneError && <p className="error-text">{phoneError}</p>}
                     <div className="journey-actions">
                       <button
                         type="button"
                         className="ghost-btn"
-                        onClick={() => { setPhoneStep("idle"); setOtp(""); setPhoneError(null); }}
+                        onClick={() => { setPhoneStep("idle"); setOtp(""); setPhoneError(null); setDevOtp(null); }}
                         disabled={phoneStep === "verifying"}
                       >
                         Change number
@@ -445,7 +457,7 @@ export function OnboardingPage() {
                         type="button"
                         className="primary-btn"
                         onClick={() => void verifyOtp()}
-                        disabled={phoneStep === "verifying" || otp.length !== 4}
+                        disabled={phoneStep === "verifying" || otp.length !== 6}
                       >
                         {phoneStep === "verifying" ? "Verifying…" : "Verify OTP"}
                       </button>

@@ -362,8 +362,6 @@ export async function updateUserDetails(
     companyName?: string;
     websiteUrl?: string;
     supportEmail?: string;
-    phoneNumber?: string;
-    phoneVerified?: boolean;
   }
 ): Promise<User | null> {
   const current = await getUserById(userId);
@@ -386,15 +384,6 @@ export async function updateUserDetails(
     data.companyName !== undefined ||
     data.websiteUrl !== undefined ||
     data.supportEmail !== undefined;
-
-  if (data.phoneNumber !== undefined) {
-    setClauses.push(`phone_number = $${idx++}`);
-    values.push(data.phoneNumber.trim() || null);
-  }
-  if (data.phoneVerified !== undefined) {
-    setClauses.push(`phone_verified = $${idx++}`);
-    values.push(data.phoneVerified);
-  }
 
   if (needsBasicsUpdate) {
     const existingBasics = (current.business_basics as Record<string, unknown>) ?? {};

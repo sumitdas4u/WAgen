@@ -1,11 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { changePassword, updateMyProfile } from "../../../../lib/api";
+import { changePassword, requestPhoneOtp, updateMyProfile, verifyPhoneOtp } from "../../../../lib/api";
 import { useAuth } from "../../../../lib/auth-context";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import "./../account.css";
-
-const MOCK_OTP = "0000";
 
 function getInitials(name: string): string {
   return name
@@ -28,7 +26,7 @@ function passwordStrength(pw: string): 0 | 1 | 2 | 3 {
 const STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Strong"];
 const STRENGTH_CLASSES = ["", "filled-weak", "filled-fair", "filled-strong"];
 
-type PhoneStep = "idle" | "sent" | "verifying" | "done" | "error";
+type PhoneStep = "idle" | "sending" | "sent" | "verifying" | "done" | "error";
 
 function PhoneVerifySection({
   currentPhone,
@@ -45,27 +43,38 @@ function PhoneVerifySection({
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<PhoneStep>(currentVerified ? "done" : "idle");
   const [error, setError] = useState<string | null>(null);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
 
-  const sendOtp = () => {
+  const sendOtp = async () => {
     setError(null);
+    setDevOtp(null);
     const normalized = phone.trim();
     if (!normalized.startsWith("+") || normalized.length < 8) {
       setError("Enter phone in international format: +91XXXXXXXXXX");
       return;
     }
-    // Mock: advance to OTP entry — no real SMS sent yet
-    setStep("sent");
+    setStep("sending");
+    try {
+      const response = await requestPhoneOtp(token, { phoneNumber: normalized });
+      setPhone(response.phoneNumber);
+      setDevOtp(response.devCode ?? null);
+      setStep("sent");
+    } catch (e) {
+      setError((e as Error).message);
+      setStep("idle");
+    }
   };
 
   const verifyOtp = async () => {
     setError(null);
-    if (otp.trim() !== MOCK_OTP) {
-      setError(`Incorrect OTP. (Use ${MOCK_OTP} during testing.)`);
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setError("Enter the 6-digit OTP.");
       return;
     }
     setStep("verifying");
     try {
-      await updateMyProfile(token, { phoneNumber: phone.trim(), phoneVerified: true });
+      const response = await verifyPhoneOtp(token, { phoneNumber: phone.trim(), otp: otp.trim() });
+      setPhone(response.user.phone_number ?? phone.trim());
       await onSaved();
       setStep("done");
     } catch (e) {
@@ -93,7 +102,7 @@ function PhoneVerifySection({
           <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0, marginTop: "0.75rem" }}>
             <button
               className="acc-secondary-btn"
-              onClick={() => { setStep("idle"); setOtp(""); setError(null); }}
+              onClick={() => { setStep("idle"); setOtp(""); setError(null); setDevOtp(null); }}
             >
               Change number
             </button>
@@ -122,7 +131,7 @@ function PhoneVerifySection({
           </div>
         )}
 
-        {(step === "idle" || step === "error") && (
+        {(step === "idle" || step === "sending" || step === "error") && (
           <>
             <div className="acc-form-row">
               <label className="acc-label" htmlFor="prf-phone">
@@ -140,8 +149,8 @@ function PhoneVerifySection({
             </div>
             {error && <p className="acc-save-error">{error}</p>}
             <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0 }}>
-              <button className="acc-save-btn" onClick={sendOtp}>
-                Send OTP
+              <button className="acc-save-btn" onClick={() => void sendOtp()} disabled={step === "sending"}>
+                {step === "sending" ? "Sending..." : "Send OTP"}
               </button>
             </div>
           </>
@@ -150,7 +159,7 @@ function PhoneVerifySection({
         {(step === "sent" || step === "verifying") && (
           <>
             <p style={{ fontSize: "0.83rem", color: "#334155" }}>
-              OTP sent to <strong>{phone}</strong>. Enter the 4-digit code below.
+              OTP sent to <strong>{phone}</strong>. Enter the 6-digit code below.
             </p>
             <div className="acc-form-row">
               <label className="acc-label" htmlFor="prf-otp">One-time code</label>
@@ -159,18 +168,19 @@ function PhoneVerifySection({
                 className="acc-input"
                 type="text"
                 inputMode="numeric"
-                maxLength={4}
+                maxLength={6}
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                placeholder="0000"
+                placeholder="123456"
                 autoFocus
               />
             </div>
+            {devOtp && <p className="acc-input-hint">Development OTP: {devOtp}</p>}
             {error && <p className="acc-save-error">{error}</p>}
             <div className="acc-form-actions" style={{ borderTop: "none", paddingTop: 0 }}>
               <button
                 className="acc-secondary-btn"
-                onClick={() => { setStep("idle"); setOtp(""); setError(null); }}
+                onClick={() => { setStep("idle"); setOtp(""); setError(null); setDevOtp(null); }}
                 disabled={step === "verifying"}
               >
                 Change number
@@ -178,7 +188,7 @@ function PhoneVerifySection({
               <button
                 className="acc-save-btn"
                 onClick={() => void verifyOtp()}
-                disabled={step === "verifying" || otp.length !== 4}
+                disabled={step === "verifying" || otp.length !== 6}
               >
                 {step === "verifying" ? "Verifying…" : "Verify OTP"}
               </button>

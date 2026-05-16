@@ -2,14 +2,18 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const { mockUpdateMyProfile, mockChangePassword } = vi.hoisted(() => ({
+const { mockUpdateMyProfile, mockChangePassword, mockRequestPhoneOtp, mockVerifyPhoneOtp } = vi.hoisted(() => ({
   mockUpdateMyProfile: vi.fn(),
-  mockChangePassword: vi.fn()
+  mockChangePassword: vi.fn(),
+  mockRequestPhoneOtp: vi.fn(),
+  mockVerifyPhoneOtp: vi.fn()
 }));
 
 vi.mock("../../../../lib/api", () => ({
   updateMyProfile: (...args: unknown[]) => mockUpdateMyProfile(...args),
-  changePassword: (...args: unknown[]) => mockChangePassword(...args)
+  changePassword: (...args: unknown[]) => mockChangePassword(...args),
+  requestPhoneOtp: (...args: unknown[]) => mockRequestPhoneOtp(...args),
+  verifyPhoneOtp: (...args: unknown[]) => mockVerifyPhoneOtp(...args)
 }));
 
 vi.mock("../../../../lib/auth-context", () => ({
@@ -62,6 +66,28 @@ describe("PhoneVerifySection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUpdateMyProfile.mockResolvedValue({ user: {} });
+    mockRequestPhoneOtp.mockResolvedValue({
+      ok: true,
+      phoneNumber: "+919804735837",
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      resendAfterSeconds: 60
+    });
+    mockVerifyPhoneOtp.mockResolvedValue({
+      user: {
+        id: "user_1",
+        name: "Test User",
+        email: "test@example.com",
+        phone_number: "+919804735837",
+        phone_verified: true,
+        business_type: null,
+        subscription_plan: "starter",
+        business_basics: {},
+        personality: "friendly_warm",
+        custom_personality_prompt: null,
+        ai_active: true,
+        ai_token_balance: 0
+      }
+    });
   });
 
   it("renders phone input and Send OTP button", () => {
@@ -81,21 +107,26 @@ describe("PhoneVerifySection", () => {
     renderProfile();
     fireEvent.change(getPhoneInput(), { target: { value: "+919804735837" } });
     fireEvent.click(getSendOtpBtn());
-    expect(await screen.findByPlaceholderText("0000")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("123456")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /verify otp/i })).toBeInTheDocument();
+    expect(mockRequestPhoneOtp).toHaveBeenCalledWith("test-token", { phoneNumber: "+919804735837" });
   });
 
   it("updates profile after correct OTP", async () => {
     renderProfile();
     fireEvent.change(getPhoneInput(), { target: { value: "+919804735837" } });
     fireEvent.click(getSendOtpBtn());
-    const otpInput = await screen.findByPlaceholderText("0000");
-    fireEvent.change(otpInput, { target: { value: "0000" } });
+    const otpInput = await screen.findByPlaceholderText("123456");
+    fireEvent.change(otpInput, { target: { value: "654321" } });
     fireEvent.click(screen.getByRole("button", { name: /verify otp/i }));
     expect(await screen.findByText(/verified/i)).toBeInTheDocument();
-    expect(mockUpdateMyProfile).toHaveBeenCalledWith(
+    expect(mockVerifyPhoneOtp).toHaveBeenCalledWith(
       "test-token",
-      { phoneNumber: "+919804735837", phoneVerified: true }
+      { phoneNumber: "+919804735837", otp: "654321" }
+    );
+    expect(mockUpdateMyProfile).not.toHaveBeenCalledWith(
+      "test-token",
+      expect.objectContaining({ phoneVerified: true })
     );
   });
 

@@ -1506,12 +1506,34 @@ export function updateMyProfile(
     companyName?: string;
     websiteUrl?: string;
     supportEmail?: string;
-    phoneNumber?: string;
-    phoneVerified?: boolean;
   }
 ) {
   return apiRequest<{ user: User }>("/api/auth/me", {
     method: "PATCH",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export interface SendPhoneOtpResponse {
+  ok: boolean;
+  phoneNumber: string;
+  expiresAt: string;
+  resendAfterSeconds: number;
+  devCode?: string;
+}
+
+export function requestPhoneOtp(token: string, payload: { phoneNumber: string }) {
+  return apiRequest<SendPhoneOtpResponse>("/api/auth/phone/send-otp", {
+    method: "POST",
+    token,
+    body: JSON.stringify(payload)
+  });
+}
+
+export function verifyPhoneOtp(token: string, payload: { phoneNumber: string; otp: string }) {
+  return apiRequest<{ user: User }>("/api/auth/phone/verify", {
+    method: "POST",
     token,
     body: JSON.stringify(payload)
   });

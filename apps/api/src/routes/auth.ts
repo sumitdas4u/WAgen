@@ -29,6 +29,7 @@ import {
   getTokenUsageByAction,
   getTokenUsageByDay
 } from "../services/ai-token-service.js";
+import { PhoneOtpError, requestPhoneOtp, verifyPhoneOtp } from "../services/phone-otp-service.js";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 
@@ -49,9 +50,16 @@ const UpdateMeSchema = z.object({
   businessType: z.string().max(100).optional(),
   companyName: z.string().max(200).optional(),
   websiteUrl: z.string().max(500).optional(),
-  supportEmail: z.string().max(200).optional(),
-  phoneNumber: z.string().max(30).optional(),
-  phoneVerified: z.boolean().optional()
+  supportEmail: z.string().max(200).optional()
+});
+
+const SendPhoneOtpSchema = z.object({
+  phoneNumber: z.string().trim().min(1).max(30)
+});
+
+const VerifyPhoneOtpSchema = z.object({
+  phoneNumber: z.string().trim().min(1).max(30),
+  otp: z.string().trim().regex(/^\d{6}$/)
 });
 
 const ChangePasswordSchema = z.object({
@@ -354,6 +362,61 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     return reply.send({ user });
   });
+
+  fastify.post(
+    "/api/auth/phone/send-otp",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = SendPhoneOtpSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid phone OTP payload" });
+      }
+
+      const user = await getUserById(request.authUser.userId);
+      if (!user) {
+        return reply.status(404).send({ error: "User not found" });
+      }
+
+      try {
+        const result = await requestPhoneOtp({
+          userId: user.id,
+          userName: user.name,
+          phoneNumber: parsed.data.phoneNumber
+        });
+        return reply.send({ ok: true, ...result });
+      } catch (error) {
+        if (error instanceof PhoneOtpError) {
+          return reply.status(error.statusCode).send({ error: error.message, code: error.code });
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.post(
+    "/api/auth/phone/verify",
+    { preHandler: [fastify.requireAuth], config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = VerifyPhoneOtpSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid phone OTP verification payload" });
+      }
+
+      try {
+        const user = await verifyPhoneOtp({
+          userId: request.authUser.userId,
+          phoneNumber: parsed.data.phoneNumber,
+          otp: parsed.data.otp
+        });
+        return reply.send({ user });
+      } catch (error) {
+        if (error instanceof PhoneOtpError) {
+          return reply.status(error.statusCode).send({ error: error.message, code: error.code });
+        }
+        throw error;
+      }
+    }
+  );
 
   fastify.post(
     "/api/auth/password/change",

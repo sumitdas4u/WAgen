@@ -31,7 +31,7 @@ const BaseEnvSchema = z.object({
   DIGITAL_SMS_SENDER_ID: z.string().default("KEYLNS"),
   DIGITAL_SMS_ENTITY_ID: z.string().default("1201159375531154788"),
   DIGITAL_SMS_DLT_TEMPLATE_ID: z.string().default("1307162333099680070"),
-  DIGITAL_SMS_TYPE: z.enum(["flash", "otp", "promotional", "transactional"]).default("transactional"),
+  DIGITAL_SMS_TYPE: z.enum(["flash", "otp", "promotional", "transactional"]).default("otp"),
   DIGITAL_SMS_OTP_TEMPLATE: z
     .string()
     .default("Dear {name}, {otp} is you verification OTP for registration at KEYLINE"),
