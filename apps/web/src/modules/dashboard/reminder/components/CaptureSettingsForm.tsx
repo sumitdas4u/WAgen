@@ -90,7 +90,7 @@ export function CaptureSettingsForm({ config, onSave, isSaving }: Props) {
   });
   const contactFieldsQuery = useQuery({
     queryKey: ["contact-fields"],
-    queryFn: () => listContactFields(token ?? "").then((r) => r.fields.filter((f) => f.is_active && f.field_type === "date")),
+    queryFn: () => listContactFields(token ?? "").then((r) => r.fields.filter((f) => f.is_active && f.field_type === "DATE")),
     staleTime: 60_000,
     enabled: !!token
   });
