@@ -40,6 +40,9 @@ export function normalizeAccountPhoneNumber(input: string): string {
   if (!/^[1-9]\d{7,14}$/.test(digits)) {
     throw new PhoneOtpError("Enter phone in international format, for example +91XXXXXXXXXX.", "invalid_phone", 400);
   }
+  if (digits.startsWith("91") && !/^91[6-9]\d{9}$/.test(digits)) {
+    throw new PhoneOtpError("Enter a valid 10-digit Indian mobile number with +91 country code.", "invalid_phone", 400);
+  }
 
   return `+${digits}`;
 }
@@ -235,9 +238,11 @@ export async function verifyPhoneOtp(input: {
   }
 
   const client = await pool.connect();
+  let transactionOpen = false;
 
   try {
     await client.query("BEGIN");
+    transactionOpen = true;
 
     const otpResult = await client.query<{
       id: string;
@@ -259,6 +264,7 @@ export async function verifyPhoneOtp(input: {
     const row = firstRow(otpResult);
     if (!row) {
       await client.query("ROLLBACK");
+      transactionOpen = false;
       throw new PhoneOtpError("OTP is invalid or expired. Request a new code.", "invalid_or_expired", 400);
     }
 
@@ -270,6 +276,7 @@ export async function verifyPhoneOtp(input: {
         [row.id]
       );
       await client.query("COMMIT");
+      transactionOpen = false;
       throw new PhoneOtpError("Too many incorrect attempts. Request a new OTP.", "too_many_attempts", 429);
     }
 
@@ -283,6 +290,7 @@ export async function verifyPhoneOtp(input: {
         [row.id, nextAttempts, MAX_VERIFY_ATTEMPTS]
       );
       await client.query("COMMIT");
+      transactionOpen = false;
       throw new PhoneOtpError(
         nextAttempts >= MAX_VERIFY_ATTEMPTS
           ? "Too many incorrect attempts. Request a new OTP."
@@ -312,9 +320,12 @@ export async function verifyPhoneOtp(input: {
 
     const user = requireRow(userResult, "Expected verified user row");
     await client.query("COMMIT");
+    transactionOpen = false;
     return user;
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => undefined);
+    }
     const code = (error as { code?: string }).code;
     if (code === "23505") {
       throw new PhoneOtpError("This phone number is already linked to another account.", "phone_in_use", 409);
