@@ -45,7 +45,13 @@ export function normalizeAccountPhoneNumber(input: string): string {
 }
 
 export function buildOtpMessage(input: { name: string; otp: string; template?: string }): string {
-  const name = input.name.trim().replace(/\s+/g, " ").slice(0, 80) || "Customer";
+  const name =
+    input.name
+      .trim()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .slice(0, 30)
+      .trim() || "Customer";
   const otp = input.otp;
   let message = (input.template ?? env.DIGITAL_SMS_OTP_TEMPLATE)
     .replace(/\{name\}/gi, name)
