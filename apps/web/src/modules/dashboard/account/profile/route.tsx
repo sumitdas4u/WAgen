@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { changePassword, requestPhoneOtp, updateMyProfile, verifyPhoneOtp } from "../../../../lib/api";
 import { useAuth } from "../../../../lib/auth-context";
+import { normalizePhoneInput } from "../../../../lib/phone";
 import { useDashboardShell } from "../../../../shared/dashboard/shell-context";
 import "./../account.css";
 
@@ -48,9 +49,11 @@ function PhoneVerifySection({
   const sendOtp = async () => {
     setError(null);
     setDevOtp(null);
-    const normalized = phone.trim();
-    if (!normalized.startsWith("+") || normalized.length < 8) {
-      setError("Enter phone in international format: +91XXXXXXXXXX");
+    let normalized: string;
+    try {
+      normalized = normalizePhoneInput(phone);
+    } catch (e) {
+      setError((e as Error).message);
       return;
     }
     setStep("sending");

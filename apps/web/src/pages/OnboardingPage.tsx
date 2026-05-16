@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
+import { normalizePhoneInput } from "../lib/phone";
 import {
   fetchIngestionJobs,
   ingestManual,
@@ -89,9 +90,11 @@ export function OnboardingPage() {
     if (!token) return;
     setPhoneError(null);
     setDevOtp(null);
-    const normalized = phone.trim();
-    if (!normalized.startsWith("+") || normalized.length < 8) {
-      setPhoneError("Enter phone in international format: +91XXXXXXXXXX");
+    let normalized: string;
+    try {
+      normalized = normalizePhoneInput(phone);
+    } catch (e) {
+      setPhoneError((e as Error).message);
       return;
     }
     setPhoneStep("sending");

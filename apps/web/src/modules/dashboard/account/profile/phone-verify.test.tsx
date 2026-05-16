@@ -96,11 +96,19 @@ describe("PhoneVerifySection", () => {
     expect(getSendOtpBtn()).toBeInTheDocument();
   });
 
-  it("shows error if phone does not start with +", async () => {
+  it("normalizes local Indian mobile numbers before sending OTP", async () => {
     renderProfile();
     fireEvent.change(getPhoneInput(), { target: { value: "9804735837" } });
     fireEvent.click(getSendOtpBtn());
-    expect(await screen.findByText(/international format/i)).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("123456")).toBeInTheDocument();
+    expect(mockRequestPhoneOtp).toHaveBeenCalledWith("test-token", { phoneNumber: "+919804735837" });
+  });
+
+  it("shows error for short +91 mobile numbers", async () => {
+    renderProfile();
+    fireEvent.change(getPhoneInput(), { target: { value: "+91980735837" } });
+    fireEvent.click(getSendOtpBtn());
+    expect(await screen.findByText(/valid 10-digit Indian mobile/i)).toBeInTheDocument();
   });
 
   it("shows OTP input after local send", async () => {

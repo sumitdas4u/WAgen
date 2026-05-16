@@ -33,9 +33,12 @@ export interface RequestPhoneOtpResult {
 export function normalizeAccountPhoneNumber(input: string): string {
   const trimmed = input.trim();
   const withoutSeparators = trimmed.replace(/[\s().-]/g, "");
-  const digits = withoutSeparators.startsWith("+")
+  let digits = withoutSeparators.startsWith("+")
     ? withoutSeparators.slice(1).replace(/\D/g, "")
     : withoutSeparators.replace(/\D/g, "").replace(/^00/, "");
+  if (/^[6-9]\d{9}$/.test(digits)) {
+    digits = `91${digits}`;
+  }
 
   if (!/^[1-9]\d{7,14}$/.test(digits)) {
     throw new PhoneOtpError("Enter phone in international format, for example +91XXXXXXXXXX.", "invalid_phone", 400);
