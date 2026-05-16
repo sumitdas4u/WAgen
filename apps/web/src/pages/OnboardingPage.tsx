@@ -421,9 +421,6 @@ export function OnboardingPage() {
                       >
                         {phoneStep === "sending" ? "Sending..." : "Send OTP"}
                       </button>
-                      <button type="button" className="ghost-btn" onClick={handleStep1Proceed}>
-                        Skip for now
-                      </button>
                     </div>
                   </>
                 )}
