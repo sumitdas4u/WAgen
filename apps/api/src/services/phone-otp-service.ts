@@ -287,8 +287,8 @@ export async function verifyPhoneOtp(input: {
       const nextAttempts = row.attempts + 1;
       await client.query(
         `UPDATE phone_verification_otps
-         SET attempts = $2,
-             consumed_at = CASE WHEN $2 >= $3 THEN NOW() ELSE consumed_at END
+         SET attempts = $2::int,
+             consumed_at = CASE WHEN $2::int >= $3::int THEN NOW() ELSE consumed_at END
          WHERE id = $1`,
         [row.id, nextAttempts, MAX_VERIFY_ATTEMPTS]
       );
