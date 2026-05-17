@@ -41,6 +41,7 @@ import { genericWebhookRoutes } from "./routes/generic-webhooks.js";
 import { sequenceRoutes } from "./routes/sequences.js";
 import { reminderRoutes } from "./routes/reminder.js";
 import { notificationsRoutes } from "./routes/notifications.js";
+import { mobileRoutes } from "./routes/mobile.js";
 import { reportsRoutes } from "./routes/reports.js";
 import { cannedResponsesRoutes } from "./routes/canned-responses.js";
 import { agentNotificationsRoutes } from "./routes/agent-notifications.js";
@@ -264,6 +265,7 @@ export async function buildApp() {
   await sequenceRoutes(app);
   await reminderRoutes(app);
   await notificationsRoutes(app);
+  await mobileRoutes(app);
   await reportsRoutes(app);
   await cannedResponsesRoutes(app);
   await agentNotificationsRoutes(app);

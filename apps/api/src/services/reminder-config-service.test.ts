@@ -22,8 +22,10 @@ beforeEach(() => {
 describe("listReminderConfigs", () => {
   it("returns existing configs when present", async () => {
     mockPoolQuery
-      .mockResolvedValueOnce({ rows: [] }) // ensure birthday
-      .mockResolvedValueOnce({ rows: [] }) // ensure anniversary
+      .mockResolvedValueOnce({ rows: [] }) // ensure Birthday contact field
+      .mockResolvedValueOnce({ rows: [] }) // ensure Anniversary contact field
+      .mockResolvedValueOnce({ rows: [] }) // ensure birthday reminder config
+      .mockResolvedValueOnce({ rows: [] }) // ensure anniversary reminder config
       .mockResolvedValueOnce({
       rows: [
         { id: "uuid-1", config_key: "birthday", reminder_type: "birthday" },
@@ -38,6 +40,8 @@ describe("listReminderConfigs", () => {
 
   it("seeds defaults and returns them when no configs exist", async () => {
     mockPoolQuery
+      .mockResolvedValueOnce({ rows: [] })   // ensure Birthday contact field
+      .mockResolvedValueOnce({ rows: [] })   // ensure Anniversary contact field
       .mockResolvedValueOnce({ rows: [] })   // INSERT birthday
       .mockResolvedValueOnce({ rows: [] })   // INSERT anniversary
       .mockResolvedValueOnce({

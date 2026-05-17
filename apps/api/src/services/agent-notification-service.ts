@@ -1,5 +1,6 @@
 import { pool } from "../db/pool.js";
 import type { AgentNotificationPayload } from "../types/ws-events.js";
+import { sendAgentNotificationPush } from "./mobile-push-service.js";
 import { realtimeHub } from "./realtime-hub.js";
 
 export type AgentNotificationType = AgentNotificationPayload["type"];
@@ -50,6 +51,10 @@ export async function createAgentNotification(
 
     if (input.broadcast !== false) {
       realtimeHub.broadcast(input.userId, "agent.notification", notification);
+      void sendAgentNotificationPush({
+        userId: input.userId,
+        notification
+      });
     }
 
     return notification;

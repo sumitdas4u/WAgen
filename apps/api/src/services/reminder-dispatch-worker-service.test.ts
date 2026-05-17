@@ -78,19 +78,22 @@ describe("processUserReminders", () => {
   };
 
   it("skips configs that are not due yet", async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ ...config, campaign_send_time: "09:01" }] });
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [{ id: "agent-profile-1" }] })
+      .mockResolvedValueOnce({ rows: [{ ...config, campaign_send_time: "09:01" }] });
 
     await processUserReminders("user-1", {
       now: new Date("2026-05-14T03:30:10.000Z")
     });
 
-    expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2);
     expect(mockSendConversationFlowMessage).not.toHaveBeenCalled();
     expect(mockExpireStaleCaptureSessions).toHaveBeenCalledTimes(1);
   });
 
   it("dispatches due contacts with resolved template variables and condition filtering", async () => {
     mockPoolQuery
+      .mockResolvedValueOnce({ rows: [{ id: "agent-profile-1" }] })
       .mockResolvedValueOnce({ rows: [config] })
       .mockResolvedValueOnce({
         rows: [{
@@ -144,7 +147,7 @@ describe("processUserReminders", () => {
         }
       }
     });
-    expect(mockPoolQuery.mock.calls[4][1]).toEqual([
+    expect(mockPoolQuery.mock.calls[5][1]).toEqual([
       "user-1",
       "contact-1",
       "birthday",

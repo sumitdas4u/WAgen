@@ -59,7 +59,9 @@ beforeEach(() => {
 describe("processReminderCaptureEvent", () => {
   it("skips when no enabled reminder configs exist", async () => {
     mockLoadSnapshot.mockResolvedValueOnce(baseContact);
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] }); // no configs
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [{ id: "agent-profile-1" }] })
+      .mockResolvedValueOnce({ rows: [] }); // no configs
 
     await processReminderCaptureEvent({
       userId: "user-1",
@@ -67,29 +69,31 @@ describe("processReminderCaptureEvent", () => {
       contactId: "contact-1"
     });
 
-    expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2);
   });
 
   it("skips a config when trigger_type does not match event", async () => {
     mockLoadSnapshot.mockResolvedValueOnce(baseContact);
-    mockPoolQuery.mockResolvedValueOnce({
-      rows: [{
-        id: "rc-1",
-        user_id: "user-1",
-        config_key: "birthday",
-        reminder_type: "birthday",
-        enabled: true,
-        capture_enabled: true,
-        capture_trigger_type: "update", // event is create → skip
-        capture_conditions_json: [],
-        capture_template_name: "bday_ask",
-        capture_template_lang: "en",
-        capture_template_vars: {},
-        retry_interval_days: 7,
-        retry_max_count: 1,
-        cooldown_days: 30
-      }]
-    });
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [{ id: "agent-profile-1" }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "rc-1",
+          user_id: "user-1",
+          config_key: "birthday",
+          reminder_type: "birthday",
+          enabled: true,
+          capture_enabled: true,
+          capture_trigger_type: "update", // event is create -> skip
+          capture_conditions_json: [],
+          capture_template_name: "bday_ask",
+          capture_template_lang: "en",
+          capture_template_vars: {},
+          retry_interval_days: 7,
+          retry_max_count: 1,
+          cooldown_days: 30
+        }]
+      });
 
     await processReminderCaptureEvent({
       userId: "user-1",
@@ -97,29 +101,31 @@ describe("processReminderCaptureEvent", () => {
       contactId: "contact-1"
     });
 
-    expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2);
   });
 
   it("skips when conditions do not match", async () => {
     mockLoadSnapshot.mockResolvedValueOnce(baseContact);
-    mockPoolQuery.mockResolvedValueOnce({
-      rows: [{
-        id: "rc-1",
-        user_id: "user-1",
-        config_key: "birthday",
-        reminder_type: "birthday",
-        enabled: true,
-        capture_enabled: true,
-        capture_trigger_type: "create",
-        capture_conditions_json: [{ field: "contact_type", operator: "eq", value: "VIP" }],
-        capture_template_name: "bday_ask",
-        capture_template_lang: "en",
-        capture_template_vars: {},
-        retry_interval_days: 7,
-        retry_max_count: 1,
-        cooldown_days: 30
-      }]
-    });
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [{ id: "agent-profile-1" }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "rc-1",
+          user_id: "user-1",
+          config_key: "birthday",
+          reminder_type: "birthday",
+          enabled: true,
+          capture_enabled: true,
+          capture_trigger_type: "create",
+          capture_conditions_json: [{ field: "contact_type", operator: "eq", value: "VIP" }],
+          capture_template_name: "bday_ask",
+          capture_template_lang: "en",
+          capture_template_vars: {},
+          retry_interval_days: 7,
+          retry_max_count: 1,
+          cooldown_days: 30
+        }]
+      });
 
     mockEvaluate.mockReturnValue(false);
 
@@ -130,6 +136,6 @@ describe("processReminderCaptureEvent", () => {
     });
 
     expect(mockEvaluate).toHaveBeenCalledTimes(1);
-    expect(mockPoolQuery).toHaveBeenCalledTimes(1); // only configs SELECT
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2); // API-channel check and configs SELECT
   });
 });

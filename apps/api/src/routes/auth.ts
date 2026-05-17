@@ -30,7 +30,13 @@ import {
   getTokenUsageByAction,
   getTokenUsageByDay
 } from "../services/ai-token-service.js";
-import { PhoneOtpError, requestPhoneOtp, verifyPhoneOtp } from "../services/phone-otp-service.js";
+import {
+  PhoneOtpError,
+  requestPhoneLoginOtp,
+  requestPhoneOtp,
+  verifyPhoneLoginOtp,
+  verifyPhoneOtp
+} from "../services/phone-otp-service.js";
 import { env } from "../config/env.js";
 import { pool } from "../db/pool.js";
 
@@ -171,6 +177,24 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       `
     });
   };
+  const trySendEmailVerificationForUser = async (
+    user: { id: string; name: string; email: string },
+    request: FastifyRequest
+  ) => {
+    try {
+      await sendEmailVerificationForUser(user, request);
+      return true;
+    } catch (error) {
+      if ((error as Error).message === "BREVO_API_KEY is not configured") {
+        request.log.warn(
+          { email: user.email },
+          "Email verification could not be sent because BREVO_API_KEY is not configured"
+        );
+        return false;
+      }
+      throw error;
+    }
+  };
 
   fastify.post("/api/auth/signup", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = SignupSchema.safeParse(request.body);
@@ -180,10 +204,12 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     const existingUser = await getUserAuthIdentityByEmail(parsed.data.email);
     if (existingUser?.email_verified === false) {
-      await sendEmailVerificationForUser(existingUser, request);
+      const emailSent = await trySendEmailVerificationForUser(existingUser, request);
       return reply.status(202).send({
         emailVerificationRequired: true,
-        message: "Confirmation email is waiting for verification. We sent a new verification email."
+        message: emailSent
+          ? "Confirmation email is waiting for verification. We sent a new verification email."
+          : "Confirmation email is waiting for verification, but email delivery is not configured on this server."
       });
     }
     if (existingUser) {
@@ -198,20 +224,24 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       // Store signup IP and run fraud checks fire-and-forget — never block signup
       void pool.query("UPDATE users SET signup_ip = $1 WHERE id = $2", [ip ?? null, user.id]);
       void checkSignupFraud(user.id, user.email, ip);
-      await sendEmailVerificationForUser(user, request);
+      const emailSent = await trySendEmailVerificationForUser(user, request);
       return reply.status(201).send({
         emailVerificationRequired: true,
-        message: "Verification link sent to your email. Verify first, then login."
+        message: emailSent
+          ? "Verification link sent to your email. Verify first, then login."
+          : "Account created, but email delivery is not configured on this server."
       });
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code === "23505") {
         const duplicateUser = await getUserAuthIdentityByEmail(parsed.data.email);
         if (duplicateUser?.email_verified === false) {
-          await sendEmailVerificationForUser(duplicateUser, request);
+          const emailSent = await trySendEmailVerificationForUser(duplicateUser, request);
           return reply.status(202).send({
             emailVerificationRequired: true,
-            message: "Confirmation email is waiting for verification. We sent a new verification email."
+            message: emailSent
+              ? "Confirmation email is waiting for verification. We sent a new verification email."
+              : "Confirmation email is waiting for verification, but email delivery is not configured on this server."
           });
         }
         return reply.status(409).send({ error: "Email already in use. Please log in." });
@@ -232,12 +262,14 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     if (authResult.status === "email_not_verified") {
-      await sendEmailVerificationForUser(
+      const emailSent = await trySendEmailVerificationForUser(
         { id: authResult.userId, name: authResult.name, email: authResult.email },
         request
       );
       return reply.status(403).send({
-        error: "Email not verified. A new verification link has been sent to your inbox."
+        error: emailSent
+          ? "Email not verified. A new verification link has been sent to your inbox."
+          : "Email not verified, and email delivery is not configured on this server."
       });
     }
 
@@ -245,6 +277,54 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     const token = issueToken(user.id, user.email);
     return reply.send({ token, user });
   });
+
+  fastify.post(
+    "/api/auth/phone-login/send-otp",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = SendPhoneOtpSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid phone OTP payload" });
+      }
+
+      try {
+        const result = await requestPhoneLoginOtp({
+          phoneNumber: parsed.data.phoneNumber
+        });
+        return reply.send({ ok: true, ...result });
+      } catch (error) {
+        if (error instanceof PhoneOtpError) {
+          return reply.status(error.statusCode).send({ error: error.message, code: error.code });
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.post(
+    "/api/auth/phone-login/verify",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = VerifyPhoneOtpSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "Invalid phone OTP verification payload" });
+      }
+
+      try {
+        const user = await verifyPhoneLoginOtp({
+          phoneNumber: parsed.data.phoneNumber,
+          otp: parsed.data.otp
+        });
+        const token = issueToken(user.id, user.email);
+        return reply.send({ token, user });
+      } catch (error) {
+        if (error instanceof PhoneOtpError) {
+          return reply.status(error.statusCode).send({ error: error.message, code: error.code });
+        }
+        throw error;
+      }
+    }
+  );
 
   fastify.get("/api/auth/email/verify", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = EmailVerificationQuerySchema.safeParse(request.query ?? {});

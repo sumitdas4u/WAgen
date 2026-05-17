@@ -5,6 +5,7 @@ dist
 !.env.example
 !infra/.env.production.example
 coverage
+.run/
 apps/api/uploads
 *.log
 tmp/
@@ -15,6 +16,8 @@ tools/deploy/*
 ~/
 *.tsbuildinfo
 *.pdf
+apps/mobile/.expo/
+apps/mobile/google-services.json
 *.sql
 !infra/schema.sql
 !infra/baseline/*.sql

@@ -9,6 +9,7 @@ const MAX_VERIFY_ATTEMPTS = 5;
 
 export type PhoneOtpErrorCode =
   | "invalid_phone"
+  | "phone_not_found"
   | "rate_limited"
   | "sms_not_configured"
   | "send_failed"
@@ -29,6 +30,21 @@ export interface RequestPhoneOtpResult {
   resendAfterSeconds: number;
   devCode?: string;
 }
+
+const PUBLIC_USER_COLUMNS = [
+  "id",
+  "name",
+  "email",
+  "business_type",
+  "subscription_plan",
+  "business_basics",
+  "personality",
+  "custom_personality_prompt",
+  "ai_active",
+  "phone_number",
+  "phone_verified",
+  "ai_token_balance"
+].join(", ");
 
 export function normalizeAccountPhoneNumber(input: string): string {
   const trimmed = input.trim();
@@ -227,6 +243,50 @@ export async function requestPhoneOtp(input: {
     resendAfterSeconds: env.DIGITAL_SMS_OTP_RESEND_SECONDS,
     ...(smsResult.skipped && env.NODE_ENV !== "production" ? { devCode: otp } : {})
   };
+}
+
+async function getVerifiedPhoneLoginUser(phoneNumberInput: string): Promise<User> {
+  const phoneNumber = normalizeAccountPhoneNumber(phoneNumberInput);
+  const result = await pool.query<User>(
+    `SELECT ${PUBLIC_USER_COLUMNS}
+     FROM users
+     WHERE phone_number = $1
+       AND phone_verified = TRUE
+     LIMIT 1`,
+    [phoneNumber]
+  );
+  const user = firstRow(result);
+  if (!user) {
+    throw new PhoneOtpError(
+      "No verified WAgen account is linked to this phone number. Verify it from the web dashboard first.",
+      "phone_not_found",
+      404
+    );
+  }
+  return user;
+}
+
+export async function requestPhoneLoginOtp(input: {
+  phoneNumber: string;
+}): Promise<RequestPhoneOtpResult> {
+  const user = await getVerifiedPhoneLoginUser(input.phoneNumber);
+  return requestPhoneOtp({
+    userId: user.id,
+    userName: user.name,
+    phoneNumber: input.phoneNumber
+  });
+}
+
+export async function verifyPhoneLoginOtp(input: {
+  phoneNumber: string;
+  otp: string;
+}): Promise<User> {
+  const user = await getVerifiedPhoneLoginUser(input.phoneNumber);
+  return verifyPhoneOtp({
+    userId: user.id,
+    phoneNumber: input.phoneNumber,
+    otp: input.otp
+  });
 }
 
 export async function verifyPhoneOtp(input: {
