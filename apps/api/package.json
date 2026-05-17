@@ -19,7 +19,7 @@
     "db:reset:dev": "tsx src/scripts/reset-db-dev.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@bull-board/api": "^6.21.0",
     "@bull-board/fastify": "^6.21.0",
     "@fastify/cors": "^10.0.1",
