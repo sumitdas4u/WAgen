@@ -268,6 +268,13 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface EmailVerificationRequiredResponse {
+  emailVerificationRequired: true;
+  message: string;
+}
+
+export type SignupResponse = AuthResponse | EmailVerificationRequiredResponse;
+
 export interface GoogleAuthPopupPayload {
   type?: string;
   status?: "success" | "error";
@@ -282,7 +289,7 @@ export function signup(payload: {
   password: string;
   businessType: string;
 }) {
-  return apiRequest<AuthResponse>("/api/auth/signup", {
+  return apiRequest<SignupResponse>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify(payload)
   });

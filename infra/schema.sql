@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT,
   google_auth_sub TEXT UNIQUE,
+  email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  email_verified_at TIMESTAMPTZ,
   business_type TEXT,
   subscription_plan TEXT NOT NULL DEFAULT 'trial',
   business_basics JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -41,6 +43,22 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
 CREATE INDEX IF NOT EXISTS knowledge_user_id_idx ON knowledge_base(user_id);
 CREATE INDEX IF NOT EXISTS knowledge_embedding_idx ON knowledge_base USING ivfflat (embedding_vector vector_cosine_ops) WITH (lists = 100);
 CREATE UNIQUE INDEX IF NOT EXISTS users_google_auth_sub_unique_idx ON users(google_auth_sub) WHERE google_auth_sub IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS email_verification_tokens_user_idx
+  ON email_verification_tokens(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS email_verification_tokens_active_idx
+  ON email_verification_tokens(token_hash, expires_at)
+  WHERE used_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

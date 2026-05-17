@@ -27,7 +27,7 @@ interface AuthContextValue {
     email: string;
     password: string;
     businessType: string;
-  }) => Promise<{ emailVerificationRequired: boolean }>;
+  }) => Promise<{ emailVerificationRequired: boolean; message?: string }>;
   loginWithPassword: (payload: { email: string; password: string }) => Promise<void>;
   loginWithGoogle: (payload?: {
     mode?: "login" | "signup";
@@ -189,8 +189,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       impersonatedBy: getImpersonatedBy(token),
       signupAndLogin: async (payload) => {
         const response = await signup(payload);
-        setAuthenticatedState(response);
-        return { emailVerificationRequired: false };
+        if ("token" in response) {
+          setAuthenticatedState(response);
+          return { emailVerificationRequired: false };
+        }
+        return { emailVerificationRequired: true, message: response.message };
       },
       loginWithPassword: async (payload) => {
         const response = await login({

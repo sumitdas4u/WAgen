@@ -8,6 +8,7 @@ import { ensureWorkspaceForUser } from "./workspace-billing-service.js";
 interface UserRow extends User {
   password_hash: string | null;
   google_auth_sub: string | null;
+  email_verified: boolean;
 }
 
 export interface UserAuthIdentity {
@@ -16,7 +17,17 @@ export interface UserAuthIdentity {
   email: string;
   password_hash: string | null;
   google_auth_sub: string | null;
+  email_verified: boolean;
 }
+
+export type AuthenticateUserResult =
+  | { status: "authenticated"; user: User }
+  | { status: "email_not_verified"; userId: string; name: string; email: string }
+  | { status: "invalid" };
+
+export type VerifyEmailResult =
+  | { status: "verified"; userId: string; newlyVerified: boolean }
+  | { status: "invalid_or_expired" };
 
 function toPublicUser(row: UserRow): User {
   return {
@@ -64,8 +75,8 @@ export async function createUserFromGoogleAuth(input: {
 }): Promise<User> {
   const normalizedEmail = input.email.trim().toLowerCase();
   const result = await pool.query<User>(
-    `INSERT INTO users (name, email, password_hash, google_auth_sub, business_type)
-     VALUES ($1, $2, NULL, $3, $4)
+    `INSERT INTO users (name, email, password_hash, google_auth_sub, email_verified, email_verified_at, business_type)
+     VALUES ($1, $2, NULL, $3, TRUE, NOW(), $4)
      RETURNING id, name, email, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance`,
     [input.name.trim(), normalizedEmail, input.googleAuthSub, input.businessType ?? null]
   );
@@ -75,10 +86,10 @@ export async function createUserFromGoogleAuth(input: {
   return user;
 }
 
-export async function authenticateUser(email: string, password: string): Promise<User | null> {
+export async function authenticateUser(email: string, password: string): Promise<AuthenticateUserResult> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
+    `SELECT id, name, email, password_hash, google_auth_sub, email_verified, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE email = $1`,
     [normalizedEmail]
@@ -86,21 +97,112 @@ export async function authenticateUser(email: string, password: string): Promise
 
   const row = firstRow(result);
   if (!row) {
-    return null;
+    return { status: "invalid" };
   }
   if (!row.password_hash) {
-    return null;
+    return { status: "invalid" };
   }
   const isValid = await bcrypt.compare(password, row.password_hash);
   if (!isValid) {
-    return null;
+    return { status: "invalid" };
   }
 
-  return toPublicUser(row);
+  if (!row.email_verified) {
+    return {
+      status: "email_not_verified",
+      userId: row.id,
+      name: row.name,
+      email: row.email
+    };
+  }
+
+  return { status: "authenticated", user: toPublicUser(row) };
 }
 
-function hashResetToken(token: string): string {
+function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export async function createEmailVerificationToken(userId: string): Promise<string> {
+  const token = randomBytes(32).toString("base64url");
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE email_verification_tokens
+       SET used_at = NOW()
+       WHERE user_id = $1
+         AND used_at IS NULL`,
+      [userId]
+    );
+    await client.query(
+      `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+      [userId, hashToken(token)]
+    );
+    await client.query("COMMIT");
+    return token;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function verifyUserEmailWithToken(token: string): Promise<VerifyEmailResult> {
+  const tokenHash = hashToken(token);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const tokenResult = await client.query<{ id: string; user_id: string }>(
+      `SELECT id, user_id
+       FROM email_verification_tokens
+       WHERE token_hash = $1
+         AND used_at IS NULL
+         AND expires_at > NOW()
+       FOR UPDATE`,
+      [tokenHash]
+    );
+
+    const verificationToken = firstRow(tokenResult);
+    if (!verificationToken) {
+      await client.query("ROLLBACK");
+      return { status: "invalid_or_expired" };
+    }
+
+    const updateResult = await client.query<{ id: string }>(
+      `UPDATE users
+       SET email_verified = TRUE,
+           email_verified_at = COALESCE(email_verified_at, NOW())
+       WHERE id = $1
+         AND email_verified = FALSE
+       RETURNING id`,
+      [verificationToken.user_id]
+    );
+
+    await client.query(
+      `UPDATE email_verification_tokens
+       SET used_at = NOW()
+       WHERE id = $1`,
+      [verificationToken.id]
+    );
+
+    await client.query("COMMIT");
+    return {
+      status: "verified",
+      userId: verificationToken.user_id,
+      newlyVerified: (updateResult.rowCount ?? 0) > 0
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateUserPassword(input: {
@@ -164,7 +266,7 @@ export async function createPasswordResetToken(email: string): Promise<{
   await pool.query(
     `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
      VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
-    [user.id, hashResetToken(token)]
+    [user.id, hashToken(token)]
   );
 
   return { email: user.email, name: user.name, token };
@@ -174,7 +276,7 @@ export async function resetUserPasswordWithToken(input: {
   token: string;
   newPassword: string;
 }): Promise<"updated" | "invalid_or_expired"> {
-  const tokenHash = hashResetToken(input.token);
+  const tokenHash = hashToken(input.token);
   const passwordHash = await bcrypt.hash(input.newPassword, 10);
   const client = await pool.connect();
 
@@ -237,7 +339,7 @@ export async function userEmailExists(email: string): Promise<boolean> {
 export async function getUserAuthIdentityByEmail(email: string): Promise<UserAuthIdentity | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const result = await pool.query<UserAuthIdentity>(
-    `SELECT id, name, email, password_hash, google_auth_sub
+    `SELECT id, name, email, password_hash, google_auth_sub, email_verified
      FROM users
      WHERE email = $1
      LIMIT 1`,
@@ -249,7 +351,7 @@ export async function getUserAuthIdentityByEmail(email: string): Promise<UserAut
 
 export async function getUserAuthIdentityById(userId: string): Promise<UserAuthIdentity | null> {
   const result = await pool.query<UserAuthIdentity>(
-    `SELECT id, name, email, password_hash, google_auth_sub
+    `SELECT id, name, email, password_hash, google_auth_sub, email_verified
      FROM users
      WHERE id = $1
      LIMIT 1`,
@@ -272,7 +374,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 
 export async function getUserByGoogleAuthSub(googleAuthSub: string): Promise<User | null> {
   const result = await pool.query<UserRow>(
-    `SELECT id, name, email, password_hash, google_auth_sub, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
+    `SELECT id, name, email, password_hash, google_auth_sub, email_verified, business_type, subscription_plan, business_basics, personality, custom_personality_prompt, ai_active, phone_number, phone_verified, ai_token_balance
      FROM users
      WHERE google_auth_sub = $1
      LIMIT 1`,
@@ -286,7 +388,9 @@ export async function getUserByGoogleAuthSub(googleAuthSub: string): Promise<Use
 export async function setUserGoogleAuthSub(userId: string, googleAuthSub: string): Promise<void> {
   await pool.query(
     `UPDATE users
-     SET google_auth_sub = $1
+     SET google_auth_sub = $1,
+         email_verified = TRUE,
+         email_verified_at = COALESCE(email_verified_at, NOW())
      WHERE id = $2`,
     [googleAuthSub, userId]
   );

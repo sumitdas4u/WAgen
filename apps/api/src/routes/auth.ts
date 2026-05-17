@@ -3,6 +3,7 @@ import { checkSignupFraud } from "../services/fraud-detection-service.js";
 import { z } from "zod";
 import {
   authenticateUser,
+  createEmailVerificationToken,
   createUser,
   createUserFromGoogleAuth,
   createPasswordResetToken,
@@ -13,7 +14,7 @@ import {
   resetUserPasswordWithToken,
   updateUserPassword,
   updateUserDetails,
-  userEmailExists
+  verifyUserEmailWithToken
 } from "../services/user-service.js";
 import {
   buildGoogleAuthConnectUrl,
@@ -43,6 +44,10 @@ const SignupSchema = z.object({
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
+});
+
+const EmailVerificationQuerySchema = z.object({
+  token: z.string().min(32)
 });
 
 const UpdateMeSchema = z.object({
@@ -119,6 +124,53 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     const origin = getRequestOrigin(request);
     return origin ?? env.APP_BASE_URL.replace(/\/$/, "");
   };
+  const getApiBaseUrl = (request: FastifyRequest) => {
+    const origin = getRequestOrigin(request);
+    if (origin) {
+      return origin.replace(/\/$/, "");
+    }
+    try {
+      return new URL(env.APP_BASE_URL).origin;
+    } catch {
+      return env.APP_BASE_URL.replace(/\/$/, "");
+    }
+  };
+  const buildAppRedirectUrl = (path: string, params?: Record<string, string>) => {
+    const url = new URL(path, env.APP_BASE_URL.endsWith("/") ? env.APP_BASE_URL : `${env.APP_BASE_URL}/`);
+    for (const [key, value] of Object.entries(params ?? {})) {
+      url.searchParams.set(key, value);
+    }
+    return url.toString();
+  };
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  const sendEmailVerificationForUser = async (
+    user: { id: string; name: string; email: string },
+    request: FastifyRequest
+  ) => {
+    const token = await createEmailVerificationToken(user.id);
+    const verifyUrl = `${getApiBaseUrl(request)}/api/auth/email/verify?token=${encodeURIComponent(token)}`;
+    const safeName = escapeHtml(user.name);
+    await sendTransactionalEmail({
+      to: user.email,
+      subject: "Verify your WAgen AI email",
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#0f172a">
+          <h1 style="font-size:22px;margin:0 0 12px">Verify your email</h1>
+          <p style="font-size:14px;line-height:1.6;color:#475569">Hi ${safeName}, confirm this email address to finish creating your WAgen AI account.</p>
+          <p style="margin:24px 0">
+            <a href="${verifyUrl}" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;display:inline-block;font-weight:700">Verify email</a>
+          </p>
+          <p style="font-size:12px;line-height:1.6;color:#64748b">This link expires in 24 hours. If you did not create this account, you can safely ignore this email.</p>
+        </div>
+      `
+    });
+  };
 
   fastify.post("/api/auth/signup", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const parsed = SignupSchema.safeParse(request.body);
@@ -126,8 +178,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "Invalid signup payload" });
     }
 
-    const exists = await userEmailExists(parsed.data.email);
-    if (exists) {
+    const existingUser = await getUserAuthIdentityByEmail(parsed.data.email);
+    if (existingUser?.email_verified === false) {
+      await sendEmailVerificationForUser(existingUser, request);
+      return reply.status(202).send({
+        emailVerificationRequired: true,
+        message: "Confirmation email is waiting for verification. We sent a new verification email."
+      });
+    }
+    if (existingUser) {
       return reply.status(409).send({ error: "Email already in use. Please log in." });
     }
 
@@ -136,15 +195,25 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     try {
       const user = await createUser(parsed.data);
-      void creditSignupTokens(user.id);
       // Store signup IP and run fraud checks fire-and-forget — never block signup
       void pool.query("UPDATE users SET signup_ip = $1 WHERE id = $2", [ip ?? null, user.id]);
       void checkSignupFraud(user.id, user.email, ip);
-      const token = issueToken(user.id, user.email);
-      return reply.send({ token, user });
+      await sendEmailVerificationForUser(user, request);
+      return reply.status(201).send({
+        emailVerificationRequired: true,
+        message: "Verification link sent to your email. Verify first, then login."
+      });
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code === "23505") {
+        const duplicateUser = await getUserAuthIdentityByEmail(parsed.data.email);
+        if (duplicateUser?.email_verified === false) {
+          await sendEmailVerificationForUser(duplicateUser, request);
+          return reply.status(202).send({
+            emailVerificationRequired: true,
+            message: "Confirmation email is waiting for verification. We sent a new verification email."
+          });
+        }
         return reply.status(409).send({ error: "Email already in use. Please log in." });
       }
       throw error;
@@ -157,13 +226,42 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "Invalid login payload" });
     }
 
-    const user = await authenticateUser(parsed.data.email, parsed.data.password);
-    if (!user) {
+    const authResult = await authenticateUser(parsed.data.email, parsed.data.password);
+    if (authResult.status === "invalid") {
       return reply.status(401).send({ error: "Invalid credentials" });
     }
 
+    if (authResult.status === "email_not_verified") {
+      await sendEmailVerificationForUser(
+        { id: authResult.userId, name: authResult.name, email: authResult.email },
+        request
+      );
+      return reply.status(403).send({
+        error: "Email not verified. A new verification link has been sent to your inbox."
+      });
+    }
+
+    const user = authResult.user;
     const token = issueToken(user.id, user.email);
     return reply.send({ token, user });
+  });
+
+  fastify.get("/api/auth/email/verify", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const parsed = EmailVerificationQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return reply.redirect(buildAppRedirectUrl("/signup", { verification: "invalid" }));
+    }
+
+    const result = await verifyUserEmailWithToken(parsed.data.token);
+    if (result.status === "invalid_or_expired") {
+      return reply.redirect(buildAppRedirectUrl("/signup", { verification: "invalid" }));
+    }
+
+    if (result.newlyVerified) {
+      await creditSignupTokens(result.userId);
+    }
+
+    return reply.redirect(buildAppRedirectUrl("/signup", { verified: "1" }));
   });
 
   fastify.get("/api/auth/google/start", {

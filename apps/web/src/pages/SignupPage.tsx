@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
 
@@ -62,6 +62,19 @@ export function SignupPage() {
   const [businessType, setBusinessType] = useState(BUSINESS_TYPES[0]);
   const selectedPlan = readPlanFromSearch(location.search);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("verified") === "1") {
+      setMode("login");
+      setInfo("Email verified. You can login now.");
+      setError(null);
+    } else if (params.get("verification") === "invalid") {
+      setMode("login");
+      setError("Verification link is invalid or expired. Sign up again to resend the email.");
+      setInfo(null);
+    }
+  }, [location.search]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -73,7 +86,7 @@ export function SignupPage() {
       if (mode === "signup") {
         const result = await signupAndLogin({ name, email, password, businessType });
         if (result.emailVerificationRequired) {
-          setInfo("Verification link sent to your email. Verify first, then login.");
+          setInfo(result.message ?? "Verification link sent to your email. Verify first, then login.");
           setMode("login");
           setPassword("");
           return;
