@@ -10,7 +10,7 @@ import {
 } from "../../lib/api";
 import { useDashboardShell } from "../../shared/dashboard/shell-context";
 
-const DEFAULT_DEMO_YOUTUBE_ID = "M7lc1UVf-VE";
+const DEFAULT_DEMO_YOUTUBE_ID = "HdrPDEA24e4";
 const DEMO_SCHEDULE_URL = "https://calendly.com/sumitdas4u/30min";
 const OFFER_PLAN_CODES: BillingPlan["code"][] = ["pro", "starter", "business"];
 const PLAN_LABELS: Record<BillingPlan["code"], string> = {
